@@ -1,0 +1,153 @@
+sy// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// --------------------------------------
+// Enums
+// --------------------------------------
+
+enum UserRole {
+  OWNER
+  STAFF
+}
+
+enum AppointmentStatus {
+  BOOKED
+  CANCELLED
+  NO_SHOW
+  COMPLETED
+}
+
+enum AppointmentSource {
+  CUSTOMER
+  ADMIN
+  AUTOMATION
+}
+
+// --------------------------------------
+// Salon & Core Models
+// --------------------------------------
+
+model Salon {
+  id              Int      @id @default(autoincrement())
+  name            String
+  logoUrl         String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  users           SalonUser[]
+  settings        SalonSettings?
+  staff           Staff[]
+  services        Service[]
+  appointments    Appointment[]
+}
+
+model SalonSettings {
+  id              Int      @id @default(autoincrement())
+  workStartHour   Int      @default(9)
+  workEndHour     Int      @default(18)
+  slotInterval    Int      @default(30) // in minutes
+  timezone        String   @default("Europe/Istanbul")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  salonId         Int      @unique
+  salon           Salon    @relation(fields: [salonId], references: [id])
+}
+
+// --------------------------------------
+// User & Staff Models
+// --------------------------------------
+
+model SalonUser {
+  id              Int       @id @default(autoincrement())
+  email           String    @unique
+  passwordHash    String
+  role            UserRole
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  salonId         Int
+  salon           Salon     @relation(fields: [salonId], references: [id])
+  
+  staffProfile    Staff?
+}
+
+model Staff {
+  id              Int      @id @default(autoincrement())
+  name            String
+  phone           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  salonId         Int
+  salon           Salon    @relation(fields: [salonId], references: [id])
+  
+  userId          Int?      @unique // Optional link to a SalonUser
+  user            SalonUser? @relation(fields: [userId], references: [id])
+
+  leaves          Leave[]
+  appointments    Appointment[]
+  services        Service[] @relation("StaffServices")
+}
+
+model Leave {
+  id              Int      @id @default(autoincrement())
+  startDate       DateTime @db.Date
+  endDate         DateTime @db.Date
+  reason          String?
+  createdAt       DateTime @default(now())
+
+  staffId         Int
+  staff           Staff    @relation(fields: [staffId], references: [id])
+}
+
+// --------------------------------------
+// Service & Booking Models
+// --------------------------------------
+
+model Service {
+  id              Int      @id @default(autoincrement())
+  name            String
+  description     String?
+  price           Float
+  duration        Int      // in minutes
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  salonId         Int
+  salon           Salon    @relation(fields: [salonId], references: [id])
+
+  staff           Staff[]   @relation("StaffServices")
+  appointments    Appointment[]
+}
+
+model Appointment {
+  id              Int      @id @default(autoincrement())
+  customerName    String
+  customerPhone   String
+  startTime       DateTime
+  endTime         DateTime
+  status          AppointmentStatus @default(BOOKED)
+  source          AppointmentSource @default(CUSTOMER)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  salonId         Int
+  salon           Salon    @relation(fields: [salonId], references: [id])
+  
+  staffId         Int
+  staff           Staff    @relation(fields: [staffId], references: [id])
+
+  serviceId       Int
+  service         Service  @relation(fields: [serviceId], references: [id])
+
+  @@index([staffId, startTime, endTime])
+}
