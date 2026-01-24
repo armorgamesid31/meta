@@ -1,6 +1,17 @@
-// This file can be used for global test setup if needed.
-// For example, to set up environment variables or mock modules.
-// import dotenv from 'dotenv';
-// dotenv.config({ path: '.env.test' });
+import { vi, beforeEach, afterEach } from "vitest";
 
-// For now, it's empty as no global setup is explicitly required by the tests.
+beforeEach(() => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: vi.fn().mockResolvedValue({}),
+  } as unknown as Response));
+  // Ensure window.fetch is the same as the stubbed global fetch
+  if (typeof window !== 'undefined') {
+    window.fetch = globalThis.fetch;
+  }
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
