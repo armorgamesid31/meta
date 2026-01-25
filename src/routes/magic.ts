@@ -105,6 +105,29 @@ router.get('/:token', async (req: any, res: any) => {
   }
 
   try {
+    // Extract salon slug from subdomain
+    const host = req.headers.host || '';
+    const salonSlug = host.split('.')[0]; // e.g., "mysalon" from "mysalon.salonasistan.com"
+
+    if (!salonSlug || salonSlug === 'salonasistan' || salonSlug === 'localhost:3000') {
+      return res.status(400).json({ message: 'Invalid salon subdomain' });
+    }
+
+    // Find salon by slug
+    const salon = await prisma.salon.findUnique({
+      where: { slug: salonSlug },
+      select: {
+        id: true,
+        name: true,
+        address: true,
+        bookingTheme: true
+      }
+    });
+
+    if (!salon) {
+      return res.status(404).json({ message: 'Salon not found' });
+    }
+
     // Find and validate magic link
     const magicLink = await prisma.magicLink.findUnique({
       where: { token }
@@ -114,21 +137,41 @@ router.get('/:token', async (req: any, res: any) => {
       return res.status(404).json({ message: 'Magic link not found' });
     }
 
-    if (magicLink.expiresAt < new Date()) {
-      return res.status(410).json({ message: 'Magic link has expired' });
+    // Validate token belongs to this salon
+    const tokenSalonId = (magicLink.context as any)?.salonId;
+    if (tokenSalonId !== salon.id) {
+      return res.status(403).json({ message: 'Token does not belong to this salon' });
     }
 
+    // Check token state
     if (magicLink.usedAt) {
-      return res.status(410).json({ message: 'Magic link has already been used' });
+      return res.status(410).json({
+        status: 'USED',
+        message: 'Bu randevu bağlantısı daha önce kullanılmış.',
+        salon: {
+          name: salon.name,
+          address: salon.address
+        }
+      });
+    }
+
+    if (magicLink.expiresAt < new Date()) {
+      return res.status(410).json({
+        status: 'EXPIRED',
+        message: 'Bu randevu bağlantısının süresi dolmuş.',
+        salon: {
+          name: salon.name,
+          address: salon.address,
+          phone: '0555-123-4567' // This should come from salon settings
+        }
+      });
     }
 
     // Auto-create customer if not exists
-    const salonId = (magicLink.context as any)?.salonId || 481; // Use the salon from context or default to our test salon
-
     let customer = await prisma.customer.findFirst({
       where: {
         phone: magicLink.phone,
-        salonId: salonId
+        salonId: salon.id
       }
     });
 
@@ -137,7 +180,7 @@ router.get('/:token', async (req: any, res: any) => {
         data: {
           phone: magicLink.phone,
           name: `Customer ${magicLink.phone}`, // Placeholder name
-          salonId: salonId
+          salonId: salon.id
         }
       });
     }
@@ -145,77 +188,21 @@ router.get('/:token', async (req: any, res: any) => {
     // Prepare response based on type
     const response: any = {
       type: magicLink.type,
-      expiresAt: magicLink.expiresAt.toISOString()
+      expiresAt: magicLink.expiresAt.toISOString(),
+      salon: {
+        id: salon.id,
+        name: salon.name,
+        address: salon.address,
+        theme: salon.bookingTheme || {
+          primaryColor: '#10b981',
+          secondaryColor: '#064e3b'
+        }
+      },
+      customer: {
+        phone: magicLink.phone,
+        name: customer.name
+      }
     };
-
-    // Add type-specific data
-    switch (magicLink.type) {
-      case 'BOOKING':
-        // For booking, return salon info with theme
-        const salon = await prisma.salon.findUnique({
-          where: { id: (magicLink.context as any)?.salonId || 481 },
-          select: {
-            id: true,
-            name: true,
-            bookingTheme: true
-          }
-        });
-
-        if (salon) {
-          response.salon = {
-            id: salon.id,
-            name: salon.name,
-            theme: salon.bookingTheme || {
-              primaryColor: '#10b981',
-              secondaryColor: '#064e3b'
-            }
-          };
-        }
-
-        // Return customer info (name may be null)
-        response.customer = {
-          phone: magicLink.phone,
-          name: customer.name
-        };
-        break;
-
-      case 'CANCEL':
-      case 'RESCHEDULE':
-        // For cancel/reschedule, return appointment details
-        if (magicLink.context && (magicLink.context as any).appointmentId) {
-          const appointment = await prisma.appointment.findUnique({
-            where: { id: (magicLink.context as any).appointmentId },
-            include: {
-              service: true,
-              staff: {
-                select: {
-                  id: true,
-                  name: true
-                }
-              },
-              salon: {
-                select: {
-                  id: true,
-                  name: true
-                }
-              }
-            }
-          });
-
-          if (appointment) {
-            response.appointment = {
-              id: appointment.id,
-              startTime: appointment.startTime,
-              endTime: appointment.endTime,
-              status: appointment.status,
-              service: appointment.service,
-              staff: appointment.staff,
-              salon: appointment.salon
-            };
-          }
-        }
-        break;
-    }
 
     res.json(response);
 

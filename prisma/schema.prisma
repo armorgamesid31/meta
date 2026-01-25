@@ -48,6 +48,8 @@ enum BookingSessionState {
 model Salon {
   id              Int      @id @default(autoincrement())
   name            String
+  slug            String?  @unique // For subdomain routing
+  address         String?  // Salon address for display
   logoUrl         String?
   bookingTheme    Json?
   createdAt       DateTime @default(now())

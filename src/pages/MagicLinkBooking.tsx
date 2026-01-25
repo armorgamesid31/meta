@@ -64,6 +64,7 @@ const MagicLinkBooking: React.FC = () => {
   // UI state
   const [currentStep, setCurrentStep] = useState<'info' | 'services' | 'datetime' | 'confirm'>('info');
   const [submitting, setSubmitting] = useState(false);
+  const [tokenStatus, setTokenStatus] = useState<'valid' | 'EXPIRED' | 'USED' | 'invalid'>('valid');
 
   useEffect(() => {
     if (!token) {
@@ -76,7 +77,10 @@ const MagicLinkBooking: React.FC = () => {
     fetch(`/m/${token}`)
       .then(res => res.json())
       .then(data => {
-        if (data.message) {
+        if (data.status === 'USED' || data.status === 'EXPIRED') {
+          setTokenStatus(data.status);
+          setMagicLinkData(data.salon);
+        } else if (data.message) {
           setError(data.message);
         } else {
           setMagicLinkData(data);
@@ -166,6 +170,65 @@ const MagicLinkBooking: React.FC = () => {
         <div className="text-center">
           <h1 className="text-2xl font-bold text-red-600 mb-4">Error</h1>
           <p className="text-gray-600">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show token state screens
+  if (tokenStatus === 'EXPIRED') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="max-w-md mx-auto bg-white shadow-lg rounded-lg p-8 text-center">
+          <div className="mb-6">
+            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <span className="text-2xl">⏰</span>
+            </div>
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">Bağlantı Süresi Dolmuş</h1>
+            <p className="text-gray-600">
+              Bu randevu bağlantısının süresi dolmuş. Yeni bir bağlantı için salon ile iletişime geçin.
+            </p>
+          </div>
+
+          <div className="bg-gray-50 p-4 rounded-lg mb-6">
+            <h3 className="font-medium text-gray-900 mb-2">{(magicLinkData as any).name}</h3>
+            <p className="text-sm text-gray-600 mb-2">{(magicLinkData as any).address}</p>
+            <p className="text-sm text-gray-600">📞 {(magicLinkData as any).phone}</p>
+          </div>
+
+          <button
+            onClick={() => window.location.href = `tel:${(magicLinkData as any).phone}`}
+            className="w-full bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700"
+          >
+            Salon ile İletişime Geç
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (tokenStatus === 'USED') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="max-w-md mx-auto bg-white shadow-lg rounded-lg p-8 text-center">
+          <div className="mb-6">
+            <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <span className="text-2xl">✅</span>
+            </div>
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">Bağlantı Kullanılmış</h1>
+            <p className="text-gray-600">
+              Bu randevu bağlantısı daha önce kullanılmış. Her bağlantı sadece bir kez kullanılabilir.
+            </p>
+          </div>
+
+          <div className="bg-gray-50 p-4 rounded-lg mb-6">
+            <h3 className="font-medium text-gray-900 mb-2">{(magicLinkData as any).name}</h3>
+            <p className="text-sm text-gray-600">{(magicLinkData as any).address}</p>
+          </div>
+
+          <p className="text-sm text-gray-500">
+            Başka bir randevu için yeni bir bağlantı isteyin.
+          </p>
         </div>
       </div>
     );
