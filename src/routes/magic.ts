@@ -105,42 +105,57 @@ router.get('/:token', async (req: any, res: any) => {
   }
 
   try {
-    // Extract salon slug from subdomain
     const host = req.headers.host || '';
-    const salonSlug = host.split('.')[0]; // e.g., "mysalon" from "mysalon.salonasistan.com"
+    const isLocalhost = host.includes('localhost') || host.includes('127.0.0.1');
 
-    if (!salonSlug || salonSlug === 'salonasistan' || salonSlug === 'localhost:3000') {
-      return res.status(400).json({ message: 'Invalid salon subdomain' });
-    }
-
-    // Find salon by slug
-    const salon = await prisma.salon.findUnique({
-      where: { slug: salonSlug },
-      select: {
-        id: true,
-        name: true,
-        address: true,
-        bookingTheme: true
-      }
-    });
-
-    if (!salon) {
-      return res.status(404).json({ message: 'Salon not found' });
-    }
-
-    // Find and validate magic link
+    // Find magic link
     const magicLink = await prisma.magicLink.findUnique({
-      where: { token }
+      where: { token },
     });
 
     if (!magicLink) {
-      return res.status(404).json({ message: 'Magic link not found' });
+      return res.status(404).json({ status: 'INVALID' });
     }
 
-    // Validate token belongs to this salon
-    const tokenSalonId = (magicLink.context as any)?.salonId;
-    if (tokenSalonId !== salon.id) {
-      return res.status(403).json({ message: 'Token does not belong to this salon' });
+    // Get salonId from context
+    const salonId = (magicLink.context as any)?.salonId;
+    if (!salonId) {
+      return res.status(404).json({ status: 'INVALID' });
+    }
+
+    let salon;
+
+    if (isLocalhost) {
+      // Localhost: get salon by salonId from token context
+      salon = await prisma.salon.findUnique({
+        where: { id: salonId },
+        select: {
+          id: true,
+          name: true,
+          address: true,
+          bookingTheme: true
+        }
+      });
+    } else {
+      // Production: get salon from subdomain and validate it matches token salonId
+      const slug = host.split('.')[0];
+      salon = await prisma.salon.findUnique({
+        where: { slug },
+        select: {
+          id: true,
+          name: true,
+          address: true,
+          bookingTheme: true
+        }
+      });
+
+      if (!salon || salon.id !== salonId) {
+        return res.status(404).json({ status: 'INVALID_SALON' });
+      }
+    }
+
+    if (!salon) {
+      return res.status(404).json({ status: 'INVALID_SALON' });
     }
 
     // Check token state
