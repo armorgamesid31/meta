@@ -1,0 +1,31 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false
+  },
+  "include": [
+    "src/server.mts",
+    "src/routes/**/*.ts",
+    "src/middleware/**/*.ts",
+    "src/utils/**/*.ts",
+    "src/modules/**/*.ts",
+    "src/prisma.ts",
+    "src/config.ts",
+    "src/types/**/*.ts"
+  ],
+  "exclude": [
+    "src/**/*.tsx",
+    "src/App.tsx",
+    "src/main.tsx",
+    "src/components/**/*",
+    "src/pages/**/*",
+    "src/vite-env.d.ts",
+    "node_modules",
+    "src/**/*.test.ts",
+    "src/comprehensive.test.ts",
+    "tests/**/*"
+  ]
+}

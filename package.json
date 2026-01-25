@@ -9,7 +9,7 @@
   "scripts": {
     "dev:frontend": "vite",
     "dev:backend": "npx tsx watch src/server.ts",
-    "build": "tsc -b",
+    "build": "tsc -p tsconfig.server.json",
     "start": "node dist/server.mjs",
     "lint": "eslint .",
     "preview": "vite preview",
