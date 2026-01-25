@@ -5,6 +5,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import OnboardingGuard from './components/OnboardingGuard';
 import AdminLayout from './components/AdminLayout';
 import OnboardingWizard from './pages/admin/OnboardingWizard';
+import MagicLinkBooking from './pages/MagicLinkBooking';
 
 function App() {
   return (
@@ -26,6 +27,9 @@ function App() {
             </OnboardingGuard>
           </ProtectedRoute>
         } />
+
+        {/* Magic Link Booking - No authentication required */}
+        <Route path="/m" element={<MagicLinkBooking />} />
 
         {/* Müşteri Uygulaması Rotası - Henüz uygulanmadı, sadece yer tutucu */}
         <Route path="/book" element={<div>Customer Booking (Work in progress)</div>} />

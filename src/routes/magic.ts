@@ -145,39 +145,19 @@ router.get('/:token', async (req: any, res: any) => {
     // Prepare response based on type
     const response: any = {
       type: magicLink.type,
-      phone: magicLink.phone,
-      customer: {
-        id: customer.id,
-        name: customer.name,
-        phone: customer.phone,
-        email: customer.email
-      },
-      context: magicLink.context
+      expiresAt: magicLink.expiresAt.toISOString()
     };
 
     // Add type-specific data
     switch (magicLink.type) {
       case 'BOOKING':
-        // For booking, return salon info and available services
+        // For booking, return salon info with theme
         const salon = await prisma.salon.findUnique({
-          where: { id: (magicLink.context as any)?.salonId || 1 },
-          include: {
-            services: {
-              include: {
-                staff: {
-                  select: {
-                    id: true,
-                    name: true
-                  }
-                }
-              }
-            },
-            staff: {
-              select: {
-                id: true,
-                name: true
-              }
-            }
+          where: { id: (magicLink.context as any)?.salonId || 481 },
+          select: {
+            id: true,
+            name: true,
+            bookingTheme: true
           }
         });
 
@@ -185,10 +165,18 @@ router.get('/:token', async (req: any, res: any) => {
           response.salon = {
             id: salon.id,
             name: salon.name,
-            services: salon.services,
-            staff: salon.staff
+            theme: salon.bookingTheme || {
+              primaryColor: '#10b981',
+              secondaryColor: '#064e3b'
+            }
           };
         }
+
+        // Return customer info (name may be null)
+        response.customer = {
+          phone: magicLink.phone,
+          name: customer.name
+        };
         break;
 
       case 'CANCEL':

@@ -6,6 +6,7 @@ import bookingRoutes from './routes/bookings.js';
 import sessionRoutes from './routes/sessions.js';
 import adminRoutes from './routes/admin.js';
 import magicRoutes from './routes/magic.js';
+import availabilityRoutes from './routes/availability.js';
 
 const app = express();
 
@@ -26,6 +27,8 @@ app.use('/api/bookings', bookingRoutes);
 app.use('/api/sessions', sessionRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/magic-link', magicRoutes);
+app.use('/availability', availabilityRoutes);
+app.use('/appointments', bookingRoutes);
 app.use('/m', magicRoutes);
 
 // Basic test route

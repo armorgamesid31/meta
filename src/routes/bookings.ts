@@ -481,4 +481,174 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
   }
 });
 
+// POST /appointments - Create appointment using magic link token
+router.post('/', async (req: any, res: any) => {
+  const { token, salonId, datetime, people, campaignOptIn } = req.body as any;
+
+  if (!token || !salonId || !datetime || !Array.isArray(people) || people.length === 0) {
+    return res.status(400).json({ message: 'Missing required fields' });
+  }
+
+  try {
+    // Validate magic link token
+    const magicLink = await prisma.magicLink.findUnique({
+      where: { token }
+    });
+
+    if (!magicLink) {
+      return res.status(404).json({ message: 'Magic link not found' });
+    }
+
+    if (magicLink.expiresAt < new Date()) {
+      return res.status(410).json({ message: 'Magic link has expired' });
+    }
+
+    if (magicLink.usedAt) {
+      return res.status(410).json({ message: 'Magic link has already been used' });
+    }
+
+    if (magicLink.type !== 'BOOKING') {
+      return res.status(400).json({ message: 'Invalid magic link type' });
+    }
+
+    // Validate salon matches
+    if (magicLink.context && (magicLink.context as any).salonId !== salonId) {
+      return res.status(400).json({ message: 'Salon ID mismatch' });
+    }
+
+    // Auto-create or find customer
+    let customer = await prisma.customer.findFirst({
+      where: {
+        phone: magicLink.phone,
+        salonId: salonId
+      }
+    });
+
+    if (!customer) {
+      // Use the first person's name as customer name
+      const customerName = people[0].name || `Customer ${magicLink.phone}`;
+      customer = await prisma.customer.create({
+        data: {
+          phone: magicLink.phone,
+          name: customerName,
+          salonId: salonId
+        }
+      });
+    }
+
+    // Parse datetime
+    const appointmentDateTime = new Date(datetime);
+    if (isNaN(appointmentDateTime.getTime())) {
+      return res.status(400).json({ message: 'Invalid datetime format' });
+    }
+
+    // Start transaction
+    const result = await prisma.$transaction(async (tx) => {
+      const appointments = [];
+
+      // Create appointments for each person
+      for (const person of people) {
+        if (!person.name || !person.birthDate || !person.gender || !Array.isArray(person.services)) {
+          throw new Error('Invalid person data');
+        }
+
+        // Validate gender
+        if (!['kadin', 'erkek', 'belirtmek-istemiyorum'].includes(person.gender)) {
+          throw new Error('Invalid gender value');
+        }
+
+        // Create appointment for each service in this person
+        for (const serviceItem of person.services) {
+          if (!serviceItem.serviceId || !serviceItem.staffId) {
+            throw new Error('Invalid service data');
+          }
+
+          // Validate service and staff exist
+          const service = await tx.service.findFirst({
+            where: {
+              id: serviceItem.serviceId,
+              salonId: salonId
+            }
+          });
+
+          if (!service) {
+            throw new Error('Service not found');
+          }
+
+          const staff = await tx.staff.findFirst({
+            where: {
+              id: serviceItem.staffId,
+              salonId: salonId
+            }
+          });
+
+          if (!staff) {
+            throw new Error('Staff not found');
+          }
+
+          // Calculate end time
+          const endTime = new Date(appointmentDateTime.getTime() + service.duration * 60 * 1000);
+
+          // Create appointment
+          const appointment = await tx.appointment.create({
+            data: {
+              salonId: salonId,
+              staffId: serviceItem.staffId,
+              serviceId: serviceItem.serviceId,
+              customerId: customer.id,
+              customerName: person.name,
+              customerPhone: magicLink.phone,
+              startTime: appointmentDateTime,
+              endTime: endTime,
+              status: 'BOOKED',
+              source: 'CUSTOMER',
+              notes: `Birth date: ${person.birthDate}, Gender: ${person.gender}, Campaign opt-in: ${campaignOptIn || false}`
+            }
+          });
+
+          appointments.push(appointment);
+        }
+      }
+
+      // Mark magic link as used
+      await tx.magicLink.update({
+        where: { token },
+        data: { usedAt: new Date() }
+      });
+
+      return appointments;
+    });
+
+    // Emit WhatsApp event (this would be consumed by n8n)
+    const salon = await prisma.salon.findUnique({
+      where: { id: salonId },
+      select: { name: true }
+    });
+
+    // Simple event emission (in production, this would go to a message queue)
+    console.log('📱 WhatsApp Event:', {
+      event: 'appointment.created',
+      appointmentId: result[0].id,
+      salon: {
+        name: salon?.name || 'Unknown Salon',
+        location: 'Salon Address' // This would come from salon settings
+      },
+      customer: {
+        phone: magicLink.phone,
+        name: customer.name
+      },
+      datetime: appointmentDateTime.toLocaleString('tr-TR')
+    });
+
+    res.status(201).json({
+      appointmentId: result[0].id,
+      status: 'CONFIRMED'
+    });
+
+  } catch (error) {
+    console.error('Error creating appointment:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 export default router;
