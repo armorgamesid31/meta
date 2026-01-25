@@ -1,10 +1,10 @@
 import express from 'express';
 import cors from 'cors';
-import authRoutes from './routes/auth.js';
-import salonRoutes from './routes/salon.js';
-import bookingRoutes from './routes/bookings.js';
-import sessionRoutes from './routes/sessions.js';
-import adminRoutes from './routes/admin.js';
+import authRoutes from './routes/auth';
+import salonRoutes from './routes/salon';
+import bookingRoutes from './routes/bookings';
+import sessionRoutes from './routes/sessions';
+import adminRoutes from './routes/admin';
 
 const app = express();
 
