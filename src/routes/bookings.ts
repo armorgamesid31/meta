@@ -1,8 +1,8 @@
-const { Router } = require('express');
-const { prisma } = require('../prisma');
-const { authenticateToken } = require('../middleware/auth');
-const { AvailabilityEngine } = require('../modules/availability/engine');
-const { DateNormalizer } = require('../modules/availability/normalizer');
+import { Router } from 'express';
+import { prisma } from '../prisma.js';
+import { authenticateToken } from '../middleware/auth.js';
+import { AvailabilityEngine } from '../modules/availability/engine.js';
+import { DateNormalizer } from '../modules/availability/normalizer.js';
 
 const router = Router();
 
@@ -481,4 +481,4 @@ router.post("/reschedule", authenticateToken, async (req: AuthRequest, res) => {
   }
 });
 
-module.exports = router;
+export default router;

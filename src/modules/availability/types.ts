@@ -1,29 +1,29 @@
-type AvailabilitySlot = {
+export type AvailabilitySlot = {
   startTime: Date;
   endTime: Date;
   availableStaff: number[];
   optionId: string;
 };
 
-type LockToken = {
+export type LockToken = {
   id: string;
   expiresAt: Date;
 };
 
-type AvailabilityOptions = {
+export type AvailabilityOptions = {
   date: Date;
   serviceId: number;
   peopleCount: number;
   salonId: number;
 };
 
-type AvailabilityResult = {
+export type AvailabilityResult = {
   slots: AvailabilitySlot[];
   lockToken: LockToken;
 };
 
 // Legacy database record types (TEXT fields)
-type LegacyAppointmentRecord = {
+export type LegacyAppointmentRecord = {
   id: string;
   calisan_id: string;
   tarih: string; // TEXT date like "2024-01-15"
@@ -32,7 +32,7 @@ type LegacyAppointmentRecord = {
   durum: string;  // TEXT status
 };
 
-type LegacyLeaveRecord = {
+export type LegacyLeaveRecord = {
   id: string;
   calisan_id: string;
   baslangic_tarihi: string; // TEXT date
@@ -40,7 +40,7 @@ type LegacyLeaveRecord = {
   neden: string;
 };
 
-type LegacyLockRecord = {
+export type LegacyLockRecord = {
   id: string;
   salon_id: string;
   tarih: string;
@@ -48,14 +48,4 @@ type LegacyLockRecord = {
   sure: string;
   expires_at: string; // TEXT datetime
   created_at: string;
-};
-
-module.exports = {
-  AvailabilitySlot,
-  LockToken,
-  AvailabilityOptions,
-  AvailabilityResult,
-  LegacyAppointmentRecord,
-  LegacyLeaveRecord,
-  LegacyLockRecord
 };

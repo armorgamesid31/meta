@@ -7,13 +7,13 @@ import {
   LegacyAppointmentRecord,
   LegacyLeaveRecord,
   LegacyLockRecord
-} from './types';
+} from './types.js';
 import {
   DateNormalizer,
   AppointmentNormalizer,
   LeaveNormalizer,
   LockNormalizer
-} from './normalizer';
+} from './normalizer.js';
 
 class AvailabilityEngine {
   private readonly SLOT_INTERVAL_MINUTES = 15;
@@ -255,4 +255,4 @@ class AvailabilityEngine {
   }
 }
 
-module.exports = { AvailabilityEngine };
+export { AvailabilityEngine };

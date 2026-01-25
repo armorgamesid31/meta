@@ -1,6 +1,6 @@
-const { Router } = require('express');
-const { prisma } = require('../prisma');
-const { authenticateToken } = require('../middleware/auth');
+import { Router } from 'express';
+import { prisma } from '../prisma.js';
+import { authenticateToken } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -174,4 +174,4 @@ router.post("/complete-onboarding", authenticateToken, async (req: AuthRequest, 
   }
 });
 
-module.exports = router;
+export default router;

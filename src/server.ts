@@ -1,10 +1,10 @@
-const express = require('express');
-const cors = require('cors');
-const authRoutes = require('./routes/auth');
-const salonRoutes = require('./routes/salon');
-const bookingRoutes = require('./routes/bookings');
-const sessionRoutes = require('./routes/sessions');
-const adminRoutes = require('./routes/admin');
+import express from 'express';
+import cors from 'cors';
+import authRoutes from './routes/auth.js';
+import salonRoutes from './routes/salon.js';
+import bookingRoutes from './routes/bookings.js';
+import sessionRoutes from './routes/sessions.js';
+import adminRoutes from './routes/admin.js';
 
 const app = express();
 
@@ -43,4 +43,4 @@ app.get("/", (_req, res) => {
   `);
 });
 
-module.exports = app;
+export default app;

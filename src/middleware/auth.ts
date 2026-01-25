@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { verifyToken } from '../utils/jwt';
+import { verifyToken } from '../utils/jwt.js';
 import { PrismaClient, UserRole } from '@prisma/client';
 
 interface AuthRequest extends Request {
@@ -10,7 +10,7 @@ interface AuthRequest extends Request {
   };
 }
 
-const authenticateToken = (req: AuthRequest, res: Response, next: NextFunction) => {
+export const authenticateToken = (req: AuthRequest, res: Response, next: NextFunction) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
@@ -24,16 +24,11 @@ const authenticateToken = (req: AuthRequest, res: Response, next: NextFunction) 
   next();
 };
 
-const authorizeRoles = (roles: UserRole[]) => {
+export const authorizeRoles = (roles: UserRole[]) => {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
     if (!req.user || !roles.includes(req.user.role)) {
       return res.sendStatus(403); // Forbidden
     }
     next();
   };
-};
-
-module.exports = {
-  authenticateToken,
-  authorizeRoles
 };

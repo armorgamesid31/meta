@@ -1,7 +1,7 @@
-const { Router } = require('express');
-const { prisma } = require('../prisma');
-const { AvailabilityEngine } = require('../modules/availability/engine');
-const { v4: uuidv4 } = require('uuid');
+import { Router } from 'express';
+import { prisma } from '../prisma.js';
+import { AvailabilityEngine } from '../modules/availability/engine.js';
+import { v4 as uuidv4 } from 'uuid';
 
 const router = Router();
 
@@ -374,4 +374,4 @@ router.post("/:token/confirm", async (req: Request, res: Response) => {
   }
 });
 
-module.exports = router;
+export default router;

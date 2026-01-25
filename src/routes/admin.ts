@@ -1,6 +1,6 @@
-const { Router } = require('express');
-const { prisma } = require('../prisma');
-const { authenticateToken } = require('../middleware/auth');
+import { Router } from 'express';
+import { prisma } from '../prisma.js';
+import { authenticateToken } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -579,4 +579,4 @@ router.put("/booking-theme", authenticateToken, async (req: AuthRequest, res) =>
   }
 });
 
-module.exports = router;
+export default router;

@@ -12,19 +12,14 @@ interface TokenPayload {
   role: 'OWNER' | 'STAFF';
 }
 
-const generateToken = (payload: TokenPayload): string => {
+export const generateToken = (payload: TokenPayload): string => {
   return jwt.sign(payload as any, JWT_SECRET as any, { expiresIn: JWT_EXPIRES_IN as any });
 };
 
-const verifyToken = (token: string): TokenPayload | null => {
+export const verifyToken = (token: string): TokenPayload | null => {
   try {
     return jwt.verify(token, JWT_SECRET as string) as TokenPayload;
   } catch {
     return null;
   }
-};
-
-module.exports = {
-  generateToken,
-  verifyToken
 };
