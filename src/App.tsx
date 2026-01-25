@@ -1,5 +1,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import HomePage from './pages/HomePage';
+import RegisterPage from './pages/RegisterPage';
 import LoginPage from './pages/LoginPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import OnboardingGuard from './components/OnboardingGuard';
@@ -17,6 +19,13 @@ function App() {
   return (
     <Router>
       <Routes>
+        {/* Home Page */}
+        <Route path="/" element={<HomePage />} />
+
+        {/* Registration */}
+        <Route path="/register" element={<RegisterPage />} />
+
+        {/* Login */}
         <Route path="/login" element={<LoginPage />} />
 
         {/* Onboarding Wizard rotası - kimlik doğrulaması gerektirir, ancak onboarding yapılmamışsa erişilebilir */}
@@ -36,11 +45,31 @@ function App() {
 
         {/* Salon Panel Routes */}
         <Route path="/salon/login" element={<SalonLogin />} />
-        <Route path="/salon/dashboard" element={<SalonDashboard />} />
-        <Route path="/salon/settings" element={<SalonSettings />} />
-        <Route path="/salon/services" element={<SalonServices />} />
-        <Route path="/salon/staff" element={<SalonStaff />} />
-        <Route path="/salon/appointments" element={<SalonAppointments />} />
+        <Route path="/salon/dashboard" element={
+          <OnboardingGuard>
+            <SalonDashboard />
+          </OnboardingGuard>
+        } />
+        <Route path="/salon/settings" element={
+          <OnboardingGuard>
+            <SalonSettings />
+          </OnboardingGuard>
+        } />
+        <Route path="/salon/services" element={
+          <OnboardingGuard>
+            <SalonServices />
+          </OnboardingGuard>
+        } />
+        <Route path="/salon/staff" element={
+          <OnboardingGuard>
+            <SalonStaff />
+          </OnboardingGuard>
+        } />
+        <Route path="/salon/appointments" element={
+          <OnboardingGuard>
+            <SalonAppointments />
+          </OnboardingGuard>
+        } />
 
         {/* Magic Link Booking - No authentication required */}
         <Route path="/m/:token" element={<MagicLinkBooking />} />

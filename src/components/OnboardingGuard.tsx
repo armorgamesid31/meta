@@ -8,18 +8,27 @@ interface OnboardingGuardProps {
 }
 
 const OnboardingGuard: React.FC<OnboardingGuardProps> = ({ children }) => {
-  const isAuthenticated = localStorage.getItem("auth_token");
+  const salonToken = localStorage.getItem("salonToken");
   const [isOnboarded, setIsOnboarded] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const checkOnboardingStatus = async () => {
-      if (isAuthenticated) {
+      if (salonToken) {
         try {
-          const { data } = await apiFetch(`${API_BASE_URL}/api/salon/settings`, {
-            headers: { Authorization: `Bearer ${isAuthenticated}` },
+          // Check if salon has completed onboarding by checking if they have services
+          const response = await fetch(`${API_BASE_URL}/api/salon/me`, {
+            headers: { Authorization: `Bearer ${salonToken}` },
           });
-          setIsOnboarded(data?.isOnboarded || false);
+
+          if (response.ok) {
+            const data = await response.json();
+            // Consider onboarded if salon has services (basic check)
+            // In a real implementation, this would check a proper onboarding status
+            setIsOnboarded(data.salon?.services?.length > 0 || false);
+          } else {
+            setIsOnboarded(false);
+          }
         } catch (error) {
           setIsOnboarded(false);
         } finally {
@@ -30,14 +39,16 @@ const OnboardingGuard: React.FC<OnboardingGuardProps> = ({ children }) => {
       }
     };
     checkOnboardingStatus();
-  }, [isAuthenticated]);
+  }, [salonToken]);
 
   if (loading) {
-    return null; // Don't render loading text to avoid test failures
+    return <div className="min-h-screen flex items-center justify-center">
+      <div className="text-gray-500">Yükleniyor...</div>
+    </div>;
   }
 
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+  if (!salonToken) {
+    return <Navigate to="/salon/login" replace />;
   }
 
   if (isOnboarded === false) {
