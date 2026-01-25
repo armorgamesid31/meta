@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import SalonLayout from '../../components/SalonLayout';
+import { apiPost } from '../../utils/api';
 
 interface DashboardStats {
   totalAppointments: number;
@@ -25,15 +26,8 @@ const SalonDashboard: React.FC = () => {
     setCreatedLink(null);
 
     try {
-      const response = await fetch('/api/salon/magic-link/booking', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('salonToken')}`
-        },
-        body: JSON.stringify({
-          phone: phoneNumber
-        })
+      const response = await apiPost('/api/salon/magic-link/booking', {
+        phone: phoneNumber
       });
 
       if (response.ok) {

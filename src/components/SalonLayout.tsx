@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { apiGet } from '../utils/api';
 
 interface SalonUser {
   id: number;
@@ -33,11 +34,7 @@ const SalonLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       setUser(parsedUser);
 
       // Load salon info
-      fetch('/api/salon/me', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      })
+      apiGet('/api/salon/me')
         .then(res => res.json())
         .then(data => {
           if (data.salon) {

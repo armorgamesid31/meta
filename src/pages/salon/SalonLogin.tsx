@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { apiPost } from '../../utils/api';
 
 const SalonLogin: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -14,14 +15,7 @@ const SalonLogin: React.FC = () => {
     setError('');
 
     try {
-      const response = await fetch('/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, password }),
-      });
-
+      const response = await apiPost('/auth/login', { email, password });
       const data = await response.json();
 
       if (response.ok) {
