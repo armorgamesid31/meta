@@ -70,6 +70,36 @@ const OnboardingWizard: React.FC = () => {
 
   const handleNext = async () => {
     setError(null);
+
+    // Validation
+    if (currentStep === OnboardingStep.SALON_INFO) {
+      if (!salonSettings.name.trim()) {
+        setError("Salon adı zorunludur.");
+        return;
+      }
+    } else if (currentStep === OnboardingStep.SERVICES) {
+      if (salonSettings.services.length === 0) {
+        setError("En az 1 hizmet eklemelisiniz.");
+        return;
+      }
+      // Check if all services have required fields
+      for (let i = 0; i < salonSettings.services.length; i++) {
+        const service = salonSettings.services[i];
+        if (!service.name.trim()) {
+          setError(`Hizmet ${i + 1}: İsim zorunludur.`);
+          return;
+        }
+        if (!service.duration || service.duration < 15) {
+          setError(`Hizmet ${i + 1}: Süre en az 15 dakika olmalıdır.`);
+          return;
+        }
+        if (service.price < 0) {
+          setError(`Hizmet ${i + 1}: Fiyat 0'dan küçük olamaz.`);
+          return;
+        }
+      }
+    }
+
     setLoading(true);
 
     const token = localStorage.getItem("salonToken");
@@ -121,17 +151,8 @@ const OnboardingWizard: React.FC = () => {
           }),
         });
       } else if (currentStep === OnboardingStep.COMPLETION) {
-        // Mark as onboarded
-        await apiFetch(`${API_BASE_URL}/api/salon/settings`, {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            isOnboarded: true,
-          }),
-        });
+        // Onboarding completed - navigate to dashboard
+        // Note: Onboarding status is determined by presence of services
         navigate("/salon/dashboard");
         return;
       }
@@ -239,21 +260,23 @@ const OnboardingWizard: React.FC = () => {
                     <label className="block text-sm font-medium mb-1">Süre (dk):</label>
                     <input
                       type="number"
-                      value={service.duration}
-                      onChange={(e) => updateService(index, 'duration', parseInt(e.target.value))}
+                      value={service.duration || ""}
+                      onChange={(e) => updateService(index, 'duration', e.target.value ? parseInt(e.target.value) : 30)}
                       className="w-full p-2 border rounded"
                       min="15"
                       max="480"
+                      placeholder="30"
                     />
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1">Fiyat (TL):</label>
                     <input
                       type="number"
-                      value={service.price}
-                      onChange={(e) => updateService(index, 'price', parseInt(e.target.value))}
+                      value={service.price || ""}
+                      onChange={(e) => updateService(index, 'price', e.target.value ? parseInt(e.target.value) : 0)}
                       className="w-full p-2 border rounded"
                       min="0"
+                      placeholder="0"
                     />
                   </div>
                 </div>
@@ -277,22 +300,24 @@ const OnboardingWizard: React.FC = () => {
                 <label className="block text-sm font-medium mb-1">Açılış Saati:</label>
                 <input
                   type="number"
-                  value={salonSettings.workStartHour}
-                  onChange={(e) => setSalonSettings(prev => ({ ...prev, workStartHour: parseInt(e.target.value) }))}
+                  value={salonSettings.workStartHour || ""}
+                  onChange={(e) => setSalonSettings(prev => ({ ...prev, workStartHour: e.target.value ? parseInt(e.target.value) : 9 }))}
                   className="w-full p-2 border rounded"
                   min="0"
                   max="23"
+                  placeholder="9"
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Kapanış Saati:</label>
                 <input
                   type="number"
-                  value={salonSettings.workEndHour}
-                  onChange={(e) => setSalonSettings(prev => ({ ...prev, workEndHour: parseInt(e.target.value) }))}
+                  value={salonSettings.workEndHour || ""}
+                  onChange={(e) => setSalonSettings(prev => ({ ...prev, workEndHour: e.target.value ? parseInt(e.target.value) : 18 }))}
                   className="w-full p-2 border rounded"
                   min="0"
                   max="23"
+                  placeholder="18"
                 />
               </div>
             </div>
