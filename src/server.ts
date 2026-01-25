@@ -27,8 +27,20 @@ app.use('/api/magic-link', sessionRoutes);
 app.use('/api/admin', adminRoutes);
 
 // Basic test route
-app.get('/', (req, res) => {
-  res.send('SalonAsistan Backend is running!');
+app.get("/", (_req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html lang="tr">
+      <head>
+        <meta charset="UTF-8" />
+        <title>Salon Asistan</title>
+      </head>
+      <body>
+        <h1>Salon Asistan Çalışıyor ✅</h1>
+        <p>Sunucu canlı. Frontend bir sonraki adım.</p>
+      </body>
+    </html>
+  `);
 });
 
 export default app;
