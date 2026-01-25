@@ -23,11 +23,14 @@ interface Service {
   name: string;
   duration: number;
   price: number;
+  enabled: boolean;
+  staff: Staff[];
 }
 
 interface Staff {
   id: number;
   name: string;
+  enabled: boolean;
 }
 
 interface AvailabilitySlot {

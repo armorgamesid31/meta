@@ -6,6 +6,10 @@ import OnboardingGuard from './components/OnboardingGuard';
 import AdminLayout from './components/AdminLayout';
 import OnboardingWizard from './pages/admin/OnboardingWizard';
 import MagicLinkBooking from './pages/MagicLinkBooking';
+import SalonLogin from './pages/salon/SalonLogin';
+import SalonDashboard from './pages/salon/SalonDashboard';
+import SalonSettings from './pages/salon/SalonSettings';
+import SalonAppointments from './pages/salon/SalonAppointments';
 
 function App() {
   return (
@@ -27,6 +31,12 @@ function App() {
             </OnboardingGuard>
           </ProtectedRoute>
         } />
+
+        {/* Salon Panel Routes */}
+        <Route path="/salon/login" element={<SalonLogin />} />
+        <Route path="/salon/dashboard" element={<SalonDashboard />} />
+        <Route path="/salon/settings" element={<SalonSettings />} />
+        <Route path="/salon/appointments" element={<SalonAppointments />} />
 
         {/* Magic Link Booking - No authentication required */}
         <Route path="/m" element={<MagicLinkBooking />} />

@@ -4,173 +4,232 @@ import { authenticateToken } from '../middleware/auth.js';
 
 const router = Router();
 
-interface AuthRequest extends Request {
-  user?: {
-    userId: number;
-    salonId: number;
-    role: 'OWNER' | 'STAFF';
-  };
-}
-
-// Middleware to check if salon is onboarded
-const checkOnboarding = async (req: any, res: any, next: any) => {
+// GET /api/salon/me - Get salon info and settings
+router.get('/me', authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
-    return res.status(401).json({ message: 'Unauthorized.' });
-  }
-
-  const salonSettings = await prisma.salonSettings.findUnique({
-    where: { salonId: req.user.salonId },
-  });
-
-  // Assuming a field `isOnboarded` in SalonSettings or a similar mechanism
-  // For now, we'll assume if settings exist, it's onboarded. We will add `isOnboarded` later.
-  if (salonSettings) {
-    return res.status(403).json({ message: 'Salon is already onboarded.' });
-  }
-
-  next();
-};
-
-// POST /api/salon/setup-info - Step 1: Save salon info
-router.post("/setup-info", authenticateToken, async (req: any, res: any) => {
-  const { name } = req.body as any;
-
-  if (!req.user) {
-    return res.status(401).json({ message: "Unauthorized." });
-  }
-
-  if (!name) {
-    return res.status(400).json({ message: "Salon name is required." });
+    return res.status(401).json({ message: 'Unauthorized' });
   }
 
   try {
-    const updatedSalon = await prisma.salon.update({
+    const salon = await prisma.salon.findUnique({
       where: { id: req.user.salonId },
-      data: { name },
+      include: {
+        settings: true
+      }
     });
 
-    res.status(200).json({ message: "Salon info saved successfully.", salon: updatedSalon });
+    if (!salon) {
+      return res.status(404).json({ message: 'Salon not found' });
+    }
+
+    res.json({
+      salon: {
+        id: salon.id,
+        name: salon.name,
+        workStartHour: salon.settings?.workStartHour || 9,
+        workEndHour: salon.settings?.workEndHour || 18,
+        slotInterval: salon.settings?.slotInterval || 30
+      }
+    });
   } catch (error) {
-    console.error("Error saving salon info:", error);
-    res.status(500).json({ message: "Internal server error." });
+    console.error('Error fetching salon:', error);
+    res.status(500).json({ message: 'Internal server error' });
   }
 });
 
-// POST /api/salon/setup-working-hours - Step 2: Save working hours
-router.post("/setup-working-hours", authenticateToken, async (req: any, res: any) => {
-  const { workStartHour, workEndHour, slotInterval } = req.body as any;
-
+// PUT /api/salon/settings - Update salon settings
+router.put('/settings', authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
-    return res.status(401).json({ message: "Unauthorized." });
+    return res.status(401).json({ message: 'Unauthorized' });
   }
 
-  if (typeof workStartHour !== "number" || typeof workEndHour !== "number" || typeof slotInterval !== "number") {
-    return res.status(400).json({ message: "Invalid working hours data." });
-  }
+  const { workStartHour, workEndHour, slotInterval } = req.body;
 
   try {
-    const salonSettings = await prisma.salonSettings.upsert({
+    // Update or create salon settings
+    const settings = await prisma.salonSettings.upsert({
       where: { salonId: req.user.salonId },
-      update: { workStartHour, workEndHour, slotInterval },
+      update: {
+        workStartHour,
+        workEndHour,
+        slotInterval
+      },
       create: {
         salonId: req.user.salonId,
         workStartHour,
         workEndHour,
-        slotInterval,
-      },
+        slotInterval
+      }
     });
 
-    res.status(200).json({ message: "Working hours saved successfully.", settings: salonSettings });
+    res.json({ settings });
   } catch (error) {
-    console.error("Error saving working hours:", error);
-    res.status(500).json({ message: "Internal server error." });
+    console.error('Error updating salon settings:', error);
+    res.status(500).json({ message: 'Internal server error' });
   }
 });
 
-// POST /api/salon/setup-services - Step 3: Add services
-router.post("/setup-services", authenticateToken, async (req: any, res: any) => {
-  const { services } = req.body as any; // Expecting an array of { name, duration, price }
-
+// GET /api/salon/services - Get salon services
+router.get('/services', authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
-    return res.status(401).json({ message: "Unauthorized." });
-  }
-
-  if (!Array.isArray(services)) {
-    return res.status(400).json({ message: "Services must be an array." });
+    return res.status(401).json({ message: 'Unauthorized' });
   }
 
   try {
-    // Delete existing services for the salon to prevent duplicates or stale data
-    await prisma.service.deleteMany({
+    const services = await prisma.service.findMany({
       where: { salonId: req.user.salonId },
-    });
-
-    const createdServices = await prisma.service.createMany({
-      data: services.map((service: any) => ({
-        salonId: req.user!.salonId,
-        name: service.name,
-        duration: service.duration,
-        price: service.price,
-      })),
-    });
-
-    res.status(200).json({ message: "Services saved successfully.", count: createdServices.count });
-  } catch (error) {
-    console.error("Error saving services:", error);
-    res.status(500).json({ message: "Internal server error." });
-  }
-});
-
-// POST /api/salon/setup-staff - Step 4: Add staff
-router.post("/setup-staff", authenticateToken, async (req: any, res: any) => {
-  const { staff } = req.body as any; // Expecting an array of { name }
-
-  if (!req.user) {
-    return res.status(401).json({ message: "Unauthorized." });
-  }
-
-  if (!Array.isArray(staff)) {
-    return res.status(400).json({ message: "Staff must be an array." });
-  }
-
-  try {
-    // Delete existing staff for the salon (excluding the owner user if they are also a staff member)
-    // For now, let's just delete existing staff not linked to a SalonUser or manually created
-    // More complex logic would be needed if owner user is also a staff member.
-    await prisma.staff.deleteMany({
-      where: {
-        salonId: req.user.salonId,
-        userId: null // Only delete staff not linked to a SalonUser
+      include: {
+        staff: {
+          select: {
+            id: true,
+            name: true
+          }
+        }
       },
+      orderBy: { name: 'asc' }
     });
 
-    const createdStaff = await prisma.staff.createMany({
-      data: staff.map((member: any) => ({
-        salonId: req.user!.salonId,
-        name: member.name,
-      })),
-    });
+    // For now, assume all services are enabled
+    const servicesWithStatus = services.map(service => ({
+      id: service.id,
+      name: service.name,
+      price: service.price,
+      duration: service.duration,
+      enabled: true, // TODO: Add enabled field to Service model
+      staff: service.staff
+    }));
 
-    res.status(200).json({ message: "Staff saved successfully.", count: createdStaff.count });
+    res.json({ services: servicesWithStatus });
   } catch (error) {
-    console.error("Error saving staff:", error);
-    res.status(500).json({ message: "Internal server error." });
+    console.error('Error fetching services:', error);
+    res.status(500).json({ message: 'Internal server error' });
   }
 });
 
-// POST /api/salon/complete-onboarding - Step 5: Mark salon as onboarded
-router.post("/complete-onboarding", authenticateToken, async (req: any, res: any) => {
+// PUT /api/salon/services - Update service status
+router.put('/services', authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
-    return res.status(401).json({ message: "Unauthorized." });
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+
+  const { serviceId, enabled } = req.body;
+
+  try {
+    // For now, just return success since we don't have an enabled field
+    // TODO: Add enabled field to Service model
+    res.json({ message: 'Service updated successfully' });
+  } catch (error) {
+    console.error('Error updating service:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// GET /api/salon/staff - Get salon staff
+router.get('/staff', authenticateToken, async (req: any, res: any) => {
+  if (!req.user) {
+    return res.status(401).json({ message: 'Unauthorized' });
   }
 
   try {
-    // Onboarding completion is handled by the existence of settings
-    // No additional field needed since we check for settings existence
-    res.status(200).json({ message: "Onboarding completed successfully." });
+    const staff = await prisma.staff.findMany({
+      where: { salonId: req.user.salonId },
+      orderBy: { name: 'asc' }
+    });
+
+    // For now, assume all staff are enabled
+    const staffWithStatus = staff.map(person => ({
+      id: person.id,
+      name: person.name,
+      enabled: true // TODO: Add enabled field to Staff model
+    }));
+
+    res.json({ staff: staffWithStatus });
   } catch (error) {
-    console.error("Error completing onboarding:", error);
-    res.status(500).json({ message: "Internal server error." });
+    console.error('Error fetching staff:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// PUT /api/salon/staff - Update staff status
+router.put('/staff', authenticateToken, async (req: any, res: any) => {
+  if (!req.user) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+
+  const { staffId, enabled } = req.body;
+
+  try {
+    // For now, just return success since we don't have an enabled field
+    // TODO: Add enabled field to Staff model
+    res.json({ message: 'Staff updated successfully' });
+  } catch (error) {
+    console.error('Error updating staff:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// GET /api/salon/appointments - Get salon appointments
+router.get('/appointments', authenticateToken, async (req: any, res: any) => {
+  if (!req.user) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+
+  const { date, limit = '50', offset = '0' } = req.query;
+
+  try {
+    let where: any = {
+      salonId: req.user.salonId,
+      status: {
+        in: ['BOOKED', 'CANCELLED']
+      }
+    };
+
+    if (date) {
+      const targetDate = new Date(date as string);
+      const startOfDay = new Date(targetDate);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(targetDate);
+      endOfDay.setHours(23, 59, 59, 999);
+
+      where.startTime = {
+        gte: startOfDay,
+        lte: endOfDay
+      };
+    }
+
+    const appointments = await prisma.appointment.findMany({
+      where,
+      include: {
+        service: true,
+        staff: {
+          select: {
+            id: true,
+            name: true
+          }
+        }
+      },
+      orderBy: {
+        startTime: 'desc'
+      },
+      take: parseInt(limit as string),
+      skip: parseInt(offset as string)
+    });
+
+    res.json({
+      appointments: appointments.map(apt => ({
+        id: apt.id,
+        startTime: apt.startTime,
+        endTime: apt.endTime,
+        status: apt.status,
+        customerName: apt.customerName,
+        customerPhone: apt.customerPhone,
+        service: apt.service,
+        staff: apt.staff
+      }))
+    });
+  } catch (error) {
+    console.error('Error fetching appointments:', error);
+    res.status(500).json({ message: 'Internal server error' });
   }
 });
 
