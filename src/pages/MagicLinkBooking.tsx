@@ -40,7 +40,7 @@ interface AvailabilitySlot {
   slots: string[];
 }
 
-const MagicLinkBooking: React.FC = () => {
+const MagicLinkBooking: React.FC = React.memo(() => {
   console.log('🔄 MagicLinkBooking component rendered/mounted');
   const { token } = useParams<{ token: string }>();
   console.log('📝 Token from params:', token);
@@ -470,6 +470,6 @@ const MagicLinkBooking: React.FC = () => {
       </div>
     </div>
   );
-};
+});
 
 export default MagicLinkBooking;
