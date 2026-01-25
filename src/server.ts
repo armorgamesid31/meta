@@ -10,9 +10,14 @@ import availabilityRoutes from './routes/availability.js';
 
 const app = express();
 
+// Direct test route - define before middleware
+app.get('/test-direct', (req, res) => {
+  res.json({ message: 'Direct route working' });
+});
+
 // Configure CORS for frontend access
 app.use(cors({
-  origin: 'http://localhost:5173', // Allow only your frontend origin
+  origin: ['http://localhost:5173', 'http://localhost:5174'], // Allow frontend origins
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
@@ -21,6 +26,7 @@ app.use(cors({
 app.use(express.json());
 
 // API routes
+console.log('Auth routes:', typeof authRoutes);
 app.use('/auth', authRoutes);
 app.use('/api/salon', salonRoutes);
 app.use('/api/bookings', bookingRoutes);
