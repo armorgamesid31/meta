@@ -109,7 +109,10 @@ const MagicLinkBooking: React.FC = () => {
   const handleDateChange = async (date: string) => {
     console.log('Date changed:', date);
     setSelectedDate(date);
-    setSelectedTime(''); // Clear time when date changes
+    // Don't clear selectedTime when date changes - only clear it if date actually changed
+    if (selectedDate !== date) {
+      setSelectedTime(''); // Only clear time if date actually changed
+    }
     setAvailableSlots([]); // Clear previous slots
 
     if (magicLinkData) {
@@ -388,7 +391,10 @@ const MagicLinkBooking: React.FC = () => {
                 <input
                   type="date"
                   value={selectedDate}
-                  onChange={(e) => handleDateChange(e.target.value)}
+                  onChange={(e) => {
+                    console.log('Date input changed to:', e.target.value);
+                    handleDateChange(e.target.value);
+                  }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 />
