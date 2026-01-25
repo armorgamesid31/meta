@@ -16,15 +16,10 @@ const OnboardingGuard: React.FC<OnboardingGuardProps> = ({ children }) => {
     const checkOnboardingStatus = async () => {
       if (isAuthenticated) {
         try {
-          const response = await apiFetch(`${API_BASE_URL}/api/salon/settings`, {
+          const { data } = await apiFetch(`${API_BASE_URL}/api/salon/settings`, {
             headers: { Authorization: `Bearer ${isAuthenticated}` },
           });
-          if (response.ok) {
-            const data = await response.json();
-            setIsOnboarded(data?.isOnboarded || false);
-          } else {
-            setIsOnboarded(false);
-          }
+          setIsOnboarded(data?.isOnboarded || false);
         } catch (error) {
           setIsOnboarded(false);
         } finally {

@@ -19,17 +19,10 @@ function App() {
           </ProtectedRoute>
         } />
 
-        <Route path="/admin/*" element={
+        <Route path="/admin" element={
           <ProtectedRoute>
             <OnboardingGuard>
-              <AdminLayout>
-                <Routes>
-                  <Route path="dashboard" element={<div>Admin Dashboard Page</div>} />
-                  <Route path="calendar" element={<div>Admin Calendar Page</div>} />
-                  <Route path="settings" element={<div>Admin Settings Page</div>} />
-                  <Route path="*" element={<div>Admin 404 Not Found</div>} />
-                </Routes>
-              </AdminLayout>
+              <AdminLayout />
             </OnboardingGuard>
           </ProtectedRoute>
         } />

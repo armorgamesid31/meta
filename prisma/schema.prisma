@@ -32,6 +32,12 @@ enum AppointmentSource {
   AUTOMATION
 }
 
+enum BookingSessionState {
+  CREATED
+  SLOT_SELECTED
+  CONFIRMED
+}
+
 // --------------------------------------
 // Salon & Core Models
 // --------------------------------------
@@ -40,6 +46,7 @@ model Salon {
   id              Int      @id @default(autoincrement())
   name            String
   logoUrl         String?
+  bookingTheme    Json?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   users           SalonUser[]
@@ -47,6 +54,8 @@ model Salon {
   staff           Staff[]
   services        Service[]
   appointments    Appointment[]
+  bookingSessions BookingSession[]
+  customers       Customer[]
 }
 
 model SalonSettings {
@@ -129,6 +138,21 @@ model Service {
   appointments    Appointment[]
 }
 
+model Customer {
+  id              Int      @id @default(autoincrement())
+  name            String
+  phone           String   @unique
+  email           String?
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  salonId         Int
+  salon           Salon    @relation(fields: [salonId], references: [id])
+
+  appointments    Appointment[]
+}
+
 model Appointment {
   id              Int      @id @default(autoincrement())
   customerName    String
@@ -137,17 +161,39 @@ model Appointment {
   endTime         DateTime
   status          AppointmentStatus @default(BOOKED)
   source          AppointmentSource @default(CUSTOMER)
+  notes           String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   salonId         Int
   salon           Salon    @relation(fields: [salonId], references: [id])
-  
+
   staffId         Int
   staff           Staff    @relation(fields: [staffId], references: [id])
 
   serviceId       Int
   service         Service  @relation(fields: [serviceId], references: [id])
 
+  customerId      Int?
+  customer        Customer? @relation(fields: [customerId], references: [id])
+
   @@index([staffId, startTime, endTime])
+  @@index([customerPhone])
+}
+
+model BookingSession {
+  id              Int                 @id @default(autoincrement())
+  token           String              @unique
+  salonId         Int
+  salon           Salon               @relation(fields: [salonId], references: [id])
+  state           BookingSessionState @default(CREATED)
+  expiresAt       DateTime
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  // Optional session data
+  selectedSlot    Json? // { date, startTime, serviceId, staffIds, peopleCount }
+  customerInfo    Json? // { name, phone, email }
+
+  @@index([token, expiresAt])
 }

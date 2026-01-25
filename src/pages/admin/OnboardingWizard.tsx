@@ -44,16 +44,11 @@ const OnboardingWizard: React.FC = () => {
       }
 
       try {
-        const response = await apiFetch(`${API_BASE_URL}/api/salon/settings`, {
+        const { data } = await apiFetch(`${API_BASE_URL}/api/salon/settings`, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        if (response.ok) {
-          const data = await response.json();
-          if (data) {
-            setSalonSettings(prev => ({ ...prev, ...data }));
-          }
-        } else {
-          console.error("Failed to fetch salon settings:", response.statusText);
+        if (data) {
+          setSalonSettings(prev => ({ ...prev, ...data }));
         }
       } catch (err: any) {
         console.error("Error fetching salon settings:", err);
@@ -79,7 +74,7 @@ const OnboardingWizard: React.FC = () => {
     const isCompletionStep = currentStep === OnboardingStep.COMPLETION;
 
     try {
-      const updateSettingsResponse = await apiFetch(`${API_BASE_URL}/api/salon/settings`, {
+      await apiFetch(`${API_BASE_URL}/api/salon/settings`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -88,16 +83,11 @@ const OnboardingWizard: React.FC = () => {
         body: JSON.stringify({ ...salonSettings, isOnboarded: isCompletionStep }),
       });
 
-      if (updateSettingsResponse.ok) {
-        // ONLY advance step on success
-        if (isCompletionStep) {
-          navigate("/admin/dashboard");
-        } else {
-          setCurrentStep(prev => prev + 1);
-        }
+      // If we get here, the request was successful
+      if (isCompletionStep) {
+        navigate("/admin/dashboard");
       } else {
-        console.error("Failed to update salon settings");
-        setError("API error");
+        setCurrentStep(prev => prev + 1);
       }
     } catch (fetchErr: any) {
       console.error("Fetch error in onboarding:", fetchErr);

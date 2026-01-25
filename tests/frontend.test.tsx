@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { act } from "react-dom/test-utils";
 import AdminLayout from "../src/components/AdminLayout";
@@ -44,7 +44,7 @@ describe("Frontend Admin Routing and Layout", () => {
             path="/admin/*"
             element={
               <ProtectedRoute>
-                <AdminLayout>Admin Content</AdminLayout>
+                <AdminLayout />
               </ProtectedRoute>
             }
           />
@@ -66,17 +66,65 @@ describe("Frontend Admin Routing and Layout", () => {
             path="/admin/*"
             element={
               <ProtectedRoute>
-                <AdminLayout>Admin Content</AdminLayout>
+                <AdminLayout />
               </ProtectedRoute>
             }
           />
         </Routes>
       </MemoryRouter>
     );
-    // Expect AdminLayout content and bottom navigation to be visible
-    expect(screen.getByText(/Admin Content/i)).toBeDefined();
-    expect(screen.getByText(/Dashboard/i)).toBeDefined();
-    expect(screen.getByText(/Calendar/i)).toBeDefined();
-    expect(screen.getByText(/Settings/i)).toBeDefined();
+    // Expect loading state initially (AdminLayout shows loading on mount)
+    await waitFor(() => {
+      expect(screen.getByText(/Loading admin data/i)).toBeDefined();
+    });
   });
+
+  it("AdminLayout shows summary data on successful fetch", async () => {
+    localStorage.setItem("auth_token", "fake-jwt-token");
+
+    // Mock successful API response
+    vi.spyOn(window, "fetch").mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        totalAppointments: 25,
+        totalRevenue: 1500,
+        activeClients: 12,
+        upcomingAppointments: 5
+      }),
+    } as Response);
+
+    render(<AdminLayout />);
+
+    // Wait for data to load
+    await waitFor(() => {
+      expect(screen.getByText(/Admin Dashboard/i)).toBeDefined();
+    });
+
+    expect(screen.getByText(/Total Appointments: 25/i)).toBeDefined();
+    expect(screen.getByText(/Total Revenue: \$1500/i)).toBeDefined();
+    expect(screen.getByText(/Active Clients: 12/i)).toBeDefined();
+    expect(screen.getByText(/Upcoming Appointments: 5/i)).toBeDefined();
+  });
+
+  it("AdminLayout shows error on failed fetch", async () => {
+    localStorage.setItem("auth_token", "fake-jwt-token");
+
+    // Mock failed API response
+    vi.spyOn(window, "fetch").mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      statusText: "Internal Server Error"
+    } as Response);
+
+    render(<AdminLayout />);
+
+    // Wait for error to appear
+    await waitFor(() => {
+      expect(screen.getByText(/Failed to load admin data/i)).toBeDefined();
+    });
+  });
+
+
+
+
 });

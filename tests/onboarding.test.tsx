@@ -4,6 +4,7 @@ import { MemoryRouter, Routes, Route } from "react-router-dom";
 import ProtectedRoute from "../src/components/ProtectedRoute";
 import OnboardingGuard from "../src/components/OnboardingGuard";
 import OnboardingWizard from "../src/pages/admin/OnboardingWizard";
+import AdminLayout from "../src/components/AdminLayout";
 import React from "react";
 
 // Mock localStorage
@@ -28,7 +29,7 @@ Object.defineProperty(window, "localStorage", {
   value: localStorageMock,
 });
 
-const MockAdminDashboard = () => <div>Admin Dashboard Content</div>;
+// AdminLayout is now the component that shows "Admin Dashboard Content"
 
 describe("Admin Onboarding Flow", () => {
   const authToken = "fake-auth-token";
@@ -49,7 +50,7 @@ describe("Admin Onboarding Flow", () => {
     render(
       <MemoryRouter initialEntries={["/admin"]}>
         <Routes>
-          <Route path="/admin/*" element={<ProtectedRoute><OnboardingGuard><MockAdminDashboard /></OnboardingGuard></ProtectedRoute>} />
+          <Route path="/admin/*" element={<ProtectedRoute><OnboardingGuard><AdminLayout /></OnboardingGuard></ProtectedRoute>} />
           <Route path="/admin/onboarding" element={<ProtectedRoute><OnboardingWizard /></ProtectedRoute>} />
         </Routes>
       </MemoryRouter>
@@ -74,14 +75,35 @@ describe("Admin Onboarding Flow", () => {
     render(
       <MemoryRouter initialEntries={["/admin"]}>
         <Routes>
-          <Route path="/admin/*" element={<ProtectedRoute><OnboardingGuard><MockAdminDashboard /></OnboardingGuard></ProtectedRoute>} />
+          <Route path="/admin/*" element={<ProtectedRoute><OnboardingGuard><AdminLayout /></OnboardingGuard></ProtectedRoute>} />
           <Route path="/admin/onboarding" element={<ProtectedRoute><OnboardingWizard /></ProtectedRoute>} />
         </Routes>
       </MemoryRouter>
     );
 
     await waitFor(() => {
-      expect(screen.getByText(/Admin Dashboard Content/i)).toBeDefined();
+      expect(screen.getByText(/Admin Dashboard/i)).toBeDefined();
+      expect(screen.queryByText(/Salon Kurulum Sihirbazı/i)).toBeNull();
+    });
+  });
+
+  // Test 4: Unauthenticated user gets redirected to login
+  it("should redirect unauthenticated user to login", async () => {
+    // No auth token set
+
+    render(
+      <MemoryRouter initialEntries={["/admin"]}>
+        <Routes>
+          <Route path="/login" element={<div>Login Page</div>} />
+          <Route path="/admin/*" element={<ProtectedRoute><OnboardingGuard><AdminLayout /></OnboardingGuard></ProtectedRoute>} />
+          <Route path="/admin/onboarding" element={<ProtectedRoute><OnboardingWizard /></ProtectedRoute>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Login Page/i)).toBeDefined();
+      expect(screen.queryByText(/Admin Dashboard Content/i)).toBeNull();
       expect(screen.queryByText(/Salon Kurulum Sihirbazı/i)).toBeNull();
     });
   });
