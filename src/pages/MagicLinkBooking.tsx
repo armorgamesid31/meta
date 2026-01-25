@@ -41,9 +41,17 @@ interface AvailabilitySlot {
 }
 
 const MagicLinkBooking: React.FC = React.memo(() => {
-  console.log('🔄 MagicLinkBooking component rendered/mounted');
   const { token } = useParams<{ token: string }>();
-  console.log('📝 Token from params:', token);
+
+  // Mount/Unmount logging
+  useEffect(() => {
+    console.log('🟢 MagicLinkBooking MOUNTED with token:', token);
+    return () => {
+      console.log('🔴 MagicLinkBooking UNMOUNTED');
+    };
+  }, []); // Empty dependency array = only run on mount/unmount
+
+  console.log('🔄 MagicLinkBooking component RENDERED');
 
   const [magicLinkData, setMagicLinkData] = useState<MagicLinkData | null>(null);
   const [services, setServices] = useState<Service[]>([]);
