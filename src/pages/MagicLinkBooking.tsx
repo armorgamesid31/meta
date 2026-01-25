@@ -73,6 +73,7 @@ const MagicLinkBooking: React.FC = () => {
     console.log('Selected date:', selectedDate);
     console.log('Selected time:', selectedTime);
     console.log('Available slots:', availableSlots);
+    console.log('Button disabled state:', !selectedDate || !selectedTime);
   }, [currentStep, selectedDate, selectedTime, availableSlots]);
 
   useEffect(() => {
@@ -392,9 +393,11 @@ const MagicLinkBooking: React.FC = () => {
                   type="date"
                   value={selectedDate}
                   onChange={(e) => {
-                    console.log('Date input changed to:', e.target.value);
+                    console.log('Date input onChange fired with value:', e.target.value);
+                    console.log('Current selectedDate before change:', selectedDate);
                     handleDateChange(e.target.value);
                   }}
+                  onBlur={() => console.log('Date input lost focus')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 />
