@@ -101,14 +101,16 @@ const MagicLinkBooking: React.FC = () => {
   const handleDateChange = async (date: string) => {
     setSelectedDate(date);
     setSelectedTime('');
+    setAvailableSlots([]); // Clear previous slots
 
     if (magicLinkData) {
       try {
         const response = await apiGet(`/availability?salonId=${magicLinkData.salon.id}&date=${date}`);
         const data: AvailabilitySlot = await response.json();
-        setAvailableSlots(data.slots);
+        setAvailableSlots(data?.slots || []);
       } catch (error) {
         console.error('Error fetching availability:', error);
+        setAvailableSlots([]);
       }
     }
   };
@@ -238,9 +240,11 @@ const MagicLinkBooking: React.FC = () => {
       {/* Header */}
       <div
         className="py-8 px-4 text-center text-white"
-        style={{ backgroundColor: magicLinkData.salon.theme.primaryColor }}
+        style={{
+          backgroundColor: magicLinkData.salon?.theme?.primaryColor || '#10b981'
+        }}
       >
-        <h1 className="text-3xl font-bold mb-2">{magicLinkData.salon.name}</h1>
+        <h1 className="text-3xl font-bold mb-2">{magicLinkData.salon?.name || 'Salon'}</h1>
         <p className="text-lg opacity-90">Randevu Alın</p>
       </div>
 
@@ -263,18 +267,22 @@ const MagicLinkBooking: React.FC = () => {
 
         {/* Progress indicator */}
         <div className="flex justify-between px-6 py-4 border-b">
-          {['Bilgiler', 'Hizmetler', 'Tarih/Saat', 'Onayla'].map((step, index) => (
-            <div
-              key={step}
-              className={`flex-1 text-center text-sm ${
-                index <= ['info', 'services', 'datetime', 'confirm'].indexOf(currentStep)
-                  ? 'text-blue-600 font-semibold'
-                  : 'text-gray-400'
-              }`}
-            >
-              {step}
-            </div>
-          ))}
+          {['Bilgiler', 'Hizmetler', 'Tarih/Saat', 'Onayla'].map((step, index) => {
+            const stepOrder = ['info', 'services', 'datetime', 'confirm'];
+            const currentIndex = stepOrder.indexOf(currentStep);
+            const isActive = index <= currentIndex;
+
+            return (
+              <div
+                key={step}
+                className={`flex-1 text-center text-sm ${
+                  isActive ? 'text-blue-600 font-semibold' : 'text-gray-400'
+                }`}
+              >
+                {step}
+              </div>
+            );
+          })}
         </div>
 
         <div className="p-6">
@@ -376,7 +384,7 @@ const MagicLinkBooking: React.FC = () => {
                 />
               </div>
 
-              {availableSlots.length > 0 && (
+              {Array.isArray(availableSlots) && availableSlots.length > 0 && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Saat *
@@ -414,10 +422,10 @@ const MagicLinkBooking: React.FC = () => {
               <h2 className="text-xl font-semibold mb-4">Onay</h2>
 
               <div className="bg-gray-50 p-4 rounded-md space-y-2">
-                <p><strong>İsim:</strong> {customerName}</p>
-                <p><strong>Tarih:</strong> {selectedDate}</p>
-                <p><strong>Saat:</strong> {selectedTime}</p>
-                <p><strong>Salon:</strong> {magicLinkData.salon.name}</p>
+                <p><strong>İsim:</strong> {customerName || 'Belirtilmemiş'}</p>
+                <p><strong>Tarih:</strong> {selectedDate || 'Belirtilmemiş'}</p>
+                <p><strong>Saat:</strong> {selectedTime || 'Belirtilmemiş'}</p>
+                <p><strong>Salon:</strong> {magicLinkData.salon?.name || 'Salon'}</p>
               </div>
 
               <button
