@@ -35,14 +35,19 @@ const SalonLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
       // Load salon info
       apiGet('/api/salon/me')
-        .then(res => res.json())
+        .then(res => {
+          if (!res.ok) {
+            throw new Error('Salon bilgisi alınamadı');
+          }
+          return res.json();
+        })
         .then(data => {
           if (data.salon) {
             setSalon(data.salon);
           }
         })
         .catch(error => {
-          console.error('Error loading salon info:', error);
+          console.error('SalonLayout error:', error);
         });
     } catch (error) {
       navigate('/salon/login');
