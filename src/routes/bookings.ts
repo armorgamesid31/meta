@@ -38,8 +38,8 @@ interface RescheduleBookingRequest {
 }
 
 // POST /api/bookings/confirm - Confirm a booking using a lock token
-router.post("/confirm", authenticateToken, async (req: AuthRequest, res) => {
-  const { lockToken, customerName, customerPhone, serviceId, staffIds }: ConfirmBookingRequest = req.body;
+router.post("/confirm", authenticateToken, async (req: any, res: any) => {
+  const { lockToken, customerName, customerPhone, serviceId, staffIds } = req.body as any;
 
   if (!req.user) {
     return res.status(401).json({ message: 'Unauthorized.' });
@@ -175,8 +175,8 @@ router.post("/confirm", authenticateToken, async (req: AuthRequest, res) => {
 });
 
 // POST /api/bookings/cancel - Cancel an existing booking
-router.post("/cancel", authenticateToken, async (req: AuthRequest, res) => {
-  const { bookingId }: CancelBookingRequest = req.body;
+router.post("/cancel", authenticateToken, async (req: any, res: any) => {
+  const { bookingId } = req.body as any;
 
   if (!req.user) {
     return res.status(401).json({ message: 'Unauthorized.' });
@@ -271,8 +271,8 @@ router.post("/cancel", authenticateToken, async (req: AuthRequest, res) => {
 });
 
 // POST /api/bookings/reschedule - Reschedule an existing booking
-router.post("/reschedule", authenticateToken, async (req: AuthRequest, res) => {
-  const { bookingId, newSlot }: RescheduleBookingRequest = req.body;
+router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
+  const { bookingId, newSlot } = req.body as any;
 
   if (!req.user) {
     return res.status(401).json({ message: 'Unauthorized.' });

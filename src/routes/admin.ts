@@ -24,13 +24,13 @@ interface UpdateCustomerRequest {
 }
 
 // GET /api/admin/appointments - Get all confirmed appointments for salon
-router.get("/appointments", authenticateToken, async (req: AuthRequest, res) => {
+router.get("/appointments", authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
     return res.status(401).json({ message: 'Unauthorized.' });
   }
 
   const salonId = req.user.salonId;
-  const { date, status, limit = '50', offset = '0' } = req.query;
+  const { date, status, limit = '50', offset = '0' } = req.query as any;
   const dateStr = Array.isArray(date) ? date[0] : date;
   const statusStr = Array.isArray(status) ? status[0] : status;
   const limitStr = Array.isArray(limit) ? limit[0] : limit;
@@ -115,12 +115,12 @@ router.get("/appointments", authenticateToken, async (req: AuthRequest, res) => 
 });
 
 // GET /api/admin/appointments/:id - Get appointment details
-router.get("/appointments/:id", authenticateToken, async (req: AuthRequest, res) => {
+router.get("/appointments/:id", authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
     return res.status(401).json({ message: 'Unauthorized.' });
   }
 
-  const { id } = req.params;
+  const { id } = req.params as any;
   const salonId = req.user.salonId;
 
   try {
@@ -172,13 +172,13 @@ router.get("/appointments/:id", authenticateToken, async (req: AuthRequest, res)
 });
 
 // POST /api/admin/appointments/:id/cancel - Cancel appointment
-router.post("/appointments/:id/cancel", authenticateToken, async (req: AuthRequest, res) => {
+router.post("/appointments/:id/cancel", authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
     return res.status(401).json({ message: 'Unauthorized.' });
   }
 
-  const { id } = req.params;
-  const { reason }: CancelAppointmentRequest = req.body;
+  const { id } = req.params as any;
+  const { reason } = req.body as any;
   const salonId = req.user.salonId;
 
   try {
@@ -251,13 +251,13 @@ router.post("/appointments/:id/cancel", authenticateToken, async (req: AuthReque
 });
 
 // GET /api/admin/customers - Get all customers for salon
-router.get("/customers", authenticateToken, async (req: AuthRequest, res) => {
+router.get("/customers", authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
     return res.status(401).json({ message: 'Unauthorized.' });
   }
 
   const salonId = req.user.salonId;
-  const { limit = '50', offset = '0', search } = req.query;
+  const { limit = '50', offset = '0', search } = req.query as any;
   const searchStr = Array.isArray(search) ? search[0] : search;
   const limitStr = Array.isArray(limit) ? limit[0] : limit;
   const offsetStr = Array.isArray(offset) ? offset[0] : offset;
@@ -337,12 +337,12 @@ router.get("/customers", authenticateToken, async (req: AuthRequest, res) => {
 });
 
 // GET /api/admin/customers/:id - Get customer details
-router.get("/customers/:id", authenticateToken, async (req: AuthRequest, res) => {
+router.get("/customers/:id", authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
     return res.status(401).json({ message: 'Unauthorized.' });
   }
 
-  const { id } = req.params;
+  const { id } = req.params as any;
   const salonId = req.user.salonId;
 
   try {
@@ -407,13 +407,13 @@ router.get("/customers/:id", authenticateToken, async (req: AuthRequest, res) =>
 });
 
 // PUT /api/admin/customers/:id - Update customer
-router.put("/customers/:id", authenticateToken, async (req: AuthRequest, res) => {
+router.put("/customers/:id", authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
     return res.status(401).json({ message: 'Unauthorized.' });
   }
 
-  const { id } = req.params;
-  const { name, phone, email, notes }: UpdateCustomerRequest = req.body;
+  const { id } = req.params as any;
+  const { name, phone, email, notes } = req.body as any;
   const salonId = req.user.salonId;
 
   try {
@@ -486,7 +486,7 @@ router.put("/customers/:id", authenticateToken, async (req: AuthRequest, res) =>
 });
 
 // GET /api/admin/booking-theme - Get salon booking theme
-router.get("/booking-theme", authenticateToken, async (req: AuthRequest, res) => {
+router.get("/booking-theme", authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
     return res.status(401).json({ message: 'Unauthorized.' });
   }
@@ -523,13 +523,13 @@ router.get("/booking-theme", authenticateToken, async (req: AuthRequest, res) =>
 });
 
 // PUT /api/admin/booking-theme - Update salon booking theme
-router.put("/booking-theme", authenticateToken, async (req: AuthRequest, res) => {
+router.put("/booking-theme", authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
     return res.status(401).json({ message: 'Unauthorized.' });
   }
 
   const salonId = req.user.salonId;
-  const { logoUrl, primaryColor, secondaryColor, welcomeTitle, welcomeDescription, confirmButtonText } = req.body;
+  const { logoUrl, primaryColor, secondaryColor, welcomeTitle, welcomeDescription, confirmButtonText } = req.body as any;
 
   try {
     // Validate inputs

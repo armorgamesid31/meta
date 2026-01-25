@@ -8,8 +8,8 @@ import { UserRole } from '@prisma/client';
 const router = Router();
 
 // POST /auth/register - Register a new salon owner
-router.post('/register', async (req, res) => {
-  const { email, password, salonName } = req.body;
+router.post('/register', async (req: any, res: any) => {
+  const { email, password, salonName } = req.body as any;
 
   if (!email || !password || !salonName) {
     return res.status(400).json({ message: 'Email, password, and salonName are required.' });
@@ -59,8 +59,8 @@ router.post('/register', async (req, res) => {
 });
 
 // POST /auth/login - Login a user
-router.post('/login', async (req, res) => {
-  const { email, password } = req.body;
+router.post('/login', async (req: any, res: any) => {
+  const { email, password } = req.body as any;
 
   if (!email || !password) {
     return res.status(400).json({ message: 'Email and password are required.' });
@@ -91,7 +91,7 @@ router.post('/login', async (req, res) => {
 });
 
 // GET /auth/me - Protected route to get authenticated user info
-router.get('/me', authenticateToken, async (req, res) => {
+router.get('/me', authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
     return res.status(401).json({ message: 'Unauthorized.' });
   }

@@ -28,8 +28,8 @@ interface ConfirmBookingRequest {
 }
 
 // POST /api/magic-link - Create a new booking session
-router.post("/magic-link", async (req: Request, res: Response) => {
-  const { salonId }: CreateMagicLinkRequest = req.body;
+router.post("/magic-link", async (req: any, res: any) => {
+  const { salonId } = req.body as any;
 
   if (!salonId || typeof salonId !== 'number') {
     return res.status(400).json({ message: 'Valid salonId is required.' });
@@ -68,8 +68,8 @@ router.post("/magic-link", async (req: Request, res: Response) => {
 });
 
 // GET /api/sessions/:token - Get session state
-router.get("/:token", async (req: Request, res: Response) => {
-  const { token } = req.params;
+router.get("/:token", async (req: any, res: any) => {
+  const { token } = req.params as any;
   const tokenStr = Array.isArray(token) ? token[0] : token;
 
   const session = await prisma.bookingSession.findUnique({
@@ -138,10 +138,10 @@ router.get("/:token", async (req: Request, res: Response) => {
 });
 
 // GET /api/sessions/:token/availability - Get availability for session
-router.get("/:token/availability", async (req: Request, res: Response) => {
-  const { token } = req.params;
+router.get("/:token/availability", async (req: any, res: any) => {
+  const { token } = req.params as any;
   const tokenStr = Array.isArray(token) ? token[0] : token;
-  const { date } = req.query;
+  const { date } = req.query as any;
 
   if (!date || typeof date !== 'string') {
     return res.status(400).json({ message: 'Date parameter is required.' });
@@ -180,10 +180,10 @@ router.get("/:token/availability", async (req: Request, res: Response) => {
 });
 
 // POST /api/sessions/:token/lock - Lock a slot for the session
-router.post("/:token/lock", async (req: Request, res: Response) => {
-  const { token } = req.params;
+router.post("/:token/lock", async (req: any, res: any) => {
+  const { token } = req.params as any;
   const tokenStr = Array.isArray(token) ? token[0] : token;
-  const { slot }: LockSlotRequest = req.body;
+  const { slot } = req.body as any;
 
   if (!slot || !slot.date || !slot.startTime || !slot.serviceId || !Array.isArray(slot.staffIds)) {
     return res.status(400).json({ message: 'Valid slot data is required.' });
@@ -242,10 +242,10 @@ router.post("/:token/lock", async (req: Request, res: Response) => {
 });
 
 // POST /api/sessions/:token/confirm - Confirm booking for session
-router.post("/:token/confirm", async (req: Request, res: Response) => {
-  const { token } = req.params;
+router.post("/:token/confirm", async (req: any, res: any) => {
+  const { token } = req.params as any;
   const tokenStr = Array.isArray(token) ? token[0] : token;
-  const { customerInfo }: ConfirmBookingRequest = req.body;
+  const { customerInfo } = req.body as any;
 
   if (!customerInfo || !customerInfo.name || !customerInfo.phone) {
     return res.status(400).json({ message: 'Customer information is required.' });

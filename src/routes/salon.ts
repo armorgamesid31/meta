@@ -13,7 +13,7 @@ interface AuthRequest extends Request {
 }
 
 // Middleware to check if salon is onboarded
-const checkOnboarding = async (req: AuthRequest, res: Response, next: any) => {
+const checkOnboarding = async (req: any, res: any, next: any) => {
   if (!req.user) {
     return res.status(401).json({ message: 'Unauthorized.' });
   }
@@ -32,8 +32,8 @@ const checkOnboarding = async (req: AuthRequest, res: Response, next: any) => {
 };
 
 // POST /api/salon/setup-info - Step 1: Save salon info
-router.post("/setup-info", authenticateToken, async (req: AuthRequest, res) => {
-  const { name } = req.body;
+router.post("/setup-info", authenticateToken, async (req: any, res: any) => {
+  const { name } = req.body as any;
 
   if (!req.user) {
     return res.status(401).json({ message: "Unauthorized." });
@@ -57,8 +57,8 @@ router.post("/setup-info", authenticateToken, async (req: AuthRequest, res) => {
 });
 
 // POST /api/salon/setup-working-hours - Step 2: Save working hours
-router.post("/setup-working-hours", authenticateToken, async (req: AuthRequest, res) => {
-  const { workStartHour, workEndHour, slotInterval } = req.body;
+router.post("/setup-working-hours", authenticateToken, async (req: any, res: any) => {
+  const { workStartHour, workEndHour, slotInterval } = req.body as any;
 
   if (!req.user) {
     return res.status(401).json({ message: "Unauthorized." });
@@ -88,8 +88,8 @@ router.post("/setup-working-hours", authenticateToken, async (req: AuthRequest, 
 });
 
 // POST /api/salon/setup-services - Step 3: Add services
-router.post("/setup-services", authenticateToken, async (req: AuthRequest, res) => {
-  const { services } = req.body; // Expecting an array of { name, duration, price }
+router.post("/setup-services", authenticateToken, async (req: any, res: any) => {
+  const { services } = req.body as any; // Expecting an array of { name, duration, price }
 
   if (!req.user) {
     return res.status(401).json({ message: "Unauthorized." });
@@ -122,8 +122,8 @@ router.post("/setup-services", authenticateToken, async (req: AuthRequest, res) 
 });
 
 // POST /api/salon/setup-staff - Step 4: Add staff
-router.post("/setup-staff", authenticateToken, async (req: AuthRequest, res) => {
-  const { staff } = req.body; // Expecting an array of { name }
+router.post("/setup-staff", authenticateToken, async (req: any, res: any) => {
+  const { staff } = req.body as any; // Expecting an array of { name }
 
   if (!req.user) {
     return res.status(401).json({ message: "Unauthorized." });
@@ -159,7 +159,7 @@ router.post("/setup-staff", authenticateToken, async (req: AuthRequest, res) => 
 });
 
 // POST /api/salon/complete-onboarding - Step 5: Mark salon as onboarded
-router.post("/complete-onboarding", authenticateToken, async (req: AuthRequest, res) => {
+router.post("/complete-onboarding", authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
     return res.status(401).json({ message: "Unauthorized." });
   }
