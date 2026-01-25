@@ -67,6 +67,14 @@ const MagicLinkBooking: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [tokenStatus, setTokenStatus] = useState<'valid' | 'EXPIRED' | 'USED' | 'invalid'>('valid');
 
+  // Debug logging
+  useEffect(() => {
+    console.log('Current step:', currentStep);
+    console.log('Selected date:', selectedDate);
+    console.log('Selected time:', selectedTime);
+    console.log('Available slots:', availableSlots);
+  }, [currentStep, selectedDate, selectedTime, availableSlots]);
+
   useEffect(() => {
     if (!token) {
       setError('Magic link token is missing');
@@ -99,8 +107,9 @@ const MagicLinkBooking: React.FC = () => {
   }, [token]);
 
   const handleDateChange = async (date: string) => {
+    console.log('Date changed:', date);
     setSelectedDate(date);
-    setSelectedTime('');
+    setSelectedTime(''); // Clear time when date changes
     setAvailableSlots([]); // Clear previous slots
 
     if (magicLinkData) {
@@ -108,6 +117,7 @@ const MagicLinkBooking: React.FC = () => {
         const response = await apiGet(`/availability?salonId=${magicLinkData.salon.id}&date=${date}`);
         const data: AvailabilitySlot = await response.json();
         setAvailableSlots(data?.slots || []);
+        console.log('Available slots loaded:', data?.slots);
       } catch (error) {
         console.error('Error fetching availability:', error);
         setAvailableSlots([]);
@@ -393,7 +403,10 @@ const MagicLinkBooking: React.FC = () => {
                     {availableSlots.map(slot => (
                       <button
                         key={slot}
-                        onClick={() => setSelectedTime(slot)}
+                        onClick={() => {
+                          console.log('Time slot selected:', slot);
+                          setSelectedTime(slot);
+                        }}
                         className={`py-2 px-3 text-sm border rounded-md ${
                           selectedTime === slot
                             ? 'bg-blue-600 text-white border-blue-600'
@@ -408,7 +421,12 @@ const MagicLinkBooking: React.FC = () => {
               )}
 
               <button
-                onClick={() => setCurrentStep('confirm')}
+                onClick={() => {
+                  console.log('Attempting to go to confirm step');
+                  console.log('selectedDate:', selectedDate, 'selectedTime:', selectedTime);
+                  console.log('Button should be enabled:', !!(selectedDate && selectedTime));
+                  setCurrentStep('confirm');
+                }}
                 disabled={!selectedDate || !selectedTime}
                 className="w-full bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
               >
