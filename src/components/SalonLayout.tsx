@@ -8,8 +8,14 @@ interface SalonUser {
   salonId: number;
 }
 
+interface SalonInfo {
+  id: number;
+  name: string;
+}
+
 const SalonLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<SalonUser | null>(null);
+  const [salon, setSalon] = useState<SalonInfo | null>(null);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -25,6 +31,22 @@ const SalonLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     try {
       const parsedUser = JSON.parse(userData);
       setUser(parsedUser);
+
+      // Load salon info
+      fetch('/api/salon/me', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.salon) {
+            setSalon(data.salon);
+          }
+        })
+        .catch(error => {
+          console.error('Error loading salon info:', error);
+        });
     } catch (error) {
       navigate('/salon/login');
     }
@@ -42,8 +64,10 @@ const SalonLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
   const navigation = [
     { name: 'Dashboard', href: '/salon/dashboard', current: location.pathname === '/salon/dashboard' },
-    { name: 'Randevular', href: '/salon/appointments', current: location.pathname === '/salon/appointments' },
     { name: 'Ayarlar', href: '/salon/settings', current: location.pathname === '/salon/settings' },
+    { name: 'Hizmetler', href: '/salon/services', current: location.pathname === '/salon/services' },
+    { name: 'Personel', href: '/salon/staff', current: location.pathname === '/salon/staff' },
+    { name: 'Randevular', href: '/salon/appointments', current: location.pathname === '/salon/appointments' },
   ];
 
   return (

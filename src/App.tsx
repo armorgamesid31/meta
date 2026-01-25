@@ -9,6 +9,8 @@ import MagicLinkBooking from './pages/MagicLinkBooking';
 import SalonLogin from './pages/salon/SalonLogin';
 import SalonDashboard from './pages/salon/SalonDashboard';
 import SalonSettings from './pages/salon/SalonSettings';
+import SalonServices from './pages/salon/SalonServices';
+import SalonStaff from './pages/salon/SalonStaff';
 import SalonAppointments from './pages/salon/SalonAppointments';
 
 function App() {
@@ -36,6 +38,8 @@ function App() {
         <Route path="/salon/login" element={<SalonLogin />} />
         <Route path="/salon/dashboard" element={<SalonDashboard />} />
         <Route path="/salon/settings" element={<SalonSettings />} />
+        <Route path="/salon/services" element={<SalonServices />} />
+        <Route path="/salon/staff" element={<SalonStaff />} />
         <Route path="/salon/appointments" element={<SalonAppointments />} />
 
         {/* Magic Link Booking - No authentication required */}

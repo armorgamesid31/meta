@@ -43,6 +43,8 @@ const MagicLinkBooking: React.FC = () => {
   const token = searchParams.get('token');
 
   const [magicLinkData, setMagicLinkData] = useState<MagicLinkData | null>(null);
+  const [services, setServices] = useState<Service[]>([]);
+  const [staff, setStaff] = useState<Staff[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -56,7 +58,8 @@ const MagicLinkBooking: React.FC = () => {
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedTime, setSelectedTime] = useState('');
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
-  const [selectedServices, setSelectedServices] = useState<Array<{serviceId: number, staffId: number}>>([]);
+  const [selectedService, setSelectedService] = useState<number | null>(null);
+  const [selectedStaff, setSelectedStaff] = useState<number | null>(null);
 
   // UI state
   const [currentStep, setCurrentStep] = useState<'info' | 'services' | 'datetime' | 'confirm'>('info');
@@ -106,7 +109,7 @@ const MagicLinkBooking: React.FC = () => {
   };
 
   const handleSubmit = async () => {
-    if (!magicLinkData || !token || !selectedDate || !selectedTime || selectedServices.length === 0) {
+    if (!magicLinkData || !token || !selectedDate || !selectedTime || !selectedService || !selectedStaff) {
       return;
     }
 
@@ -128,7 +131,10 @@ const MagicLinkBooking: React.FC = () => {
             name: customerName,
             birthDate,
             gender,
-            services: selectedServices
+            services: [{
+              serviceId: selectedService,
+              staffId: selectedStaff
+            }]
           }],
           campaignOptIn
         })
