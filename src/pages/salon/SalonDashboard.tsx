@@ -16,6 +16,41 @@ const SalonDashboard: React.FC = () => {
     totalRevenue: 0
   });
   const [loading, setLoading] = useState(true);
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [createdLink, setCreatedLink] = useState<string | null>(null);
+
+  const createBookingLink = async () => {
+    setCreating(true);
+    setCreatedLink(null);
+
+    try {
+      const response = await fetch('/api/salon/magic-link/booking', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('salonToken')}`
+        },
+        body: JSON.stringify({
+          phone: phoneNumber
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setCreatedLink(data.magicUrl);
+        setPhoneNumber(''); // Clear the input
+      } else {
+        const error = await response.json();
+        alert(`Hata: ${error.message}`);
+      }
+    } catch (error) {
+      console.error('Error creating booking link:', error);
+      alert('Bağlantı oluşturulamadı');
+    } finally {
+      setCreating(false);
+    }
+  };
 
   useEffect(() => {
     // For now, just show placeholder stats
@@ -140,39 +175,57 @@ const SalonDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Quick Actions */}
+        {/* Magic Link Creator */}
         <div className="mt-8">
-          <h2 className="text-lg font-medium text-gray-900 mb-4">Hızlı İşlemler</h2>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <div className="bg-white p-6 rounded-lg shadow">
-              <h3 className="text-sm font-medium text-gray-900">Randevu Oluştur</h3>
-              <p className="mt-1 text-sm text-gray-500">
-                Manuel randevu oluşturun
-              </p>
-              <button className="mt-3 bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700">
-                Oluştur
-              </button>
+          <div className="bg-white shadow rounded-lg p-6">
+            <h2 className="text-lg font-medium text-gray-900 mb-4">Randevu Bağlantısı Oluştur</h2>
+            <p className="text-sm text-gray-600 mb-4">
+              Müşteriye göndereceğiniz randevu alma bağlantısını oluşturun
+            </p>
+
+            <div className="flex space-x-4">
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Telefon Numarası
+                </label>
+                <input
+                  type="tel"
+                  placeholder="05551234567"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={phoneNumber}
+                  onChange={(e) => setPhoneNumber(e.target.value)}
+                />
+              </div>
+              <div className="flex items-end">
+                <button
+                  onClick={createBookingLink}
+                  disabled={creating || !phoneNumber}
+                  className="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                >
+                  {creating ? 'Oluşturuluyor...' : 'Bağlantı Oluştur'}
+                </button>
+              </div>
             </div>
 
-            <div className="bg-white p-6 rounded-lg shadow">
-              <h3 className="text-sm font-medium text-gray-900">Müşteri Ekle</h3>
-              <p className="mt-1 text-sm text-gray-500">
-                Yeni müşteri kaydı oluşturun
-              </p>
-              <button className="mt-3 bg-green-600 text-white px-4 py-2 rounded text-sm hover:bg-green-700">
-                Ekle
-              </button>
-            </div>
-
-            <div className="bg-white p-6 rounded-lg shadow">
-              <h3 className="text-sm font-medium text-gray-900">Hizmet Ayarları</h3>
-              <p className="mt-1 text-sm text-gray-500">
-                Hizmetleri ve fiyatları düzenleyin
-              </p>
-              <button className="mt-3 bg-purple-600 text-white px-4 py-2 rounded text-sm hover:bg-purple-700">
-                Düzenle
-              </button>
-            </div>
+            {createdLink && (
+              <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-md">
+                <p className="text-sm text-green-800 mb-2">Randevu bağlantısı oluşturuldu:</p>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="text"
+                    value={createdLink}
+                    readOnly
+                    className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded bg-white"
+                  />
+                  <button
+                    onClick={() => navigator.clipboard.writeText(createdLink)}
+                    className="bg-green-600 text-white px-4 py-2 rounded text-sm hover:bg-green-700"
+                  >
+                    Kopyala
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

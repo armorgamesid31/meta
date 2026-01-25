@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 interface MagicLinkData {
-  type: 'BOOKING';
+  type: 'BOOKING' | 'RESCHEDULE';
   expiresAt: string;
   salon: {
     id: number;
@@ -16,6 +16,7 @@ interface MagicLinkData {
     phone: string;
     name: string | null;
   };
+  rescheduleAppointmentId?: number;
 }
 
 interface Service {
@@ -250,6 +251,22 @@ const MagicLinkBooking: React.FC = () => {
       </div>
 
       <div className="max-w-md mx-auto bg-white shadow-lg -mt-4 rounded-t-lg">
+        {/* Reschedule Banner */}
+        {magicLinkData?.type === 'RESCHEDULE' && (
+          <div className="bg-blue-50 border-b border-blue-200 px-6 py-3">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <span className="text-blue-600">🔄</span>
+              </div>
+              <div className="ml-3">
+                <p className="text-sm text-blue-800">
+                  Bu randevu değişikliği için kullanılacak bağlantıdır.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Progress indicator */}
         <div className="flex justify-between px-6 py-4 border-b">
           {['Bilgiler', 'Hizmetler', 'Tarih/Saat', 'Onayla'].map((step, index) => (

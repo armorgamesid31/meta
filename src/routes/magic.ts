@@ -204,6 +204,11 @@ router.get('/:token', async (req: any, res: any) => {
       }
     };
 
+    // Add reschedule context if applicable
+    if (magicLink.type === 'RESCHEDULE' && magicLink.context) {
+      response.rescheduleAppointmentId = (magicLink.context as any).appointmentId;
+    }
+
     res.json(response);
 
   } catch (error) {

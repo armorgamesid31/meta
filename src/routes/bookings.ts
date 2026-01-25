@@ -544,6 +544,18 @@ router.post('/', async (req: any, res: any) => {
 
     // Start transaction
     const result = await prisma.$transaction(async (tx) => {
+      // Handle reschedule: cancel old appointment
+      if (magicLink.type === 'RESCHEDULE' && magicLink.context) {
+        const oldAppointmentId = (magicLink.context as any).appointmentId;
+        await tx.appointment.update({
+          where: { id: oldAppointmentId },
+          data: {
+            status: 'CANCELLED',
+            updatedAt: new Date()
+          }
+        });
+      }
+
       const appointments = [];
 
       // Create appointments for each person
@@ -601,8 +613,8 @@ router.post('/', async (req: any, res: any) => {
               startTime: appointmentDateTime,
               endTime: endTime,
               status: 'BOOKED',
-              source: 'CUSTOMER',
-              notes: `Birth date: ${person.birthDate}, Gender: ${person.gender}, Campaign opt-in: ${campaignOptIn || false}`
+              source: magicLink.type === 'RESCHEDULE' ? 'ADMIN' : 'CUSTOMER',
+              notes: `Birth date: ${person.birthDate}, Gender: ${person.gender}, Campaign opt-in: ${campaignOptIn || false}${magicLink.type === 'RESCHEDULE' ? ', Rescheduled' : ''}`
             }
           });
 

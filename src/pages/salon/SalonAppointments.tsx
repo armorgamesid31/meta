@@ -3,18 +3,16 @@ import SalonLayout from '../../components/SalonLayout';
 
 interface Appointment {
   id: number;
-  startTime: string;
-  endTime: string;
-  status: 'BOOKED' | 'CANCELLED' | 'COMPLETED';
-  customerName: string;
-  customerPhone: string;
-  service: {
+  datetime: string;
+  status: 'CONFIRMED' | 'CANCELLED' | 'COMPLETED';
+  customer: {
     name: string;
-    price: number;
+    phone: string;
   };
-  staff: {
+  services: Array<{
     name: string;
-  };
+    price?: number;
+  }>;
 }
 
 const SalonAppointments: React.FC = () => {
@@ -43,6 +41,56 @@ const SalonAppointments: React.FC = () => {
       console.error('Error loading appointments:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const cancelAppointment = async (appointmentId: number) => {
+    if (!confirm('Bu randevuyu iptal etmek istediğinizden emin misiniz?')) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/salon/appointments/${appointmentId}/cancel`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('salonToken')}`
+        }
+      });
+
+      if (response.ok) {
+        alert('Randevu iptal edildi');
+        loadAppointments(); // Reload appointments
+      } else {
+        const error = await response.json();
+        alert(`Hata: ${error.message}`);
+      }
+    } catch (error) {
+      console.error('Error cancelling appointment:', error);
+      alert('Randevu iptal edilemedi');
+    }
+  };
+
+  const generateRescheduleLink = async (appointmentId: number) => {
+    try {
+      const response = await fetch(`/api/salon/appointments/${appointmentId}/reschedule-link`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('salonToken')}`
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        // Copy to clipboard
+        navigator.clipboard.writeText(data.magicUrl);
+        alert(`Erteleme bağlantısı kopyalandı: ${data.magicUrl}`);
+      } else {
+        const error = await response.json();
+        alert(`Hata: ${error.message}`);
+      }
+    } catch (error) {
+      console.error('Error generating reschedule link:', error);
+      alert('Erteleme bağlantısı oluşturulamadı');
     }
   };
 
@@ -122,34 +170,47 @@ const SalonAppointments: React.FC = () => {
                       <div className="flex items-center">
                         <div className="flex-1">
                           <h3 className="text-sm font-medium text-gray-900">
-                            {appointment.customerName}
+                            {appointment.customer.name}
                           </h3>
                           <p className="text-sm text-gray-600">
-                            {appointment.customerPhone}
+                            {appointment.customer.phone}
                           </p>
                         </div>
                         <div className="flex-1 ml-4">
                           <p className="text-sm text-gray-900">
-                            {appointment.service.name}
+                            {appointment.services[0].name}
                           </p>
                           <p className="text-sm text-gray-600">
-                            {appointment.staff.name}
+                            {formatDateTime(appointment.datetime)}
                           </p>
                         </div>
                         <div className="flex-1 ml-4">
-                          <p className="text-sm text-gray-900">
-                            {formatDateTime(appointment.startTime)}
-                          </p>
                           <p className="text-sm text-gray-600">
-                            ₺{appointment.service.price}
+                            ₺{appointment.services[0].price || 0}
                           </p>
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center">
+                    <div className="flex items-center space-x-2">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(appointment.status)}`}>
                         {getStatusText(appointment.status)}
                       </span>
+                      {appointment.status === 'CONFIRMED' && (
+                        <div className="flex space-x-2">
+                          <button
+                            onClick={() => cancelAppointment(appointment.id)}
+                            className="bg-red-600 text-white px-3 py-1 rounded text-xs hover:bg-red-700"
+                          >
+                            İptal Et
+                          </button>
+                          <button
+                            onClick={() => generateRescheduleLink(appointment.id)}
+                            className="bg-blue-600 text-white px-3 py-1 rounded text-xs hover:bg-blue-700"
+                          >
+                            Ertele
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </li>

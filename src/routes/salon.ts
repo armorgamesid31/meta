@@ -176,29 +176,22 @@ router.get('/appointments', authenticateToken, async (req: any, res: any) => {
 
   const { date, limit = '50', offset = '0' } = req.query;
 
+  // Default to today if no date provided
+  const targetDate = date ? new Date(date as string) : new Date();
+  const startOfDay = new Date(targetDate);
+  startOfDay.setHours(0, 0, 0, 0);
+  const endOfDay = new Date(targetDate);
+  endOfDay.setHours(23, 59, 59, 999);
+
   try {
-    let where: any = {
-      salonId: req.user.salonId,
-      status: {
-        in: ['BOOKED', 'CANCELLED']
-      }
-    };
-
-    if (date) {
-      const targetDate = new Date(date as string);
-      const startOfDay = new Date(targetDate);
-      startOfDay.setHours(0, 0, 0, 0);
-      const endOfDay = new Date(targetDate);
-      endOfDay.setHours(23, 59, 59, 999);
-
-      where.startTime = {
-        gte: startOfDay,
-        lte: endOfDay
-      };
-    }
-
     const appointments = await prisma.appointment.findMany({
-      where,
+      where: {
+        salonId: req.user.salonId,
+        startTime: {
+          gte: startOfDay,
+          lte: endOfDay
+        }
+      },
       include: {
         service: true,
         staff: {
@@ -209,7 +202,7 @@ router.get('/appointments', authenticateToken, async (req: any, res: any) => {
         }
       },
       orderBy: {
-        startTime: 'desc'
+        startTime: 'asc'
       },
       take: parseInt(limit as string),
       skip: parseInt(offset as string)
@@ -218,17 +211,169 @@ router.get('/appointments', authenticateToken, async (req: any, res: any) => {
     res.json({
       appointments: appointments.map(apt => ({
         id: apt.id,
-        startTime: apt.startTime,
-        endTime: apt.endTime,
-        status: apt.status,
-        customerName: apt.customerName,
-        customerPhone: apt.customerPhone,
-        service: apt.service,
-        staff: apt.staff
+        datetime: apt.startTime,
+        status: apt.status === 'BOOKED' ? 'CONFIRMED' : apt.status,
+        customer: {
+          name: apt.customerName,
+          phone: apt.customerPhone
+        },
+        services: [{
+          name: apt.service.name
+        }]
       }))
     });
   } catch (error) {
     console.error('Error fetching appointments:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// POST /api/salon/appointments/:id/cancel - Cancel appointment
+router.post('/appointments/:id/cancel', authenticateToken, async (req: any, res: any) => {
+  if (!req.user) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+
+  const { id } = req.params;
+
+  try {
+    // Check if appointment exists and belongs to salon
+    const appointment = await prisma.appointment.findFirst({
+      where: {
+        id: parseInt(id),
+        salonId: req.user.salonId,
+        status: 'BOOKED'
+      }
+    });
+
+    if (!appointment) {
+      return res.status(404).json({ message: 'Appointment not found or cannot be cancelled' });
+    }
+
+    // Check if appointment is in the future
+    if (appointment.startTime <= new Date()) {
+      return res.status(400).json({ message: 'Cannot cancel past appointments' });
+    }
+
+    // Update appointment status
+    await prisma.appointment.update({
+      where: { id: parseInt(id) },
+      data: {
+        status: 'CANCELLED',
+        updatedAt: new Date()
+      }
+    });
+
+    res.json({ message: 'Appointment cancelled successfully' });
+  } catch (error) {
+    console.error('Error cancelling appointment:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// POST /api/salon/appointments/:id/reschedule-link - Generate reschedule magic link
+router.post('/appointments/:id/reschedule-link', authenticateToken, async (req: any, res: any) => {
+  if (!req.user) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+
+  const { id } = req.params;
+
+  try {
+    // Check if appointment exists and belongs to salon
+    const appointment = await prisma.appointment.findFirst({
+      where: {
+        id: parseInt(id),
+        salonId: req.user.salonId,
+        status: 'BOOKED'
+      }
+    });
+
+    if (!appointment) {
+      return res.status(404).json({ message: 'Appointment not found' });
+    }
+
+    // Check if appointment is in the future
+    if (appointment.startTime <= new Date()) {
+      return res.status(400).json({ message: 'Cannot reschedule past appointments' });
+    }
+
+    // Generate reschedule magic link
+    const { randomBytes } = await import('crypto');
+    const token = randomBytes(32).toString('hex');
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + 6); // 6 hours for reschedule
+
+    const magicLink = await prisma.magicLink.create({
+      data: {
+        token,
+        phone: appointment.customerPhone,
+        type: 'RESCHEDULE',
+        context: {
+          appointmentId: appointment.id,
+          salonId: req.user.salonId
+        },
+        expiresAt
+      }
+    });
+
+    // Generate magic link URL
+    const baseUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const magicUrl = `${baseUrl}/m/${token}`;
+
+    res.json({
+      magicUrl,
+      token,
+      expiresAt: magicLink.expiresAt
+    });
+  } catch (error) {
+    console.error('Error generating reschedule link:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// POST /api/salon/magic-link/booking - Create booking magic link
+router.post('/magic-link/booking', authenticateToken, async (req: any, res: any) => {
+  if (!req.user) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+
+  const { phone } = req.body;
+
+  if (!phone) {
+    return res.status(400).json({ message: 'Phone number is required' });
+  }
+
+  try {
+    // Generate booking magic link
+    const { randomBytes } = await import('crypto');
+    const token = randomBytes(32).toString('hex');
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + 24); // 24 hours for booking
+
+    const magicLink = await prisma.magicLink.create({
+      data: {
+        token,
+        phone,
+        type: 'BOOKING',
+        context: {
+          salonId: req.user.salonId
+        },
+        expiresAt
+      }
+    });
+
+    // Generate magic link URL
+    const baseUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const magicUrl = `${baseUrl}/m/${token}`;
+
+    res.status(201).json({
+      magicUrl,
+      token,
+      expiresAt: magicLink.expiresAt
+    });
+  } catch (error) {
+    console.error('Error creating booking magic link:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
