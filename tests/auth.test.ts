@@ -1,6 +1,6 @@
 import request from "supertest";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import app from "../src/app"; // Ensure your Express app is exported from src/app.ts
+import app from "../src/server"; // Ensure your Express app is exported from src/server.ts
 import { prisma } from "../src/prisma";
 import bcrypt from "bcrypt";
 import { generateToken } from "../src/utils/jwt";
