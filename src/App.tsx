@@ -43,7 +43,7 @@ function App() {
         <Route path="/salon/appointments" element={<SalonAppointments />} />
 
         {/* Magic Link Booking - No authentication required */}
-        <Route path="/m" element={<MagicLinkBooking />} />
+        <Route path="/m/:token" element={<MagicLinkBooking />} />
 
         {/* Müşteri Uygulaması Rotası - Henüz uygulanmadı, sadece yer tutucu */}
         <Route path="/book" element={<div>Customer Booking (Work in progress)</div>} />

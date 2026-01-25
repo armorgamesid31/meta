@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
+import { apiGet, apiPost } from '../utils/api';
 
 interface MagicLinkData {
   type: 'BOOKING' | 'RESCHEDULE';
@@ -40,8 +41,7 @@ interface AvailabilitySlot {
 }
 
 const MagicLinkBooking: React.FC = () => {
-  const [searchParams] = useSearchParams();
-  const token = searchParams.get('token');
+  const { token } = useParams<{ token: string }>();
 
   const [magicLinkData, setMagicLinkData] = useState<MagicLinkData | null>(null);
   const [services, setServices] = useState<Service[]>([]);
@@ -75,7 +75,7 @@ const MagicLinkBooking: React.FC = () => {
     }
 
     // Resolve magic link
-    fetch(`/m/${token}`)
+    apiGet(`/m/${token}`)
       .then(res => res.json())
       .then(data => {
         if (data.status === 'USED' || data.status === 'EXPIRED') {
@@ -104,7 +104,7 @@ const MagicLinkBooking: React.FC = () => {
 
     if (magicLinkData) {
       try {
-        const response = await fetch(`/availability?salonId=${magicLinkData.salon.id}&date=${date}`);
+        const response = await apiGet(`/availability?salonId=${magicLinkData.salon.id}&date=${date}`);
         const data: AvailabilitySlot = await response.json();
         setAvailableSlots(data.slots);
       } catch (error) {
@@ -123,26 +123,20 @@ const MagicLinkBooking: React.FC = () => {
     try {
       const datetime = `${selectedDate}T${selectedTime}:00`;
 
-      const response = await fetch('/appointments', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          token,
-          salonId: magicLinkData.salon.id,
-          datetime,
-          people: [{
-            name: customerName,
-            birthDate,
-            gender,
-            services: [{
-              serviceId: selectedService,
-              staffId: selectedStaff
-            }]
-          }],
-          campaignOptIn
-        })
+      const response = await apiPost('/appointments', {
+        token,
+        salonId: magicLinkData.salon.id,
+        datetime,
+        people: [{
+          name: customerName,
+          birthDate,
+          gender,
+          services: [{
+            serviceId: selectedService,
+            staffId: selectedStaff
+          }]
+        }],
+        campaignOptIn
       });
 
       const result = await response.json();
