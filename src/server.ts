@@ -5,6 +5,7 @@ import salonRoutes from './routes/salon.js';
 import bookingRoutes from './routes/bookings.js';
 import sessionRoutes from './routes/sessions.js';
 import adminRoutes from './routes/admin.js';
+import magicRoutes from './routes/magic.js';
 
 const app = express();
 
@@ -23,8 +24,9 @@ app.use('/auth', authRoutes);
 app.use('/api/salon', salonRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/sessions', sessionRoutes);
-app.use('/api/magic-link', sessionRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/magic-link', magicRoutes);
+app.use('/m', magicRoutes);
 
 // Basic test route
 app.get("/", (_req, res) => {

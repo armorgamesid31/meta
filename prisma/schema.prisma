@@ -290,4 +290,28 @@ model UserPermissionOverride {
   @@unique([userId, permissionId, salonId])
 }
 
+// --------------------------------------
+// Magic Link System
+// --------------------------------------
+
+enum MagicLinkType {
+  BOOKING     // Customer booking flow
+  CANCEL      // Cancel existing booking
+  RESCHEDULE  // Reschedule existing booking
+}
+
+model MagicLink {
+  id          Int           @id @default(autoincrement())
+  token       String        @unique // URL-safe token
+  phone       String        // Customer phone number
+  type        MagicLinkType // Purpose of the link
+  context     Json?         // Additional context (appointmentId, salonId, etc.)
+  expiresAt   DateTime      // When the link expires
+  usedAt      DateTime?     // When the link was used
+  createdAt   DateTime      @default(now())
+
+  @@index([token, expiresAt])
+  @@index([phone, type])
+}
+
 
