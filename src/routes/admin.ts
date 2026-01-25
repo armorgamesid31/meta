@@ -55,7 +55,7 @@ router.get("/appointments", authenticateToken, async (req: AuthRequest, res) => 
     }
 
     if (statusStr && statusStr !== 'all') {
-      where.status = statusStr.toUpperCase();
+      where.status = String(statusStr).toUpperCase();
     }
 
     const appointments = await prisma.appointment.findMany({
@@ -81,8 +81,8 @@ router.get("/appointments", authenticateToken, async (req: AuthRequest, res) => 
       orderBy: {
         startTime: 'asc'
       },
-      take: parseInt(limitStr || '50'),
-      skip: parseInt(offsetStr || '0')
+      take: parseInt(String(limitStr || '50')),
+      skip: parseInt(String(offsetStr || '0'))
     });
 
     const total = await prisma.appointment.count({ where });
@@ -106,8 +106,8 @@ router.get("/appointments", authenticateToken, async (req: AuthRequest, res) => 
         createdAt: apt.createdAt
       })),
       total,
-      limit: parseInt(limitStr || '50'),
-      offset: parseInt(offsetStr || '0')
+      limit: parseInt(String(limitStr || '50')),
+      offset: parseInt(String(offsetStr || '0'))
     });
   } catch (error) {
     console.error('Error fetching appointments:', error);
@@ -127,7 +127,7 @@ router.get("/appointments/:id", authenticateToken, async (req: AuthRequest, res)
   try {
     const appointment = await prisma.appointment.findFirst({
       where: {
-        id: parseInt(id),
+        id: parseInt(String(id)),
         salonId,
         status: {
           in: ['BOOKED', 'CANCELLED'] // Only confirmed appointments
@@ -188,7 +188,7 @@ router.post("/appointments/:id/cancel", authenticateToken, async (req: AuthReque
       // Find appointment
       const appointment = await tx.appointment.findFirst({
         where: {
-          id: parseInt(id),
+          id: parseInt(String(id)),
           salonId,
           status: 'BOOKED' // Only cancel booked appointments
         }
@@ -205,7 +205,7 @@ router.post("/appointments/:id/cancel", authenticateToken, async (req: AuthReque
 
       // Update appointment status
       const updatedAppointment = await tx.appointment.update({
-        where: { id: parseInt(id) },
+        where: { id: parseInt(String(id)) },
         data: {
           status: 'CANCELLED',
           notes: reason ? `Cancelled: ${reason}` : 'Cancelled by admin',
@@ -309,8 +309,8 @@ router.get("/customers", authenticateToken, async (req: AuthRequest, res) => {
       orderBy: {
         name: 'asc'
       },
-      take: parseInt(limitStr || '50'),
-      skip: parseInt(offsetStr || '0')
+      take: parseInt(String(limitStr || '50')),
+      skip: parseInt(String(offsetStr || '0'))
     });
 
     const total = await prisma.customer.count({ where });
@@ -328,8 +328,8 @@ router.get("/customers", authenticateToken, async (req: AuthRequest, res) => {
         createdAt: customer.createdAt
       })),
       total,
-      limit: parseInt(limitStr || '50'),
-      offset: parseInt(offsetStr || '0')
+      limit: parseInt(String(limitStr || '50')),
+      offset: parseInt(String(offsetStr || '0'))
     });
   } catch (error) {
     console.error('Error fetching customers:', error);
@@ -349,7 +349,7 @@ router.get("/customers/:id", authenticateToken, async (req: AuthRequest, res) =>
   try {
     const customer = await prisma.customer.findFirst({
       where: {
-        id: parseInt(id),
+        id: parseInt(String(id)),
         salonId
       },
       include: {
@@ -421,7 +421,7 @@ router.put("/customers/:id", authenticateToken, async (req: AuthRequest, res) =>
     // Check if customer exists
     const existingCustomer = await prisma.customer.findFirst({
       where: {
-        id: parseInt(id),
+        id: parseInt(String(id)),
         salonId
       }
     });
@@ -436,7 +436,7 @@ router.put("/customers/:id", authenticateToken, async (req: AuthRequest, res) =>
         where: {
           salonId,
           phone,
-          id: { not: parseInt(id) }
+          id: { not: parseInt(String(id)) }
         }
       });
 
@@ -447,7 +447,7 @@ router.put("/customers/:id", authenticateToken, async (req: AuthRequest, res) =>
 
     // Update customer
     const updatedCustomer = await prisma.customer.update({
-      where: { id: parseInt(id) },
+      where: { id: parseInt(String(id)) },
       data: {
         name: name || existingCustomer.name,
         phone: phone || existingCustomer.phone,

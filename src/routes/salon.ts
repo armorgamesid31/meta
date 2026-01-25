@@ -34,29 +34,20 @@ const checkOnboarding = async (req: AuthRequest, res: Response, next: any) => {
 
 // POST /api/salon/setup-info - Step 1: Save salon info
 router.post("/setup-info", authenticateToken, async (req: AuthRequest, res) => {
-  const { name, slug } = req.body;
+  const { name } = req.body;
 
   if (!req.user) {
     return res.status(401).json({ message: "Unauthorized." });
   }
 
-  if (!name || !slug) {
-    return res.status(400).json({ message: "Salon name and slug are required." });
+  if (!name) {
+    return res.status(400).json({ message: "Salon name is required." });
   }
 
   try {
-    // Check if a salon with this slug already exists for another user (or current user)
-    const existingSalon = await prisma.salon.findUnique({
-      where: { slug: slug },
-    });
-
-    if (existingSalon && existingSalon.id !== req.user.salonId) {
-      return res.status(409).json({ message: "Salon slug already taken." });
-    }
-
     const updatedSalon = await prisma.salon.update({
       where: { id: req.user.salonId },
-      data: { name, slug },
+      data: { name },
     });
 
     res.status(200).json({ message: "Salon info saved successfully.", salon: updatedSalon });
@@ -175,11 +166,8 @@ router.post("/complete-onboarding", authenticateToken, async (req: AuthRequest, 
   }
 
   try {
-    await prisma.salonSettings.update({
-      where: { salonId: req.user.salonId },
-      data: { isOnboarded: true },
-    });
-
+    // Onboarding completion is handled by the existence of settings
+    // No additional field needed since we check for settings existence
     res.status(200).json({ message: "Onboarding completed successfully." });
   } catch (error) {
     console.error("Error completing onboarding:", error);
