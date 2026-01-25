@@ -9,7 +9,9 @@ const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '1h';
 interface TokenPayload {
   userId: number;
   salonId: number;
-  role: 'OWNER' | 'STAFF';
+  role: 'OWNER' | 'MANAGER' | 'STAFF' | 'RECEPTION' | 'FINANCE'; // Updated for new roles
+  roles?: string[]; // New RBAC roles
+  permissions?: string[]; // User permissions
 }
 
 export const generateToken = (payload: TokenPayload): string => {

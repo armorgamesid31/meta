@@ -67,7 +67,22 @@ router.post('/login', async (req: any, res: any) => {
   }
 
   try {
-    const user = await prisma.salonUser.findUnique({ where: { email } });
+    const user = await prisma.salonUser.findUnique({
+      where: { email },
+      include: {
+        userRoles: {
+          include: {
+            role: true
+          }
+        },
+        permissionOverrides: {
+          include: {
+            permission: true
+          }
+        }
+      }
+    });
+
     if (!user) {
       return res.status(401).json({ message: 'Invalid credentials.' });
     }
@@ -77,13 +92,46 @@ router.post('/login', async (req: any, res: any) => {
       return res.status(401).json({ message: 'Invalid credentials.' });
     }
 
+    // Get user roles and permissions
+    const roles = user.userRoles.map(ura => ura.role.name);
+    const rolePermissions = await prisma.$queryRaw`
+      SELECT DISTINCT p.key
+      FROM permissions p
+      JOIN role_permissions rp ON p.id = rp.permission_id
+      JOIN user_role_assignments ura ON rp.role_id = ura.role_id AND ura.salon_id = ${user.salonId}
+      WHERE ura.user_id = ${user.id} AND rp.granted = true
+    ` as Array<{ key: string }>;
+
+    const overridePermissions = user.permissionOverrides
+      .filter(upo => upo.granted && (!upo.expiresAt || upo.expiresAt > new Date()))
+      .map(upo => upo.permission.key);
+
+    const permissions = [...new Set([...rolePermissions.map(p => p.key), ...overridePermissions])];
+
+    // For backward compatibility, include the primary role if no roles are assigned
+    if (roles.length === 0) {
+      roles.push(user.role);
+    }
+
     const token = generateToken({
       userId: user.id,
       salonId: user.salonId,
-      role: user.role,
+      role: user.role, // Keep for backward compatibility
+      roles,
+      permissions,
     });
 
-    res.status(200).json({ token, user: { id: user.id, email: user.email, role: user.role, salonId: user.salonId } });
+    res.status(200).json({
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        roles,
+        permissions,
+        salonId: user.salonId
+      }
+    });
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ message: 'Internal server error.' });

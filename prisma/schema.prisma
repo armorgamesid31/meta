@@ -16,7 +16,10 @@ datasource db {
 
 enum UserRole {
   OWNER
+  MANAGER
   STAFF
+  RECEPTION
+  FINANCE
 }
 
 enum AppointmentStatus {
@@ -56,6 +59,8 @@ model Salon {
   appointments    Appointment[]
   bookingSessions BookingSession[]
   customers       Customer[]
+  userRoleAssignments UserRoleAssignment[]
+  permissionOverrides UserPermissionOverride[]
 }
 
 model SalonSettings {
@@ -85,8 +90,10 @@ model SalonUser {
 
   salonId         Int
   salon           Salon     @relation(fields: [salonId], references: [id])
-  
+
   staffProfile    Staff?
+  userRoles       UserRoleAssignment[]
+  permissionOverrides UserPermissionOverride[]
 }
 
 model Staff {
@@ -197,3 +204,90 @@ model BookingSession {
 
   @@index([token, expiresAt])
 }
+
+// --------------------------------------
+// Role-Based Access Control (RBAC)
+// --------------------------------------
+
+model Role {
+  id              Int      @id @default(autoincrement())
+  name            String   @unique // OWNER, MANAGER, STAFF, RECEPTION, FINANCE
+  displayName     String   // Human readable name
+  description     String?
+  isSystemRole    Boolean  @default(false) // Cannot be deleted
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  userRoles       UserRoleAssignment[]
+  rolePermissions RolePermission[]
+}
+
+model Permission {
+  id              Int      @id @default(autoincrement())
+  key             String   @unique // e.g., "appointments:read", "customers:write"
+  name            String   // Human readable name
+  description     String?
+  resource        String   // e.g., "appointments", "customers", "staff"
+  action          String   // e.g., "read", "write", "delete", "manage"
+  isSystemPermission Boolean @default(false) // Cannot be deleted
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  rolePermissions RolePermission[]
+  userOverrides   UserPermissionOverride[]
+}
+
+model RolePermission {
+  id             Int        @id @default(autoincrement())
+  roleId         Int
+  permissionId   Int
+  granted        Boolean    @default(true) // Can be false to deny permission
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  role           Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission     Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+}
+
+model UserRoleAssignment {
+  id             Int        @id @default(autoincrement())
+  userId         Int
+  roleId         Int
+  salonId        Int        // Users can have different roles in different salons
+  isPrimary      Boolean    @default(false) // Primary role for the salon
+  assignedAt     DateTime   @default(now())
+  assignedBy     Int?       // User ID who assigned this role
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  user           SalonUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role           Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  salon          Salon      @relation(fields: [salonId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId, salonId])
+}
+
+model UserPermissionOverride {
+  id             Int        @id @default(autoincrement())
+  userId         Int
+  permissionId   Int
+  salonId        Int
+  granted        Boolean    // Override: true = grant, false = deny
+  reason         String?    // Why this override exists
+  expiresAt      DateTime?  // Optional expiration
+  createdBy      Int        // User ID who created this override
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  user           SalonUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permission     Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  salon          Salon      @relation(fields: [salonId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, permissionId, salonId])
+}
+
+
