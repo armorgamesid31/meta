@@ -16,16 +16,25 @@ const OnboardingGuard: React.FC<OnboardingGuardProps> = ({ children }) => {
     const checkOnboardingStatus = async () => {
       if (salonToken) {
         try {
-          // Check if salon has completed onboarding by checking if they have services
+          // Check if salon has completed onboarding
           const response = await fetch(`${API_BASE_URL}/api/salon/me`, {
             headers: { Authorization: `Bearer ${salonToken}` },
           });
 
           if (response.ok) {
             const data = await response.json();
-            // Consider onboarded if salon has services (basic check)
-            // In a real implementation, this would check a proper onboarding status
-            setIsOnboarded(data.salon?.services?.length > 0 || false);
+            // Check if salon has settings with isOnboarded flag
+            // For now, check if salon has services as a basic indicator
+            const hasServicesResponse = await fetch(`${API_BASE_URL}/api/salon/services`, {
+              headers: { Authorization: `Bearer ${salonToken}` },
+            });
+
+            if (hasServicesResponse.ok) {
+              const servicesData = await hasServicesResponse.json();
+              setIsOnboarded(servicesData.services?.length > 0 || false);
+            } else {
+              setIsOnboarded(false);
+            }
           } else {
             setIsOnboarded(false);
           }

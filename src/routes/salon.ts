@@ -43,26 +43,44 @@ router.put('/settings', authenticateToken, async (req: any, res: any) => {
     return res.status(401).json({ message: 'Unauthorized' });
   }
 
-  const { workStartHour, workEndHour, slotInterval } = req.body;
+  const { name, phone, address, workStartHour, workEndHour, slotInterval, isOnboarded } = req.body;
 
   try {
-    // Update or create salon settings
-    const settings = await prisma.salonSettings.upsert({
-      where: { salonId: req.user.salonId },
-      update: {
-        workStartHour,
-        workEndHour,
-        slotInterval
-      },
-      create: {
-        salonId: req.user.salonId,
-        workStartHour,
-        workEndHour,
-        slotInterval
-      }
-    });
+    // Update salon basic info if provided
+    if (name || phone || address) {
+      await prisma.salon.update({
+        where: { id: req.user.salonId },
+        data: {
+          ...(name && { name }),
+          // Note: phone and address are not in the Salon model yet
+          // TODO: Add phone and address fields to Salon model
+        }
+      });
+    }
 
-    res.json({ settings });
+    // Update or create salon settings
+    if (workStartHour !== undefined || workEndHour !== undefined || slotInterval !== undefined || isOnboarded !== undefined) {
+      const settings = await prisma.salonSettings.upsert({
+        where: { salonId: req.user.salonId },
+        update: {
+          ...(workStartHour !== undefined && { workStartHour }),
+          ...(workEndHour !== undefined && { workEndHour }),
+          ...(slotInterval !== undefined && { slotInterval }),
+          ...(isOnboarded !== undefined && { isOnboarded }),
+        },
+        create: {
+          salonId: req.user.salonId,
+          ...(workStartHour !== undefined && { workStartHour }),
+          ...(workEndHour !== undefined && { workEndHour }),
+          ...(slotInterval !== undefined && { slotInterval }),
+          ...(isOnboarded !== undefined && { isOnboarded }),
+        }
+      });
+
+      res.json({ settings });
+    } else {
+      res.json({ message: 'Settings updated successfully' });
+    }
   } catch (error) {
     console.error('Error updating salon settings:', error);
     res.status(500).json({ message: 'Internal server error' });
@@ -102,6 +120,42 @@ router.get('/services', authenticateToken, async (req: any, res: any) => {
     res.json({ services: servicesWithStatus });
   } catch (error) {
     console.error('Error fetching services:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// POST /api/salon/services - Create a new service
+router.post('/services', authenticateToken, async (req: any, res: any) => {
+  if (!req.user) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+
+  const { name, duration, price } = req.body;
+
+  if (!name || !duration || price === undefined) {
+    return res.status(400).json({ message: 'Name, duration, and price are required' });
+  }
+
+  try {
+    const service = await prisma.service.create({
+      data: {
+        name,
+        duration: parseInt(duration),
+        price: parseInt(price),
+        salonId: req.user.salonId,
+      },
+    });
+
+    res.status(201).json({
+      service: {
+        id: service.id,
+        name: service.name,
+        duration: service.duration,
+        price: service.price,
+      }
+    });
+  } catch (error) {
+    console.error('Error creating service:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
