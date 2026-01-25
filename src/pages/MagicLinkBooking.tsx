@@ -43,15 +43,7 @@ interface AvailabilitySlot {
 const MagicLinkBooking: React.FC = React.memo(() => {
   const { token } = useParams<{ token: string }>();
 
-  // Mount/Unmount logging
-  useEffect(() => {
-    console.log('🟢 MagicLinkBooking MOUNTED with token:', token);
-    return () => {
-      console.log('🔴 MagicLinkBooking UNMOUNTED');
-    };
-  }, []); // Empty dependency array = only run on mount/unmount
-
-  console.log('🔄 MagicLinkBooking component RENDERED');
+  // Mount
 
   const [magicLinkData, setMagicLinkData] = useState<MagicLinkData | null>(null);
   const [services, setServices] = useState<Service[]>([]);
@@ -67,13 +59,13 @@ const MagicLinkBooking: React.FC = React.memo(() => {
 
   // Booking state
   const [selectedDate, setSelectedDate] = useState('');
-  const [selectedTime, setSelectedTime] = useState('');
+  const [selectedSlot, setSelectedSlot] = useState('');
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
   const [selectedService, setSelectedService] = useState<number | null>(null);
   const [selectedStaff, setSelectedStaff] = useState<number | null>(null);
 
   // UI state
-  const [currentStep, setCurrentStep] = useState<'info' | 'services' | 'datetime' | 'confirm'>('info');
+  const [currentStep, setCurrentStep] = useState<'info' | 'services' | 'date' | 'slot' | 'confirm'>('info');
   const [submitting, setSubmitting] = useState(false);
   const [tokenStatus, setTokenStatus] = useState<'valid' | 'EXPIRED' | 'USED' | 'invalid'>('valid');
 
@@ -81,10 +73,10 @@ const MagicLinkBooking: React.FC = React.memo(() => {
   useEffect(() => {
     console.log('Current step:', currentStep);
     console.log('Selected date:', selectedDate);
-    console.log('Selected time:', selectedTime);
+    console.log('Selected slot:', selectedSlot);
     console.log('Available slots:', availableSlots);
-    console.log('Button disabled state:', !selectedDate || !selectedTime);
-  }, [currentStep, selectedDate, selectedTime, availableSlots]);
+    console.log('Button disabled state:', !selectedDate || !selectedSlot);
+  }, [currentStep, selectedDate, selectedSlot, availableSlots]);
 
   useEffect(() => {
     if (!token) {
@@ -120,9 +112,9 @@ const MagicLinkBooking: React.FC = React.memo(() => {
   const handleDateChange = async (date: string) => {
     console.log('Date changed:', date);
     setSelectedDate(date);
-    // Don't clear selectedTime when date changes - only clear it if date actually changed
+    // Don't clear selectedSlot when date changes - only clear it if date actually changed
     if (selectedDate !== date) {
-      setSelectedTime(''); // Only clear time if date actually changed
+      setSelectedSlot(''); // Only clear slot if date actually changed
     }
     setAvailableSlots([]); // Clear previous slots
 
@@ -140,14 +132,14 @@ const MagicLinkBooking: React.FC = React.memo(() => {
   };
 
   const handleSubmit = async () => {
-    if (!magicLinkData || !token || !selectedDate || !selectedTime || !selectedService || !selectedStaff) {
+    if (!magicLinkData || !token || !selectedDate || !selectedSlot || !selectedService || !selectedStaff) {
       return;
     }
 
     setSubmitting(true);
 
     try {
-      const datetime = `${selectedDate}T${selectedTime}:00`;
+      const datetime = `${selectedDate}T${selectedSlot}:00`;
 
       const response = await apiPost('/appointments', {
         token,
@@ -291,8 +283,8 @@ const MagicLinkBooking: React.FC = React.memo(() => {
 
         {/* Progress indicator */}
         <div className="flex justify-between px-6 py-4 border-b">
-          {['Bilgiler', 'Hizmetler', 'Tarih/Saat', 'Onayla'].map((step, index) => {
-            const stepOrder = ['info', 'services', 'datetime', 'confirm'];
+          {['Bilgiler', 'Hizmetler', 'Tarih', 'Saat', 'Onayla'].map((step, index) => {
+            const stepOrder = ['info', 'services', 'date', 'slot', 'confirm'];
             const currentIndex = stepOrder.indexOf(currentStep);
             const isActive = index <= currentIndex;
 
@@ -383,7 +375,7 @@ const MagicLinkBooking: React.FC = React.memo(() => {
               <h2 className="text-xl font-semibold mb-4">Hizmet Seçimi</h2>
               <p className="text-gray-600">Hizmet seçimi burada uygulanacak...</p>
               <button
-                onClick={() => setCurrentStep('datetime')}
+                onClick={() => setCurrentStep('date')}
                 className="w-full bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700"
               >
                 Devam Et
@@ -391,32 +383,58 @@ const MagicLinkBooking: React.FC = React.memo(() => {
             </div>
           )}
 
-          {currentStep === 'datetime' && (
+          {currentStep === 'date' && (
             <div className="space-y-4">
-              <h2 className="text-xl font-semibold mb-4">Tarih ve Saat Seçimi</h2>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Tarih *
-                </label>
-                <input
-                  type="date"
-                  value={selectedDate}
-                  onChange={(e) => {
-                    console.log('Date input onChange fired with value:', e.target.value);
-                    console.log('Current selectedDate before change:', selectedDate);
-                    handleDateChange(e.target.value);
+              <h2 className="text-xl font-semibold mb-4">Tarih Seçimi</h2>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  onClick={() => {
+                    const today = new Date().toISOString().split('T')[0];
+                    console.log('Date selected: today', today);
+                    handleDateChange(today);
+                    setCurrentStep('slot');
                   }}
-                  onBlur={() => console.log('Date input lost focus')}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required
-                />
+                  className="py-3 px-4 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                >
+                  Bugün
+                </button>
+                <button
+                  onClick={() => {
+                    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+                    console.log('Date selected: tomorrow', tomorrow);
+                    handleDateChange(tomorrow);
+                    setCurrentStep('slot');
+                  }}
+                  className="py-3 px-4 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                >
+                  Yarın
+                </button>
+                <button
+                  onClick={() => {
+                    const dayAfter = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+                    console.log('Date selected: +2 days', dayAfter);
+                    handleDateChange(dayAfter);
+                    setCurrentStep('slot');
+                  }}
+                  className="py-3 px-4 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                >
+                  2 Gün Sonra
+                </button>
               </div>
+            </div>
+          )}
 
-              {Array.isArray(availableSlots) && availableSlots.length > 0 && (
+          {currentStep === 'slot' && (
+            <div className="space-y-4">
+              <h2 className="text-xl font-semibold mb-4">Saat Seçimi</h2>
+              <p className="text-gray-600 mb-4">
+                Seçilen tarih: {selectedDate ? new Date(selectedDate).toLocaleDateString('tr-TR') : 'Tarih seçilmedi'}
+              </p>
+
+              {Array.isArray(availableSlots) && availableSlots.length > 0 ? (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Saat *
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Uygun Saatler *
                   </label>
                   <div className="grid grid-cols-3 gap-2">
                     {availableSlots.map(slot => (
@@ -424,10 +442,10 @@ const MagicLinkBooking: React.FC = React.memo(() => {
                         key={slot}
                         onClick={() => {
                           console.log('Time slot selected:', slot);
-                          setSelectedTime(slot);
+                          setSelectedSlot(slot);
                         }}
                         className={`py-2 px-3 text-sm border rounded-md ${
-                          selectedTime === slot
+                          selectedSlot === slot
                             ? 'bg-blue-600 text-white border-blue-600'
                             : 'bg-white text-gray-700 border-gray-300 hover:border-blue-500'
                         }`}
@@ -437,16 +455,26 @@ const MagicLinkBooking: React.FC = React.memo(() => {
                     ))}
                   </div>
                 </div>
+              ) : (
+                <div className="text-center py-8">
+                  <p className="text-gray-500">Bu tarih için uygun saat bulunamadı.</p>
+                  <button
+                    onClick={() => setCurrentStep('date')}
+                    className="mt-4 text-blue-600 hover:text-blue-800"
+                  >
+                    Farklı tarih seç
+                  </button>
+                </div>
               )}
 
               <button
                 onClick={() => {
                   console.log('Attempting to go to confirm step');
-                  console.log('selectedDate:', selectedDate, 'selectedTime:', selectedTime);
-                  console.log('Button should be enabled:', !!(selectedDate && selectedTime));
+                  console.log('selectedDate:', selectedDate, 'selectedSlot:', selectedSlot);
+                  console.log('Button should be enabled:', !!(selectedDate && selectedSlot));
                   setCurrentStep('confirm');
                 }}
-                disabled={!selectedDate || !selectedTime}
+                disabled={!selectedDate || !selectedSlot}
                 className="w-full bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
               >
                 Devam Et
@@ -461,7 +489,7 @@ const MagicLinkBooking: React.FC = React.memo(() => {
               <div className="bg-gray-50 p-4 rounded-md space-y-2">
                 <p><strong>İsim:</strong> {customerName || 'Belirtilmemiş'}</p>
                 <p><strong>Tarih:</strong> {selectedDate || 'Belirtilmemiş'}</p>
-                <p><strong>Saat:</strong> {selectedTime || 'Belirtilmemiş'}</p>
+                <p><strong>Saat:</strong> {selectedSlot || 'Belirtilmemiş'}</p>
                 <p><strong>Salon:</strong> {magicLinkData.salon?.name || 'Salon'}</p>
               </div>
 

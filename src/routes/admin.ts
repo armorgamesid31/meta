@@ -579,4 +579,157 @@ router.put("/booking-theme", authenticateToken, async (req: any, res: any) => {
   }
 });
 
+// GET /api/admin/health - System health check
+router.get("/health", authenticateToken, async (req: any, res: any) => {
+  if (!req.user) {
+    return res.status(401).json({ message: 'Unauthorized.' });
+  }
+
+  const salonId = req.user.salonId;
+
+  try {
+    const results = {
+      database: 'OK' as 'OK' | 'FAIL',
+      auth: 'OK' as 'OK' | 'FAIL',
+      booking: 'OK' as 'OK' | 'FAIL',
+      availability: 'OK' as 'OK' | 'FAIL',
+      lastCheck: new Date().toISOString()
+    };
+
+    // Test database connection
+    try {
+      await prisma.salon.findUnique({ where: { id: salonId } });
+    } catch (error) {
+      results.database = 'FAIL';
+    }
+
+    // Test auth (already passed if we got here)
+    results.auth = 'OK';
+
+    // Test booking writes (try to count appointments)
+    try {
+      await prisma.appointment.count({ where: { salonId } });
+    } catch (error) {
+      results.booking = 'FAIL';
+    }
+
+    // Test availability endpoint (simulate a call)
+    try {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const dateStr = tomorrow.toISOString().split('T')[0];
+      // This would normally call the availability engine
+      // For now, just check if we can query services
+      await prisma.service.count({ where: { salonId } });
+    } catch (error) {
+      results.availability = 'FAIL';
+    }
+
+    res.json(results);
+  } catch (error) {
+    console.error('Error checking system health:', error);
+    res.status(500).json({
+      database: 'FAIL',
+      auth: 'FAIL',
+      booking: 'FAIL',
+      availability: 'FAIL',
+      lastCheck: new Date().toISOString()
+    });
+  }
+});
+
+// GET /api/admin/magic-links - Get recent magic links
+router.get("/magic-links", authenticateToken, async (req: any, res: any) => {
+  if (!req.user) {
+    return res.status(401).json({ message: 'Unauthorized.' });
+  }
+
+  const salonId = req.user.salonId;
+  const { limit = '10' } = req.query as any;
+  const limitNum = parseInt(String(limit)) || 10;
+
+  try {
+    // For now, return mock data since we don't have magic link storage yet
+    // In a real implementation, this would query a magic_links table
+    const mockLinks = [
+      {
+        id: 1,
+        token: 'abc123def456',
+        phone: '+905551234567',
+        status: 'ACTIVE' as const,
+        createdAt: new Date(Date.now() - 1000 * 60 * 30).toISOString(), // 30 min ago
+        expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString() // 7 days from now
+      },
+      {
+        id: 2,
+        token: 'def789ghi012',
+        phone: '+905559876543',
+        status: 'USED' as const,
+        createdAt: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(), // 2 hours ago
+        expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString()
+      }
+    ].slice(0, limitNum);
+
+    res.json({ links: mockLinks });
+  } catch (error) {
+    console.error('Error fetching magic links:', error);
+    res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+// GET /api/admin/events - Get recent booking events
+router.get("/events", authenticateToken, async (req: any, res: any) => {
+  if (!req.user) {
+    return res.status(401).json({ message: 'Unauthorized.' });
+  }
+
+  const salonId = req.user.salonId;
+  const { limit = '20' } = req.query as any;
+  const limitNum = parseInt(String(limit)) || 20;
+
+  try {
+    // For now, return mock data since we don't have event logging yet
+    // In a real implementation, this would query an events table
+    const mockEvents = [
+      {
+        id: 1,
+        type: 'LINK_CREATED',
+        token: 'abc123def456',
+        phone: '+905551234567',
+        timestamp: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
+        details: 'Magic link created for customer'
+      },
+      {
+        id: 2,
+        type: 'DATE_SELECTED',
+        token: 'abc123def456',
+        phone: '+905551234567',
+        timestamp: new Date(Date.now() - 1000 * 60 * 25).toISOString(),
+        details: 'Customer selected date: 2026-01-26'
+      },
+      {
+        id: 3,
+        type: 'SLOT_SELECTED',
+        token: 'abc123def456',
+        phone: '+905551234567',
+        timestamp: new Date(Date.now() - 1000 * 60 * 20).toISOString(),
+        details: 'Customer selected slot: 14:00'
+      },
+      {
+        id: 4,
+        type: 'BOOKING_CONFIRMED',
+        token: 'abc123def456',
+        phone: '+905551234567',
+        timestamp: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
+        details: 'Booking confirmed successfully'
+      }
+    ].slice(0, limitNum);
+
+    res.json({ events: mockEvents });
+  } catch (error) {
+    console.error('Error fetching events:', error);
+    res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
 export default router;

@@ -12,6 +12,8 @@ interface SalonUser {
 interface SalonInfo {
   id: number;
   name: string;
+  subscriptionStatus: 'trial' | 'active' | 'expired';
+  onboardingComplete: boolean;
 }
 
 const SalonLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -109,6 +111,39 @@ const SalonLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           </div>
         </div>
       </nav>
+
+      {/* Salon Context Header */}
+      {salon && (
+        <div className="bg-blue-50 border-b border-blue-200">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">{salon.name}</h2>
+                  <p className="text-sm text-gray-600">ID: {salon.id} • Sahip: {user.email}</p>
+                </div>
+              </div>
+              <div className="flex items-center space-x-4">
+                <div className="flex items-center space-x-2">
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                    salon.subscriptionStatus === 'active' ? 'bg-green-100 text-green-800' :
+                    salon.subscriptionStatus === 'trial' ? 'bg-yellow-100 text-yellow-800' :
+                    'bg-red-100 text-red-800'
+                  }`}>
+                    {salon.subscriptionStatus === 'active' ? 'Aktif' :
+                     salon.subscriptionStatus === 'trial' ? 'Deneme' : 'Süresi Dolmuş'}
+                  </span>
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                    salon.onboardingComplete ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                  }`}>
+                    {salon.onboardingComplete ? 'Hazır' : 'Kurulum Gerekli'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
         {children}
