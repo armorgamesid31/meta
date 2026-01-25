@@ -15,7 +15,7 @@ import {
   LockNormalizer
 } from './normalizer';
 
-export class AvailabilityEngine {
+class AvailabilityEngine {
   private readonly SLOT_INTERVAL_MINUTES = 15;
 
   /**
@@ -254,3 +254,5 @@ export class AvailabilityEngine {
     return checkDate >= rangeStart && checkDate <= rangeEnd;
   }
 }
+
+module.exports = { AvailabilityEngine };

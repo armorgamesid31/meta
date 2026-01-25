@@ -10,7 +10,7 @@ interface AuthRequest extends Request {
   };
 }
 
-export const authenticateToken = (req: AuthRequest, res: Response, next: NextFunction) => {
+const authenticateToken = (req: AuthRequest, res: Response, next: NextFunction) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
@@ -24,11 +24,16 @@ export const authenticateToken = (req: AuthRequest, res: Response, next: NextFun
   next();
 };
 
-export const authorizeRoles = (roles: UserRole[]) => {
+const authorizeRoles = (roles: UserRole[]) => {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
     if (!req.user || !roles.includes(req.user.role)) {
       return res.sendStatus(403); // Forbidden
     }
     next();
   };
+};
+
+module.exports = {
+  authenticateToken,
+  authorizeRoles
 };

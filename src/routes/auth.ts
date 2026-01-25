@@ -1,9 +1,9 @@
-import { Router } from 'express';
-import bcrypt from 'bcrypt';
-import { prisma } from '../prisma';
-import { generateToken } from '../utils/jwt';
-import { authenticateToken } from '../middleware/auth';
-import { UserRole } from '@prisma/client';
+const { Router } = require('express');
+const bcrypt = require('bcrypt');
+const { prisma } = require('../prisma');
+const { generateToken } = require('../utils/jwt');
+const { authenticateToken } = require('../middleware/auth');
+const { UserRole } = require('@prisma/client');
 
 const router = Router();
 
@@ -112,4 +112,4 @@ router.get('/me', authenticateToken, async (req, res) => {
   }
 });
 
-export default router;
+module.exports = router;

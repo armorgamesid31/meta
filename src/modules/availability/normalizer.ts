@@ -1,9 +1,13 @@
-import { LegacyAppointmentRecord, LegacyLeaveRecord, LegacyLockRecord } from './types';
+const types = require('./types');
+
+const LegacyAppointmentRecord = types.LegacyAppointmentRecord;
+const LegacyLeaveRecord = types.LegacyLeaveRecord;
+const LegacyLockRecord = types.LegacyLockRecord;
 
 /**
  * Normalizes TEXT date/time fields from legacy database into proper Date objects
  */
-export class DateNormalizer {
+class DateNormalizer {
   /**
    * Parse TEXT date string like "2024-01-15" into Date
    */
@@ -63,8 +67,8 @@ export class DateNormalizer {
 /**
  * Normalizes legacy appointment records
  */
-export class AppointmentNormalizer {
-  static normalize(record: LegacyAppointmentRecord) {
+class AppointmentNormalizer {
+  static normalize(record: any) {
     const startTimeMinutes = DateNormalizer.parseTimeToMinutes(record.saat);
     const duration = DateNormalizer.parseDuration(record.sure);
 
@@ -83,8 +87,8 @@ export class AppointmentNormalizer {
 /**
  * Normalizes legacy leave records
  */
-export class LeaveNormalizer {
-  static normalize(record: LegacyLeaveRecord) {
+class LeaveNormalizer {
+  static normalize(record: any) {
     return {
       id: parseInt(record.id),
       staffId: parseInt(record.calisan_id),
@@ -98,8 +102,8 @@ export class LeaveNormalizer {
 /**
  * Normalizes legacy lock records
  */
-export class LockNormalizer {
-  static normalize(record: LegacyLockRecord) {
+class LockNormalizer {
+  static normalize(record: any) {
     const startTimeMinutes = DateNormalizer.parseTimeToMinutes(record.saat);
     const duration = DateNormalizer.parseDuration(record.sure);
 
@@ -114,3 +118,10 @@ export class LockNormalizer {
     };
   }
 }
+
+module.exports = {
+  DateNormalizer,
+  AppointmentNormalizer,
+  LeaveNormalizer,
+  LockNormalizer
+};
