@@ -41,7 +41,9 @@ interface AvailabilitySlot {
 }
 
 const MagicLinkBooking: React.FC = () => {
+  console.log('🔄 MagicLinkBooking component rendered/mounted');
   const { token } = useParams<{ token: string }>();
+  console.log('📝 Token from params:', token);
 
   const [magicLinkData, setMagicLinkData] = useState<MagicLinkData | null>(null);
   const [services, setServices] = useState<Service[]>([]);
