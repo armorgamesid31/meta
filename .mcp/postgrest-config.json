@@ -1,0 +1,19 @@
+{
+  "api": {
+    "baseUrl": "http://localhost:3000",
+    "timeout": 30000,
+    "headers": {
+      "Content-Type": "application/json",
+      "Accept": "application/json"
+    }
+  },
+  "authentication": {
+    "enabled": false,
+    "token": null
+  },
+  "endpoints": {
+    "health": "/health",
+    "salon": "/api/salon",
+    "admin": "/api/admin"
+  }
+}

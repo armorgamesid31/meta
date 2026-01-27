@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { authenticateToken } from '../middleware/auth.js';
+import { logCustomerBehavior, calculateCancellationSeverity, BehaviorType } from '../utils/behaviorTracking.js';
 
 const router = Router();
 
@@ -14,7 +15,13 @@ router.get('/me', authenticateToken, async (req: any, res: any) => {
     const salon = await prisma.salon.findUnique({
       where: { id: req.user.salonId },
       include: {
-        settings: true
+        settings: true,
+        _count: {
+          select: {
+            services: true,
+            staff: true
+          }
+        }
       }
     });
 
@@ -22,13 +29,25 @@ router.get('/me', authenticateToken, async (req: any, res: any) => {
       return res.status(404).json({ message: 'Salon not found' });
     }
 
+    // Single source of truth for salon readiness
+    const hasServices = salon._count.services > 0;
+    const hasWorkingHours = (salon.settings?.workStartHour !== undefined &&
+                            salon.settings?.workEndHour !== undefined);
+    // Staff is optional for basic onboarding - can be added later
+    const onboardingComplete = hasServices && hasWorkingHours;
+
+    // Default to trial status (no real subscription system yet)
+    const subscriptionStatus = 'trial';
+
     res.json({
       salon: {
         id: salon.id,
         name: salon.name,
         workStartHour: salon.settings?.workStartHour || 9,
         workEndHour: salon.settings?.workEndHour || 18,
-        slotInterval: salon.settings?.slotInterval || 30
+        slotInterval: salon.settings?.slotInterval || 30,
+        onboardingComplete,
+        subscriptionStatus
       }
     });
   } catch (error) {
@@ -87,37 +106,80 @@ router.put('/settings', authenticateToken, async (req: any, res: any) => {
   }
 });
 
-// GET /api/salon/services - Get salon services
+// GET /api/salon/services - Get authenticated salon's services (for salon management)
 router.get('/services', authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
     return res.status(401).json({ message: 'Unauthorized' });
   }
 
+  const salonId = req.user.salonId;
+  console.log(`[SALON_SERVICES] authenticated request for salonId=${salonId}`);
+
   try {
     const services = await prisma.service.findMany({
-      where: { salonId: req.user.salonId },
-      include: {
-        staff: {
-          select: {
-            id: true,
-            name: true
-          }
-        }
+      where: {
+        salonId: salonId
+      },
+      select: {
+        id: true,
+        name: true,
+        duration: true,
+        price: true
+        // TODO: Add enabled field to Service model
       },
       orderBy: { name: 'asc' }
     });
 
-    // For now, assume all services are enabled
+    console.log(`[SALON_SERVICES] found ${services.length} services for salonId=${salonId}`);
+
+    // Transform to expected format with enabled status
     const servicesWithStatus = services.map(service => ({
       id: service.id,
       name: service.name,
       price: service.price,
       duration: service.duration,
-      enabled: true, // TODO: Add enabled field to Service model
-      staff: service.staff
+      enabled: true // Default to true until enabled field is added
     }));
 
     res.json({ services: servicesWithStatus });
+  } catch (error) {
+    console.error('Error fetching services:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// GET /api/salon/services/public - Get salon services by ID (public for magic links)
+router.get('/services/public', async (req: any, res: any) => {
+  // Allow public access for magic link booking flow
+  // But filter by salonId from query parameter
+  const { s: salonId } = req.query;
+
+  console.log(`[MAGIC_SERVICES] public request for salonId=${salonId}`);
+
+  if (!salonId) {
+    console.log(`[MAGIC_SERVICES] salonId missing in query`);
+    return res.status(400).json({ message: 'Salon ID required' });
+  }
+
+  try {
+    const services = await prisma.service.findMany({
+      where: {
+        salonId: parseInt(salonId as string)
+        // TODO: Add enabled field to Service model and filter by it
+        // For now, all services are considered enabled
+      },
+      select: {
+        id: true,
+        name: true,
+        duration: true,
+        price: true
+      },
+      orderBy: { name: 'asc' }
+    });
+
+    console.log(`[MAGIC_SERVICES] found ${services.length} services for salonId=${salonId}`);
+
+    res.json({ services });
   } catch (error) {
     console.error('Error fetching services:', error);
     res.status(500).json({ message: 'Internal server error' });
@@ -178,7 +240,7 @@ router.put('/services', authenticateToken, async (req: any, res: any) => {
   }
 });
 
-// GET /api/salon/staff - Get salon staff
+// GET /api/salon/staff - Get authenticated salon's staff (for salon management)
 router.get('/staff', authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
     return res.status(401).json({ message: 'Unauthorized' });
@@ -186,15 +248,22 @@ router.get('/staff', authenticateToken, async (req: any, res: any) => {
 
   try {
     const staff = await prisma.staff.findMany({
-      where: { salonId: req.user.salonId },
+      where: {
+        salonId: req.user.salonId
+      },
+      select: {
+        id: true,
+        name: true,
+        // TODO: Add enabled field to Staff model
+      },
       orderBy: { name: 'asc' }
     });
 
-    // For now, assume all staff are enabled
+    // Transform to expected format with enabled status
     const staffWithStatus = staff.map(person => ({
       id: person.id,
       name: person.name,
-      enabled: true // TODO: Add enabled field to Staff model
+      enabled: true // Default to true until enabled field is added
     }));
 
     res.json({ staff: staffWithStatus });
@@ -204,20 +273,190 @@ router.get('/staff', authenticateToken, async (req: any, res: any) => {
   }
 });
 
-// PUT /api/salon/staff - Update staff status
-router.put('/staff', authenticateToken, async (req: any, res: any) => {
+// GET /api/salon/staff/public - Get salon staff by ID (public for magic links)
+router.get('/staff/public', async (req: any, res: any) => {
+  // Allow public access for magic link booking flow
+  // But filter by salonId from query parameter
+  const { s: salonId } = req.query;
+
+  if (!salonId) {
+    return res.status(400).json({ message: 'Salon ID required' });
+  }
+
+  try {
+    const staff = await prisma.staff.findMany({
+      where: {
+        salonId: parseInt(salonId as string),
+        // TODO: Add enabled field to Staff model and filter by it
+      },
+      select: {
+        id: true,
+        name: true
+      },
+      orderBy: { name: 'asc' }
+    });
+
+    res.json({ staff });
+  } catch (error) {
+    console.error('Error fetching staff:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// POST /api/salon/staff - Create a new staff member
+router.post('/staff', authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
     return res.status(401).json({ message: 'Unauthorized' });
   }
 
-  const { staffId, enabled } = req.body;
+  const { name } = req.body;
+
+  if (!name || typeof name !== 'string' || !name.trim()) {
+    return res.status(400).json({ message: 'Name is required and must be a non-empty string' });
+  }
 
   try {
-    // For now, just return success since we don't have an enabled field
-    // TODO: Add enabled field to Staff model
-    res.json({ message: 'Staff updated successfully' });
+    const staff = await prisma.staff.create({
+      data: {
+        name: name.trim(),
+        salonId: req.user.salonId,
+      },
+    });
+
+    res.status(201).json({
+      staff: {
+        id: staff.id,
+        name: staff.name,
+      }
+    });
+  } catch (error) {
+    console.error('Error creating staff:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// PUT /api/salon/staff/:id - Update specific staff member
+router.put('/staff/:id', authenticateToken, async (req: any, res: any) => {
+  if (!req.user) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+
+  const { id } = req.params;
+  const { name } = req.body;
+
+  if (!id || isNaN(parseInt(id))) {
+    return res.status(400).json({ message: 'Valid staff ID is required' });
+  }
+
+  if (!name || typeof name !== 'string' || !name.trim()) {
+    return res.status(400).json({ message: 'Name is required and must be a non-empty string' });
+  }
+
+  try {
+    // Check if staff exists and belongs to salon
+    const existingStaff = await prisma.staff.findFirst({
+      where: {
+        id: parseInt(id),
+        salonId: req.user.salonId
+      }
+    });
+
+    if (!existingStaff) {
+      return res.status(404).json({ message: 'Staff member not found' });
+    }
+
+    // Update staff
+    const updatedStaff = await prisma.staff.update({
+      where: { id: parseInt(id) },
+      data: {
+        name: name.trim(),
+      },
+    });
+
+    res.json({
+      staff: {
+        id: updatedStaff.id,
+        name: updatedStaff.name,
+      }
+    });
   } catch (error) {
     console.error('Error updating staff:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// DELETE /api/salon/staff/:id - Delete specific staff member
+router.delete('/staff/:id', authenticateToken, async (req: any, res: any) => {
+  if (!req.user) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+
+  const { id } = req.params;
+
+  if (!id || isNaN(parseInt(id))) {
+    return res.status(400).json({ message: 'Valid staff ID is required' });
+  }
+
+  try {
+    // Check if staff exists and belongs to salon
+    const existingStaff = await prisma.staff.findFirst({
+      where: {
+        id: parseInt(id),
+        salonId: req.user.salonId
+      }
+    });
+
+    if (!existingStaff) {
+      return res.status(404).json({ message: 'Staff member not found' });
+    }
+
+    // Delete staff
+    await prisma.staff.delete({
+      where: { id: parseInt(id) },
+    });
+
+    res.json({ message: 'Staff member deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting staff:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// PUT /api/salon/staff/:id/status - Update staff status (enabled/disabled)
+router.put('/staff/:id/status', authenticateToken, async (req: any, res: any) => {
+  if (!req.user) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+
+  const { id } = req.params;
+  const { enabled } = req.body;
+
+  if (!id || isNaN(parseInt(id))) {
+    return res.status(400).json({ message: 'Valid staff ID is required' });
+  }
+
+  if (typeof enabled !== 'boolean') {
+    return res.status(400).json({ message: 'Enabled status must be a boolean' });
+  }
+
+  try {
+    // Check if staff exists and belongs to salon
+    const existingStaff = await prisma.staff.findFirst({
+      where: {
+        id: parseInt(id),
+        salonId: req.user.salonId
+      }
+    });
+
+    if (!existingStaff) {
+      return res.status(404).json({ message: 'Staff member not found' });
+    }
+
+    // For now, just return success since we don't have an enabled field in Staff model
+    // TODO: Add enabled field to Staff model and implement actual status update
+    res.json({ message: 'Staff status updated successfully' });
+  } catch (error) {
+    console.error('Error updating staff status:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -297,6 +536,9 @@ router.post('/appointments/:id/cancel', authenticateToken, async (req: any, res:
         id: parseInt(id),
         salonId: req.user.salonId,
         status: 'BOOKED'
+      },
+      include: {
+        customer: true
       }
     });
 
@@ -307,6 +549,30 @@ router.post('/appointments/:id/cancel', authenticateToken, async (req: any, res:
     // Check if appointment is in the future
     if (appointment.startTime <= new Date()) {
       return res.status(400).json({ message: 'Cannot cancel past appointments' });
+    }
+
+    // Calculate hours until appointment for behavior logging
+    const hoursUntilAppointment = (appointment.startTime.getTime() - Date.now()) / (1000 * 60 * 60);
+
+    // Get salon risk configuration
+    const { getSalonRiskConfig } = await import('../utils/behaviorTracking.js');
+    const config = await getSalonRiskConfig(req.user.salonId);
+
+    // Log last-minute cancellation if within configured threshold
+    if (config?.isEnabled && hoursUntilAppointment < config.lastMinuteHoursThreshold && appointment.customerId) {
+      const severityScore = calculateCancellationSeverity(hoursUntilAppointment);
+      await logCustomerBehavior({
+        customerId: appointment.customerId,
+        salonId: req.user.salonId,
+        appointmentId: appointment.id,
+        behaviorType: BehaviorType.LAST_MINUTE_CANCELLATION,
+        severityScore,
+        metadata: {
+          hoursUntilAppointment,
+          appointmentDateTime: appointment.startTime,
+          serviceName: appointment.service?.name
+        }
+      });
     }
 
     // Update appointment status
@@ -393,6 +659,9 @@ router.post('/magic-link/booking', authenticateToken, async (req: any, res: any)
   }
 
   const { phone } = req.body;
+  const salonId = req.user.salonId;
+
+  console.log(`[MAGIC_LINK_CREATE] creating link for salonId=${salonId}, phone=${phone}`);
 
   if (!phone) {
     return res.status(400).json({ message: 'Phone number is required' });
@@ -411,11 +680,13 @@ router.post('/magic-link/booking', authenticateToken, async (req: any, res: any)
         phone,
         type: 'BOOKING',
         context: {
-          salonId: req.user.salonId
+          salonId: salonId
         },
         expiresAt
       }
     });
+
+    console.log(`[MAGIC_LINK_CREATE] created token=${token} with salonId=${salonId}`);
 
     // Generate magic link URL
     const baseUrl = process.env.FRONTEND_URL || 'http://localhost:5173';

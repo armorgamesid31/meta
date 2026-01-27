@@ -25,7 +25,8 @@ const LoginPage: React.FC = () => {
       const data = await response.json();
 
       if (response.ok) {
-        localStorage.setItem('auth_token', data.token);
+        localStorage.setItem('salonToken', data.token);
+        localStorage.setItem('salonUser', JSON.stringify(data.user));
         navigate('/admin');
       } else {
         setError(data.message || 'Login failed');

@@ -19,6 +19,10 @@ const SalonAppointments: React.FC = () => {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState<number | null>(null);
+  const [showConfirmCancel, setShowConfirmCancel] = useState<number | null>(null);
 
   useEffect(() => {
     loadAppointments();
@@ -45,9 +49,9 @@ const SalonAppointments: React.FC = () => {
   };
 
   const cancelAppointment = async (appointmentId: number) => {
-    if (!confirm('Bu randevuyu iptal etmek istediğinizden emin misiniz?')) {
-      return;
-    }
+    setCancelling(appointmentId);
+    setError(null);
+    setSuccess(null);
 
     try {
       const response = await fetch(`/api/salon/appointments/${appointmentId}/cancel`, {
@@ -58,19 +62,25 @@ const SalonAppointments: React.FC = () => {
       });
 
       if (response.ok) {
-        alert('Randevu iptal edildi');
+        setSuccess('Randevu başarıyla iptal edildi');
         loadAppointments(); // Reload appointments
+        setShowConfirmCancel(null);
       } else {
-        const error = await response.json();
-        alert(`Hata: ${error.message}`);
+        const errorData = await response.json();
+        setError(`İptal edilemedi: ${errorData.message}`);
       }
     } catch (error) {
       console.error('Error cancelling appointment:', error);
-      alert('Randevu iptal edilemedi');
+      setError('Randevu iptal edilemedi - bağlantı hatası');
+    } finally {
+      setCancelling(null);
     }
   };
 
   const generateRescheduleLink = async (appointmentId: number) => {
+    setError(null);
+    setSuccess(null);
+
     try {
       const response = await fetch(`/api/salon/appointments/${appointmentId}/reschedule-link`, {
         method: 'POST',
@@ -82,15 +92,15 @@ const SalonAppointments: React.FC = () => {
       if (response.ok) {
         const data = await response.json();
         // Copy to clipboard
-        navigator.clipboard.writeText(data.magicUrl);
-        alert(`Erteleme bağlantısı kopyalandı: ${data.magicUrl}`);
+        await navigator.clipboard.writeText(data.magicUrl);
+        setSuccess(`Erteleme bağlantısı panoya kopyalandı`);
       } else {
-        const error = await response.json();
-        alert(`Hata: ${error.message}`);
+        const errorData = await response.json();
+        setError(`Erteleme bağlantısı oluşturulamadı: ${errorData.message}`);
       }
     } catch (error) {
       console.error('Error generating reschedule link:', error);
-      alert('Erteleme bağlantısı oluşturulamadı');
+      setError('Erteleme bağlantısı oluşturulamadı - bağlantı hatası');
     }
   };
 
@@ -141,6 +151,41 @@ const SalonAppointments: React.FC = () => {
             Salonunuzun randevularını görüntüleyin
           </p>
         </div>
+
+        {error && (
+          <div className="mb-4 bg-red-50 border border-red-200 rounded-md p-4">
+            <div className="text-red-800 text-sm">{error}</div>
+          </div>
+        )}
+
+        {success && (
+          <div className="mb-4 bg-green-50 border border-green-200 rounded-md p-4">
+            <div className="text-green-800 text-sm">{success}</div>
+          </div>
+        )}
+
+        {/* Cancel Confirmation Dialog */}
+        {showConfirmCancel && (
+          <div className="mb-4 bg-yellow-50 border border-yellow-200 rounded-md p-4">
+            <div className="text-yellow-800 text-sm mb-3">
+              Bu randevuyu iptal etmek istediğinizden emin misiniz? Bu işlem geri alınamaz.
+            </div>
+            <div className="flex space-x-2">
+              <button
+                onClick={() => cancelAppointment(showConfirmCancel)}
+                className="bg-red-600 text-white px-4 py-2 rounded text-sm hover:bg-red-700"
+              >
+                Evet, İptal Et
+              </button>
+              <button
+                onClick={() => setShowConfirmCancel(null)}
+                className="bg-gray-600 text-white px-4 py-2 rounded text-sm hover:bg-gray-700"
+              >
+                Vazgeç
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Date Filter */}
         <div className="mb-6">
@@ -198,10 +243,11 @@ const SalonAppointments: React.FC = () => {
                       {appointment.status === 'CONFIRMED' && (
                         <div className="flex space-x-2">
                           <button
-                            onClick={() => cancelAppointment(appointment.id)}
-                            className="bg-red-600 text-white px-3 py-1 rounded text-xs hover:bg-red-700"
+                            onClick={() => setShowConfirmCancel(appointment.id)}
+                            disabled={cancelling === appointment.id}
+                            className="bg-red-600 text-white px-3 py-1 rounded text-xs hover:bg-red-700 disabled:bg-gray-400"
                           >
-                            İptal Et
+                            {cancelling === appointment.id ? 'İptal Ediliyor...' : 'İptal Et'}
                           </button>
                           <button
                             onClick={() => generateRescheduleLink(appointment.id)}

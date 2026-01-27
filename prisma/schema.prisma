@@ -63,6 +63,9 @@ model Salon {
   customers       Customer[]
   userRoleAssignments UserRoleAssignment[]
   permissionOverrides UserPermissionOverride[]
+  behaviorLogs    CustomerBehaviorLog[]
+  riskProfiles    CustomerRiskProfile[]
+  riskConfig      SalonRiskConfig?
 }
 
 model SalonSettings {
@@ -160,6 +163,8 @@ model Customer {
   salon           Salon    @relation(fields: [salonId], references: [id])
 
   appointments    Appointment[]
+  behaviorLogs    CustomerBehaviorLog[]
+  riskProfile     CustomerRiskProfile?
 }
 
 model Appointment {
@@ -185,6 +190,8 @@ model Appointment {
 
   customerId      Int?
   customer        Customer? @relation(fields: [customerId], references: [id])
+
+  behaviorLogs    CustomerBehaviorLog[]
 
   @@index([staffId, startTime, endTime])
   @@index([customerPhone])
@@ -314,6 +321,129 @@ model MagicLink {
 
   @@index([token, expiresAt])
   @@index([phone, type])
+}
+
+// --------------------------------------
+// Customer Risk & Behavior Tracking
+// --------------------------------------
+
+model CustomerBehaviorLog {
+  id              Int           @id @default(autoincrement())
+  customerId      Int
+  salonId         Int
+  appointmentId   Int?          // Nullable for non-appointment behaviors
+
+  behaviorType    BehaviorType
+  severityScore   Int           // 1-10 scale for risk assessment
+  occurredAt      DateTime
+
+  // Context data for analysis
+  metadata        Json?         // Flexible storage for behavior details
+
+  // Relationships
+  customer        Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  salon           Salon         @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  appointment     Appointment?  @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+
+  // Indexes for performance and queries
+  @@index([customerId, occurredAt])
+  @@index([salonId, behaviorType, occurredAt])
+  @@index([occurredAt]) // For cleanup queries
+}
+
+model CustomerRiskProfile {
+  id              Int         @id @default(autoincrement())
+  customerId      Int         @unique
+  salonId         Int
+
+  // Risk scoring (calculated from behavior logs)
+  riskScore       Float       @default(0) // 0-100 scale
+  riskLevel       RiskLevel   @default(LOW)
+
+  // Behavior counts (last 3 months)
+  lastMinuteCancellations Int @default(0)
+  noShows               Int @default(0)
+  totalBookings         Int @default(0)
+
+  // Status
+  isBlocked            Boolean    @default(false)
+  blockedUntil         DateTime?
+  blockReason          String?
+
+  // Metadata
+  lastCalculatedAt     DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+
+  // Relationships
+  customer             Customer   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  salon                Salon      @relation(fields: [salonId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, salonId])
+}
+
+enum BehaviorType {
+  LAST_MINUTE_CANCELLATION  // < 24 hours before appointment
+  NO_SHOW                   // Appointment time passed without attendance
+  FREQUENT_CANCELLATION     // Multiple cancellations in short period
+  BOOKING_FREQUENCY         // Too many bookings in time window
+}
+
+enum RiskLevel {
+  LOW       // Normal customer
+  MEDIUM    // Requires monitoring
+  HIGH      // High risk, show warnings
+  CRITICAL  // Block bookings
+}
+
+// --------------------------------------
+// Risk Management Configuration
+// --------------------------------------
+
+model SalonRiskConfig {
+  id              Int      @id @default(autoincrement())
+  salonId         Int      @unique
+
+  // System Control
+  isEnabled       Boolean  @default(false) // Master on/off switch
+
+  // Risk Thresholds (0-100 scale)
+  warningThreshold    Float @default(25.0)  // Show warnings above this score
+  blockingThreshold   Float @default(50.0)  // Block bookings above this score
+
+  // Behavior Scoring Weights
+  lastMinuteCancellationWeight Float @default(3.0)
+  noShowWeight                 Float @default(5.0)
+  frequentCancellationWeight   Float @default(2.0)
+  bookingFrequencyWeight       Float @default(1.0)
+
+  // Behavior Definitions
+  lastMinuteHoursThreshold     Int   @default(24)  // Hours before appointment
+  frequentCancellationCount    Int   @default(3)   // Cancellations in period
+  frequentCancellationDays     Int   @default(30)  // Days for frequent check
+  maxBookingsPerMonth          Int   @default(10)  // Booking frequency limit
+
+  // Actions Configuration
+  autoBlockEnabled             Boolean @default(false)
+  autoBlockDurationDays        Int     @default(7)    // Days to block
+  requireManualReview          Boolean @default(false)
+
+  // UI Messages (Legacy - kept for backward compatibility)
+  warningMessage               String  @default("Riskli müşteri profili tespit edildi. Devam etmek istiyor musunuz?")
+  blockMessage                 String  @default("Bu müşteri için randevu alınamaz.")
+
+  // Risk Level Messages (Optional - can be empty)
+  mediumRiskMessage            String? // For MEDIUM risk level
+  highRiskMessage              String? // For HIGH risk level (takes precedence over warningMessage)
+  criticalRiskMessage          String? // For CRITICAL risk level (takes precedence over blockMessage)
+
+  // Metadata
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relationships
+  salon          Salon    @relation(fields: [salonId], references: [id], onDelete: Cascade)
+
+  @@map("salon_risk_configs")
 }
 
 

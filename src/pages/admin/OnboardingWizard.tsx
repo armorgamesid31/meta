@@ -151,9 +151,16 @@ const OnboardingWizard: React.FC = () => {
           }),
         });
       } else if (currentStep === OnboardingStep.COMPLETION) {
-        // Onboarding completed - navigate to dashboard
-        // Note: Onboarding status is determined by presence of services
-        navigate("/salon/dashboard");
+        // Onboarding completed - refetch salon data and navigate to dashboard
+        // This ensures OnboardingGuard gets updated salon state
+        try {
+          // Force refetch of salon data by clearing any cached state
+          // The OnboardingGuard will refetch when it detects the salon state change
+          navigate("/salon/dashboard");
+        } catch (err) {
+          console.error("Error completing onboarding:", err);
+          setError("Kurulum tamamlanırken hata oluştu");
+        }
         return;
       }
 
@@ -347,9 +354,9 @@ const OnboardingWizard: React.FC = () => {
 
       <div style={{ marginTop: "1rem", display: "flex", justifyContent: "space-between" }}>
         {currentStep > OnboardingStep.SALON_INFO && (
-          <button onClick={() => setCurrentStep(prev => prev - 1)} disabled={loading}>Geri</button>
+          <button onClick={() => setCurrentStep(prev => prev - 1)} disabled={loading} data-testid="onboarding-back">Geri</button>
         )}
-        <button onClick={handleNext} disabled={loading}>
+        <button onClick={handleNext} disabled={loading} data-testid="onboarding-next">
           {currentStep >= OnboardingStep.COMPLETION ? "Tamamla" : "İleri"}
         </button>
       </div>

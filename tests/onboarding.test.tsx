@@ -41,7 +41,7 @@ describe("Admin Onboarding Flow", () => {
 
   // Test 1: Non-onboarded admin sees onboarding wizard
   it("should show onboarding wizard for non-onboarded admin", async () => {
-    localStorage.setItem("auth_token", authToken);
+    localStorage.setItem("salonToken", authToken);
     vi.spyOn(window, "fetch").mockResolvedValueOnce({
       ok: true,
       json: async () => ({ isOnboarded: false }),
@@ -66,7 +66,7 @@ describe("Admin Onboarding Flow", () => {
 
   // Test 3: Onboarded admin skips onboarding and goes to dashboard
   it("should go to admin dashboard directly if already onboarded", async () => {
-    localStorage.setItem("auth_token", authToken);
+    localStorage.setItem("salonToken", authToken);
     vi.spyOn(window, "fetch").mockResolvedValueOnce({
       ok: true,
       json: async () => ({ isOnboarded: true }),

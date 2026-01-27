@@ -1,0 +1,12 @@
+{
+  "database": {
+    "url": "postgresql://postgres:password@localhost:5432/yson_db",
+    "driver": "org.postgresql.Driver",
+    "user": "postgres",
+    "password": "password"
+  },
+  "connection": {
+    "poolSize": 10,
+    "timeout": 30000
+  }
+}

@@ -5,7 +5,19 @@ import { generateToken } from '../utils/jwt.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { UserRole } from '@prisma/client';
 
+// Fixed: Regenerated Prisma Client to export UserRole enum on Windows
+
 const router = Router();
+
+// Test route to verify auth routes are loaded
+router.get('/test', (req, res) => {
+  res.json({ message: 'Auth routes working' });
+});
+
+// Test POST route
+router.post('/test-post', (req, res) => {
+  res.json({ message: 'POST routes working', body: req.body });
+});
 
 // POST /auth/register-salon - Register a new salon
 router.post('/register-salon', async (req: any, res: any) => {

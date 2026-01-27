@@ -25,6 +25,7 @@ const HomePage: React.FC = () => {
           <button
             onClick={() => navigate('/register')}
             className="w-full bg-green-600 text-white py-4 px-6 rounded-lg text-lg font-medium hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors"
+            data-testid="landing-create-salon"
           >
             Yeni Salon Oluştur
           </button>

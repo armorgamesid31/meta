@@ -1,0 +1,14 @@
+{
+  "browsers": {
+    "path": "C:\\Users\\berka\\Documents\\b\\projects\\yson\\node_modules\\playwright\\.local-browsers",
+    "chromium": {
+      "version": "1200",
+      "executable": "chrome.exe"
+    }
+  },
+  "options": {
+    "headless": true,
+    "timeout": 30000,
+    "slowMo": 0
+  }
+}

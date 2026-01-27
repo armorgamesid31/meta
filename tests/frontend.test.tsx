@@ -56,7 +56,7 @@ describe("Frontend Admin Routing and Layout", () => {
   });
 
   it("Accessing /admin with token renders AdminLayout", async () => {
-    localStorage.setItem("auth_token", "fake-jwt-token");
+    localStorage.setItem("salonToken", "fake-jwt-token");
 
     render(
       <MemoryRouter initialEntries={["/admin"]}>
@@ -80,7 +80,7 @@ describe("Frontend Admin Routing and Layout", () => {
   });
 
   it("AdminLayout shows summary data on successful fetch", async () => {
-    localStorage.setItem("auth_token", "fake-jwt-token");
+    localStorage.setItem("salonToken", "fake-jwt-token");
 
     // Mock successful API response
     vi.spyOn(window, "fetch").mockResolvedValueOnce({
@@ -107,7 +107,7 @@ describe("Frontend Admin Routing and Layout", () => {
   });
 
   it("AdminLayout shows error on failed fetch", async () => {
-    localStorage.setItem("auth_token", "fake-jwt-token");
+    localStorage.setItem("salonToken", "fake-jwt-token");
 
     // Mock failed API response
     vi.spyOn(window, "fetch").mockResolvedValueOnce({

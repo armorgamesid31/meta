@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { authenticateToken, requirePermission } from '../middleware/auth.js';
+import { runNoShowDetection } from '../utils/noShowDetector.js';
+import { cleanupOldBehaviorLogs } from '../utils/behaviorTracking.js';
 
 const router = Router();
 
@@ -579,6 +581,72 @@ router.put("/booking-theme", authenticateToken, async (req: any, res: any) => {
   }
 });
 
+// GET /api/admin/summary - Get salon summary stats
+router.get("/summary", authenticateToken, async (req: any, res: any) => {
+  if (!req.user) {
+    return res.status(401).json({ message: 'Unauthorized.' });
+  }
+
+  const salonId = req.user.salonId;
+
+  try {
+    // Get total appointments count
+    const totalAppointments = await prisma.appointment.count({
+      where: { salonId }
+    });
+
+    // Get total revenue (sum of service prices for booked appointments)
+    const revenueResult = await prisma.appointment.aggregate({
+      where: {
+        salonId,
+        status: 'BOOKED'
+      },
+      _sum: {
+        service: {
+          price: true
+        }
+      }
+    });
+
+    const totalRevenue = revenueResult._sum.service?.price || 0;
+
+    // Get active clients count (unique customers with booked appointments)
+    const activeClientsResult = await prisma.appointment.findMany({
+      where: {
+        salonId,
+        status: 'BOOKED'
+      },
+      select: {
+        customerId: true
+      },
+      distinct: ['customerId']
+    });
+
+    const activeClients = activeClientsResult.length;
+
+    // Get upcoming appointments count (future booked appointments)
+    const upcomingAppointments = await prisma.appointment.count({
+      where: {
+        salonId,
+        status: 'BOOKED',
+        startTime: {
+          gte: new Date()
+        }
+      }
+    });
+
+    res.json({
+      totalAppointments,
+      totalRevenue,
+      activeClients,
+      upcomingAppointments
+    });
+  } catch (error) {
+    console.error('Error fetching admin summary:', error);
+    res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
 // GET /api/admin/health - System health check
 router.get("/health", authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
@@ -645,32 +713,42 @@ router.get("/magic-links", authenticateToken, async (req: any, res: any) => {
   }
 
   const salonId = req.user.salonId;
-  const { limit = '10' } = req.query as any;
-  const limitNum = parseInt(String(limit)) || 10;
 
   try {
-    // For now, return mock data since we don't have magic link storage yet
-    // In a real implementation, this would query a magic_links table
-    const mockLinks = [
-      {
-        id: 1,
-        token: 'abc123def456',
-        phone: '+905551234567',
-        status: 'ACTIVE' as const,
-        createdAt: new Date(Date.now() - 1000 * 60 * 30).toISOString(), // 30 min ago
-        expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString() // 7 days from now
+    // Query real magic links for this salon
+    const magicLinks = await prisma.magicLink.findMany({
+      where: {
+        context: {
+          path: ['salonId'],
+          equals: salonId
+        }
       },
-      {
-        id: 2,
-        token: 'def789ghi012',
-        phone: '+905559876543',
-        status: 'USED' as const,
-        createdAt: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(), // 2 hours ago
-        expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString()
-      }
-    ].slice(0, limitNum);
+      select: {
+        id: true,
+        token: true,
+        phone: true,
+        type: true,
+        usedAt: true,
+        expiresAt: true,
+        createdAt: true
+      },
+      orderBy: {
+        createdAt: 'desc'
+      },
+      take: 10
+    });
 
-    res.json({ links: mockLinks });
+    // Transform to expected format
+    const links = magicLinks.map(link => ({
+      id: link.id,
+      token: link.token,
+      phone: link.phone,
+      status: link.usedAt ? 'USED' : (link.expiresAt > new Date() ? 'ACTIVE' : 'EXPIRED'),
+      createdAt: link.createdAt.toISOString(),
+      expiresAt: link.expiresAt.toISOString()
+    }));
+
+    res.json({ links });
   } catch (error) {
     console.error('Error fetching magic links:', error);
     res.status(500).json({ message: 'Internal server error.' });
@@ -684,50 +762,388 @@ router.get("/events", authenticateToken, async (req: any, res: any) => {
   }
 
   const salonId = req.user.salonId;
-  const { limit = '20' } = req.query as any;
-  const limitNum = parseInt(String(limit)) || 20;
 
   try {
-    // For now, return mock data since we don't have event logging yet
-    // In a real implementation, this would query an events table
-    const mockEvents = [
-      {
-        id: 1,
-        type: 'LINK_CREATED',
-        token: 'abc123def456',
-        phone: '+905551234567',
-        timestamp: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
-        details: 'Magic link created for customer'
-      },
-      {
-        id: 2,
-        type: 'DATE_SELECTED',
-        token: 'abc123def456',
-        phone: '+905551234567',
-        timestamp: new Date(Date.now() - 1000 * 60 * 25).toISOString(),
-        details: 'Customer selected date: 2026-01-26'
-      },
-      {
-        id: 3,
-        type: 'SLOT_SELECTED',
-        token: 'abc123def456',
-        phone: '+905551234567',
-        timestamp: new Date(Date.now() - 1000 * 60 * 20).toISOString(),
-        details: 'Customer selected slot: 14:00'
-      },
-      {
-        id: 4,
-        type: 'BOOKING_CONFIRMED',
-        token: 'abc123def456',
-        phone: '+905551234567',
-        timestamp: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
-        details: 'Booking confirmed successfully'
-      }
-    ].slice(0, limitNum);
-
-    res.json({ events: mockEvents });
+    // For now, return empty array since we don't have event logging yet
+    // In a real implementation, this would query an events table filtered by salonId
+    // This ensures new salons don't see fake historical events
+    res.json({ events: [] });
   } catch (error) {
     console.error('Error fetching events:', error);
+    res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+// GET /api/admin/risk-profiles - Get customer risk profiles
+router.get("/risk-profiles", authenticateToken, async (req: any, res: any) => {
+  if (!req.user) {
+    return res.status(401).json({ message: 'Unauthorized.' });
+  }
+
+  const salonId = req.user.salonId;
+  const { limit = '50', offset = '0', riskLevel } = req.query as any;
+  const limitStr = Array.isArray(limit) ? limit[0] : limit;
+  const offsetStr = Array.isArray(offset) ? offset[0] : offset;
+  const riskLevelStr = Array.isArray(riskLevel) ? riskLevel[0] : riskLevel;
+
+  try {
+    const where: any = { salonId };
+
+    if (riskLevelStr && riskLevelStr !== 'all') {
+      where.riskLevel = riskLevelStr.toUpperCase();
+    }
+
+    const riskProfiles = await prisma.customerRiskProfile.findMany({
+      where,
+      include: {
+        customer: {
+          select: {
+            id: true,
+            name: true,
+            phone: true,
+            email: true
+          }
+        }
+      },
+      orderBy: {
+        riskScore: 'desc'
+      },
+      take: parseInt(String(limitStr || '50')),
+      skip: parseInt(String(offsetStr || '0'))
+    });
+
+    const total = await prisma.customerRiskProfile.count({ where });
+
+    res.json({
+      riskProfiles: riskProfiles.map(profile => ({
+        id: profile.id,
+        customer: profile.customer,
+        riskScore: profile.riskScore,
+        riskLevel: profile.riskLevel,
+        lastMinuteCancellations: profile.lastMinuteCancellations,
+        noShows: profile.noShows,
+        totalBookings: profile.totalBookings,
+        isBlocked: profile.isBlocked,
+        blockedUntil: profile.blockedUntil,
+        blockReason: profile.blockReason,
+        lastCalculatedAt: profile.lastCalculatedAt
+      })),
+      total,
+      limit: parseInt(String(limitStr || '50')),
+      offset: parseInt(String(offsetStr || '0'))
+    });
+  } catch (error) {
+    console.error('Error fetching risk profiles:', error);
+    res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+// GET /api/admin/behavior-logs - Get customer behavior logs
+router.get("/behavior-logs", authenticateToken, async (req: any, res: any) => {
+  if (!req.user) {
+    return res.status(401).json({ message: 'Unauthorized.' });
+  }
+
+  const salonId = req.user.salonId;
+  const { limit = '50', offset = '0', behaviorType, customerId } = req.query as any;
+  const limitStr = Array.isArray(limit) ? limit[0] : limit;
+  const offsetStr = Array.isArray(offset) ? offset[0] : offset;
+  const behaviorTypeStr = Array.isArray(behaviorType) ? behaviorType[0] : behaviorType;
+  const customerIdStr = Array.isArray(customerId) ? customerId[0] : customerId;
+
+  try {
+    const where: any = { salonId };
+
+    if (behaviorTypeStr && behaviorTypeStr !== 'all') {
+      where.behaviorType = behaviorTypeStr.toUpperCase();
+    }
+
+    if (customerIdStr) {
+      where.customerId = parseInt(customerIdStr);
+    }
+
+    const behaviorLogs = await prisma.customerBehaviorLog.findMany({
+      where,
+      include: {
+        customer: {
+          select: {
+            id: true,
+            name: true,
+            phone: true
+          }
+        },
+        appointment: {
+          select: {
+            id: true,
+            startTime: true,
+            service: {
+              select: {
+                name: true
+              }
+            }
+          }
+        }
+      },
+      orderBy: {
+        occurredAt: 'desc'
+      },
+      take: parseInt(String(limitStr || '50')),
+      skip: parseInt(String(offsetStr || '0'))
+    });
+
+    const total = await prisma.customerBehaviorLog.count({ where });
+
+    res.json({
+      behaviorLogs: behaviorLogs.map(log => ({
+        id: log.id,
+        customer: log.customer,
+        behaviorType: log.behaviorType,
+        severityScore: log.severityScore,
+        occurredAt: log.occurredAt,
+        metadata: log.metadata,
+        appointment: log.appointment
+      })),
+      total,
+      limit: parseInt(String(limitStr || '50')),
+      offset: parseInt(String(offsetStr || '0'))
+    });
+  } catch (error) {
+    console.error('Error fetching behavior logs:', error);
+    res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+// POST /api/admin/run-no-show-detection - Manually trigger no-show detection
+router.post("/run-no-show-detection", authenticateToken, async (req: any, res: any) => {
+  if (!req.user) {
+    return res.status(401).json({ message: 'Unauthorized.' });
+  }
+
+  try {
+    const count = await runNoShowDetection();
+    res.json({
+      message: `No-show detection completed. Processed ${count} appointments.`,
+      processedCount: count
+    });
+  } catch (error) {
+    console.error('Error running no-show detection:', error);
+    res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+// POST /api/admin/cleanup-behavior-logs - Clean up old behavior logs
+router.post("/cleanup-behavior-logs", authenticateToken, async (req: any, res: any) => {
+  if (!req.user) {
+    return res.status(401).json({ message: 'Unauthorized.' });
+  }
+
+  try {
+    const count = await cleanupOldBehaviorLogs();
+    res.json({
+      message: `Cleanup completed. Removed ${count} old behavior logs.`,
+      removedCount: count
+    });
+  } catch (error) {
+    console.error('Error cleaning up behavior logs:', error);
+    res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+// GET /api/admin/risk-config - Get salon risk configuration
+router.get("/risk-config", authenticateToken, async (req: any, res: any) => {
+  if (!req.user) {
+    return res.status(401).json({ message: 'Unauthorized.' });
+  }
+
+  const salonId = req.user.salonId;
+
+  try {
+    const config = await prisma.salonRiskConfig.findUnique({
+      where: { salonId }
+    });
+
+    if (!config) {
+      // Return default configuration if none exists
+      const defaultConfig = {
+        isEnabled: false,
+        warningThreshold: 25.0,
+        blockingThreshold: 50.0,
+        lastMinuteCancellationWeight: 3.0,
+        noShowWeight: 5.0,
+        frequentCancellationWeight: 2.0,
+        bookingFrequencyWeight: 1.0,
+        lastMinuteHoursThreshold: 24,
+        frequentCancellationCount: 3,
+        frequentCancellationDays: 30,
+        maxBookingsPerMonth: 10,
+        autoBlockEnabled: false,
+        autoBlockDurationDays: 7,
+        requireManualReview: false,
+        warningMessage: "Riskli müşteri profili tespit edildi. Devam etmek istiyor musunuz?",
+        blockMessage: "Bu müşteri için randevu alınamaz.",
+        mediumRiskMessage: null,
+        highRiskMessage: null,
+        criticalRiskMessage: null
+      };
+
+      res.json({ config: defaultConfig });
+    } else {
+      res.json({ config });
+    }
+  } catch (error) {
+    console.error('Error fetching risk config:', error);
+    res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+// PUT /api/admin/risk-config - Update salon risk configuration
+router.put("/risk-config", authenticateToken, async (req: any, res: any) => {
+  if (!req.user) {
+    return res.status(401).json({ message: 'Unauthorized.' });
+  }
+
+  const salonId = req.user.salonId;
+  const {
+    isEnabled,
+    warningThreshold,
+    blockingThreshold,
+    lastMinuteCancellationWeight,
+    noShowWeight,
+    frequentCancellationWeight,
+    bookingFrequencyWeight,
+    lastMinuteHoursThreshold,
+    frequentCancellationCount,
+    frequentCancellationDays,
+    maxBookingsPerMonth,
+    autoBlockEnabled,
+    autoBlockDurationDays,
+    requireManualReview,
+    warningMessage,
+    blockMessage,
+    mediumRiskMessage,
+    highRiskMessage,
+    criticalRiskMessage
+  } = req.body as any;
+
+  try {
+    // Validation
+    if (warningThreshold !== undefined && blockingThreshold !== undefined) {
+      if (warningThreshold >= blockingThreshold) {
+        return res.status(400).json({ message: 'Warning threshold must be less than blocking threshold.' });
+      }
+    }
+
+    if (lastMinuteHoursThreshold !== undefined && (lastMinuteHoursThreshold < 1 || lastMinuteHoursThreshold > 168)) {
+      return res.status(400).json({ message: 'Last minute threshold must be between 1-168 hours.' });
+    }
+
+    if (warningMessage && warningMessage.length > 500) {
+      return res.status(400).json({ message: 'Warning message must be 500 characters or less.' });
+    }
+
+    if (blockMessage && blockMessage.length > 500) {
+      return res.status(400).json({ message: 'Block message must be 500 characters or less.' });
+    }
+
+    // Update or create configuration
+    const config = await prisma.salonRiskConfig.upsert({
+      where: { salonId },
+      update: {
+        ...(isEnabled !== undefined && { isEnabled }),
+        ...(warningThreshold !== undefined && { warningThreshold }),
+        ...(blockingThreshold !== undefined && { blockingThreshold }),
+        ...(lastMinuteCancellationWeight !== undefined && { lastMinuteCancellationWeight }),
+        ...(noShowWeight !== undefined && { noShowWeight }),
+        ...(frequentCancellationWeight !== undefined && { frequentCancellationWeight }),
+        ...(bookingFrequencyWeight !== undefined && { bookingFrequencyWeight }),
+        ...(lastMinuteHoursThreshold !== undefined && { lastMinuteHoursThreshold }),
+        ...(frequentCancellationCount !== undefined && { frequentCancellationCount }),
+        ...(frequentCancellationDays !== undefined && { frequentCancellationDays }),
+        ...(maxBookingsPerMonth !== undefined && { maxBookingsPerMonth }),
+        ...(autoBlockEnabled !== undefined && { autoBlockEnabled }),
+        ...(autoBlockDurationDays !== undefined && { autoBlockDurationDays }),
+        ...(requireManualReview !== undefined && { requireManualReview }),
+        ...(warningMessage !== undefined && { warningMessage }),
+        ...(blockMessage !== undefined && { blockMessage }),
+        ...(mediumRiskMessage !== undefined && { mediumRiskMessage }),
+        ...(highRiskMessage !== undefined && { highRiskMessage }),
+        ...(criticalRiskMessage !== undefined && { criticalRiskMessage }),
+        updatedAt: new Date()
+      },
+      create: {
+        salonId,
+        isEnabled: isEnabled ?? false,
+        warningThreshold: warningThreshold ?? 25.0,
+        blockingThreshold: blockingThreshold ?? 50.0,
+        lastMinuteCancellationWeight: lastMinuteCancellationWeight ?? 3.0,
+        noShowWeight: noShowWeight ?? 5.0,
+        frequentCancellationWeight: frequentCancellationWeight ?? 2.0,
+        bookingFrequencyWeight: bookingFrequencyWeight ?? 1.0,
+        lastMinuteHoursThreshold: lastMinuteHoursThreshold ?? 24,
+        frequentCancellationCount: frequentCancellationCount ?? 3,
+        frequentCancellationDays: frequentCancellationDays ?? 30,
+        maxBookingsPerMonth: maxBookingsPerMonth ?? 10,
+        autoBlockEnabled: autoBlockEnabled ?? false,
+        autoBlockDurationDays: autoBlockDurationDays ?? 7,
+        requireManualReview: requireManualReview ?? false,
+        warningMessage: warningMessage ?? "Riskli müşteri profili tespit edildi. Devam etmek istiyor musunuz?",
+        blockMessage: blockMessage ?? "Bu müşteri için randevu alınamaz."
+      }
+    });
+
+    res.json({
+      message: 'Risk configuration updated successfully.',
+      config
+    });
+  } catch (error) {
+    console.error('Error updating risk config:', error);
+    res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+// POST /api/admin/risk-config/reset - Reset risk configuration to defaults
+router.post("/risk-config/reset", authenticateToken, async (req: any, res: any) => {
+  if (!req.user) {
+    return res.status(401).json({ message: 'Unauthorized.' });
+  }
+
+  const salonId = req.user.salonId;
+
+  try {
+    // Delete existing config (if any) and create default
+    await prisma.salonRiskConfig.deleteMany({
+      where: { salonId }
+    });
+
+    // This will create the default config via the upsert logic above
+    const config = await prisma.salonRiskConfig.create({
+      data: {
+        salonId,
+        isEnabled: false,
+        warningThreshold: 25.0,
+        blockingThreshold: 50.0,
+        lastMinuteCancellationWeight: 3.0,
+        noShowWeight: 5.0,
+        frequentCancellationWeight: 2.0,
+        bookingFrequencyWeight: 1.0,
+        lastMinuteHoursThreshold: 24,
+        frequentCancellationCount: 3,
+        frequentCancellationDays: 30,
+        maxBookingsPerMonth: 10,
+        autoBlockEnabled: false,
+        autoBlockDurationDays: 7,
+        requireManualReview: false,
+        warningMessage: "Riskli müşteri profili tespit edildi. Devam etmek istiyor musunuz?",
+        blockMessage: "Bu müşteri için randevu alınamaz."
+      }
+    });
+
+    res.json({
+      message: 'Risk configuration reset to defaults.',
+      config
+    });
+  } catch (error) {
+    console.error('Error resetting risk config:', error);
     res.status(500).json({ message: 'Internal server error.' });
   }
 });

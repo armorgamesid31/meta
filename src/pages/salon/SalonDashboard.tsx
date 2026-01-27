@@ -232,6 +232,7 @@ const SalonDashboard: React.FC = () => {
                   onClick={createBookingLink}
                   disabled={creating || !phoneNumber}
                   className="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                  data-testid="dashboard-create-magic-link"
                 >
                   {creating ? 'Oluşturuluyor...' : 'Bağlantı Oluştur'}
                 </button>
@@ -239,7 +240,7 @@ const SalonDashboard: React.FC = () => {
             </div>
 
             {createdLink && (
-              <div className="p-4 bg-green-50 border border-green-200 rounded-md">
+              <div className="p-4 bg-green-50 border border-green-200 rounded-md" data-testid="dashboard-magic-link-output">
                 <p className="text-sm text-green-800 mb-2">✓ Bağlantı başarıyla oluşturuldu:</p>
                 <div className="flex items-center space-x-2">
                   <input

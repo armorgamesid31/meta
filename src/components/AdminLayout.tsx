@@ -5,8 +5,17 @@ import { Appointment } from '../types/appointment';
 import { Client } from '../types/client';
 import { API_BASE_URL } from '../config';
 
+interface SalonInfo {
+  id: number;
+  name: string;
+  onboardingComplete: boolean;
+  subscriptionStatus: 'trial' | 'active' | 'expired';
+}
+
 const AdminLayout: React.FC = () => {
   const [summary, setSummary] = useState<AdminSummary | null>(null);
+  const [salon, setSalon] = useState<SalonInfo | null>(null);
+  const [userEmail, setUserEmail] = useState<string>('');
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
@@ -25,6 +34,22 @@ const AdminLayout: React.FC = () => {
   const [createError, setCreateError] = useState<string | null>(null);
 
   useEffect(() => {
+    const fetchSalonInfo = async () => {
+      try {
+        const { data } = await apiFetch<{ salon: SalonInfo }>(`${API_BASE_URL}/api/salon/me`);
+        setSalon(data.salon);
+
+        // Get user email from localStorage
+        const userData = localStorage.getItem('salonUser');
+        if (userData) {
+          const user = JSON.parse(userData);
+          setUserEmail(user.email);
+        }
+      } catch (err: any) {
+        console.error('Failed to load salon info:', err);
+      }
+    };
+
     const fetchSummary = async () => {
       try {
         const { data } = await apiFetch<AdminSummary>(`${API_BASE_URL}/api/admin/summary`);
@@ -36,6 +61,7 @@ const AdminLayout: React.FC = () => {
       }
     };
 
+    fetchSalonInfo();
     fetchSummary();
   }, []);
 
@@ -65,7 +91,7 @@ const AdminLayout: React.FC = () => {
       setClientsLoading(true);
       setClientsError(null);
       try {
-        const { data } = await apiFetch<Client[]>(`${API_BASE_URL}/api/admin/clients`);
+        const { data } = await apiFetch<Client[]>(`${API_BASE_URL}/api/admin/customers`);
         setClients(data);
       } catch (err: any) {
         setClientsError(err.message || 'Failed to load clients');
@@ -150,14 +176,137 @@ const AdminLayout: React.FC = () => {
   }
 
   return (
-    <div>
-      <h1>Admin Dashboard</h1>
-      <div>
-        <p>Total Appointments: {summary.totalAppointments}</p>
-        <p>Total Revenue: ${summary.totalRevenue}</p>
-        <p>Active Clients: {summary.activeClients}</p>
-        <p>Upcoming Appointments: {summary.upcomingAppointments}</p>
-      </div>
+    <div className="min-h-screen bg-gray-50">
+      {/* Salon Context Header - matches SalonLayout */}
+      {salon && (
+        <div className="bg-blue-50 border-b border-blue-200">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">{salon.name}</h2>
+                  <p className="text-sm text-gray-600">ID: {salon.id} • Sahip: {userEmail}</p>
+                </div>
+              </div>
+              <div className="flex items-center space-x-4">
+                <div className="flex items-center space-x-2">
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                    salon.subscriptionStatus === 'active' ? 'bg-green-100 text-green-800' :
+                    salon.subscriptionStatus === 'trial' ? 'bg-yellow-100 text-yellow-800' :
+                    'bg-red-100 text-red-800'
+                  }`}>
+                    {salon.subscriptionStatus === 'active' ? 'Aktif' :
+                     salon.subscriptionStatus === 'trial' ? 'Deneme' : 'Süresi Dolmuş'}
+                  </span>
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                    salon.onboardingComplete ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                  }`}>
+                    {salon.onboardingComplete ? 'Hazır' : 'Kurulum Gerekli'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+        <div className="mb-8">
+          <h1 className="text-2xl font-bold text-gray-900">Admin Dashboard</h1>
+          <p className="mt-1 text-sm text-gray-600">
+            Salonunuzun yönetim paneli
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <div className="bg-white overflow-hidden shadow rounded-lg">
+            <div className="p-5">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <div className="w-8 h-8 bg-blue-500 rounded-md flex items-center justify-center">
+                    <span className="text-white text-sm font-medium">📅</span>
+                  </div>
+                </div>
+                <div className="ml-5 w-0 flex-1">
+                  <dl>
+                    <dt className="text-sm font-medium text-gray-500 truncate">
+                      Toplam Randevu
+                    </dt>
+                    <dd className="text-lg font-medium text-gray-900">
+                      {summary.totalAppointments}
+                    </dd>
+                  </dl>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white overflow-hidden shadow rounded-lg">
+            <div className="p-5">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <div className="w-8 h-8 bg-green-500 rounded-md flex items-center justify-center">
+                    <span className="text-white text-sm font-medium">💰</span>
+                  </div>
+                </div>
+                <div className="ml-5 w-0 flex-1">
+                  <dl>
+                    <dt className="text-sm font-medium text-gray-500 truncate">
+                      Toplam Gelir
+                    </dt>
+                    <dd className="text-lg font-medium text-gray-900">
+                      ₺{summary.totalRevenue}
+                    </dd>
+                  </dl>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white overflow-hidden shadow rounded-lg">
+            <div className="p-5">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <div className="w-8 h-8 bg-purple-500 rounded-md flex items-center justify-center">
+                    <span className="text-white text-sm font-medium">👥</span>
+                  </div>
+                </div>
+                <div className="ml-5 w-0 flex-1">
+                  <dl>
+                    <dt className="text-sm font-medium text-gray-500 truncate">
+                      Aktif Müşteriler
+                    </dt>
+                    <dd className="text-lg font-medium text-gray-900">
+                      {summary.activeClients}
+                    </dd>
+                  </dl>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white overflow-hidden shadow rounded-lg">
+            <div className="p-5">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <div className="w-8 h-8 bg-orange-500 rounded-md flex items-center justify-center">
+                    <span className="text-white text-sm font-medium">⏰</span>
+                  </div>
+                </div>
+                <div className="ml-5 w-0 flex-1">
+                  <dl>
+                    <dt className="text-sm font-medium text-gray-500 truncate">
+                      Yaklaşan Randevular
+                    </dt>
+                    <dd className="text-lg font-medium text-gray-900">
+                      {summary.upcomingAppointments}
+                    </dd>
+                  </dl>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
 
       <h2>Upcoming Appointments</h2>
       {appointmentsLoading && <div>Loading appointments...</div>}
@@ -241,6 +390,7 @@ const AdminLayout: React.FC = () => {
           ))}
         </ul>
       )}
+      </main>
     </div>
   );
 };

@@ -12,19 +12,24 @@ const RegisterPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('Form submitted with:', { salonName, email, password });
     setLoading(true);
     setError('');
 
     try {
+      console.log('Making API call to /auth/register-salon');
       const response = await apiPost('/auth/register-salon', {
         salonName,
         email,
         password
       });
+      console.log('API response status:', response.status);
 
       const data = await response.json();
+      console.log('API response data:', data);
 
       if (response.ok) {
+        console.log('Registration successful, navigating to dashboard');
         // Auto-login after registration
         localStorage.setItem('salonToken', data.token);
         localStorage.setItem('salonUser', JSON.stringify(data.user));
@@ -32,9 +37,11 @@ const RegisterPage: React.FC = () => {
         // Redirect to onboarding (will be triggered automatically)
         navigate('/salon/dashboard');
       } else {
+        console.log('Registration failed:', data.message);
         setError(data.message || 'Kayıt başarısız');
       }
     } catch (error) {
+      console.log('API call failed:', error);
       setError('Bağlantı hatası. Lütfen tekrar deneyin.');
     } finally {
       setLoading(false);
@@ -66,6 +73,7 @@ const RegisterPage: React.FC = () => {
                 placeholder="Örnek: Ahmet Kuaför"
                 value={salonName}
                 onChange={(e) => setSalonName(e.target.value)}
+                data-testid="register-salon-name"
               />
             </div>
 
@@ -82,6 +90,7 @@ const RegisterPage: React.FC = () => {
                 placeholder="ornek@email.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                data-testid="register-email"
               />
             </div>
 
@@ -98,6 +107,7 @@ const RegisterPage: React.FC = () => {
                 placeholder="Güçlü bir şifre seçin"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                data-testid="register-password"
               />
             </div>
           </div>
@@ -113,6 +123,7 @@ const RegisterPage: React.FC = () => {
               type="submit"
               disabled={loading || !salonName || !email || !password}
               className="w-full bg-green-600 text-white py-3 px-4 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+              data-testid="register-submit"
             >
               {loading ? 'Salon Oluşturuluyor...' : 'Salon Oluştur'}
             </button>

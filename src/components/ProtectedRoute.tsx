@@ -6,7 +6,7 @@ interface ProtectedRouteProps {
 }
 
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
-  const isAuthenticated = localStorage.getItem('auth_token');
+  const isAuthenticated = localStorage.getItem('salonToken');
 
   if (!isAuthenticated) {
     // Kullanıcı kimliği doğrulanmamışsa, login sayfasına yönlendir
