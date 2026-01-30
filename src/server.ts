@@ -10,6 +10,7 @@ import sessionRoutes from './routes/sessions.js';
 import adminRoutes from './routes/admin.js';
 import magicRoutes from './routes/magic.js';
 import availabilityRoutes from './routes/availability.js';
+import authRoutes from './routes/auth.js';
 
 const app = express();
 
@@ -99,6 +100,7 @@ app.post('/auth/register-salon', async (req, res) => {
   }
 });
 console.log('Direct auth routes set up');
+app.use('/auth', authRoutes);
 app.use('/api/salon', salonRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/sessions', sessionRoutes);

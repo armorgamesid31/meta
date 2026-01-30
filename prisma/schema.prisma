@@ -22,6 +22,22 @@ enum UserRole {
   FINANCE
 }
 
+enum SchedulingRule {
+  STANDARD              // Normal scheduling - services can be booked separately
+  CONSECUTIVE_BLOCK     // Services must be booked as continuous block with synergy
+  PARALLEL              // Services can be performed in parallel (future use)
+  ROOM_DEPENDENT        // Requires specific room/setup time
+  PARALLEL_POSSIBLE     // Can be done simultaneously with other services
+  FLEXIBLE_FLOW         // Adaptable scheduling based on availability
+  STRICT_BLOCK_BUFFERED // Continuous block with mandatory buffer time
+}
+
+enum TargetGender {
+  FEMALE   // Services primarily for women
+  MALE     // Services primarily for men
+  UNISEX   // Services suitable for anyone
+}
+
 enum AppointmentStatus {
   BOOKED
   CANCELLED
@@ -134,17 +150,36 @@ model Leave {
 // Service & Booking Models
 // --------------------------------------
 
+model ServiceCategory {
+  id              Int             @id @default(autoincrement())
+  name            String          @unique
+  description     String?
+  schedulingRule  SchedulingRule  @default(STANDARD)
+  synergyFactor   Float           @default(1.0) // 1.0 = no synergy, 0.0-0.9 = time saving
+  bufferMinutes   Int             @default(0)   // Buffer time between services
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  // Relations
+  services        Service[]
+}
+
 model Service {
   id              Int      @id @default(autoincrement())
   name            String
   description     String?
   price           Float
   duration        Int      // in minutes
+  targetGender    TargetGender @default(FEMALE) // Gender targeting for services
+  isSynergyEnabled Boolean @default(false) // Only synergy-enabled services trigger algorithm
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
-  
+
   salonId         Int
   salon           Salon    @relation(fields: [salonId], references: [id])
+
+  categoryId      Int?
+  category        ServiceCategory? @relation(fields: [categoryId], references: [id])
 
   staff           Staff[]   @relation("StaffServices")
   appointments    Appointment[]

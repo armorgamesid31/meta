@@ -1,19 +1,19 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import HomePage from './pages/HomePage';
-import RegisterPage from './pages/RegisterPage';
-import LoginPage from './pages/LoginPage';
-import ProtectedRoute from './components/ProtectedRoute';
-import OnboardingGuard from './components/OnboardingGuard';
-import AdminLayout from './components/AdminLayout';
-import OnboardingWizard from './pages/admin/OnboardingWizard';
-import MagicLinkBooking from './pages/MagicLinkBooking';
-import SalonLogin from './pages/salon/SalonLogin';
-import SalonDashboard from './pages/salon/SalonDashboard';
-import SalonSettings from './pages/salon/SalonSettings';
-import SalonServices from './pages/salon/SalonServices';
-import SalonStaff from './pages/salon/SalonStaff';
-import SalonAppointments from './pages/salon/SalonAppointments';
+import HomePage from './pages/HomePage.js';
+import RegisterPage from './pages/RegisterPage.js';
+import LoginPage from './pages/LoginPage.js';
+import ProtectedRoute from './components/ProtectedRoute.js';
+import OnboardingGuard from './components/OnboardingGuard.js';
+import AdminLayout from './components/AdminLayout.js';
+import OnboardingWizard from './pages/admin/OnboardingWizard.js';
+import MagicLinkBooking from './pages/MagicLinkBooking.js';
+import SalonLogin from './pages/salon/SalonLogin.js';
+import SalonDashboard from './pages/salon/SalonDashboard.js';
+import SalonSettings from './pages/salon/SalonSettings.js';
+import SalonServices from './pages/salon/SalonServices.js';
+import SalonStaff from './pages/salon/SalonStaff.js';
+import SalonAppointments from './pages/salon/SalonAppointments.js';
 
 function App() {
   return (
@@ -73,6 +73,7 @@ function App() {
 
         {/* Magic Link Booking - No authentication required */}
         <Route path="/m/:token" element={<MagicLinkBooking />} />
+        <Route path="/magic-link" element={<MagicLinkBooking />} />
 
         {/* Müşteri Uygulaması Rotası - Henüz uygulanmadı, sadece yer tutucu */}
         <Route path="/book" element={<div>Customer Booking (Work in progress)</div>} />

@@ -3,6 +3,11 @@ export type AvailabilitySlot = {
   endTime: Date;
   availableStaff: number[];
   optionId: string;
+  metadata?: {
+    schedulingRule?: 'STANDARD' | 'CONSECUTIVE_BLOCK' | 'PARALLEL';
+    totalDuration?: number;
+    serviceCount?: number;
+  };
 };
 
 export type LockToken = {

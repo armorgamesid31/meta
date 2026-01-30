@@ -1,748 +1,638 @@
 import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
-import { apiGet, apiPost } from '../utils/api';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  Zap,
+  Sparkles,
+  Activity,
+  Hand,
+  Eye,
+  Scissors,
+  PenTool,
+  Stethoscope,
+  Waves,
+  Palette,
+  MessageCircle,
+  User,
+  ShoppingCart,
+  Clock,
+  ChevronDown,
+  ChevronUp,
+  X,
+  Check
+} from 'lucide-react';
 
-interface MagicLinkData {
-  type: 'BOOKING' | 'RESCHEDULE';
-  expiresAt: string;
-  salon: {
-    id: number;
-    name: string;
-    theme: {
-      primaryColor: string;
-      secondaryColor: string;
-    };
-  };
-  customer: {
-    phone: string;
-    name: string | null;
-    isReturningCustomer: boolean;
-  };
-  rescheduleAppointmentId?: number;
-}
+// Mock Services Data - Simulating Database
+const MOCK_SERVICES = [
+  {
+    id: 1,
+    name: 'Lazer Epilasyon - Kol',
+    duration: 30,
+    price: 200,
+    targetGender: 'FEMALE',
+    isSynergyEnabled: true,
+    categoryId: 1,
+    category: {
+      name: 'Epilasyon & Tüy Alma',
+      schedulingRule: 'CONSECUTIVE_BLOCK',
+      synergyFactor: 0.3,
+      icon: Zap
+    }
+  },
+  {
+    id: 2,
+    name: 'Lazer Epilasyon - Bacak',
+    duration: 45,
+    price: 300,
+    targetGender: 'FEMALE',
+    isSynergyEnabled: true,
+    categoryId: 1,
+    category: {
+      name: 'Epilasyon & Tüy Alma',
+      schedulingRule: 'CONSECUTIVE_BLOCK',
+      synergyFactor: 0.3,
+      icon: Zap
+    }
+  },
+  {
+    id: 3,
+    name: 'Lazer Epilasyon - Sırt',
+    duration: 40,
+    price: 250,
+    targetGender: 'MALE',
+    isSynergyEnabled: true,
+    categoryId: 1,
+    category: {
+      name: 'Epilasyon & Tüy Alma',
+      schedulingRule: 'CONSECUTIVE_BLOCK',
+      synergyFactor: 0.3,
+      icon: Zap
+    }
+  },
+  {
+    id: 4,
+    name: 'Hydrafacial',
+    duration: 60,
+    price: 400,
+    targetGender: 'UNISEX',
+    isSynergyEnabled: false,
+    categoryId: 2,
+    category: {
+      name: 'Cilt Sağlığı & Yüz',
+      schedulingRule: 'ROOM_DEPENDENT',
+      synergyFactor: 0.8,
+      icon: Sparkles
+    }
+  },
+  {
+    id: 5,
+    name: 'Kavitasyon',
+    duration: 60,
+    price: 500,
+    targetGender: 'FEMALE',
+    isSynergyEnabled: false,
+    categoryId: 3,
+    category: {
+      name: 'Vücut Şekillendirme',
+      schedulingRule: 'ROOM_DEPENDENT',
+      synergyFactor: 0.5,
+      icon: Activity
+    }
+  },
+  {
+    id: 6,
+    name: 'Manikür',
+    duration: 45,
+    price: 120,
+    targetGender: 'FEMALE',
+    isSynergyEnabled: false,
+    categoryId: 4,
+    category: {
+      name: 'Tırnak & El/Ayak',
+      schedulingRule: 'PARALLEL_POSSIBLE',
+      synergyFactor: 1.0,
+      icon: Hand
+    }
+  },
+  {
+    id: 7,
+    name: 'Kaş Mikroblad',
+    duration: 90,
+    price: 600,
+    targetGender: 'FEMALE',
+    isSynergyEnabled: false,
+    categoryId: 5,
+    category: {
+      name: 'Bakış Tasarımı (Kaş/Kirpik)',
+      schedulingRule: 'STANDARD',
+      synergyFactor: 0.9,
+      icon: Eye
+    }
+  },
+  {
+    id: 8,
+    name: 'Saç Kesimi',
+    duration: 45,
+    price: 100,
+    targetGender: 'UNISEX',
+    isSynergyEnabled: false,
+    categoryId: 6,
+    category: {
+      name: 'Saç Tasarımı',
+      schedulingRule: 'FLEXIBLE_FLOW',
+      synergyFactor: 1.0,
+      icon: Scissors
+    }
+  },
+  {
+    id: 9,
+    name: 'Kalıcı Kaş',
+    duration: 120,
+    price: 800,
+    targetGender: 'FEMALE',
+    isSynergyEnabled: false,
+    categoryId: 7,
+    category: {
+      name: 'Kalıcı Makyaj (PMU)',
+      schedulingRule: 'STANDARD',
+      synergyFactor: 1.0,
+      icon: PenTool
+    }
+  },
+  {
+    id: 10,
+    name: 'Botox',
+    duration: 30,
+    price: 800,
+    targetGender: 'UNISEX',
+    isSynergyEnabled: false,
+    categoryId: 8,
+    category: {
+      name: 'Medikal Estetik',
+      schedulingRule: 'ROOM_DEPENDENT',
+      synergyFactor: 0.9,
+      icon: Stethoscope
+    }
+  },
+  {
+    id: 11,
+    name: 'Spa Masajı',
+    duration: 90,
+    price: 300,
+    targetGender: 'UNISEX',
+    isSynergyEnabled: false,
+    categoryId: 9,
+    category: {
+      name: 'Spa & Wellness',
+      schedulingRule: 'STRICT_BLOCK_BUFFERED',
+      synergyFactor: 1.0,
+      icon: Waves
+    }
+  },
+  {
+    id: 12,
+    name: 'Gelin Makyajı',
+    duration: 120,
+    price: 800,
+    targetGender: 'FEMALE',
+    isSynergyEnabled: false,
+    categoryId: 10,
+    category: {
+      name: 'Profesyonel Makyaj',
+      schedulingRule: 'STANDARD',
+      synergyFactor: 1.0,
+      icon: Palette
+    }
+  },
+  {
+    id: 13,
+    name: 'Cilt Analizi Danışmanlığı',
+    duration: 30,
+    price: 100,
+    targetGender: 'UNISEX',
+    isSynergyEnabled: false,
+    categoryId: 11,
+    category: {
+      name: 'Danışmanlık',
+      schedulingRule: 'STANDARD',
+      synergyFactor: 1.0,
+      icon: MessageCircle
+    }
+  }
+];
 
-interface Service {
-  id: number;
-  name: string;
-  duration: number;
-  price: number;
-  enabled: boolean;
-  staff: Staff[];
-}
+// Mock Staff Data
+const MOCK_STAFF = [
+  { id: 1, name: 'Ayşe Yılmaz' },
+  { id: 2, name: 'Mehmet Kaya' },
+  { id: 3, name: 'Zeynep Demir' },
+  { id: 4, name: 'Ahmet Çelik' }
+];
 
-interface Staff {
-  id: number;
-  name: string;
-  enabled: boolean;
-}
+const MagicLinkBooking: React.FC = () => {
+  const [showWelcomeModal, setShowWelcomeModal] = useState(false);
+  const [selectedGender, setSelectedGender] = useState<'FEMALE' | 'MALE' | null>(null);
+  const [userName, setUserName] = useState('Misafir');
+  const [cart, setCart] = useState<Array<{
+    serviceId: number;
+    service: any;
+    staffId: number;
+    isGift: boolean;
+  }>>([]);
+  const [expandedCategories, setExpandedCategories] = useState<Set<number>>(new Set());
 
-interface AvailabilitySlot {
-  date: string;
-  slots: string[];
-}
-
-const MagicLinkBooking: React.FC = React.memo(() => {
-  const { token } = useParams<{ token: string }>();
-
-  // Mount
-
-  const [magicLinkData, setMagicLinkData] = useState<MagicLinkData | null>(null);
-  const [services, setServices] = useState<Service[]>([]);
-  const [staff, setStaff] = useState<Staff[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  // Form state
-  const [customerName, setCustomerName] = useState('');
-  const [birthDate, setBirthDate] = useState('');
-  const [gender, setGender] = useState<'kadin' | 'erkek' | 'belirtmek-istemiyorum'>('kadin');
-  const [campaignOptIn, setCampaignOptIn] = useState(false);
-
-  // Booking state
-  const [selectedDate, setSelectedDate] = useState('');
-  const [selectedSlot, setSelectedSlot] = useState('');
-  const [availableSlots, setAvailableSlots] = useState<string[]>([]);
-  const [selectedService, setSelectedService] = useState<number | null>(null);
-  const [selectedStaff, setSelectedStaff] = useState<number | null>(null);
-
-  // UI state
-  const [currentStep, setCurrentStep] = useState<'info' | 'services' | 'date' | 'slot' | 'confirm'>('info');
-  const [isReturningCustomer, setIsReturningCustomer] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
-  const [submitSuccess, setSubmitSuccess] = useState(false);
-  const [tokenStatus, setTokenStatus] = useState<'valid' | 'EXPIRED' | 'USED' | 'invalid' | 'SALON_NOT_READY'>('valid');
-
-  // Debug logging
+  // Gender Intelligence Engine
   useEffect(() => {
-    console.log('Current step:', currentStep);
-    console.log('Selected date:', selectedDate);
-    console.log('Selected slot:', selectedSlot);
-    console.log('Available slots:', availableSlots);
-    console.log('Button disabled state:', !selectedDate || !selectedSlot);
-  }, [currentStep, selectedDate, selectedSlot, availableSlots]);
+    const urlParams = new URLSearchParams(window.location.search);
+    const uid = urlParams.get('uid');
 
-  useEffect(() => {
-    if (!token) {
-      setError('Magic link token is missing');
-      setLoading(false);
+    // Check URL for user profile
+    if (uid) {
+      // Mock: Assume user profile from DB
+      const mockUserGender = uid.startsWith('male') ? 'MALE' : 'FEMALE';
+      setSelectedGender(mockUserGender);
+      setUserName(mockUserGender === 'MALE' ? 'Ahmet Bey' : 'Ayşe Hanım');
       return;
     }
 
-    // Resolve magic link
-    apiGet(`/api/magic-links/${token}`)
-      .then(res => res.json())
-      .then(data => {
-        // Handle structured error responses
-        if (data.ok === false) {
-          setTokenStatus('invalid');
-          setError(data.message || 'Bağlantı geçersiz veya süresi dolmuş');
-          return;
-        }
-
-        // Handle legacy status responses for backward compatibility
-        if (data.status === 'USED') {
-          setTokenStatus('USED');
-          setMagicLinkData(data.salon);
-          setError('Bu bağlantı daha önce kullanılmış');
-          return;
-        }
-
-        if (data.status === 'EXPIRED') {
-          setTokenStatus('EXPIRED');
-          setMagicLinkData(data.salon);
-          setError('Bu bağlantının süresi dolmuş');
-          return;
-        }
-
-        if (data.status === 'SALON_NOT_READY') {
-          setTokenStatus('SALON_NOT_READY');
-          setMagicLinkData(data.salon);
-          setError(data.message || 'Salon henüz hazır değil');
-          return;
-        }
-
-        // Success case - data should have ok: true
-        if (data.ok === true && data.salon?.id) {
-          setMagicLinkData(data);
-          setTokenStatus('valid');
-          setIsReturningCustomer(data.customer?.isReturningCustomer || false);
-
-          // Pre-fill name if available
-          if (data.customer?.name) {
-            setCustomerName(data.customer.name);
-          }
-
-          // Set initial step based on customer type
-          if (data.customer?.isReturningCustomer) {
-            setCurrentStep('services'); // Skip info step for returning customers
-          } else {
-            setCurrentStep('info'); // Show info step for new customers
-          }
-
-          // Services and staff will be loaded by the separate useEffect below
-        } else {
-          // Unexpected response format
-          console.error('Unexpected magic link response:', data);
-          setError('Bağlantı bilgileri alınamadı');
-        }
-      })
-      .catch(err => {
-        console.error('Network error resolving magic link:', err);
-        setError('Bağlantı kontrol edilemedi. Lütfen internet bağlantınızı kontrol edin.');
-      })
-      .finally(() => setLoading(false));
-  }, [token]);
-
-  // Load services and staff ONLY after magic link data is loaded
-  useEffect(() => {
-    if (!magicLinkData || !magicLinkData.salon?.id || tokenStatus !== 'valid') {
+    // Check localStorage
+    const storedGender = localStorage.getItem('preferredGender') as 'FEMALE' | 'MALE' | null;
+    if (storedGender) {
+      setSelectedGender(storedGender);
+      setUserName(storedGender === 'MALE' ? 'Beyefendi' : 'Hanımefendi');
       return;
     }
 
-    console.log('Loading services and staff for salonId:', magicLinkData.salon.id);
+    // Show welcome modal
+    setShowWelcomeModal(true);
+  }, []);
 
-    // Load services and staff for this salon (public endpoints)
-    Promise.all([
-      apiGet(`/api/salon/services/public?s=${magicLinkData.salon.id}`)
-        .then(res => res.json())
-        .catch(err => {
-          console.error('Error loading services:', err);
-          return { services: [] };
-        }),
-      apiGet(`/api/salon/staff/public?s=${magicLinkData.salon.id}`)
-        .then(res => res.json())
-        .catch(err => {
-          console.error('Error loading staff:', err);
-          return { staff: [] };
-        })
-    ]).then(([serviceData, staffData]) => {
-      const services = serviceData.services || [];
-      const staff = staffData.staff || [];
+  const handleGenderSelect = (gender: 'FEMALE' | 'MALE') => {
+    setSelectedGender(gender);
+    setUserName(gender === 'MALE' ? 'Beyefendi' : 'Hanımefendi');
+    localStorage.setItem('preferredGender', gender);
+    setShowWelcomeModal(false);
+  };
 
-      console.log(`Loaded ${services.length} services and ${staff.length} staff for salon ${magicLinkData.salon.id}`);
-
-      setServices(services);
-      setStaff(staff);
-
-      // Validate that we have required data
-      if (services.length === 0) {
-        setError('Bu salonda henüz hiç hizmet tanımlanmamış. Lütfen salon sahibi ile iletişime geçin.');
-        return;
-      }
-
-      if (staff.length === 0) {
-        setError('Bu salonda henüz hiç personel eklenmemiş. Lütfen salon sahibi ile iletişime geçin.');
-        return;
-      }
-    }).catch(err => {
-      console.error('Error loading salon data:', err);
-      setError('Salon bilgileri yüklenirken hata oluştu');
-    });
-  }, [magicLinkData, tokenStatus]);
-
-  const handleDateChange = async (date: string) => {
-    console.log('Date changed:', date);
-    setSelectedDate(date);
-    // Don't clear selectedSlot when date changes - only clear it if date actually changed
-    if (selectedDate !== date) {
-      setSelectedSlot(''); // Only clear slot if date actually changed
+  const toggleCategory = (categoryId: number) => {
+    const newExpanded = new Set(expandedCategories);
+    if (newExpanded.has(categoryId)) {
+      newExpanded.delete(categoryId);
+    } else {
+      newExpanded.add(categoryId);
     }
-    setAvailableSlots([]); // Clear previous slots
+    setExpandedCategories(newExpanded);
+  };
 
-    if (magicLinkData) {
-      try {
-        const response = await apiGet(`/availability?salonId=${magicLinkData.salon.id}&date=${date}`);
-        const data: AvailabilitySlot = await response.json();
-        setAvailableSlots(data?.slots || []);
-        console.log('Available slots loaded:', data?.slots);
-      } catch (error) {
-        console.error('Error fetching availability:', error);
-        setAvailableSlots([]);
-      }
+  const addToCart = (service: any) => {
+    if (!cart.find(item => item.serviceId === service.id)) {
+      setCart([...cart, {
+        serviceId: service.id,
+        service,
+        staffId: MOCK_STAFF[0].id, // Default staff
+        isGift: false
+      }]);
     }
   };
 
-  const handleSubmit = async () => {
-    if (!magicLinkData || !token || !selectedDate || !selectedSlot || !selectedService || !selectedStaff) {
-      return;
-    }
+  const removeFromCart = (serviceId: number) => {
+    setCart(cart.filter(item => item.serviceId !== serviceId));
+  };
 
-    setSubmitting(true);
-    setSubmitError(null);
-    setSubmitSuccess(false);
+  const updateCartItem = (serviceId: number, updates: Partial<typeof cart[0]>) => {
+    setCart(cart.map(item =>
+      item.serviceId === serviceId ? { ...item, ...updates } : item
+    ));
+  };
 
-    try {
-      const datetime = `${selectedDate}T${selectedSlot}:00`;
+  // Filter services based on selected gender
+  const filteredServices = selectedGender
+    ? MOCK_SERVICES.filter(service =>
+        service.targetGender === selectedGender || service.targetGender === 'UNISEX'
+      )
+    : MOCK_SERVICES;
 
-      // For new customers, include full customer info to create/update customer record
-      const appointmentData: any = {
-        token,
-        salonId: magicLinkData.salon.id,
-        datetime,
-        people: [{
-          name: customerName,
-          services: [{
-            serviceId: selectedService,
-            staffId: selectedStaff
-          }]
-        }]
+  // Group services by category
+  const servicesByCategory = filteredServices.reduce((acc, service) => {
+    const categoryId = service.categoryId;
+    if (!acc[categoryId]) {
+      acc[categoryId] = {
+        ...service.category,
+        id: categoryId,
+        services: []
       };
-
-      // Add customer details for new customers
-      if (!isReturningCustomer) {
-        appointmentData.people[0].birthDate = birthDate;
-        appointmentData.people[0].gender = gender;
-        appointmentData.campaignOptIn = campaignOptIn;
-      }
-
-      const response = await apiPost('/appointments', appointmentData);
-
-      const result = await response.json();
-
-      if (response.ok) {
-        setSubmitSuccess(true);
-        // Could redirect to a success page here
-      } else {
-        setSubmitError(result.message || 'Randevu oluşturulamadı');
-      }
-    } catch (error) {
-      console.error('Error booking appointment:', error);
-      setSubmitError('Randevu oluşturulurken bir hata oluştu');
-    } finally {
-      setSubmitting(false);
     }
-  };
+    acc[categoryId].services.push(service);
+    return acc;
+  }, {} as Record<number, any>);
 
-  if (loading) {
-    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
-  }
+  const totalPrice = cart.reduce((sum, item) => sum + item.service.price, 0);
+  const totalDuration = cart.reduce((sum, item) => sum + item.service.duration, 0);
 
-  if (error) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-red-600 mb-4">Error</h1>
-          <p className="text-gray-600">{error}</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Show token state screens
-  if (tokenStatus === 'EXPIRED') {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="max-w-md mx-auto bg-white shadow-lg rounded-lg p-8 text-center">
-          <div className="mb-6">
-            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <span className="text-2xl">⏰</span>
-            </div>
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">Bağlantı Süresi Dolmuş</h1>
-            <p className="text-gray-600">
-              Bu randevu bağlantısının süresi dolmuş. Yeni bir bağlantı için salon ile iletişime geçin.
-            </p>
-          </div>
-
-          <div className="bg-gray-50 p-4 rounded-lg mb-6">
-            <h3 className="font-medium text-gray-900 mb-2">{(magicLinkData as any).name}</h3>
-            <p className="text-sm text-gray-600 mb-2">{(magicLinkData as any).address}</p>
-            <p className="text-sm text-gray-600">📞 {(magicLinkData as any).phone}</p>
-          </div>
-
-          <button
-            onClick={() => window.location.href = `tel:${(magicLinkData as any).phone}`}
-            className="w-full bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700"
-          >
-            Salon ile İletişime Geç
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (tokenStatus === 'USED') {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="max-w-md mx-auto bg-white shadow-lg rounded-lg p-8 text-center">
-          <div className="mb-6">
-            <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <span className="text-2xl">✅</span>
-            </div>
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">Bağlantı Kullanılmış</h1>
-            <p className="text-gray-600">
-              Bu randevu bağlantısı daha önce kullanılmış. Her bağlantı sadece bir kez kullanılabilir.
-            </p>
-          </div>
-
-          <div className="bg-gray-50 p-4 rounded-lg mb-6">
-            <h3 className="font-medium text-gray-900 mb-2">{(magicLinkData as any).name}</h3>
-            <p className="text-sm text-gray-600">{(magicLinkData as any).address}</p>
-          </div>
-
-          <p className="text-sm text-gray-500">
-            Başka bir randevu için yeni bir bağlantı isteyin.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  if (tokenStatus === 'SALON_NOT_READY') {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="max-w-md mx-auto bg-white shadow-lg rounded-lg p-8 text-center">
-          <div className="mb-6">
-            <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <span className="text-2xl">⚠️</span>
-            </div>
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">Salon Henüz Hazır Değil</h1>
-            <p className="text-gray-600">
-              Bu salon henüz randevu almaya hazır değil. Lütfen salon sahibi ile iletişime geçin.
-            </p>
-          </div>
-
-          <div className="bg-gray-50 p-4 rounded-lg mb-6">
-            <h3 className="font-medium text-gray-900 mb-2">{(magicLinkData as any).name}</h3>
-            <p className="text-sm text-gray-600 mb-2">{(magicLinkData as any).address}</p>
-            <p className="text-sm text-gray-600">📞 Salon sahibi ile iletişime geçin</p>
-          </div>
-
-          <p className="text-sm text-gray-500">
-            Salon kurulumu tamamlandıktan sonra tekrar deneyin.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!magicLinkData) {
-    return <div className="min-h-screen flex items-center justify-center">Invalid magic link</div>;
+  if (!selectedGender) {
+    return null; // Loading state
   }
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div
-        className="py-8 px-4 text-center text-white"
-        style={{
-          backgroundColor: magicLinkData.salon?.theme?.primaryColor || '#10b981'
-        }}
-      >
-        <h1 className="text-3xl font-bold mb-2">{magicLinkData.salon?.name || 'Salon'}</h1>
-        <p className="text-lg opacity-90">Randevu Alın</p>
-      </div>
-
-      <div className="max-w-md mx-auto bg-white shadow-lg -mt-4 rounded-t-lg">
-        {/* Reschedule Banner */}
-        {magicLinkData?.type === 'RESCHEDULE' && (
-          <div className="bg-blue-50 border-b border-blue-200 px-6 py-3">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <span className="text-blue-600">🔄</span>
-              </div>
-              <div className="ml-3">
-                <p className="text-sm text-blue-800">
-                  Bu randevu değişikliği için kullanılacak bağlantıdır.
+      {/* Welcome Modal */}
+      <AnimatePresence>
+        {showWelcomeModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white/90 backdrop-blur-md rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl border border-gray-200"
+            >
+              <div className="text-center">
+                <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                  SalonAsistan'a Hoş Geldiniz
+                </h2>
+                <p className="text-gray-600 mb-8">
+                  Lütfen hizmet menünüzü seçin:
                 </p>
+
+                <div className="space-y-4">
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => handleGenderSelect('FEMALE')}
+                    className="w-full bg-gradient-to-r from-pink-100 to-pink-200 hover:from-pink-200 hover:to-pink-300 text-pink-800 font-semibold py-4 px-6 rounded-xl border border-pink-300 transition-all duration-200"
+                  >
+                    👩 Kadın Hizmetleri
+                  </motion.button>
+
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => handleGenderSelect('MALE')}
+                    className="w-full bg-gradient-to-r from-blue-100 to-blue-200 hover:from-blue-200 hover:to-blue-300 text-blue-800 font-semibold py-4 px-6 rounded-xl border border-blue-300 transition-all duration-200"
+                  >
+                    👨 Erkek Hizmetleri
+                  </motion.button>
+                </div>
               </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Main Content */}
+      <div className="pb-24">
+        {/* Sticky Header */}
+        <motion.div
+          initial={{ y: -100, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-gray-200"
+        >
+          <div className="px-4 py-4">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 bg-gradient-to-br from-[#D4AF37] to-yellow-600 rounded-full flex items-center justify-center">
+                  <User className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h1 className="font-semibold text-gray-900">Merhaba, {userName}</h1>
+                  <p className="text-sm text-gray-600">Hizmetlerinizi seçin</p>
+                </div>
+              </div>
+              <div className="flex items-center space-x-2">
+                <ShoppingCart className="w-5 h-5 text-gray-600" />
+                <span className="bg-[#D4AF37] text-white text-xs font-bold px-2 py-1 rounded-full">
+                  {cart.length}
+                </span>
+              </div>
+            </div>
+
+            {/* Gender Toggle */}
+            <div className="bg-gray-100 rounded-xl p-1 flex">
+              <motion.div
+                animate={{
+                  x: selectedGender === 'FEMALE' ? 0 : '100%'
+                }}
+                className="absolute w-1/2 h-8 bg-[#D4AF37] rounded-lg"
+                style={{ marginTop: '2px', marginLeft: '2px' }}
+              />
+              <button
+                onClick={() => setSelectedGender('FEMALE')}
+                className={`flex-1 py-2 px-4 rounded-lg font-medium text-sm transition-colors relative z-10 ${
+                  selectedGender === 'FEMALE' ? 'text-white' : 'text-gray-600'
+                }`}
+              >
+                👩 Kadın
+              </button>
+              <button
+                onClick={() => setSelectedGender('MALE')}
+                className={`flex-1 py-2 px-4 rounded-lg font-medium text-sm transition-colors relative z-10 ${
+                  selectedGender === 'MALE' ? 'text-white' : 'text-gray-600'
+                }`}
+              >
+                👨 Erkek
+              </button>
             </div>
           </div>
-        )}
+        </motion.div>
 
-        {/* Progress indicator - adapts based on customer type */}
-        <div className="flex justify-between px-6 py-4 border-b">
-          {isReturningCustomer
-            ? ['Hizmetler', 'Tarih', 'Saat', 'Onayla'].map((step, index) => {
-                const stepOrder = ['services', 'date', 'slot', 'confirm'];
-                const currentIndex = stepOrder.indexOf(currentStep);
-                const isActive = index <= currentIndex;
+        {/* Service Categories */}
+        <div className="px-4 py-6 space-y-4">
+          {Object.values(servicesByCategory).map((category: any, index) => {
+            const IconComponent = category.icon;
+            const isExpanded = expandedCategories.has(category.id);
 
-                return (
-                  <div
-                    key={step}
-                    className={`flex-1 text-center text-sm ${
-                      isActive ? 'text-blue-600 font-semibold' : 'text-gray-400'
-                    }`}
-                  >
-                    {step}
-                  </div>
-                );
-              })
-            : ['Bilgiler', 'Hizmetler', 'Tarih', 'Saat', 'Onayla'].map((step, index) => {
-                const stepOrder = ['info', 'services', 'date', 'slot', 'confirm'];
-                const currentIndex = stepOrder.indexOf(currentStep);
-                const isActive = index <= currentIndex;
-
-                return (
-                  <div
-                    key={step}
-                    className={`flex-1 text-center text-sm ${
-                      isActive ? 'text-blue-600 font-semibold' : 'text-gray-400'
-                    }`}
-                  >
-                    {step}
-                  </div>
-                );
-              })
-          }
-        </div>
-
-        <div className="p-6">
-          {currentStep === 'info' && (
-            <div className="space-y-4">
-              <h2 className="text-xl font-semibold mb-4">Kişisel Bilgiler</h2>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Ad Soyad *
-                </label>
-                <input
-                  type="text"
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Doğum Tarihi *
-                </label>
-                <input
-                  type="date"
-                  value={birthDate}
-                  onChange={(e) => setBirthDate(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Cinsiyet *
-                </label>
-                <select
-                  value={gender}
-                  onChange={(e) => setGender(e.target.value as any)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="kadin">Kadın</option>
-                  <option value="erkek">Erkek</option>
-                  <option value="belirtmek-istemiyorum">Belirtmek İstemiyorum</option>
-                </select>
-              </div>
-
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  id="campaignOptIn"
-                  checked={campaignOptIn}
-                  onChange={(e) => setCampaignOptIn(e.target.checked)}
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-                <label htmlFor="campaignOptIn" className="ml-2 text-sm text-gray-700">
-                  Kampanya ve promosyonlardan haberdar olmak istiyorum
-                </label>
-              </div>
-
-              <button
-                onClick={() => setCurrentStep('services')}
-                disabled={!customerName || !birthDate}
-                className="w-full bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
-                data-testid="booking-next"
+            return (
+              <motion.div
+                key={category.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.1 }}
+                className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden"
               >
-                Devam Et
-              </button>
-            </div>
-          )}
-
-          {currentStep === 'services' && (
-            <div className="space-y-4">
-              <h2 className="text-xl font-semibold mb-4">Hizmet Seçimi</h2>
-
-              {/* TEMPORARY DEBUG - REMOVE AFTER FIXING */}
-              <pre style={{ fontSize: '10px', background: '#f0f0f0', padding: '5px', marginBottom: '10px' }}>
-                {JSON.stringify({ servicesLength: services.length, staffLength: staff.length, services, staff }, null, 2)}
-              </pre>
-
-              {services.length === 0 ? (
-                <div className="text-center py-8">
-                  <p className="text-gray-500">Bu salon için henüz hizmet tanımlanmamış.</p>
-                  <p className="text-sm text-gray-400 mt-2">Lütfen salon sahibi ile iletişime geçin.</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Hizmet Seçin *
-                    </label>
-                    <div className="space-y-2">
-                      {services.map(service => (
-                        <div
-                          key={service.id}
-                          onClick={() => setSelectedService(service.id)}
-                          className={`p-3 border rounded-md cursor-pointer ${
-                            selectedService === service.id
-                              ? 'border-blue-500 bg-blue-50'
-                              : 'border-gray-300 hover:border-blue-300'
-                          }`}
-                          data-testid="booking-service-item"
-                        >
-                          <div className="flex justify-between items-center">
-                            <div>
-                              <h3 className="font-medium">{service.name}</h3>
-                              <p className="text-sm text-gray-600">{service.duration} dakika - ₺{service.price}</p>
-                            </div>
-                            {selectedService === service.id && (
-                              <span className="text-blue-600">✓</span>
-                            )}
-                          </div>
-                        </div>
-                      ))}
+                <button
+                  onClick={() => toggleCategory(category.id)}
+                  className="w-full px-4 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                >
+                  <div className="flex items-center space-x-3">
+                    <div className="w-10 h-10 bg-[#D4AF37]/10 rounded-lg flex items-center justify-center">
+                      <IconComponent className="w-5 h-5 text-[#D4AF37]" />
+                    </div>
+                    <div className="text-left">
+                      <h3 className="font-semibold text-gray-900">{category.name}</h3>
+                      <p className="text-sm text-gray-600">{category.services.length} hizmet</p>
                     </div>
                   </div>
-
-                  {selectedService && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Personel Seçin *
-                      </label>
-                      <div className="space-y-2">
-                        {staff.map(person => (
-                          <div
-                            key={person.id}
-                            onClick={() => setSelectedStaff(person.id)}
-                            className={`p-3 border rounded-md cursor-pointer ${
-                              selectedStaff === person.id
-                                ? 'border-blue-500 bg-blue-50'
-                                : 'border-gray-300 hover:border-blue-300'
-                            }`}
-                          >
-                            <div className="flex justify-between items-center">
-                              <span className="font-medium">{person.name}</span>
-                              {selectedStaff === person.id && (
-                                <span className="text-blue-600">✓</span>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
+                  {isExpanded ? (
+                    <ChevronUp className="w-5 h-5 text-gray-600" />
+                  ) : (
+                    <ChevronDown className="w-5 h-5 text-gray-600" />
                   )}
-                </div>
-              )}
-
-              <button
-                onClick={() => setCurrentStep('date')}
-                disabled={!selectedService || !selectedStaff}
-                className="w-full bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
-              >
-                Devam Et
-              </button>
-            </div>
-          )}
-
-          {currentStep === 'date' && (
-            <div className="space-y-4">
-              <h2 className="text-xl font-semibold mb-4">Tarih Seçimi</h2>
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  onClick={() => {
-                    const today = new Date().toISOString().split('T')[0];
-                    console.log('Date selected: today', today);
-                    handleDateChange(today);
-                    setCurrentStep('slot');
-                  }}
-                  className="py-3 px-4 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700"
-                >
-                  Bugün
                 </button>
-                <button
-                  onClick={() => {
-                    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-                    console.log('Date selected: tomorrow', tomorrow);
-                    handleDateChange(tomorrow);
-                    setCurrentStep('slot');
-                  }}
-                  className="py-3 px-4 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700"
-                >
-                  Yarın
-                </button>
-                <button
-                  onClick={() => {
-                    const dayAfter = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-                    console.log('Date selected: +2 days', dayAfter);
-                    handleDateChange(dayAfter);
-                    setCurrentStep('slot');
-                  }}
-                  className="py-3 px-4 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700"
-                >
-                  2 Gün Sonra
-                </button>
-              </div>
-            </div>
-          )}
 
-          {currentStep === 'slot' && (
-            <div className="space-y-4">
-              <h2 className="text-xl font-semibold mb-4">Saat Seçimi</h2>
-              <p className="text-gray-600 mb-4">
-                Seçilen tarih: {selectedDate ? new Date(selectedDate).toLocaleDateString('tr-TR') : 'Tarih seçilmedi'}
-              </p>
+                <AnimatePresence>
+                  {isExpanded && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      className="border-t border-gray-100"
+                    >
+                      <div className="p-4 space-y-3">
+                        {category.services.map((service: any) => {
+                          const isInCart = cart.some(item => item.serviceId === service.id);
+                          const cartItem = cart.find(item => item.serviceId === service.id);
 
-              {Array.isArray(availableSlots) && availableSlots.length > 0 ? (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Uygun Saatler *
-                  </label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {availableSlots.map(slot => (
-                      <button
-                        key={slot}
-                        onClick={() => {
-                          console.log('Time slot selected:', slot);
-                          setSelectedSlot(slot);
-                        }}
-                        className={`py-2 px-3 text-sm border rounded-md ${
-                          selectedSlot === slot
-                            ? 'bg-blue-600 text-white border-blue-600'
-                            : 'bg-white text-gray-700 border-gray-300 hover:border-blue-500'
-                        }`}
-                        data-testid="booking-slot-item"
-                      >
-                        {slot}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <div className="text-center py-8">
-                  <p className="text-gray-500">Bu tarih için uygun saat bulunamadı.</p>
-                  <button
-                    onClick={() => setCurrentStep('date')}
-                    className="mt-4 text-blue-600 hover:text-blue-800"
-                  >
-                    Farklı tarih seç
-                  </button>
-                </div>
-              )}
+                          return (
+                            <motion.div
+                              key={service.id}
+                              initial={{ opacity: 0, x: -20 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              className="bg-gray-50 rounded-lg p-3"
+                            >
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="flex-1">
+                                  <div className="flex items-center space-x-2 mb-1">
+                                    <h4 className="font-medium text-gray-900">{service.name}</h4>
+                                    {service.category.schedulingRule === 'CONSECUTIVE_BLOCK' && (
+                                      <motion.span
+                                        animate={{ scale: [1, 1.1, 1] }}
+                                        transition={{ repeat: Infinity, duration: 2 }}
+                                        className="bg-[#D4AF37] text-white text-xs px-2 py-1 rounded-full font-medium"
+                                      >
+                                        ⚡ Akıllı Blok
+                                      </motion.span>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center space-x-3 text-sm text-gray-600">
+                                    <div className="flex items-center space-x-1">
+                                      <Clock className="w-4 h-4" />
+                                      <span>{service.duration}dk</span>
+                                    </div>
+                                    <span>₺{service.price}</span>
+                                  </div>
+                                </div>
 
-              <button
-                onClick={() => {
-                  console.log('Attempting to go to confirm step');
-                  console.log('selectedDate:', selectedDate, 'selectedSlot:', selectedSlot);
-                  console.log('Button should be enabled:', !!(selectedDate && selectedSlot));
-                  setCurrentStep('confirm');
-                }}
-                disabled={!selectedDate || !selectedSlot}
-                className="w-full bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
-              >
-                Devam Et
-              </button>
-            </div>
-          )}
+                                {!isInCart ? (
+                                  <motion.button
+                                    whileHover={{ scale: 1.05 }}
+                                    whileTap={{ scale: 0.95 }}
+                                    onClick={() => addToCart(service)}
+                                    className="bg-[#D4AF37] text-white px-4 py-2 rounded-lg font-medium text-sm"
+                                  >
+                                    Ekle
+                                  </motion.button>
+                                ) : (
+                                  <motion.button
+                                    whileHover={{ scale: 1.05 }}
+                                    whileTap={{ scale: 0.95 }}
+                                    onClick={() => removeFromCart(service.id)}
+                                    className="bg-red-500 text-white px-4 py-2 rounded-lg font-medium text-sm"
+                                  >
+                                    <X className="w-4 h-4" />
+                                  </motion.button>
+                                )}
+                              </div>
 
-          {currentStep === 'confirm' && (
-            <div className="space-y-4">
-              <h2 className="text-xl font-semibold mb-4">Onay</h2>
+                              {/* Expanded Cart Item */}
+                              <AnimatePresence>
+                                {isInCart && cartItem && (
+                                  <motion.div
+                                    initial={{ height: 0, opacity: 0 }}
+                                    animate={{ height: 'auto', opacity: 1 }}
+                                    exit={{ height: 0, opacity: 0 }}
+                                    className="mt-3 pt-3 border-t border-gray-200 space-y-3"
+                                  >
+                                    <div>
+                                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Uzman Seçin
+                                      </label>
+                                      <select
+                                        value={cartItem.staffId}
+                                        onChange={(e) => updateCartItem(service.id, { staffId: parseInt(e.target.value) })}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#D4AF37] focus:border-transparent"
+                                      >
+                                        {MOCK_STAFF.map(staff => (
+                                          <option key={staff.id} value={staff.id}>
+                                            {staff.name}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
 
-              <div className="bg-gray-50 p-4 rounded-md space-y-2">
-                <p><strong>İsim:</strong> {customerName || 'Belirtilmemiş'}</p>
-                <p><strong>Hizmet:</strong> {selectedService ? services.find(s => s.id === selectedService)?.name : 'Belirtilmemiş'}</p>
-                <p><strong>Personel:</strong> {selectedStaff ? staff.find(s => s.id === selectedStaff)?.name : 'Belirtilmemiş'}</p>
-                <p><strong>Tarih:</strong> {selectedDate || 'Belirtilmemiş'}</p>
-                <p><strong>Saat:</strong> {selectedSlot || 'Belirtilmemiş'}</p>
-                <p><strong>Salon:</strong> {magicLinkData.salon?.name || 'Salon'}</p>
-              </div>
-
-              {submitError && (
-                <div className="text-red-600 text-sm text-center bg-red-50 p-3 rounded-md">
-                  {submitError}
-                </div>
-              )}
-
-              {submitSuccess && (
-                <div className="text-green-600 text-sm text-center bg-green-50 p-3 rounded-md">
-                  Randevunuz başarıyla oluşturuldu! Salon sahibi kısa sürede sizinle iletişime geçecektir.
-                </div>
-              )}
-
-              <button
-                onClick={handleSubmit}
-                disabled={submitting || submitSuccess}
-                className="w-full bg-green-600 text-white py-3 px-4 rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
-                data-testid="booking-confirm"
-              >
-                {submitting ? 'Randevu Oluşturuluyor...' : submitSuccess ? 'Randevu Oluşturuldu' : 'Randevuyu Onayla'}
-              </button>
-            </div>
-          )}
+                                    <div className="flex items-center space-x-3">
+                                      <label className="flex items-center space-x-2 cursor-pointer">
+                                        <input
+                                          type="radio"
+                                          name={`gift-${service.id}`}
+                                          checked={!cartItem.isGift}
+                                          onChange={() => updateCartItem(service.id, { isGift: false })}
+                                          className="text-[#D4AF37] focus:ring-[#D4AF37]"
+                                        />
+                                        <span className="text-sm text-gray-700">Kendim için</span>
+                                      </label>
+                                      <label className="flex items-center space-x-2 cursor-pointer">
+                                        <input
+                                          type="radio"
+                                          name={`gift-${service.id}`}
+                                          checked={cartItem.isGift}
+                                          onChange={() => updateCartItem(service.id, { isGift: true })}
+                                          className="text-[#D4AF37] focus:ring-[#D4AF37]"
+                                        />
+                                        <span className="text-sm text-gray-700">Hediye</span>
+                                      </label>
+                                    </div>
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
+                            </motion.div>
+                          );
+                        })}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </motion.div>
+            );
+          })}
         </div>
       </div>
+
+      {/* Sticky Footer */}
+      {cart.length > 0 && (
+        <motion.div
+          initial={{ y: 100, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          className="fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-md border-t border-gray-200 px-4 py-4"
+        >
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <p className="font-semibold text-gray-900">
+                {cart.length} hizmet seçildi
+              </p>
+              <p className="text-sm text-gray-600">
+                Toplam: {totalDuration}dk • ₺{totalPrice}
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-xs text-gray-500">Tahmini süre</p>
+              <p className="font-medium text-gray-900">{totalDuration} dakika</p>
+            </div>
+          </div>
+
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            className="w-full bg-gradient-to-r from-[#D4AF37] to-yellow-600 text-white font-bold py-4 px-6 rounded-xl shadow-lg"
+          >
+            Randevuyu Onayla →
+          </motion.button>
+        </motion.div>
+      )}
     </div>
   );
-});
+};
 
 export default MagicLinkBooking;

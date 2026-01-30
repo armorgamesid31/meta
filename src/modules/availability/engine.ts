@@ -14,6 +14,7 @@ import {
   LeaveNormalizer,
   LockNormalizer
 } from './normalizer.js';
+import { calculateSmartDuration, ServiceWithCategory } from '../../utils/durationCalculator.js';
 
 class AvailabilityEngine {
   private readonly SLOT_INTERVAL_MINUTES = 15;
@@ -32,6 +33,101 @@ class AvailabilityEngine {
 
     // Filter available slots
     const availableSlots = this.filterAvailableSlots(allSlots, constraints, peopleCount);
+
+    // Rank and limit slots
+    const rankedSlots = this.rankSlots(availableSlots);
+
+    // Generate lock token
+    const lockToken = this.generateLockToken();
+
+    return {
+      slots: rankedSlots,
+      lockToken
+    };
+  }
+
+  /**
+   * Calculate available time slots for service bundles with scheduling rules
+   */
+  async calculateBundleAvailability(options: {
+    date: Date;
+    services: ServiceWithCategory[];
+    peopleCount: number;
+    salonId: number;
+  }): Promise<AvailabilityResult> {
+    const { date, services, peopleCount, salonId } = options;
+
+    // Check if services require CONSECUTIVE_BLOCK scheduling
+    const hasConsecutiveBlock = services.some(service =>
+      service.category?.schedulingRule === 'CONSECUTIVE_BLOCK'
+    );
+
+    if (hasConsecutiveBlock) {
+      return this.calculateConsecutiveBlockAvailability(date, services, peopleCount, salonId);
+    }
+
+    // Fall back to standard availability calculation
+    // Use the first service for compatibility
+    const firstService = services[0];
+    if (!firstService) {
+      return { slots: [], lockToken: this.generateLockToken() };
+    }
+
+    return this.calculateAvailability({
+      date,
+      serviceId: firstService.id,
+      peopleCount,
+      salonId
+    });
+  }
+
+  /**
+   * Calculate availability for CONSECUTIVE_BLOCK services
+   * Services must be booked as a continuous time slot with synergy
+   */
+  private async calculateConsecutiveBlockAvailability(
+    date: Date,
+    services: ServiceWithCategory[],
+    peopleCount: number,
+    salonId: number
+  ): Promise<AvailabilityResult> {
+    // Calculate total duration using smart duration calculation
+    const totalDuration = calculateSmartDuration(services);
+
+    // Generate all possible start times for the day
+    const allSlots = this.generateTimeSlots(date);
+
+    // Get all constraints
+    const constraints = await this.getConstraints(salonId, date);
+
+    const availableSlots: AvailabilitySlot[] = [];
+
+    for (const slotStart of allSlots) {
+      const slotEnd = new Date(slotStart.getTime() + totalDuration * 60 * 1000);
+
+      // Check if the entire block conflicts with any constraints
+      const conflicts = this.checkSlotConflicts(slotStart, slotEnd, constraints);
+
+      if (conflicts.length === 0) {
+        // Block is available - find staff available for the entire duration
+        const availableStaff = this.findAvailableStaff(slotStart, slotEnd, constraints, peopleCount);
+
+        if (availableStaff.length >= peopleCount) {
+          availableSlots.push({
+            startTime: slotStart,
+            endTime: slotEnd,
+            availableStaff,
+            optionId: uuidv4(),
+            // Add metadata for CONSECUTIVE_BLOCK
+            metadata: {
+              schedulingRule: 'CONSECUTIVE_BLOCK',
+              totalDuration,
+              serviceCount: services.length
+            }
+          });
+        }
+      }
+    }
 
     // Rank and limit slots
     const rankedSlots = this.rankSlots(availableSlots);

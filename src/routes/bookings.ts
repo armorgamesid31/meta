@@ -3,6 +3,7 @@ import { prisma } from '../prisma.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { AvailabilityEngine } from '../modules/availability/engine.js';
 import { DateNormalizer } from '../modules/availability/normalizer.js';
+import { calculateSmartDuration, ServiceWithCategory } from '../utils/durationCalculator.js';
 
 const router = Router();
 
@@ -39,7 +40,7 @@ interface RescheduleBookingRequest {
 
 // POST /api/bookings/confirm - Confirm a booking using a lock token
 router.post("/confirm", authenticateToken, async (req: any, res: any) => {
-  const { lockToken, customerName, customerPhone, serviceId, staffIds } = req.body as any;
+  const { lockToken, customerName, customerPhone, serviceId, staffIds } = req.body as ConfirmBookingRequest;
 
   if (!req.user) {
     return res.status(401).json({ message: 'Unauthorized.' });
@@ -101,7 +102,7 @@ router.post("/confirm", authenticateToken, async (req: any, res: any) => {
       const slotStillAvailable = availabilityResult.slots.some(slot =>
         slot.startTime.getTime() === slotStart.getTime() &&
         slot.availableStaff.length >= staffIds.length &&
-        staffIds.every(staffId => slot.availableStaff.includes(staffId))
+        staffIds.every((staffId: number) => slot.availableStaff.includes(staffId))
       );
 
       if (!slotStillAvailable) {
@@ -349,7 +350,7 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
       const slotAvailable = availabilityResult.slots.some(slot =>
         slot.startTime.getTime() === newSlotStart.getTime() &&
         slot.availableStaff.length >= newSlot.staffIds.length &&
-        newSlot.staffIds.every(staffId => slot.availableStaff.includes(staffId))
+        newSlot.staffIds.every((staffId: number) => slot.availableStaff.includes(staffId))
       );
 
       if (!slotAvailable) {
@@ -569,17 +570,21 @@ router.post('/', async (req: any, res: any) => {
           throw new Error('Invalid gender value');
         }
 
-        // Create appointment for each service in this person
+        // Collect all services for this person to calculate smart duration
+        const personServices: ServiceWithCategory[] = [];
+
         for (const serviceItem of person.services) {
           if (!serviceItem.serviceId || !serviceItem.staffId) {
             throw new Error('Invalid service data');
           }
 
           // Validate service and staff exist
-          const service = await tx.service.findFirst({
+          const service = await (tx.service.findUnique as any)({
             where: {
-              id: serviceItem.serviceId,
-              salonId: salonId
+              id: serviceItem.serviceId
+            },
+            include: {
+              category: true
             }
           });
 
@@ -598,8 +603,28 @@ router.post('/', async (req: any, res: any) => {
             throw new Error('Staff not found');
           }
 
-          // Calculate end time
-          const endTime = new Date(appointmentDateTime.getTime() + service.duration * 60 * 1000);
+          // Add service to collection for smart duration calculation
+          personServices.push({
+            id: service.id,
+            name: service.name,
+            duration: service.duration,
+            price: service.price,
+            isSynergyEnabled: service.isSynergyEnabled,
+            category: service.category ? {
+              schedulingRule: service.category.schedulingRule,
+              synergyFactor: service.category.synergyFactor,
+              bufferMinutes: service.category.bufferMinutes
+            } : undefined
+          });
+        }
+
+        // Calculate smart duration for all services this person is getting
+        const totalDuration = calculateSmartDuration(personServices);
+
+        // Create appointment for each service in this person
+        for (const serviceItem of person.services) {
+          // Calculate end time using smart duration
+          const endTime = new Date(appointmentDateTime.getTime() + totalDuration * 60 * 1000);
 
           // Create appointment
           const appointment = await tx.appointment.create({
