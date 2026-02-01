@@ -65,10 +65,10 @@ export function DateTimePicker({
   return (
     <div className="space-y-4">
       {/* Date Selection */}
-      <div className="bg-white rounded-[20px] p-6 shadow-sm border border-gray-100">
+      <div className="bg-white rounded-[20px] p-6 shadow-premium border border-gray-100 card-premium">
         <div className="flex items-center gap-2 mb-4">
           <Calendar className="w-5 h-5 text-[#D4AF37]" />
-          <h3 className="text-lg font-semibold text-[#2D2D2D]">Tarih Seçin</h3>
+          <h3 className="text-lg font-semibold text-[#2D2D2D] text-premium">Tarih Seçin</h3>
         </div>
 
         <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
@@ -140,14 +140,14 @@ export function DateTimePicker({
 
       {/* Time Selection */}
       {selectedDate && (
-        <div className="bg-white rounded-[20px] p-6 shadow-sm border border-gray-100">
+        <div className="bg-white rounded-[20px] p-6 shadow-premium border border-gray-100 card-premium">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <Clock className="w-5 h-5 text-[#D4AF37]" />
-              <h3 className="text-lg font-semibold text-[#2D2D2D]">Saat Seçin</h3>
+              <h3 className="text-lg font-semibold text-[#2D2D2D] text-premium">Saat Seçin</h3>
             </div>
             {totalDuration > 0 && (
-              <span className="text-sm text-gray-500">
+              <span className="text-sm text-gray-500 text-premium">
                 ~{totalDuration} dakika
               </span>
             )}

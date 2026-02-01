@@ -151,14 +151,14 @@ export function ServiceList({
   return (
     <div className="space-y-4">
       {/* Services Card */}
-      <div className="bg-white rounded-[20px] p-6 shadow-sm border border-gray-100">
+      <div className="bg-white rounded-[20px] p-6 shadow-premium border border-gray-100 card-premium">
         <div className="flex items-center gap-3 mb-6">
           <div className="w-10 h-10 bg-[#D4AF37]/10 rounded-full flex items-center justify-center">
             <span className="text-xl">💇‍♀️</span>
           </div>
           <div>
-            <h3 className="text-lg font-semibold text-[#2D2D2D]">Hizmet Seçin</h3>
-            <p className="text-sm text-gray-500">{filteredServices.length} hizmet mevcut</p>
+            <h3 className="text-lg font-semibold text-[#2D2D2D] text-premium">Hizmet Seçin</h3>
+            <p className="text-sm text-gray-500 text-premium">{filteredServices.length} hizmet mevcut</p>
           </div>
         </div>
 
