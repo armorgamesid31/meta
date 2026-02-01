@@ -27,32 +27,34 @@ export function ServiceCard({
 
   return (
     <div
-      className={`border-b border-gray-50 last:border-b-0 transition-all ${
-        isSelected ? 'bg-[#FFFBEB] border-l-[3px] border-l-[#F59E0B]' : 'bg-white'
+      className={`border-b border-gray-100 last:border-b-0 transition-all ${
+        isSelected ? 'bg-[#FFFDF5] border-l-[4px] border-l-[#BC952B]' : 'bg-white'
       }`}
     >
       <div className="px-5 py-4">
         {/* Main Service Row */}
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
-            <h4 className="font-semibold text-[#1F2937] text-[15px] mb-1">
-              {service.name}
-            </h4>
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs text-gray-500 font-medium">
-                {service.duration}
-              </span>
-
+            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+               <h4 className="font-bold text-[#1a1a1a] text-[15px] leading-tight">
+                {service.name}
+              </h4>
               {service.hasSynergy && (
-                <span className="text-[10px] bg-[#FEF3C7] text-[#D97706] px-1.5 py-0.5 rounded flex items-center gap-1 font-semibold">
-                  <Zap className="w-3 h-3 fill-current" />
+                <span className="text-[9px] bg-[#FEF3C7] text-[#D97706] px-1.5 py-0.5 rounded-lg flex items-center gap-1 font-bold uppercase tracking-wider border border-[#D97706]/10 shadow-sm">
+                  <Zap className="w-2.5 h-2.5 fill-current" />
                   {service.synergyBadge}
                 </span>
               )}
+            </div>
+            
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-[#6b7280] font-bold">
+                {service.duration}
+              </span>
 
               {service.packageAvailable && !service.hasSynergy && (
-                <span className="text-[10px] bg-[#ECFDF5] text-[#059669] px-1.5 py-0.5 rounded flex items-center gap-1 font-semibold">
-                  <Package className="w-3 h-3" />
+                <span className="text-[10px] bg-[#ECFDF5] text-[#059669] px-2 py-0.5 rounded-lg flex items-center gap-1 font-bold border border-[#059669]/10">
+                  <Package className="w-2.5 h-2.5" />
                   Paket var
                 </span>
               )}
@@ -61,20 +63,20 @@ export function ServiceCard({
 
           <div className="flex items-center gap-3">
             {/* Price */}
-            <div className="text-right flex flex-col items-end">
+            <div className="text-right flex flex-col items-end justify-center min-w-[70px]">
               {service.usePackage ? (
-                <p className="font-semibold text-[#10B981] text-sm">Ücretsiz</p>
+                <p className="font-bold text-[#10B981] text-sm">Ücretsiz</p>
               ) : service.discountedPrice ? (
                 <>
-                  <p className="text-[11px] text-gray-400 line-through font-medium">
+                  <p className="text-[11px] text-[#9ca3af] line-through font-bold leading-none mb-1">
                     {service.price} TL
                   </p>
-                  <p className="font-bold text-[#10B981] text-[15px]">
+                  <p className="font-black text-[#10B981] text-[16px] leading-none">
                     {service.discountedPrice} TL
                   </p>
                 </>
               ) : (
-                <p className="font-bold text-[#1F2937] text-[15px]">
+                <p className="font-black text-[#1a1a1a] text-[16px]">
                   {service.price} TL
                 </p>
               )}
@@ -83,20 +85,20 @@ export function ServiceCard({
             {/* Add/Added Button */}
             <button
               onClick={onToggle}
-              className={`px-3 py-1.5 rounded-[10px] font-semibold text-xs transition-all flex items-center gap-1 whitespace-nowrap cursor-pointer ${
+              className={`min-w-[84px] h-[34px] rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1 shadow-sm cursor-pointer ${
                 isSelected
-                  ? 'bg-[#D4AF37] text-white shadow-sm hover:bg-[#B45309]'
-                  : 'bg-white border border-[#D4AF37] text-[#D4AF37] hover:bg-[#FFFBEB]'
+                  ? 'bg-[#BC952B] text-white'
+                  : 'bg-white border-2 border-[#BC952B] text-[#BC952B] hover:bg-[#BC952B]/5'
               }`}
             >
               {isSelected ? (
                 <>
-                  <Check className="w-3.5 h-3.5" strokeWidth={3} />
+                  <Check className="w-3.5 h-3.5" strokeWidth={3.5} />
                   <span>Eklendi</span>
                 </>
               ) : (
                 <>
-                  <span className="text-sm leading-none">+</span>
+                  <span className="text-sm">+</span>
                   <span>Ekle</span>
                 </>
               )}
@@ -106,27 +108,27 @@ export function ServiceCard({
 
         {/* Configuration Row - Only shown when selected */}
         {isSelected && (
-          <div className="mt-4 flex flex-wrap items-center gap-2 animate-in slide-in-from-top-1 fade-in duration-200">
+          <div className="mt-5 flex flex-wrap items-center gap-2 animate-in slide-in-from-top-2 fade-in duration-300">
             {/* Staff Selector Chip */}
             <div className="relative">
               <button
                 onClick={() => setIsStaffDropdownOpen(!isStaffDropdownOpen)}
-                className="px-3 py-1.5 bg-white border border-gray-200 rounded-xl text-xs flex items-center gap-1.5 hover:border-[#D4AF37] transition-colors cursor-pointer text-gray-700 font-medium"
+                className="h-[34px] px-3 bg-white border border-gray-200 rounded-2xl text-[12px] flex items-center gap-2 hover:border-[#BC952B] transition-colors cursor-pointer text-[#374151] font-bold shadow-sm"
               >
-                <User className="w-3.5 h-3.5 text-gray-400" />
+                <User className="w-3.5 h-3.5 text-[#BC952B]" />
                 <span>
                   Çalışan:{' '}
-                  <span className="text-[#1F2937]">
+                  <span className="text-[#1a1a1a]">
                     {staffOptions.find((s) => s.id === selectedStaffId)?.name ||
-                      'Fark Etmez'}
+                      'Zeynep'}
                   </span>
                 </span>
-                <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
+                <ChevronDown className={`w-3.5 h-3.5 text-gray-400 transition-transform ${isStaffDropdownOpen ? 'rotate-180' : ''}`} />
               </button>
 
               {/* Staff Dropdown */}
               {isStaffDropdownOpen && (
-                <div className="absolute top-full left-0 mt-1 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-10 min-w-[160px]">
+                <div className="absolute top-full left-0 mt-1.5 bg-white rounded-2xl shadow-xl border border-gray-100 py-1.5 z-10 min-w-[180px] animate-in zoom-in-95 duration-200">
                   {staffOptions.map((staff) => (
                     <button
                       key={staff.id}
@@ -134,16 +136,16 @@ export function ServiceCard({
                         onStaffSelect(staff.id);
                         setIsStaffDropdownOpen(false);
                       }}
-                      className={`w-full px-4 py-2 text-left hover:bg-gray-50 flex items-center gap-2 cursor-pointer ${
-                        selectedStaffId === staff.id ? 'bg-[#FFFBEB]' : ''
+                      className={`w-full px-4 py-2.5 text-left hover:bg-[#FFF9E5] flex items-center gap-3 cursor-pointer transition-colors ${
+                        selectedStaffId === staff.id ? 'bg-[#FFF9E5]' : ''
                       }`}
                     >
-                      <span className="text-base">{staff.emoji}</span>
-                      <span className="text-xs font-medium text-[#374151]">
+                      <span className="text-xl">{staff.emoji}</span>
+                      <span className="text-xs font-bold text-[#374151]">
                         {staff.name}
                       </span>
                       {selectedStaffId === staff.id && (
-                        <Check className="w-3.5 h-3.5 text-[#D4AF37] ml-auto" />
+                        <Check className="w-4 h-4 text-[#BC952B] ml-auto" strokeWidth={3} />
                       )}
                     </button>
                   ))}
@@ -154,10 +156,10 @@ export function ServiceCard({
             {/* Guest Selector Chip */}
             <button
               onClick={onToggleGuest}
-              className={`px-3 py-1.5 rounded-xl text-xs flex items-center gap-1.5 transition-all cursor-pointer font-medium border ${
+              className={`h-[34px] px-4 rounded-2xl text-[12px] flex items-center gap-2 transition-all cursor-pointer font-bold border shadow-sm ${
                 service.forGuest
-                  ? 'bg-[#D4AF37] text-white border-[#D4AF37]'
-                  : 'bg-white border-gray-200 text-gray-600 hover:border-[#D4AF37]'
+                  ? 'bg-[#BC952B] text-white border-[#BC952B]'
+                  : 'bg-white border-gray-200 text-[#4b5563] hover:border-[#BC952B]'
               }`}
             >
               {service.forGuest ? (
@@ -177,16 +179,16 @@ export function ServiceCard({
             {service.packageAvailable && (
               <button
                 onClick={onTogglePackage}
-                className={`px-3 py-1.5 rounded-xl text-xs flex items-center gap-1.5 transition-all cursor-pointer font-medium border ${
+                className={`h-[34px] px-4 rounded-2xl text-[11px] flex items-center gap-2 transition-all cursor-pointer font-bold border shadow-sm ${
                   service.usePackage
-                    ? 'bg-[#ECFDF5] text-[#059669] border-[#059669]/20'
-                    : 'bg-[#ECFDF5] text-[#059669] border-transparent hover:border-[#059669]/30'
+                    ? 'bg-[#10B981] text-white border-[#10B981]'
+                    : 'bg-[#ECFDF5] text-[#059669] border-[#059669]/20 hover:bg-[#d1fae5]'
                 }`}
               >
-                <Package className="w-3.5 h-3.5" />
+                <Package className="w-4 h-4" />
                 <span>Paketimi Kullan</span>
-                <span className="opacity-70 text-[10px]">
-                  ({service.packageSessionsLeft} kaldı)
+                <span className="bg-white/20 px-1.5 rounded-lg text-[10px]">
+                  {service.packageSessionsLeft} kaldı
                 </span>
               </button>
             )}

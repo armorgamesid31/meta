@@ -8,29 +8,32 @@ interface HeaderProps {
 
 export function Header({ customerName, selectedGender, onGenderClick }: HeaderProps) {
   return (
-    <header className="bg-white">
-      <div className="max-w-md mx-auto px-4 py-4">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-[#D4AF37] rounded-xl flex items-center justify-center rotate-45 shadow-sm">
-              <Sparkles className="w-5 h-5 text-white -rotate-45" />
+    <header className="bg-white px-4 pt-6 pb-4">
+      <div className="max-w-md mx-auto">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-[#BC952B] rounded-xl flex items-center justify-center shadow-sm">
+              <Sparkles className="w-6 h-6 text-white" />
             </div>
-            <h1 className="text-xl font-bold text-[#2D2D2D]">SalonAsistan</h1>
+            <h1 className="text-xl font-bold text-[#1a1a1a] tracking-tight">SalonAsistan</h1>
           </div>
 
-          {selectedGender && onGenderClick && (
+          {selectedGender && (
             <button
               onClick={onGenderClick}
-              className="w-10 h-10 bg-[#FFF8E1] rounded-full flex items-center justify-center text-xl border border-[#D4AF37]/20 shadow-sm cursor-pointer"
-              aria-label="Cinsiyet seçimi"
+              className="w-10 h-10 bg-[#FFF9E5] rounded-full flex items-center justify-center border border-[#BC952B]/20 shadow-sm cursor-pointer"
             >
-              {selectedGender === 'woman' ? '👩' : '👨'}
+              <img 
+                src={selectedGender === 'woman' ? "https://api.dicebear.com/7.x/avataaars/svg?seed=Ayse" : "https://api.dicebear.com/7.x/avataaars/svg?seed=Ahmet"} 
+                className="w-8 h-8 rounded-full"
+                alt="Avatar"
+              />
             </button>
           )}
         </div>
 
-        <p className="text-[#4B5563] text-sm font-medium">
-          Tekrar hoş geldin, <span className="text-[#2D2D2D] font-bold">{customerName}</span> ✨
+        <p className="text-[#374151] text-lg font-medium">
+          Tekrar hoş geldin, <span className="font-bold text-[#1a1a1a]">{customerName}</span> <span className="inline-block animate-bounce">✨</span>
         </p>
       </div>
     </header>

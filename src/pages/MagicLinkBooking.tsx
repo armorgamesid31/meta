@@ -84,137 +84,138 @@ const DUMMY_TIMES = {
 };
 
 export default function MagicLinkBooking() {
-  // Purely visual toggles required by Figma interaction
-  const [isWelcomeOpen, setIsWelcomeOpen] = useState(false); // Başlangıçta kapalı olsun, Figma screenshot'a uyması için
+  const [isWelcomeOpen, setIsWelcomeOpen] = useState(false);
   const [selectedGender, setSelectedGender] = useState<'woman' | 'man'>('woman');
   const [searchQuery, setSearchQuery] = useState('');
   const [referralActive, setReferralActive] = useState(false);
   const [referralPhone, setReferralPhone] = useState('');
   const [accordionOpen, setAccordionOpen] = useState(true);
-  const [selectedDate, setSelectedDate] = useState<string>('2026-01-13'); // Figma'da Sal 13 seçili
-  const [selectedTime, setSelectedTime] = useState<string>('12:30'); // Figma'da 12:30 seçili
+  const [selectedDate, setSelectedDate] = useState<string>('2026-01-13');
+  const [selectedTime, setSelectedTime] = useState<string>('12:30');
 
   return (
-    <div className="min-h-screen bg-[#FAFAFA] pb-32 font-sans">
-      <Header
-        customerName="Ayşe"
-        selectedGender={selectedGender}
-        onGenderClick={() => setIsWelcomeOpen(true)}
-      />
-
-      <div className="px-4 py-6 max-w-md mx-auto space-y-6">
-        <QuickActionCards
-          packageCount={3}
-          onRepeatClick={() => {}}
-          onPackagesClick={() => {}}
+    <div className="min-h-screen bg-[#FAFAFA] pb-40 font-sans antialiased text-[#1a1a1a]">
+      <div className="max-w-[390px] mx-auto bg-[#FAFAFA] min-h-screen shadow-2xl relative border-x border-gray-100">
+        <Header
+          customerName="Ayşe"
+          selectedGender={selectedGender}
+          onGenderClick={() => setIsWelcomeOpen(true)}
         />
 
-        <SearchBar value={searchQuery} onChange={setSearchQuery} />
+        <div className="px-4 py-2 space-y-6">
+          <QuickActionCards
+            packageCount={3}
+            onRepeatClick={() => {}}
+            onPackagesClick={() => {}}
+          />
 
-        <ReferralBanner
-          isActive={referralActive}
-          phoneValue={referralPhone}
-          onToggle={() => setReferralActive(!referralActive)}
-          onPhoneChange={setReferralPhone}
-        />
+          <SearchBar value={searchQuery} onChange={setSearchQuery} />
 
-        {/* Service List */}
-        <div className="space-y-3">
-          <ServiceAccordion
-            categoryName="Epilasyon & Tüy Alma"
-            icon="✨"
-            serviceCount={4}
-            isOpen={accordionOpen}
-            onToggle={() => setAccordionOpen(!accordionOpen)}
-          >
-            {DUMMY_SERVICES.map((service) => (
-              <ServiceCard
-                key={service.id}
-                service={service}
-                isSelected={service.id === '1'} // Figma'da ilk servis seçili
-                selectedStaffId="1" // Figma'da Zeynep seçili
-                staffOptions={DUMMY_STAFF}
-                onToggle={() => {}}
-                onToggleGuest={() => {}}
-                onTogglePackage={() => {}}
-                onStaffSelect={() => {}}
-              />
-            ))}
-          </ServiceAccordion>
+          <ReferralBanner
+            isActive={referralActive}
+            phoneValue={referralPhone}
+            onToggle={() => setReferralActive(!referralActive)}
+            onPhoneChange={setReferralPhone}
+          />
 
-          <ServiceAccordion
-            categoryName="Cilt Bakımı & Yüz"
-            icon="🧖‍♀️"
-            serviceCount={4}
-            isOpen={false}
-            onToggle={() => {}}
-          >
-            <div />
-          </ServiceAccordion>
+          {/* Service List */}
+          <div className="space-y-1">
+            <ServiceAccordion
+              categoryName="Epilasyon & Tüy Alma"
+              icon="✨"
+              serviceCount={4}
+              isOpen={accordionOpen}
+              onToggle={() => setAccordionOpen(!accordionOpen)}
+            >
+              {DUMMY_SERVICES.map((service) => (
+                <ServiceCard
+                  key={service.id}
+                  service={service}
+                  isSelected={service.id === '1'}
+                  selectedStaffId="1"
+                  staffOptions={DUMMY_STAFF}
+                  onToggle={() => {}}
+                  onToggleGuest={() => {}}
+                  onTogglePackage={() => {}}
+                  onStaffSelect={() => {}}
+                />
+              ))}
+            </ServiceAccordion>
 
-          <ServiceAccordion
-            categoryName="Vücut Şekillendirme"
-            icon="💪"
-            serviceCount={3}
-            isOpen={false}
-            onToggle={() => {}}
-          >
-            <div />
-          </ServiceAccordion>
+            <ServiceAccordion
+              categoryName="Cilt Bakımı & Yüz"
+              icon="🧖‍♀️"
+              serviceCount={4}
+              isOpen={false}
+              onToggle={() => {}}
+            >
+              <div />
+            </ServiceAccordion>
 
-          <ServiceAccordion
-            categoryName="Tırnak Sanatı & Ayak Bakımı"
-            icon="💅"
-            serviceCount={4}
-            isOpen={false}
-            onToggle={() => {}}
-          >
-            <div />
-          </ServiceAccordion>
-          
-          <ServiceAccordion
-            categoryName="Kaş & Kirpik"
-            icon="👁️" // Figma'daki ikona benzer bir şey
-            serviceCount={4}
-            isOpen={false}
-            onToggle={() => {}}
-          >
-            <div />
-          </ServiceAccordion>
+            <ServiceAccordion
+              categoryName="Vücut Şekillendirme"
+              icon="💪"
+              serviceCount={3}
+              isOpen={false}
+              onToggle={() => {}}
+            >
+              <div />
+            </ServiceAccordion>
+
+            <ServiceAccordion
+              categoryName="Tırnak Sanatı & Ayak Bakımı"
+              icon="💅"
+              serviceCount={4}
+              isOpen={false}
+              onToggle={() => {}}
+            >
+              <div />
+            </ServiceAccordion>
+            
+            <ServiceAccordion
+              categoryName="Kaş & Kirpik"
+              icon="👁️"
+              serviceCount={4}
+              isOpen={false}
+              onToggle={() => {}}
+            >
+              <div />
+            </ServiceAccordion>
+          </div>
+
+          <DateSelector
+            dates={DUMMY_DATES}
+            selectedDate={selectedDate}
+            onDateSelect={setSelectedDate}
+          />
+
+          {selectedDate && (
+            <TimeGrid
+              timeSlots={DUMMY_TIMES}
+              selectedTime={selectedTime}
+              onTimeSelect={setSelectedTime}
+              totalDuration={165}
+            />
+          )}
         </div>
 
-        <DateSelector
-          dates={DUMMY_DATES}
-          selectedDate={selectedDate}
-          onDateSelect={setSelectedDate}
+        <StickyPriceFooter
+          originalPrice={4150}
+          finalPrice={4150}
+          showDiscount={false}
+          isEnabled={true}
+          onConfirm={() => {}}
+          onShowBreakdown={() => {}}
         />
 
-        {selectedDate && (
-          <TimeGrid
-            timeSlots={DUMMY_TIMES}
-            selectedTime={selectedTime}
-            onTimeSelect={setSelectedTime}
-            totalDuration={165} // Figma'da ~165 dakika yazıyor
-          />
-        )}
+        <WelcomeModal
+          isOpen={isWelcomeOpen}
+          onSelectGender={(gender) => {
+            setSelectedGender(gender);
+            setIsWelcomeOpen(false);
+          }}
+        />
       </div>
-
-      <StickyPriceFooter
-        originalPrice={4150}
-        finalPrice={4150}
-        showDiscount={false}
-        isEnabled={true}
-        onConfirm={() => {}}
-        onShowBreakdown={() => {}}
-      />
-
-      <WelcomeModal
-        isOpen={isWelcomeOpen}
-        onSelectGender={(gender) => {
-          setSelectedGender(gender);
-          setIsWelcomeOpen(false);
-        }}
-      />
     </div>
   );
 }
