@@ -1,5 +1,5 @@
 // Centralized API configuration
-const API_BASE_URL = 'http://localhost:3000';
+import { API_BASE_URL } from '../config.js';
 
 class ApiClient {
   private baseUrl: string;

@@ -45,6 +45,7 @@ export async function logCustomerBehavior({
         customerId,
         salonId,
         appointmentId,
+        action: behaviorType,
         behaviorType,
         severityScore,
         occurredAt: new Date(),
