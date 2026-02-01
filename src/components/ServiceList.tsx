@@ -6,7 +6,11 @@ export interface Service {
   name: string;
   duration: number;
   price: number;
+  discountedPrice?: number;
   forGuest?: boolean;
+  usePackage?: boolean;
+  packageSessionsLeft?: number;
+  packageAvailable?: boolean;
 }
 
 export interface Staff {
@@ -16,6 +20,8 @@ export interface Staff {
 
 interface ServiceListProps {
   onServiceToggle: (service: Service, forGuest?: boolean) => void;
+  onToggleGuest?: (serviceId: number) => void;
+  onTogglePackage?: (serviceId: number, serviceData: any) => void;
   selectedServices: Service[];
   searchQuery: string;
   referralActive: boolean;
@@ -23,6 +29,7 @@ interface ServiceListProps {
   onStaffSelect: (staffId: string) => void;
   selectedGender: 'FEMALE' | 'MALE';
   salonId?: string;
+  packageSessions?: Record<string, number>;
 }
 
 const staffOptions = [
@@ -53,12 +60,15 @@ const serviceCategories = [
 
 export function ServiceList({
   onServiceToggle,
+  onToggleGuest,
+  onTogglePackage,
   selectedServices,
   searchQuery,
   selectedStaff,
   onStaffSelect,
   selectedGender,
-  salonId
+  salonId,
+  packageSessions
 }: ServiceListProps) {
   const [expandedCategory, setExpandedCategory] = useState<string | null>('Hizmetler');
   const [staffDropdownOpen, setStaffDropdownOpen] = useState<string | null>(null);
@@ -112,10 +122,14 @@ export function ServiceList({
   };
 
   const toggleGuestMode = (service: Service) => {
-    const existingService = getSelectedService(service.id);
-    if (existingService) {
-      // Toggle the forGuest property - we'll handle this in the parent component
-      onServiceToggle(service, !existingService.forGuest);
+    if (onToggleGuest) {
+      onToggleGuest(service.id);
+    }
+  };
+
+  const togglePackageMode = (service: Service) => {
+    if (onTogglePackage) {
+      onTogglePackage(service.id, service);
     }
   };
 
@@ -191,7 +205,16 @@ export function ServiceList({
                     </div>
 
                     <div className="text-right">
-                      <p className="text-xl font-bold text-[#2D2D2D]">{service.price} ₺</p>
+                      {selectedService?.usePackage ? (
+                        <p className="text-xl font-bold text-[#10B981]">Ücretsiz</p>
+                      ) : service.discountedPrice ? (
+                        <>
+                          <p className="text-sm text-gray-400 line-through">{service.price} ₺</p>
+                          <p className="text-xl font-bold text-[#10B981]">{service.discountedPrice} ₺</p>
+                        </>
+                      ) : (
+                        <p className="text-xl font-bold text-[#2D2D2D]">{service.price} ₺</p>
+                      )}
                     </div>
                   </div>
 
@@ -305,6 +328,24 @@ export function ServiceList({
                             </>
                           )}
                         </button>
+
+                        {/* Package Toggle - Only if package available */}
+                        {service.packageAvailable && (
+                          <button
+                            onClick={() => togglePackageMode(service)}
+                            className={`px-4 py-2 rounded-full text-sm flex items-center gap-2 transition-all ${
+                              selectedService?.usePackage
+                                ? 'bg-[#10B981] text-white'
+                                : 'bg-white border border-[#10B981]/30 text-[#10B981] hover:bg-[#10B981]/5'
+                            }`}
+                          >
+                            <Package className="w-4 h-4" />
+                            <span>Paketimi Kullan</span>
+                            <span className="text-xs opacity-80">
+                              ({packageSessions?.[service.id.toString()] || 0} kaldı)
+                            </span>
+                          </button>
+                        )}
                       </div>
                     </div>
                   )}
