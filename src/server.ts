@@ -45,7 +45,7 @@ if (process.env.NODE_ENV !== 'production') {
 // Configure CORS for frontend access
 const corsOrigins = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(',').map(origin => origin.trim())
-  : ['http://localhost:5173', 'http://localhost:5174', 'https://code.berkai.shop'];
+  : ['http://localhost:5173', 'http://localhost:5174', 'https://localhost:5173'];
 
 app.use(cors({
   origin: corsOrigins,
