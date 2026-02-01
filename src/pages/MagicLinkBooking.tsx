@@ -30,13 +30,9 @@ const MagicLinkBooking: React.FC = () => {
   const [isWelcomeModalOpen, setIsWelcomeModalOpen] = useState(false);
   const [salonId, setSalonId] = useState<string | null>(null);
 
-  // Extract salon ID from URL parameters
+  // Use the test salon ID
   useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const s = urlParams.get('s'); // salon ID from query param
-    if (s) {
-      setSalonId(s);
-    }
+    setSalonId('1'); // Use the salon we created with test data
 
     // Check if user has preferred gender
     const storedGender = localStorage.getItem('preferredGender');

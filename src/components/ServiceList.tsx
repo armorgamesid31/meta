@@ -32,6 +32,25 @@ const staffOptions = [
   { id: 'staff3', name: 'Elif', emoji: '👩‍🦱' },
 ];
 
+// Service categories with icons (matching reference design)
+const serviceCategories = [
+  {
+    name: 'Saç Hizmetleri',
+    icon: '💇‍♀️',
+    keywords: ['saç', 'kesim', 'boya', 'bakım']
+  },
+  {
+    name: 'Tırnak Hizmetleri',
+    icon: '💅',
+    keywords: ['manikür', 'pedikür', 'tırnak']
+  },
+  {
+    name: 'Diğer Hizmetler',
+    icon: '✨',
+    keywords: [] // Catch-all for remaining services
+  }
+];
+
 export function ServiceList({
   onServiceToggle,
   selectedServices,

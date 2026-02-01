@@ -22,8 +22,7 @@
     "src/routes/auth.ts",
     "src/routes/availability.ts",
     "src/prisma.ts",
-    "src/config.ts",
-    "src/types/**/*.ts"
+    "src/config.ts"
   ],
   "exclude": [
     "src/**/*.tsx",

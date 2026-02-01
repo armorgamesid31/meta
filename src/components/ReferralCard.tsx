@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Gift, ChevronDown, ChevronUp, Check } from 'lucide-react';
+import { Gift, Phone, Users } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface ReferralCardProps {
   onToggle: (active: boolean, phone: string) => void;
@@ -8,109 +9,113 @@ interface ReferralCardProps {
 
 export function ReferralCard({ onToggle, active }: ReferralCardProps) {
   const [phone, setPhone] = useState('');
-  const [isExpanded, setIsExpanded] = useState(false);
 
   const handleToggle = () => {
-    if (active) {
-      // Deactivate
-      onToggle(false, '');
-      setPhone('');
-      setIsExpanded(false);
-    } else {
-      // Activate
-      if (phone.length === 10) {
-        onToggle(true, phone);
-        setIsExpanded(false);
-      } else {
-        setIsExpanded(true);
-      }
-    }
+    const newActive = !active;
+    onToggle(newActive, newActive ? phone : '');
   };
 
-  const isValidPhone = phone.length === 10 && phone.startsWith('5');
+  const handlePhoneChange = (value: string) => {
+    // Only allow numbers and limit to 10 digits
+    const cleaned = value.replace(/\D/g, '').slice(0, 10);
+    setPhone(cleaned);
+    onToggle(active, cleaned);
+  };
 
   return (
-    <div className="bg-gradient-to-r from-[#D4AF37]/10 to-[#F4D03F]/10 rounded-[20px] p-4 border border-[#D4AF37]/20">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-gradient-to-br from-[#D4AF37] to-[#F4D03F] rounded-xl flex items-center justify-center">
-            <Gift className="w-5 h-5 text-white" />
+    <motion.div
+      initial={{ opacity: 0, y: -10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="bg-gradient-to-br from-[#D4AF37]/10 via-white to-[#D4AF37]/5 rounded-[20px] border-2 border-[#D4AF37] p-4 shadow-md"
+    >
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div className="flex items-start gap-3 flex-1">
+          <div className="w-12 h-12 bg-[#D4AF37] rounded-full flex items-center justify-center flex-shrink-0">
+            <Users className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h3 className="font-semibold text-[#2D2D2D]">Referans İndirimi</h3>
+            <h3 className="font-semibold text-[#2D2D2D] mb-1">
+              Randevuna arkadaşını ekle, anında 100 TL kazan!
+            </h3>
             <p className="text-sm text-gray-600">
-              {active ? 'Aktif - 100₺ indirim' : 'Arkadaşını referans göster, 100₺ kazan'}
+              Hem sen hem de arkadaşın indirim kazanın
             </p>
           </div>
         </div>
 
+        {/* Toggle Switch */}
         <button
-          onClick={() => setIsExpanded(!isExpanded)}
-          className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
-            active
-              ? 'bg-[#D4AF37] text-white'
-              : 'bg-white border-2 border-[#D4AF37] text-[#D4AF37]'
+          onClick={handleToggle}
+          className={`relative w-14 h-7 rounded-full transition-colors flex-shrink-0 ${
+            active ? 'bg-[#10B981]' : 'bg-gray-300'
           }`}
+          aria-label="Kampanyayı aktif et"
         >
-          {active ? (
-            <Check className="w-5 h-5" />
-          ) : isExpanded ? (
-            <ChevronUp className="w-5 h-5" />
-          ) : (
-            <ChevronDown className="w-5 h-5" />
-          )}
+          <motion.div
+            className="absolute top-1 w-5 h-5 bg-white rounded-full shadow-md"
+            animate={{
+              left: active ? '30px' : '4px',
+            }}
+            transition={{
+              type: 'spring',
+              stiffness: 500,
+              damping: 30,
+            }}
+          />
         </button>
       </div>
 
-      {/* Expanded Phone Input */}
-      {isExpanded && !active && (
-        <div className="mt-4 pt-4 border-t border-[#D4AF37]/20">
-          <div className="space-y-3">
-            <div>
-              <label className="block text-sm font-medium text-[#2D2D2D] mb-2">
-                Referans Telefon Numarası
-              </label>
+      {/* Phone Input - Animated */}
+      <AnimatePresence>
+        {active && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2 }}
+          >
+            <div className="relative mt-3">
+              <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
               <input
                 type="tel"
-                placeholder="0555 123 45 67"
+                placeholder="Arkadaşının Telefon Numarası"
                 value={phone}
-                onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                className="w-full px-4 py-3 bg-white rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#D4AF37]/30 focus:border-[#D4AF37] text-[#2D2D2D] placeholder:text-gray-400"
+                onChange={(e) => handlePhoneChange(e.target.value)}
+                className="w-full bg-white rounded-[15px] pl-11 pr-4 py-3 text-[#2D2D2D] placeholder:text-gray-400 border border-[#D4AF37]/30 focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/50"
+                maxLength={10}
               />
-              <p className="text-xs text-gray-500 mt-1">
-                Referans gösterdiğin kişinin telefon numarası
-              </p>
+              {phone.length > 0 && (
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-500">
+                  {phone.length}/10
+                </div>
+              )}
             </div>
+            {phone.length === 10 && (
+              <motion.p
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="text-xs text-[#10B981] mt-2 flex items-center gap-1"
+              >
+                ✓ 100 TL indirim tüm hizmetlere uygulanacak
+              </motion.p>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-            <button
-              onClick={handleToggle}
-              disabled={!isValidPhone}
-              className={`w-full py-3 rounded-xl font-medium transition-all ${
-                isValidPhone
-                  ? 'bg-[#D4AF37] text-white hover:bg-[#B8941F] shadow-sm'
-                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-              }`}
-            >
-              {isValidPhone ? 'İndirimi Aktif Et' : 'Geçerli telefon numarası girin'}
-            </button>
-          </div>
-        </div>
+      {/* Live Price Preview */}
+      {active && phone.length === 10 && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="mt-3 bg-[#10B981]/10 rounded-[15px] px-3 py-2 flex items-center justify-center gap-2"
+        >
+          <Gift className="w-4 h-4 text-[#10B981]" />
+          <p className="text-sm font-medium text-[#10B981]">
+            Fiyatlar güncellendi! ⬇ 100 TL indirim
+          </p>
+        </motion.div>
       )}
-
-      {/* Active State Info */}
-      {active && (
-        <div className="mt-4 pt-4 border-t border-[#D4AF37]/20">
-          <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-            <div className="flex items-center gap-2 text-green-800">
-              <Check className="w-4 h-4" />
-              <span className="text-sm font-medium">Referans indirimi aktif!</span>
-            </div>
-            <p className="text-xs text-green-600 mt-1">
-              Toplam tutardan 100₺ indirim uygulanacak.
-            </p>
-          </div>
-        </div>
-      )}
-    </div>
+    </motion.div>
   );
 }

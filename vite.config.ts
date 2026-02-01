@@ -1,8 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// Detect if we're behind a reverse proxy
-const isReverseProxy = process.env.VITE_BASE_URL?.includes('/proxy/') || false;
+// Production deployment - no reverse proxy needed
 const basePath = process.env.VITE_BASE_URL || '/';
 
 export default defineConfig({
