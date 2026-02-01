@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { ChevronDown, Check, Package, User, Gift, Zap, Loader2 } from 'lucide-react';
+import { useState } from 'react';
+import { ChevronDown, Check, Package, User, Gift, Loader2 } from 'lucide-react';
 
 export interface Service {
   id: number;
@@ -19,99 +19,40 @@ export interface Staff {
 }
 
 interface ServiceListProps {
-  onServiceToggle: (service: Service, forGuest?: boolean) => void;
-  onToggleGuest?: (serviceId: number) => void;
-  onTogglePackage?: (serviceId: number, serviceData: any) => void;
+  services: Service[]; // Artık filtrelenmiş ve hazır servis listesini alacak
+  staff: Staff[]; // Personel listesi dışarıdan gelecek
+  loading?: boolean; // Yüklenme durumu dışarıdan gelecek
+  error?: string | null; // Hata durumu dışarıdan gelecek
+  
+  // Selection States (Parent yönetiyor)
   selectedServices: Service[];
-  searchQuery: string;
-  referralActive: boolean;
   selectedStaff?: string;
+  
+  // Callbacks
+  onServiceToggle: (service: Service) => void;
+  onToggleGuest: (serviceId: number) => void;
+  onTogglePackage: (serviceId: number, service: Service) => void;
   onStaffSelect: (staffId: string) => void;
-  selectedGender: 'FEMALE' | 'MALE';
-  salonId?: string;
+  
+  // Display Props
   packageSessions?: Record<string, number>;
 }
 
-const staffOptions = [
-  { id: 'any', name: 'Fark Etmez', emoji: '👤' },
-  { id: 'staff1', name: 'Zeynep', emoji: '👩' },
-  { id: 'staff2', name: 'Aylin', emoji: '👩‍🦰' },
-  { id: 'staff3', name: 'Elif', emoji: '👩‍🦱' },
-];
-
-// Service categories with icons (matching reference design)
-const serviceCategories = [
-  {
-    name: 'Saç Hizmetleri',
-    icon: '💇‍♀️',
-    keywords: ['saç', 'kesim', 'boya', 'bakım']
-  },
-  {
-    name: 'Tırnak Hizmetleri',
-    icon: '💅',
-    keywords: ['manikür', 'pedikür', 'tırnak']
-  },
-  {
-    name: 'Diğer Hizmetler',
-    icon: '✨',
-    keywords: [] // Catch-all for remaining services
-  }
-];
-
 export function ServiceList({
+  services,
+  staff,
+  loading = false,
+  error = null,
+  selectedServices,
+  selectedStaff,
   onServiceToggle,
   onToggleGuest,
   onTogglePackage,
-  selectedServices,
-  searchQuery,
-  selectedStaff,
   onStaffSelect,
-  selectedGender,
-  salonId,
   packageSessions
 }: ServiceListProps) {
-  const [expandedCategory, setExpandedCategory] = useState<string | null>('Hizmetler');
+  // Sadece UI state'leri burada kalabilir (Dropdown aç/kapa gibi)
   const [staffDropdownOpen, setStaffDropdownOpen] = useState<string | null>(null);
-  const [services, setServices] = useState<Service[]>([]);
-  const [staff, setStaff] = useState<Staff[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  // Fetch services and staff
-  useEffect(() => {
-    const fetchData = async () => {
-      if (!salonId) return;
-
-      try {
-        setLoading(true);
-        setError(null);
-
-        // Fetch services
-        const servicesResponse = await fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/api/salon/services/public?s=${salonId}`);
-        if (!servicesResponse.ok) throw new Error('Failed to fetch services');
-        const servicesData = await servicesResponse.json();
-        setServices(servicesData.services || []);
-
-        // Fetch staff
-        const staffResponse = await fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/api/salon/staff/public?s=${salonId}`);
-        if (!staffResponse.ok) throw new Error('Failed to fetch staff');
-        const staffData = await staffResponse.json();
-        setStaff(staffData.staff || []);
-
-      } catch (err) {
-        console.error('Error fetching data:', err);
-        setError('Hizmetler yüklenirken hata oluştu');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-  }, [salonId]);
-
-  const toggleCategory = (category: string) => {
-    setExpandedCategory(expandedCategory === category ? null : category);
-  };
 
   const getSelectedService = (serviceId: number) => {
     return selectedServices.find(s => s.id === serviceId);
@@ -120,24 +61,6 @@ export function ServiceList({
   const isServiceSelected = (serviceId: number) => {
     return selectedServices.some(s => s.id === serviceId);
   };
-
-  const toggleGuestMode = (service: Service) => {
-    if (onToggleGuest) {
-      onToggleGuest(service.id);
-    }
-  };
-
-  const togglePackageMode = (service: Service) => {
-    if (onTogglePackage) {
-      onTogglePackage(service.id, service);
-    }
-  };
-
-  // Filter services based on search
-  const filteredServices = services.filter(service => {
-    const matchesSearch = service.name.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesSearch;
-  });
 
   if (loading) {
     return (
@@ -152,12 +75,6 @@ export function ServiceList({
     return (
       <div className="bg-red-50 border border-red-200 rounded-[20px] p-4 text-center">
         <p className="text-red-600">{error}</p>
-        <button
-          onClick={() => window.location.reload()}
-          className="mt-2 text-sm text-red-500 underline"
-        >
-          Tekrar dene
-        </button>
       </div>
     );
   }
@@ -172,17 +89,17 @@ export function ServiceList({
           </div>
           <div>
             <h3 className="text-lg font-semibold text-[#2D2D2D] text-premium">Hizmet Seçin</h3>
-            <p className="text-sm text-gray-500 text-premium">{filteredServices.length} hizmet mevcut</p>
+            <p className="text-sm text-gray-500 text-premium">{services.length} hizmet mevcut</p>
           </div>
         </div>
 
         <div className="space-y-3">
-          {filteredServices.length === 0 ? (
+          {services.length === 0 ? (
             <div className="text-center py-8">
               <p className="text-gray-500">Aramanızla eşleşen hizmet bulunamadı</p>
             </div>
           ) : (
-            filteredServices.map((service) => {
+            services.map((service) => {
               const selectedService = getSelectedService(service.id);
               const isSelected = isServiceSelected(service.id);
 
@@ -221,13 +138,7 @@ export function ServiceList({
                   {/* Action Button */}
                   <div className="flex justify-end">
                     <button
-                      onClick={() => {
-                        if (isSelected) {
-                          onServiceToggle(service, selectedService?.forGuest);
-                        } else {
-                          onServiceToggle(service, false);
-                        }
-                      }}
+                      onClick={() => onServiceToggle(service)}
                       className={`px-6 py-3 rounded-[12px] font-semibold transition-all duration-200 flex items-center gap-2 ${
                         isSelected
                           ? 'bg-[#D4AF37] text-white shadow-md hover:bg-[#B8941F]'
@@ -309,7 +220,7 @@ export function ServiceList({
 
                         {/* Guest Mode Toggle */}
                         <button
-                          onClick={() => toggleGuestMode(service)}
+                          onClick={() => onToggleGuest(service.id)}
                           className={`px-4 py-2 rounded-full text-sm flex items-center gap-2 transition-all ${
                             selectedService?.forGuest
                               ? 'bg-[#D4AF37] text-white'
@@ -332,7 +243,7 @@ export function ServiceList({
                         {/* Package Toggle - Only if package available */}
                         {service.packageAvailable && (
                           <button
-                            onClick={() => togglePackageMode(service)}
+                            onClick={() => onTogglePackage(service.id, service)}
                             className={`px-4 py-2 rounded-full text-sm flex items-center gap-2 transition-all ${
                               selectedService?.usePackage
                                 ? 'bg-[#10B981] text-white'

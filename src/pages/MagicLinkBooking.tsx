@@ -3,7 +3,7 @@ import { Search } from 'lucide-react';
 import { Header } from '../components/Header.js';
 import { QuickActionCards } from '../components/QuickActionCards.js';
 import { ReferralCard } from '../components/ReferralCard.js';
-import { ServiceList, type Service } from '../components/ServiceList.js';
+import { ServiceList, type Service, type Staff } from '../components/ServiceList.js';
 import { DateTimePicker } from '../components/DateTimePicker.js';
 import { StickyFooter } from '../components/StickyFooter.js';
 import { WelcomeModal } from '../components/WelcomeModal.js';
@@ -35,6 +35,12 @@ const MagicLinkBooking: React.FC = () => {
   const [isPriceModalOpen, setIsPriceModalOpen] = useState(false);
   const [isWelcomeModalOpen, setIsWelcomeModalOpen] = useState(false);
   const [salonId, setSalonId] = useState<string | null>(null);
+
+  // Data States
+  const [services, setServices] = useState<Service[]>([]);
+  const [staff, setStaff] = useState<Staff[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   
   // Mock package sessions state
   const [packageSessions, setPackageSessions] = useState<Record<string, number>>({
@@ -62,9 +68,9 @@ const MagicLinkBooking: React.FC = () => {
     time: '14:30',
   };
 
-  // Use test salon ID
+  // Initialize and Fetch Data
   useEffect(() => {
-    setSalonId('55'); // Use salon we created with test data
+    setSalonId('55'); // Use test salon ID
 
     // Check if user has preferred gender
     const storedGender = localStorage.getItem('preferredGender');
@@ -77,17 +83,55 @@ const MagicLinkBooking: React.FC = () => {
     }
   }, []);
 
+  // Fetch services and staff when salonId is set
+  useEffect(() => {
+    const fetchData = async () => {
+      if (!salonId) return;
+
+      try {
+        setLoading(true);
+        setError(null);
+
+        // Fetch services
+        const servicesResponse = await fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/api/salon/services/public?s=${salonId}`);
+        if (!servicesResponse.ok) throw new Error('Failed to fetch services');
+        const servicesData = await servicesResponse.json();
+        
+        // Add mock package data to fetched services
+        const enhancedServices = (servicesData.services || []).map((s: any) => ({
+          ...s,
+          packageAvailable: ['1', '2', '3'].includes(s.id.toString()), // Mock availability
+          packageSessionsLeft: packageSessions[s.id.toString()] || 0
+        }));
+        
+        setServices(enhancedServices);
+
+        // Fetch staff
+        const staffResponse = await fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/api/salon/staff/public?s=${salonId}`);
+        if (!staffResponse.ok) throw new Error('Failed to fetch staff');
+        const staffData = await staffResponse.json();
+        setStaff(staffData.staff || []);
+
+      } catch (err) {
+        console.error('Error fetching data:', err);
+        setError('Hizmetler yüklenirken hata oluştu');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [salonId]);
+
   const handleGenderSelect = (gender: 'woman' | 'man') => {
     setSelectedGender(gender);
     setUserName(gender === 'man' ? 'Ahmet' : 'Ayşe');
     localStorage.setItem('preferredGender', gender === 'man' ? 'MALE' : 'FEMALE');
   };
 
-  const handleServiceToggle = (service: Service, forGuest: boolean = false) => {
-    const serviceWithGuest = { ...service, forGuest };
-    const existingIndex = booking.services.findIndex(
-      s => s.id === service.id && s.forGuest === forGuest
-    );
+  const handleServiceToggle = (service: Service) => {
+    // Check if already selected (by ID)
+    const existingIndex = booking.services.findIndex(s => s.id === service.id);
 
     if (existingIndex >= 0) {
       // Remove service
@@ -96,10 +140,16 @@ const MagicLinkBooking: React.FC = () => {
         services: booking.services.filter((_, i) => i !== existingIndex),
       });
     } else {
-      // Add service
+      // Add service with default values
+      const newService = {
+        ...service,
+        forGuest: false,
+        usePackage: false
+      };
+      
       setBooking({
         ...booking,
-        services: [...booking.services, serviceWithGuest],
+        services: [...booking.services, newService],
       });
     }
   };
@@ -118,7 +168,7 @@ const MagicLinkBooking: React.FC = () => {
   };
 
   // Toggle package usage for a specific service
-  const handleTogglePackage = (serviceId: number, serviceData: any) => {
+  const handleTogglePackage = (serviceId: number, serviceData: Service) => {
     const existingService = booking.services.find(s => s.id === serviceId);
     
     if (existingService && !existingService.usePackage) {
@@ -128,8 +178,7 @@ const MagicLinkBooking: React.FC = () => {
           return {
             ...service,
             usePackage: true,
-            price: 0,
-            discountedPrice: 0,
+            // Price display logic is handled in UI component based on usePackage flag
           };
         }
         return service;
@@ -143,17 +192,12 @@ const MagicLinkBooking: React.FC = () => {
       
       setBooking({ ...booking, services: updatedServices });
     } else if (existingService && existingService.usePackage) {
-      // Disable package mode - revert to normal pricing
-      const price = serviceData.price;
-      const discountedPrice = serviceData.discountedPrice;
-      
+      // Disable package mode
       const updatedServices = booking.services.map(service => {
         if (service.id === serviceId) {
           return {
             ...service,
             usePackage: false,
-            price,
-            discountedPrice,
           };
         }
         return service;
@@ -202,6 +246,11 @@ const MagicLinkBooking: React.FC = () => {
     }
   };
 
+  // Filter services based on search query
+  const filteredServices = services.filter(service => 
+    service.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   // Calculate totals
   const subtotal = booking.services.reduce((sum, service) => {
     if (service.usePackage) return sum;
@@ -248,16 +297,16 @@ const MagicLinkBooking: React.FC = () => {
         />
 
         <ServiceList
+          services={filteredServices}
+          staff={staff}
+          loading={loading}
+          error={error}
+          selectedServices={booking.services}
+          selectedStaff={booking.selectedStaff}
           onServiceToggle={handleServiceToggle}
           onToggleGuest={handleToggleGuest}
           onTogglePackage={handleTogglePackage}
-          selectedServices={booking.services}
-          searchQuery={searchQuery}
-          referralActive={booking.referralActive}
-          selectedStaff={booking.selectedStaff}
           onStaffSelect={(staff) => setBooking({ ...booking, selectedStaff: staff })}
-          selectedGender={selectedGender === 'woman' ? 'FEMALE' : 'MALE'}
-          salonId={salonId || undefined}
           packageSessions={packageSessions}
         />
 
