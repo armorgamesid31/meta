@@ -538,7 +538,8 @@ router.post('/appointments/:id/cancel', authenticateToken, async (req: any, res:
         status: 'BOOKED'
       },
       include: {
-        customer: true
+        customer: true,
+        service: true
       }
     });
 

@@ -596,19 +596,17 @@ router.get("/summary", authenticateToken, async (req: any, res: any) => {
     });
 
     // Get total revenue (sum of service prices for booked appointments)
-    const revenueResult = await prisma.appointment.aggregate({
+    const appointmentsWithServices = await prisma.appointment.findMany({
       where: {
         salonId,
         status: 'BOOKED'
       },
-      _sum: {
-        service: {
-          price: true
-        }
+      include: {
+        service: true
       }
     });
 
-    const totalRevenue = revenueResult._sum.service?.price || 0;
+    const totalRevenue = appointmentsWithServices.reduce((sum, apt) => sum + (apt.service?.price || 0), 0);
 
     // Get active clients count (unique customers with booked appointments)
     const activeClientsResult = await prisma.appointment.findMany({

@@ -1,47 +1,72 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
 import express from 'express';
 import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import bcrypt from 'bcrypt';
 import { prisma } from './prisma.js';
 import { generateToken } from './utils/jwt.js';
 import { UserRole } from '@prisma/client';
 import salonRoutes from './routes/salon.js';
 import bookingRoutes from './routes/bookings.js';
-import sessionRoutes from './routes/sessions.js';
-import adminRoutes from './routes/admin.js';
-import magicRoutes from './routes/magic.js';
 import availabilityRoutes from './routes/availability.js';
 import authRoutes from './routes/auth.js';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const app = express();
 
-// Direct test route - define before middleware
+// Trust proxy for reverse proxy setups (Coolify/Traefik)
+app.set('trust proxy', 1);
+
+// CRITICAL: Health endpoint MUST be defined BEFORE any middleware
+app.get("/health", (_req, res) => {
+  console.log('Health endpoint called - returning status: ok');
+  res.status(200).json({ status: "ok" });
+});
+
+// Direct test route - also before middleware
 app.get('/test-direct', (req, res) => {
   res.json({ message: 'Direct route working' });
 });
 
-// Debug middleware - log all requests
-app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url} - Headers:`, JSON.stringify(req.headers, null, 2));
-  next();
-});
+// NOW apply middleware AFTER health endpoint
+// Debug middleware - log all requests (only in development)
+if (process.env.NODE_ENV !== 'production') {
+  app.use((req, res, next) => {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+    next();
+  });
+}
 
 // Configure CORS for frontend access
+const corsOrigins = process.env.CORS_ORIGINS
+  ? process.env.CORS_ORIGINS.split(',').map(origin => origin.trim())
+  : ['http://localhost:5173', 'http://localhost:5174', 'https://code.berkai.shop'];
+
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:5174'], // Allow frontend origins
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  origin: corsOrigins,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  credentials: true,
 }));
 
 // Middleware to parse JSON bodies
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
 
-// Debug middleware after JSON parsing
-app.use((req, res, next) => {
-  if (req.method !== 'GET') {
-    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url} - Body:`, JSON.stringify(req.body, null, 2));
-  }
-  next();
-});
+// Request logging middleware (only in development)
+if (process.env.NODE_ENV !== 'production') {
+  app.use((req, res, next) => {
+    if (req.method !== 'GET' && req.method !== 'OPTIONS') {
+      console.log(`[${new Date().toISOString()}] ${req.method} ${req.url} - Body:`, JSON.stringify(req.body, null, 2));
+    }
+    next();
+  });
+}
 
 // Test POST route directly in server - after middleware
 app.post('/test-auth-post', (req, res) => {
@@ -101,16 +126,16 @@ app.post('/auth/register-salon', async (req, res) => {
 });
 console.log('Direct auth routes set up');
 app.use('/auth', authRoutes);
+// Core routes for booking functionality
 app.use('/api/salon', salonRoutes);
 app.use('/api/bookings', bookingRoutes);
-app.use('/api/sessions', sessionRoutes);
-app.use('/api/admin', adminRoutes);
-app.use('/api/magic-link', magicRoutes);
 app.use('/availability', availabilityRoutes);
 app.use('/appointments', bookingRoutes);
-app.use('/api/magic-links', magicRoutes);
 
-// Basic test route
+// Serve static files from the React app build directory
+app.use(express.static(path.join(__dirname, '../dist')));
+
+// Basic test route (only for API testing, not served to frontend)
 app.get("/", (_req, res) => {
   res.send(`
     <!DOCTYPE html>
@@ -127,19 +152,25 @@ app.get("/", (_req, res) => {
   `);
 });
 
-// Production-ready health check endpoint
-app.get("/health", (_req, res) => {
-  res.status(200).json({
-    status: "ok",
-    uptime: process.uptime(),
-    timestamp: new Date().toISOString()
-  });
+// Catch all handler: send back React's index.html file for client-side routing
+// This must be the LAST middleware and only for non-API routes
+app.use((req, res, next) => {
+  // Skip API routes - let them fall through to 404 if not handled
+  if (req.path.startsWith('/api/') ||
+      req.path.startsWith('/auth/') ||
+      req.path.startsWith('/availability/') ||
+      req.path.startsWith('/appointments/') ||
+      req.path.startsWith('/health')) {
+    return next();
+  }
+  res.sendFile(path.join(__dirname, '../dist/index.html'));
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = parseInt(process.env.PORT || '3000', 10);
+const HOST = process.env.HOST || '0.0.0.0';
 
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+app.listen(PORT, HOST, () => {
+  console.log(`🚀 Server running on ${HOST}:${PORT}`);
 });
 
 export default app;

@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -10,32 +7,105 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// --------------------------------------
-// Enums
-// --------------------------------------
+model Salon {
+  id           Int            @id @default(autoincrement())
+  name         String
+  logoUrl      String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  appointments Appointment[]
+  settings     SalonSettings?
+  users        SalonUser[]
+  services     Service[]
+  staff        Staff[]
+}
+
+model SalonSettings {
+  id            Int      @id @default(autoincrement())
+  workStartHour Int      @default(9)
+  workEndHour   Int      @default(18)
+  slotInterval  Int      @default(30)
+  timezone      String   @default("Europe/Istanbul")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  salonId       Int      @unique
+  salon         Salon    @relation(fields: [salonId], references: [id])
+}
+
+model SalonUser {
+  id           Int      @id @default(autoincrement())
+  email        String   @unique
+  passwordHash String
+  role         UserRole
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  salonId      Int
+  salon        Salon    @relation(fields: [salonId], references: [id])
+  staffProfile Staff?
+}
+
+model Staff {
+  id           Int           @id @default(autoincrement())
+  name         String
+  phone        String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  salonId      Int
+  userId       Int?          @unique
+  appointments Appointment[]
+  leaves       Leave[]
+  salon        Salon         @relation(fields: [salonId], references: [id])
+  user         SalonUser?    @relation(fields: [userId], references: [id])
+  services     Service[]     @relation("StaffServices")
+}
+
+model Leave {
+  id        Int      @id @default(autoincrement())
+  startDate DateTime @db.Date
+  endDate   DateTime @db.Date
+  reason    String?
+  createdAt DateTime @default(now())
+  staffId   Int
+  staff     Staff    @relation(fields: [staffId], references: [id])
+}
+
+model Service {
+  id           Int           @id @default(autoincrement())
+  name         String
+  description  String?
+  price        Float
+  duration     Int
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  salonId      Int
+  appointments Appointment[]
+  salon        Salon         @relation(fields: [salonId], references: [id])
+  staff        Staff[]       @relation("StaffServices")
+}
+
+model Appointment {
+  id            Int               @id @default(autoincrement())
+  customerName  String
+  customerPhone String
+  startTime     DateTime
+  endTime       DateTime
+  status        AppointmentStatus @default(BOOKED)
+  source        AppointmentSource @default(CUSTOMER)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  salonId       Int
+  staffId       Int
+  serviceId     Int
+  salon         Salon             @relation(fields: [salonId], references: [id])
+  service       Service           @relation(fields: [serviceId], references: [id])
+  staff         Staff             @relation(fields: [staffId], references: [id])
+
+  @@index([staffId, startTime, endTime])
+}
 
 enum UserRole {
   OWNER
-  MANAGER
   STAFF
-  RECEPTION
-  FINANCE
-}
-
-enum SchedulingRule {
-  STANDARD              // Normal scheduling - services can be booked separately
-  CONSECUTIVE_BLOCK     // Services must be booked as continuous block with synergy
-  PARALLEL              // Services can be performed in parallel (future use)
-  ROOM_DEPENDENT        // Requires specific room/setup time
-  PARALLEL_POSSIBLE     // Can be done simultaneously with other services
-  FLEXIBLE_FLOW         // Adaptable scheduling based on availability
-  STRICT_BLOCK_BUFFERED // Continuous block with mandatory buffer time
-}
-
-enum TargetGender {
-  FEMALE   // Services primarily for women
-  MALE     // Services primarily for men
-  UNISEX   // Services suitable for anyone
 }
 
 enum AppointmentStatus {
@@ -50,435 +120,3 @@ enum AppointmentSource {
   ADMIN
   AUTOMATION
 }
-
-enum BookingSessionState {
-  CREATED
-  SLOT_SELECTED
-  CONFIRMED
-}
-
-// --------------------------------------
-// Salon & Core Models
-// --------------------------------------
-
-model Salon {
-  id              Int      @id @default(autoincrement())
-  name            String
-  slug            String?  @unique // For subdomain routing
-  address         String?  // Salon address for display
-  logoUrl         String?
-  bookingTheme    Json?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  users           SalonUser[]
-  settings        SalonSettings?
-  staff           Staff[]
-  services        Service[]
-  appointments    Appointment[]
-  bookingSessions BookingSession[]
-  customers       Customer[]
-  userRoleAssignments UserRoleAssignment[]
-  permissionOverrides UserPermissionOverride[]
-  behaviorLogs    CustomerBehaviorLog[]
-  riskProfiles    CustomerRiskProfile[]
-  riskConfig      SalonRiskConfig?
-}
-
-model SalonSettings {
-  id              Int      @id @default(autoincrement())
-  workStartHour   Int      @default(9)
-  workEndHour     Int      @default(18)
-  slotInterval    Int      @default(30) // in minutes
-  timezone        String   @default("Europe/Istanbul")
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  
-  salonId         Int      @unique
-  salon           Salon    @relation(fields: [salonId], references: [id])
-}
-
-// --------------------------------------
-// User & Staff Models
-// --------------------------------------
-
-model SalonUser {
-  id              Int       @id @default(autoincrement())
-  email           String    @unique
-  passwordHash    String
-  role            UserRole
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-
-  salonId         Int
-  salon           Salon     @relation(fields: [salonId], references: [id])
-
-  staffProfile    Staff?
-  userRoles       UserRoleAssignment[]
-  permissionOverrides UserPermissionOverride[]
-}
-
-model Staff {
-  id              Int      @id @default(autoincrement())
-  name            String
-  phone           String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  
-  salonId         Int
-  salon           Salon    @relation(fields: [salonId], references: [id])
-  
-  userId          Int?      @unique // Optional link to a SalonUser
-  user            SalonUser? @relation(fields: [userId], references: [id])
-
-  leaves          Leave[]
-  appointments    Appointment[]
-  services        Service[] @relation("StaffServices")
-}
-
-model Leave {
-  id              Int      @id @default(autoincrement())
-  startDate       DateTime @db.Date
-  endDate         DateTime @db.Date
-  reason          String?
-  createdAt       DateTime @default(now())
-
-  staffId         Int
-  staff           Staff    @relation(fields: [staffId], references: [id])
-}
-
-// --------------------------------------
-// Service & Booking Models
-// --------------------------------------
-
-model ServiceCategory {
-  id              Int             @id @default(autoincrement())
-  name            String          @unique
-  description     String?
-  schedulingRule  SchedulingRule  @default(STANDARD)
-  synergyFactor   Float           @default(1.0) // 1.0 = no synergy, 0.0-0.9 = time saving
-  bufferMinutes   Int             @default(0)   // Buffer time between services
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-
-  // Relations
-  services        Service[]
-}
-
-model Service {
-  id              Int      @id @default(autoincrement())
-  name            String
-  description     String?
-  price           Float
-  duration        Int      // in minutes
-  targetGender    TargetGender @default(FEMALE) // Gender targeting for services
-  isSynergyEnabled Boolean @default(false) // Only synergy-enabled services trigger algorithm
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  salonId         Int
-  salon           Salon    @relation(fields: [salonId], references: [id])
-
-  categoryId      Int?
-  category        ServiceCategory? @relation(fields: [categoryId], references: [id])
-
-  staff           Staff[]   @relation("StaffServices")
-  appointments    Appointment[]
-}
-
-model Customer {
-  id              Int      @id @default(autoincrement())
-  name            String
-  phone           String   @unique
-  email           String?
-  notes           String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  salonId         Int
-  salon           Salon    @relation(fields: [salonId], references: [id])
-
-  appointments    Appointment[]
-  behaviorLogs    CustomerBehaviorLog[]
-  riskProfile     CustomerRiskProfile?
-}
-
-model Appointment {
-  id              Int      @id @default(autoincrement())
-  customerName    String
-  customerPhone   String
-  startTime       DateTime
-  endTime         DateTime
-  status          AppointmentStatus @default(BOOKED)
-  source          AppointmentSource @default(CUSTOMER)
-  notes           String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  salonId         Int
-  salon           Salon    @relation(fields: [salonId], references: [id])
-
-  staffId         Int
-  staff           Staff    @relation(fields: [staffId], references: [id])
-
-  serviceId       Int
-  service         Service  @relation(fields: [serviceId], references: [id])
-
-  customerId      Int?
-  customer        Customer? @relation(fields: [customerId], references: [id])
-
-  behaviorLogs    CustomerBehaviorLog[]
-
-  @@index([staffId, startTime, endTime])
-  @@index([customerPhone])
-}
-
-model BookingSession {
-  id              Int                 @id @default(autoincrement())
-  token           String              @unique
-  salonId         Int
-  salon           Salon               @relation(fields: [salonId], references: [id])
-  state           BookingSessionState @default(CREATED)
-  expiresAt       DateTime
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
-
-  // Optional session data
-  selectedSlot    Json? // { date, startTime, serviceId, staffIds, peopleCount }
-  customerInfo    Json? // { name, phone, email }
-
-  @@index([token, expiresAt])
-}
-
-// --------------------------------------
-// Role-Based Access Control (RBAC)
-// --------------------------------------
-
-model Role {
-  id              Int      @id @default(autoincrement())
-  name            String   @unique // OWNER, MANAGER, STAFF, RECEPTION, FINANCE
-  displayName     String   // Human readable name
-  description     String?
-  isSystemRole    Boolean  @default(false) // Cannot be deleted
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  // Relations
-  userRoles       UserRoleAssignment[]
-  rolePermissions RolePermission[]
-}
-
-model Permission {
-  id              Int      @id @default(autoincrement())
-  key             String   @unique // e.g., "appointments:read", "customers:write"
-  name            String   // Human readable name
-  description     String?
-  resource        String   // e.g., "appointments", "customers", "staff"
-  action          String   // e.g., "read", "write", "delete", "manage"
-  isSystemPermission Boolean @default(false) // Cannot be deleted
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  // Relations
-  rolePermissions RolePermission[]
-  userOverrides   UserPermissionOverride[]
-}
-
-model RolePermission {
-  id             Int        @id @default(autoincrement())
-  roleId         Int
-  permissionId   Int
-  granted        Boolean    @default(true) // Can be false to deny permission
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
-
-  role           Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  permission     Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
-
-  @@unique([roleId, permissionId])
-}
-
-model UserRoleAssignment {
-  id             Int        @id @default(autoincrement())
-  userId         Int
-  roleId         Int
-  salonId        Int        // Users can have different roles in different salons
-  isPrimary      Boolean    @default(false) // Primary role for the salon
-  assignedAt     DateTime   @default(now())
-  assignedBy     Int?       // User ID who assigned this role
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
-
-  user           SalonUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  role           Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  salon          Salon      @relation(fields: [salonId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, roleId, salonId])
-}
-
-model UserPermissionOverride {
-  id             Int        @id @default(autoincrement())
-  userId         Int
-  permissionId   Int
-  salonId        Int
-  granted        Boolean    // Override: true = grant, false = deny
-  reason         String?    // Why this override exists
-  expiresAt      DateTime?  // Optional expiration
-  createdBy      Int        // User ID who created this override
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
-
-  user           SalonUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  permission     Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
-  salon          Salon      @relation(fields: [salonId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, permissionId, salonId])
-}
-
-// --------------------------------------
-// Magic Link System
-// --------------------------------------
-
-enum MagicLinkType {
-  BOOKING     // Customer booking flow
-  CANCEL      // Cancel existing booking
-  RESCHEDULE  // Reschedule existing booking
-}
-
-model MagicLink {
-  id          Int           @id @default(autoincrement())
-  token       String        @unique // URL-safe token
-  phone       String        // Customer phone number
-  type        MagicLinkType // Purpose of the link
-  context     Json?         // Additional context (appointmentId, salonId, etc.)
-  expiresAt   DateTime      // When the link expires
-  usedAt      DateTime?     // When the link was used
-  createdAt   DateTime      @default(now())
-
-  @@index([token, expiresAt])
-  @@index([phone, type])
-}
-
-// --------------------------------------
-// Customer Risk & Behavior Tracking
-// --------------------------------------
-
-model CustomerBehaviorLog {
-  id              Int           @id @default(autoincrement())
-  customerId      Int
-  salonId         Int
-  appointmentId   Int?          // Nullable for non-appointment behaviors
-
-  behaviorType    BehaviorType
-  severityScore   Int           // 1-10 scale for risk assessment
-  occurredAt      DateTime
-
-  // Context data for analysis
-  metadata        Json?         // Flexible storage for behavior details
-
-  // Relationships
-  customer        Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  salon           Salon         @relation(fields: [salonId], references: [id], onDelete: Cascade)
-  appointment     Appointment?  @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
-
-  // Indexes for performance and queries
-  @@index([customerId, occurredAt])
-  @@index([salonId, behaviorType, occurredAt])
-  @@index([occurredAt]) // For cleanup queries
-}
-
-model CustomerRiskProfile {
-  id              Int         @id @default(autoincrement())
-  customerId      Int         @unique
-  salonId         Int
-
-  // Risk scoring (calculated from behavior logs)
-  riskScore       Float       @default(0) // 0-100 scale
-  riskLevel       RiskLevel   @default(LOW)
-
-  // Behavior counts (last 3 months)
-  lastMinuteCancellations Int @default(0)
-  noShows               Int @default(0)
-  totalBookings         Int @default(0)
-
-  // Status
-  isBlocked            Boolean    @default(false)
-  blockedUntil         DateTime?
-  blockReason          String?
-
-  // Metadata
-  lastCalculatedAt     DateTime   @default(now())
-  updatedAt            DateTime   @updatedAt
-
-  // Relationships
-  customer             Customer   @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  salon                Salon      @relation(fields: [salonId], references: [id], onDelete: Cascade)
-
-  @@unique([customerId, salonId])
-}
-
-enum BehaviorType {
-  LAST_MINUTE_CANCELLATION  // < 24 hours before appointment
-  NO_SHOW                   // Appointment time passed without attendance
-  FREQUENT_CANCELLATION     // Multiple cancellations in short period
-  BOOKING_FREQUENCY         // Too many bookings in time window
-}
-
-enum RiskLevel {
-  LOW       // Normal customer
-  MEDIUM    // Requires monitoring
-  HIGH      // High risk, show warnings
-  CRITICAL  // Block bookings
-}
-
-// --------------------------------------
-// Risk Management Configuration
-// --------------------------------------
-
-model SalonRiskConfig {
-  id              Int      @id @default(autoincrement())
-  salonId         Int      @unique
-
-  // System Control
-  isEnabled       Boolean  @default(false) // Master on/off switch
-
-  // Risk Thresholds (0-100 scale)
-  warningThreshold    Float @default(25.0)  // Show warnings above this score
-  blockingThreshold   Float @default(50.0)  // Block bookings above this score
-
-  // Behavior Scoring Weights
-  lastMinuteCancellationWeight Float @default(3.0)
-  noShowWeight                 Float @default(5.0)
-  frequentCancellationWeight   Float @default(2.0)
-  bookingFrequencyWeight       Float @default(1.0)
-
-  // Behavior Definitions
-  lastMinuteHoursThreshold     Int   @default(24)  // Hours before appointment
-  frequentCancellationCount    Int   @default(3)   // Cancellations in period
-  frequentCancellationDays     Int   @default(30)  // Days for frequent check
-  maxBookingsPerMonth          Int   @default(10)  // Booking frequency limit
-
-  // Actions Configuration
-  autoBlockEnabled             Boolean @default(false)
-  autoBlockDurationDays        Int     @default(7)    // Days to block
-  requireManualReview          Boolean @default(false)
-
-  // UI Messages (Legacy - kept for backward compatibility)
-  warningMessage               String  @default("Riskli müşteri profili tespit edildi. Devam etmek istiyor musunuz?")
-  blockMessage                 String  @default("Bu müşteri için randevu alınamaz.")
-
-  // Risk Level Messages (Optional - can be empty)
-  mediumRiskMessage            String? // For MEDIUM risk level
-  highRiskMessage              String? // For HIGH risk level (takes precedence over warningMessage)
-  criticalRiskMessage          String? // For CRITICAL risk level (takes precedence over blockMessage)
-
-  // Metadata
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  // Relationships
-  salon          Salon    @relation(fields: [salonId], references: [id], onDelete: Cascade)
-
-  @@map("salon_risk_configs")
-}
-
-

@@ -35,8 +35,7 @@ async function checkSalons() {
 
       const newSalon = await prisma.salon.create({
         data: {
-          name: 'Demo Salon',
-          slug: 'demo-salon'
+          name: 'Demo Salon'
         }
       });
 

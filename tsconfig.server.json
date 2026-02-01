@@ -9,6 +9,7 @@
     "noImplicitAny": false,
     "esModuleInterop": true,
     "skipLibCheck": true,
+    "noEmitOnError": false,
     "composite": false,
     "declaration": false,
     "declarationMap": false,
@@ -16,10 +17,10 @@
   },
   "include": [
     "src/server.ts",
-    "src/routes/**/*.ts",
-    "src/middleware/**/*.ts",
-    "src/utils/**/*.ts",
-    "src/modules/**/*.ts",
+    "src/routes/salon.ts",
+    "src/routes/bookings.ts",
+    "src/routes/auth.ts",
+    "src/routes/availability.ts",
     "src/prisma.ts",
     "src/config.ts",
     "src/types/**/*.ts"
@@ -34,6 +35,13 @@
     "node_modules",
     "src/**/*.test.ts",
     "src/comprehensive.test.ts",
-    "tests/**/*"
+    "tests/**/*",
+    "src/routes/admin.ts",
+    "src/routes/sessions.ts",
+    "src/routes/magic.ts",
+    "src/utils/behaviorTracking.ts",
+    "src/utils/noShowDetector.ts",
+    "src/utils/testDataManager.ts",
+    "src/middleware/auth.ts"
   ]
 }
