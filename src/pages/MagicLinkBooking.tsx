@@ -32,7 +32,7 @@ const MagicLinkBooking: React.FC = () => {
 
   // Use the test salon ID
   useEffect(() => {
-    setSalonId('1'); // Use the salon we created with test data
+    setSalonId('55'); // Use the salon we created with test data
 
     // Check if user has preferred gender
     const storedGender = localStorage.getItem('preferredGender');
@@ -103,14 +103,15 @@ const MagicLinkBooking: React.FC = () => {
   const totalDuration = booking.services.reduce((sum, service) => sum + service.duration, 0);
 
   return (
-    <div className="min-h-screen bg-[#FAFAFA] pb-32">
+    <div className="min-h-screen bg-[#FAFAFA] pb-32 flex flex-col items-center">
+      <div className="w-full max-w-[480px] bg-[#FAFAFA] min-h-screen shadow-2xl relative">
       <Header
         customerName={userName}
         selectedGender={selectedGender === 'woman' ? 'FEMALE' : 'MALE'}
         onGenderClick={() => setIsWelcomeModalOpen(true)}
       />
 
-      <div className="px-4 py-6 max-w-md mx-auto space-y-6">
+      <div className="px-4 py-6 space-y-6">
         <QuickActionCards />
 
         {/* Search Bar */}
@@ -187,6 +188,7 @@ const MagicLinkBooking: React.FC = () => {
           setIsWelcomeModalOpen(false);
         }}
       />
+      </div>
     </div>
   );
 };
