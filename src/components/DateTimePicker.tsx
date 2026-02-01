@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
-import { Calendar, Clock, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { useState } from 'react';
+import { Calendar, Clock, UserPlus } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface DateTimePickerProps {
   selectedDate?: string;
@@ -10,9 +11,28 @@ interface DateTimePickerProps {
   salonId?: string;
 }
 
-interface TimeSlot {
-  time: string;
-  available: boolean;
+const dates = [
+  { day: 'Pzt', date: '12', fullDate: '2026-01-12', available: true },
+  { day: 'Sal', date: '13', fullDate: '2026-01-13', available: true },
+  { day: 'Çar', date: '14', fullDate: '2026-01-14', available: false },
+  { day: 'Per', date: '15', fullDate: '2026-01-15', available: true },
+  { day: 'Cum', date: '16', fullDate: '2026-01-16', available: true },
+  { day: 'Cmt', date: '17', fullDate: '2026-01-17', available: true },
+  { day: 'Paz', date: '18', fullDate: '2026-01-18', available: false },
+];
+
+const timeSlots = {
+  morning: ['09:00', '09:30', '10:00', '10:30', '11:00', '11:30'],
+  afternoon: ['12:00', '12:30', '13:00', '13:30', '14:00', '14:30', '15:00'],
+  evening: ['16:00', '16:30', '17:00', '17:30', '18:00', '18:30', '19:00'],
+};
+
+function calculateEndTime(startTime: string, durationMinutes: number): string {
+  const [hours, minutes] = startTime.split(':').map(Number);
+  const totalMinutes = hours * 60 + minutes + durationMinutes;
+  const endHours = Math.floor(totalMinutes / 60);
+  const endMinutes = totalMinutes % 60;
+  return `${String(endHours).padStart(2, '0')}:${String(endMinutes).padStart(2, '0')}`;
 }
 
 export function DateTimePicker({
@@ -21,193 +41,223 @@ export function DateTimePicker({
   onDateSelect,
   onTimeSelect,
   totalDuration,
-  salonId
 }: DateTimePickerProps) {
-  const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [availableDates, setAvailableDates] = useState<Set<string>>(new Set());
-  const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [view, setView] = useState<'date' | 'time'>('date');
+  const [showWaitlist, setShowWaitlist] = useState(false);
+  const [waitlistSubmitted, setWaitlistSubmitted] = useState(false);
 
-  // Generate next 14 days
-  const generateDates = () => {
-    const dates = [];
-    for (let i = 0; i < 14; i++) {
-      const date = new Date();
-      date.setDate(date.getDate() + i);
-      dates.push(date);
-    }
-    return dates;
-  };
-
-  const dates = generateDates();
-
-  // Fetch availability when date changes
-  useEffect(() => {
-    if (selectedDate && salonId) {
-      fetchTimeSlots(selectedDate);
-    }
-  }, [selectedDate, salonId]);
-
-  const fetchTimeSlots = async (date: string) => {
-    if (!salonId) return;
-
-    try {
-      setLoading(true);
-      // For now, generate mock time slots - in real implementation, call availability API
-      const slots: TimeSlot[] = [];
-      const startHour = 9;
-      const endHour = 18;
-      const interval = 30; // minutes
-
-      for (let hour = startHour; hour < endHour; hour++) {
-        for (let minute = 0; minute < 60; minute += interval) {
-          const timeString = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
-          // Mock availability - in real app, check against booked slots
-          const available = Math.random() > 0.3; // 70% available
-          slots.push({ time: timeString, available });
-        }
-      }
-
-      setTimeSlots(slots);
-    } catch (error) {
-      console.error('Error fetching time slots:', error);
-    } finally {
-      setLoading(false);
+  const handleDateClick = (date: typeof dates[0]) => {
+    if (!date.available) {
+      setShowWaitlist(true);
+      setWaitlistSubmitted(false);
+    } else {
+      setShowWaitlist(false);
+      setWaitlistSubmitted(false);
+      onDateSelect(date.fullDate);
     }
   };
 
-  const formatDate = (date: Date) => {
-    return date.toISOString().split('T')[0];
+  const handleWaitlistSubmit = () => {
+    setWaitlistSubmitted(true);
+    // Mock waitlist submission
+    console.log('Waitlist submitted for date');
   };
-
-  const formatDisplayDate = (date: Date) => {
-    const options: Intl.DateTimeFormatOptions = {
-      weekday: 'long',
-      day: 'numeric',
-      month: 'long'
-    };
-    return date.toLocaleDateString('tr-TR', options);
-  };
-
-  const isToday = (date: Date) => {
-    const today = new Date();
-    return date.toDateString() === today.toDateString();
-  };
-
-  const isSelectedDate = (date: Date) => {
-    return selectedDate === formatDate(date);
-  };
-
-  const handleDateClick = (date: Date) => {
-    const dateString = formatDate(date);
-    onDateSelect(dateString);
-    setView('time');
-  };
-
-  const handleTimeClick = (time: string) => {
-    onTimeSelect(time);
-  };
-
-  const formatTime = (time: string) => {
-    const [hour, minute] = time.split(':');
-    const hourNum = parseInt(hour);
-    const ampm = hourNum >= 12 ? 'PM' : 'AM';
-    const displayHour = hourNum > 12 ? hourNum - 12 : hourNum === 0 ? 12 : hourNum;
-    return `${displayHour}:${minute} ${ampm}`;
-  };
-
-  if (view === 'date') {
-    return (
-      <div className="bg-white rounded-[20px] p-6 shadow-sm border border-gray-100">
-        <div className="flex items-center justify-between mb-6">
-          <h3 className="text-lg font-semibold text-[#2D2D2D]">Tarih Seçin</h3>
-          <Calendar className="w-5 h-5 text-[#D4AF37]" />
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          {dates.map((date) => (
-            <button
-              key={formatDate(date)}
-              onClick={() => handleDateClick(date)}
-              className={`p-4 rounded-xl border-2 transition-all text-left ${
-                isSelectedDate(date)
-                  ? 'border-[#D4AF37] bg-[#D4AF37]/5'
-                  : 'border-gray-200 hover:border-[#D4AF37]/50'
-              }`}
-            >
-              <div className="text-sm font-medium text-[#2D2D2D]">
-                {isToday(date) ? 'Bugün' : date.toLocaleDateString('tr-TR', { weekday: 'short' })}
-              </div>
-              <div className={`text-lg font-bold ${isSelectedDate(date) ? 'text-[#D4AF37]' : 'text-[#2D2D2D]'}`}>
-                {date.getDate()}
-              </div>
-              <div className="text-xs text-gray-500">
-                {date.toLocaleDateString('tr-TR', { month: 'short' })}
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
-    );
-  }
 
   return (
-    <div className="bg-white rounded-[20px] p-6 shadow-sm border border-gray-100">
-      <div className="flex items-center justify-between mb-6">
-        <button
-          onClick={() => setView('date')}
-          className="flex items-center gap-2 text-[#D4AF37] hover:text-[#B8941F] transition-colors"
-        >
-          <ChevronLeft className="w-4 h-4" />
-          <span className="text-sm font-medium">Tarih Değiştir</span>
-        </button>
-        <div className="text-center">
-          <h3 className="text-lg font-semibold text-[#2D2D2D]">Saat Seçin</h3>
-          <p className="text-sm text-gray-600">
-            {selectedDate && formatDisplayDate(new Date(selectedDate))}
-          </p>
+    <div className="space-y-4">
+      {/* Date Selection */}
+      <div className="bg-white rounded-[20px] p-6 shadow-sm border border-gray-100">
+        <div className="flex items-center gap-2 mb-4">
+          <Calendar className="w-5 h-5 text-[#D4AF37]" />
+          <h3 className="text-lg font-semibold text-[#2D2D2D]">Tarih Seçin</h3>
         </div>
-        <div className="w-20"></div> {/* Spacer */}
-      </div>
 
-      {loading ? (
-        <div className="flex items-center justify-center py-8">
-          <Loader2 className="w-6 h-6 animate-spin text-[#D4AF37]" />
-          <span className="ml-2 text-gray-600">Saatler yükleniyor...</span>
-        </div>
-      ) : (
-        <div className="grid grid-cols-3 gap-3 max-h-60 overflow-y-auto">
-          {timeSlots.map((slot) => (
+        <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+          {dates.map((date) => (
             <button
-              key={slot.time}
-              onClick={() => slot.available && handleTimeClick(slot.time)}
-              disabled={!slot.available}
-              className={`p-3 rounded-lg border transition-all ${
-                selectedTime === slot.time
-                  ? 'border-[#D4AF37] bg-[#D4AF37]/10 text-[#D4AF37]'
-                  : slot.available
-                  ? 'border-gray-200 hover:border-[#D4AF37]/50 text-[#2D2D2D]'
-                  : 'border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed'
+              key={date.fullDate}
+              onClick={() => handleDateClick(date)}
+              className={`flex-shrink-0 w-16 px-3 py-4 rounded-[15px] text-center transition-all ${
+                selectedDate === date.fullDate
+                  ? 'bg-[#D4AF37] text-white shadow-md'
+                  : date.available
+                  ? 'bg-gray-50 hover:bg-gray-100 text-[#2D2D2D]'
+                  : 'bg-gray-100 text-gray-400 cursor-pointer'
               }`}
             >
-              <div className="text-sm font-medium">
-                {formatTime(slot.time)}
-              </div>
-              {!slot.available && (
-                <div className="text-xs text-gray-400 mt-1">Dolu</div>
-              )}
+              <div className="text-xs mb-2">{date.day}</div>
+              <div className="text-lg font-semibold">{date.date}</div>
+              {!date.available && <div className="text-xs mt-1">Dolu</div>}
             </button>
           ))}
         </div>
-      )}
 
-      <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-        <div className="flex items-center gap-2 text-blue-800">
-          <Clock className="w-4 h-4" />
-          <span className="text-sm font-medium">Tahmini Süre: {totalDuration} dakika</span>
-        </div>
+        {/* Waitlist Option */}
+        <AnimatePresence>
+          {showWaitlist && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="overflow-hidden"
+            >
+              {!waitlistSubmitted ? (
+                <div className="mt-4 bg-gradient-to-r from-[#2D2D2D] to-[#3D3D3D] rounded-[15px] p-4">
+                  <div className="flex items-start gap-3 mb-3">
+                    <div className="w-10 h-10 bg-white/10 rounded-full flex items-center justify-center flex-shrink-0">
+                      <UserPlus className="w-5 h-5 text-white" />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-white mb-1">
+                        Bu Gün İçin Bekleme Listesine Girin
+                      </h4>
+                      <p className="text-sm text-gray-300">
+                        Bir yer açılırsa size WhatsApp'tan haber verelim
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleWaitlistSubmit}
+                    className="w-full bg-white text-[#2D2D2D] rounded-[12px] px-4 py-3 font-semibold hover:bg-gray-100 transition-colors"
+                  >
+                    Sıraya Gir
+                  </button>
+                </div>
+              ) : (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="mt-4 bg-[#10B981]/10 border border-[#10B981]/30 rounded-[15px] p-4"
+                >
+                  <p className="text-[#10B981] font-medium text-center">
+                    ✓ Bekleme listesine eklendiniz! Bir yer açılırsa sizi haberdar edeceğiz.
+                  </p>
+                </motion.div>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
+
+      {/* Time Selection */}
+      {selectedDate && (
+        <div className="bg-white rounded-[20px] p-6 shadow-sm border border-gray-100">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Clock className="w-5 h-5 text-[#D4AF37]" />
+              <h3 className="text-lg font-semibold text-[#2D2D2D]">Saat Seçin</h3>
+            </div>
+            {totalDuration > 0 && (
+              <span className="text-sm text-gray-500">
+                ~{totalDuration} dakika
+              </span>
+            )}
+          </div>
+
+          <div className="space-y-6">
+            {/* Morning */}
+            <div>
+              <p className="text-sm font-medium text-gray-600 mb-3">Sabah</p>
+              <div className="grid grid-cols-3 gap-3">
+                {timeSlots.morning.map((time) => {
+                  const endTime = totalDuration > 0 ? calculateEndTime(time, totalDuration) : null;
+                  const isSelected = selectedTime === time;
+
+                  return (
+                    <button
+                      key={time}
+                      onClick={() => onTimeSelect(time)}
+                      className={`py-4 px-3 rounded-[12px] text-sm font-medium transition-all ${
+                        isSelected
+                          ? 'bg-[#D4AF37] text-white shadow-md'
+                          : 'bg-gray-50 hover:bg-gray-100 text-[#2D2D2D]'
+                      }`}
+                    >
+                      <div>{time}</div>
+                      {isSelected && endTime && (
+                        <motion.div
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          className="text-xs mt-1 text-white/80"
+                        >
+                          - {endTime}
+                        </motion.div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Afternoon */}
+            <div>
+              <p className="text-sm font-medium text-gray-600 mb-3">Öğle</p>
+              <div className="grid grid-cols-3 gap-3">
+                {timeSlots.afternoon.map((time) => {
+                  const endTime = totalDuration > 0 ? calculateEndTime(time, totalDuration) : null;
+                  const isSelected = selectedTime === time;
+
+                  return (
+                    <button
+                      key={time}
+                      onClick={() => onTimeSelect(time)}
+                      className={`py-4 px-3 rounded-[12px] text-sm font-medium transition-all ${
+                        isSelected
+                          ? 'bg-[#D4AF37] text-white shadow-md'
+                          : 'bg-gray-50 hover:bg-gray-100 text-[#2D2D2D]'
+                      }`}
+                    >
+                      <div>{time}</div>
+                      {isSelected && endTime && (
+                        <motion.div
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          className="text-xs mt-1 text-white/80"
+                        >
+                          - {endTime}
+                        </motion.div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Evening */}
+            <div>
+              <p className="text-sm font-medium text-gray-600 mb-3">Akşam</p>
+              <div className="grid grid-cols-3 gap-3">
+                {timeSlots.evening.map((time) => {
+                  const endTime = totalDuration > 0 ? calculateEndTime(time, totalDuration) : null;
+                  const isSelected = selectedTime === time;
+
+                  return (
+                    <button
+                      key={time}
+                      onClick={() => onTimeSelect(time)}
+                      className={`py-4 px-3 rounded-[12px] text-sm font-medium transition-all ${
+                        isSelected
+                          ? 'bg-[#D4AF37] text-white shadow-md'
+                          : 'bg-gray-50 hover:bg-gray-100 text-[#2D2D2D]'
+                      }`}
+                    >
+                      <div>{time}</div>
+                      {isSelected && endTime && (
+                        <motion.div
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          className="text-xs mt-1 text-white/80"
+                        >
+                          - {endTime}
+                        </motion.div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
