@@ -15,9 +15,10 @@ import { Service, Staff } from '../components/ui/types.js';
 const DUMMY_STAFF: Staff[] = [
   { id: '1', name: 'Zeynep', emoji: '👩' },
   { id: '2', name: 'Aylin', emoji: '👩‍🦰' },
+  { id: '3', name: 'Elif', emoji: '👩‍🦱' },
 ];
 
-const DUMMY_SERVICES: Service[] = [
+const INITIAL_SERVICES: Service[] = [
   {
     id: '1',
     name: 'Tam Vücut Lazer Paketi',
@@ -89,9 +90,62 @@ export default function MagicLinkBooking() {
   const [searchQuery, setSearchQuery] = useState('');
   const [referralActive, setReferralActive] = useState(false);
   const [referralPhone, setReferralPhone] = useState('');
-  const [accordionOpen, setAccordionOpen] = useState(true);
+  
+  const [services, setServices] = useState<Service[]>(INITIAL_SERVICES);
+  const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>(['1']); // Default selected from Figma
+  const [selectedStaffIds, setSelectedStaffIds] = useState<Record<string, string>>({ '1': '1' });
   const [selectedDate, setSelectedDate] = useState<string>('2026-01-13');
   const [selectedTime, setSelectedTime] = useState<string>('12:30');
+  const [accordionOpen, setAccordionOpen] = useState(true);
+
+  // Handlers
+  const handleServiceToggle = (id: string) => {
+    setSelectedServiceIds(prev => 
+      prev.includes(id) ? prev.filter(sId => sId !== id) : [...prev, id]
+    );
+  };
+
+  const handleToggleGuest = (id: string) => {
+    setServices(prev => prev.map(s => s.id === id ? { ...s, forGuest: !s.forGuest } : s));
+  };
+
+  const handleTogglePackage = (id: string) => {
+    setServices(prev => prev.map(s => {
+      if (s.id === id) {
+        const using = !s.usePackage;
+        return { 
+          ...s, 
+          usePackage: using,
+          packageSessionsLeft: using ? s.packageSessionsLeft! - 1 : s.packageSessionsLeft! + 1 
+        };
+      }
+      return s;
+    }));
+  };
+
+  const handleStaffSelect = (serviceId: string, staffId: string) => {
+    setSelectedStaffIds(prev => ({ ...prev, [serviceId]: staffId }));
+  };
+
+  const handleRepeatLast = () => {
+    // Reset to Figma state
+    setSelectedServiceIds(['1']);
+    setSelectedStaffIds({ '1': '1' });
+    setServices(INITIAL_SERVICES);
+  };
+
+  // Calculations
+  const filteredServices = services.filter(s => s.name.toLowerCase().includes(searchQuery.toLowerCase()));
+  const totalPrice = selectedServiceIds.reduce((sum, id) => {
+    const service = services.find(s => s.id === id);
+    if (!service || service.usePackage) return sum;
+    return sum + (service.discountedPrice || service.price);
+  }, 0);
+
+  const totalDuration = selectedServiceIds.reduce((sum, id) => {
+    const service = services.find(s => s.id === id);
+    return sum + (service?.durationMinutes || 0);
+  }, 0);
 
   return (
     <div className="min-h-screen bg-[#FAFAFA] pb-40 font-sans antialiased text-[#1a1a1a]">
@@ -105,7 +159,7 @@ export default function MagicLinkBooking() {
         <div className="px-4 py-2 space-y-6">
           <QuickActionCards
             packageCount={3}
-            onRepeatClick={() => {}}
+            onRepeatClick={handleRepeatLast}
             onPackagesClick={() => {}}
           />
 
@@ -127,17 +181,17 @@ export default function MagicLinkBooking() {
               isOpen={accordionOpen}
               onToggle={() => setAccordionOpen(!accordionOpen)}
             >
-              {DUMMY_SERVICES.map((service) => (
+              {filteredServices.map((service) => (
                 <ServiceCard
                   key={service.id}
                   service={service}
-                  isSelected={service.id === '1'}
-                  selectedStaffId="1"
+                  isSelected={selectedServiceIds.includes(service.id)}
+                  selectedStaffId={selectedStaffIds[service.id]}
                   staffOptions={DUMMY_STAFF}
-                  onToggle={() => {}}
-                  onToggleGuest={() => {}}
-                  onTogglePackage={() => {}}
-                  onStaffSelect={() => {}}
+                  onToggle={() => handleServiceToggle(service.id)}
+                  onToggleGuest={() => handleToggleGuest(service.id)}
+                  onTogglePackage={() => handleTogglePackage(service.id)}
+                  onStaffSelect={(staffId) => handleStaffSelect(service.id, staffId)}
                 />
               ))}
             </ServiceAccordion>
@@ -194,17 +248,17 @@ export default function MagicLinkBooking() {
               timeSlots={DUMMY_TIMES}
               selectedTime={selectedTime}
               onTimeSelect={setSelectedTime}
-              totalDuration={165}
+              totalDuration={totalDuration}
             />
           )}
         </div>
 
         <StickyPriceFooter
-          originalPrice={4150}
-          finalPrice={4150}
+          originalPrice={totalPrice}
+          finalPrice={totalPrice}
           showDiscount={false}
-          isEnabled={true}
-          onConfirm={() => {}}
+          isEnabled={selectedServiceIds.length > 0 && !!selectedDate && !!selectedTime}
+          onConfirm={() => alert('Randevu Onaylandı!')}
           onShowBreakdown={() => {}}
         />
 
