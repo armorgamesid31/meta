@@ -19,20 +19,24 @@ export function ServiceAccordion({
   children,
 }: ServiceAccordionProps) {
   return (
-    <div className="bg-white rounded-[20px] overflow-hidden shadow-sm border border-gray-100">
+    <div className="bg-white rounded-[24px] overflow-hidden shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-gray-100 mb-3">
       {/* Category Header */}
       <button
         onClick={onToggle}
-        className="w-full px-4 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors cursor-pointer"
+        className="w-full px-5 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors cursor-pointer"
       >
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 bg-[#D4AF37]/10 rounded-full flex items-center justify-center text-xl">
+          <div className="w-8 h-8 bg-[#FFF7ED] rounded-full flex items-center justify-center text-lg text-[#FB923C]">
             {icon}
           </div>
-          <span className="font-medium text-[#2D2D2D]">{categoryName}</span>
-          <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full">
-            {serviceCount}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-[#2D2D2D] text-[15px]">
+              {categoryName}
+            </span>
+            <span className="text-[11px] font-medium bg-[#F3F4F6] text-[#6B7280] px-2 py-0.5 rounded-full">
+              {serviceCount}
+            </span>
+          </div>
         </div>
         <ChevronDown
           className={`w-5 h-5 text-gray-400 transition-transform duration-200 ${
@@ -42,7 +46,7 @@ export function ServiceAccordion({
       </button>
 
       {/* Service Items */}
-      {isOpen && <div className="border-t border-gray-100">{children}</div>}
+      {isOpen && <div className="border-t border-gray-50">{children}</div>}
     </div>
   );
 }

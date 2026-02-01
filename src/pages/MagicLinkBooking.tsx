@@ -20,25 +20,48 @@ const DUMMY_STAFF: Staff[] = [
 const DUMMY_SERVICES: Service[] = [
   {
     id: '1',
-    name: 'Saç Kesimi',
-    duration: '45 dk',
-    durationMinutes: 45,
-    price: 1500,
-    discountedPrice: 1400,
+    name: 'Tam Vücut Lazer Paketi',
+    duration: '60 dk',
+    durationMinutes: 60,
+    price: 1800,
+    discountedPrice: 1650,
     forGuest: false,
     usePackage: false,
-    packageSessionsLeft: 3,
+    packageSessionsLeft: 4,
     packageAvailable: true,
     hasSynergy: true,
-    synergyBadge: 'Popüler',
+    synergyBadge: 'Fast Track',
   },
   {
     id: '2',
-    name: 'Fön',
+    name: 'Sırt Lazer',
     duration: '30 dk',
     durationMinutes: 30,
-    price: 500,
-    forGuest: true,
+    price: 1200,
+    discountedPrice: 1100,
+    forGuest: false,
+    usePackage: false,
+    packageSessionsLeft: 0,
+    packageAvailable: false,
+  },
+  {
+    id: '3',
+    name: 'Bacak Lazer',
+    duration: '45 dk',
+    durationMinutes: 45,
+    price: 1500,
+    forGuest: false,
+    usePackage: false,
+    packageSessionsLeft: 0,
+    packageAvailable: true,
+  },
+  {
+    id: '4',
+    name: 'Sir Ağda',
+    duration: '20 dk',
+    durationMinutes: 20,
+    price: 400,
+    forGuest: false,
     usePackage: false,
     packageSessionsLeft: 0,
     packageAvailable: false,
@@ -49,27 +72,30 @@ const DUMMY_DATES = [
   { day: 'Pzt', date: '12', fullDate: '2026-01-12', available: true },
   { day: 'Sal', date: '13', fullDate: '2026-01-13', available: true },
   { day: 'Çar', date: '14', fullDate: '2026-01-14', available: false },
+  { day: 'Per', date: '15', fullDate: '2026-01-15', available: true },
+  { day: 'Cum', date: '16', fullDate: '2026-01-16', available: true },
+  { day: 'Cmt', date: '17', fullDate: '2026-01-17', available: true },
 ];
 
 const DUMMY_TIMES = {
-  morning: ['09:00', '10:00', '11:00'],
-  afternoon: ['13:00', '14:00', '15:00'],
-  evening: ['17:00', '18:00'],
+  morning: ['09:00', '09:30', '10:00', '10:30', '11:00', '11:30'],
+  afternoon: ['12:00', '12:30', '13:00', '13:30', '14:00', '14:30', '15:00'],
+  evening: ['16:00', '16:30', '17:00', '17:30', '18:00', '18:30', '19:00'],
 };
 
 export default function MagicLinkBooking() {
   // Purely visual toggles required by Figma interaction
-  const [isWelcomeOpen, setIsWelcomeOpen] = useState(true);
+  const [isWelcomeOpen, setIsWelcomeOpen] = useState(false); // Başlangıçta kapalı olsun, Figma screenshot'a uyması için
   const [selectedGender, setSelectedGender] = useState<'woman' | 'man'>('woman');
   const [searchQuery, setSearchQuery] = useState('');
   const [referralActive, setReferralActive] = useState(false);
   const [referralPhone, setReferralPhone] = useState('');
   const [accordionOpen, setAccordionOpen] = useState(true);
-  const [selectedDate, setSelectedDate] = useState<string>();
-  const [selectedTime, setSelectedTime] = useState<string>();
+  const [selectedDate, setSelectedDate] = useState<string>('2026-01-13'); // Figma'da Sal 13 seçili
+  const [selectedTime, setSelectedTime] = useState<string>('12:30'); // Figma'da 12:30 seçili
 
   return (
-    <div className="min-h-screen bg-[#FAFAFA] pb-32">
+    <div className="min-h-screen bg-[#FAFAFA] pb-32 font-sans">
       <Header
         customerName="Ayşe"
         selectedGender={selectedGender}
@@ -93,27 +119,69 @@ export default function MagicLinkBooking() {
         />
 
         {/* Service List */}
-        <ServiceAccordion
-          categoryName="Saç Tasarımı"
-          icon="✂️"
-          serviceCount={2}
-          isOpen={accordionOpen}
-          onToggle={() => setAccordionOpen(!accordionOpen)}
-        >
-          {DUMMY_SERVICES.map((service) => (
-            <ServiceCard
-              key={service.id}
-              service={service}
-              isSelected={service.id === '1'} // Dummy selection
-              selectedStaffId="1" // Dummy staff selection
-              staffOptions={DUMMY_STAFF}
-              onToggle={() => {}}
-              onToggleGuest={() => {}}
-              onTogglePackage={() => {}}
-              onStaffSelect={() => {}}
-            />
-          ))}
-        </ServiceAccordion>
+        <div className="space-y-3">
+          <ServiceAccordion
+            categoryName="Epilasyon & Tüy Alma"
+            icon="✨"
+            serviceCount={4}
+            isOpen={accordionOpen}
+            onToggle={() => setAccordionOpen(!accordionOpen)}
+          >
+            {DUMMY_SERVICES.map((service) => (
+              <ServiceCard
+                key={service.id}
+                service={service}
+                isSelected={service.id === '1'} // Figma'da ilk servis seçili
+                selectedStaffId="1" // Figma'da Zeynep seçili
+                staffOptions={DUMMY_STAFF}
+                onToggle={() => {}}
+                onToggleGuest={() => {}}
+                onTogglePackage={() => {}}
+                onStaffSelect={() => {}}
+              />
+            ))}
+          </ServiceAccordion>
+
+          <ServiceAccordion
+            categoryName="Cilt Bakımı & Yüz"
+            icon="🧖‍♀️"
+            serviceCount={4}
+            isOpen={false}
+            onToggle={() => {}}
+          >
+            <div />
+          </ServiceAccordion>
+
+          <ServiceAccordion
+            categoryName="Vücut Şekillendirme"
+            icon="💪"
+            serviceCount={3}
+            isOpen={false}
+            onToggle={() => {}}
+          >
+            <div />
+          </ServiceAccordion>
+
+          <ServiceAccordion
+            categoryName="Tırnak Sanatı & Ayak Bakımı"
+            icon="💅"
+            serviceCount={4}
+            isOpen={false}
+            onToggle={() => {}}
+          >
+            <div />
+          </ServiceAccordion>
+          
+          <ServiceAccordion
+            categoryName="Kaş & Kirpik"
+            icon="👁️" // Figma'daki ikona benzer bir şey
+            serviceCount={4}
+            isOpen={false}
+            onToggle={() => {}}
+          >
+            <div />
+          </ServiceAccordion>
+        </div>
 
         <DateSelector
           dates={DUMMY_DATES}
@@ -126,23 +194,23 @@ export default function MagicLinkBooking() {
             timeSlots={DUMMY_TIMES}
             selectedTime={selectedTime}
             onTimeSelect={setSelectedTime}
-            totalDuration={75}
+            totalDuration={165} // Figma'da ~165 dakika yazıyor
           />
         )}
       </div>
 
       <StickyPriceFooter
-        originalPrice={2000}
-        finalPrice={1900}
-        showDiscount={true}
-        isEnabled={!!(selectedDate && selectedTime)}
+        originalPrice={4150}
+        finalPrice={4150}
+        showDiscount={false}
+        isEnabled={true}
         onConfirm={() => {}}
         onShowBreakdown={() => {}}
       />
 
       <WelcomeModal
         isOpen={isWelcomeOpen}
-        onSelectGender={(gender: 'woman' | 'man') => {
+        onSelectGender={(gender) => {
           setSelectedGender(gender);
           setIsWelcomeOpen(false);
         }}

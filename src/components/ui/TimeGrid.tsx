@@ -28,25 +28,25 @@ export function TimeGrid({
   totalDuration = 0,
 }: TimeGridProps) {
   return (
-    <div className="bg-white rounded-[20px] p-4 shadow-sm border border-gray-100">
-      <div className="flex items-center justify-between mb-3">
+    <div className="bg-white rounded-[24px] p-5 shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-gray-100">
+      <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <Clock className="w-5 h-5 text-[#D4AF37]" />
-          <h3 className="font-semibold text-[#2D2D2D]">Saat Seçin</h3>
+          <h3 className="font-semibold text-[#2D2D2D] text-[15px]">Saat Seçin</h3>
         </div>
         {totalDuration > 0 && (
-          <span className="text-sm text-gray-500">
+          <span className="text-xs font-medium text-gray-500">
             ~{totalDuration} dakika
           </span>
         )}
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-5">
         {/* Morning */}
         {timeSlots.morning.length > 0 && (
           <div>
-            <p className="text-sm text-gray-500 mb-2">Sabah</p>
-            <div className="grid grid-cols-3 gap-2">
+            <p className="text-xs text-gray-500 font-medium mb-2.5 ml-1">Sabah</p>
+            <div className="grid grid-cols-3 gap-2.5">
               {timeSlots.morning.map((time) => {
                 const endTime =
                   totalDuration > 0
@@ -58,15 +58,15 @@ export function TimeGrid({
                   <button
                     key={time}
                     onClick={() => onTimeSelect(time)}
-                    className={`w-full py-3 px-2 rounded-[12px] text-sm font-medium transition-all cursor-pointer ${
+                    className={`w-full py-3.5 px-2 rounded-2xl text-[13px] font-medium transition-all cursor-pointer flex flex-col items-center justify-center ${
                       isSelected
-                        ? 'bg-[#D4AF37] text-white shadow-md'
-                        : 'bg-gray-50 hover:bg-gray-100 text-[#2D2D2D]'
+                        ? 'bg-[#D4A32E] text-white shadow-md'
+                        : 'bg-[#F9FAFB] hover:bg-gray-100 text-[#374151]'
                     }`}
                   >
                     <div>{time}</div>
                     {isSelected && endTime && (
-                      <div className="text-xs mt-1 text-white/80">
+                      <div className="text-[11px] mt-0.5 text-white/90 font-normal">
                         - {endTime}
                       </div>
                     )}
@@ -80,8 +80,8 @@ export function TimeGrid({
         {/* Afternoon */}
         {timeSlots.afternoon.length > 0 && (
           <div>
-            <p className="text-sm text-gray-500 mb-2">Öğle</p>
-            <div className="grid grid-cols-3 gap-2">
+            <p className="text-xs text-gray-500 font-medium mb-2.5 ml-1">Öğle</p>
+            <div className="grid grid-cols-3 gap-2.5">
               {timeSlots.afternoon.map((time) => {
                 const endTime =
                   totalDuration > 0
@@ -93,15 +93,15 @@ export function TimeGrid({
                   <button
                     key={time}
                     onClick={() => onTimeSelect(time)}
-                    className={`w-full py-3 px-2 rounded-[12px] text-sm font-medium transition-all cursor-pointer ${
+                    className={`w-full py-3.5 px-2 rounded-2xl text-[13px] font-medium transition-all cursor-pointer flex flex-col items-center justify-center ${
                       isSelected
-                        ? 'bg-[#D4AF37] text-white shadow-md'
-                        : 'bg-gray-50 hover:bg-gray-100 text-[#2D2D2D]'
+                        ? 'bg-[#D4A32E] text-white shadow-md'
+                        : 'bg-[#F9FAFB] hover:bg-gray-100 text-[#374151]'
                     }`}
                   >
                     <div>{time}</div>
                     {isSelected && endTime && (
-                      <div className="text-xs mt-1 text-white/80">
+                      <div className="text-[11px] mt-0.5 text-white/90 font-normal">
                         - {endTime}
                       </div>
                     )}
@@ -115,8 +115,8 @@ export function TimeGrid({
         {/* Evening */}
         {timeSlots.evening.length > 0 && (
           <div>
-            <p className="text-sm text-gray-500 mb-2">Akşam</p>
-            <div className="grid grid-cols-3 gap-2">
+            <p className="text-xs text-gray-500 font-medium mb-2.5 ml-1">Akşam</p>
+            <div className="grid grid-cols-3 gap-2.5">
               {timeSlots.evening.map((time) => {
                 const endTime =
                   totalDuration > 0
@@ -128,15 +128,15 @@ export function TimeGrid({
                   <button
                     key={time}
                     onClick={() => onTimeSelect(time)}
-                    className={`w-full py-3 px-2 rounded-[12px] text-sm font-medium transition-all cursor-pointer ${
+                    className={`w-full py-3.5 px-2 rounded-2xl text-[13px] font-medium transition-all cursor-pointer flex flex-col items-center justify-center ${
                       isSelected
-                        ? 'bg-[#D4AF37] text-white shadow-md'
-                        : 'bg-gray-50 hover:bg-gray-100 text-[#2D2D2D]'
+                        ? 'bg-[#D4A32E] text-white shadow-md'
+                        : 'bg-[#F9FAFB] hover:bg-gray-100 text-[#374151]'
                     }`}
                   >
                     <div>{time}</div>
                     {isSelected && endTime && (
-                      <div className="text-xs mt-1 text-white/80">
+                      <div className="text-[11px] mt-0.5 text-white/90 font-normal">
                         - {endTime}
                       </div>
                     )}
