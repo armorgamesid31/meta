@@ -54,9 +54,15 @@ export default defineConfig({
         manualChunks: undefined,
       },
     },
+    minify: 'terser',
+  },
+  optimizeDeps: {
+    include: ['react', 'react-dom', 'react-router-dom'],
+    exclude: ['vite'],
   },
   ssr: {
     noExternal: ['@tailwindcss/postcss'],
+    external: ['vite'],
   },
   resolve: {
     alias: {
