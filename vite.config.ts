@@ -6,16 +6,15 @@ const basePath = process.env.VITE_BASE_URL || '/';
 
 export default defineConfig({
   plugins: [react()],
-  base: basePath, // <-- CRITICAL: Dynamic base path for reverse proxy
+  base: basePath,
   server: {
-    host: '0.0.0.0', // Listen on all interfaces for Docker/reverse proxy
+    host: '0.0.0.0',
     port: 5173,
     allowedHosts: [
       'code.berkai.shop',
       'localhost',
       '127.0.0.1'
     ],
-    // Configure HMR for reverse proxy
     hmr: {
       port: 5173,
     },
@@ -50,11 +49,18 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     assetsDir: 'assets',
-    // Ensure assets work with base path
     rollupOptions: {
       output: {
         manualChunks: undefined,
       },
+    },
+  },
+  ssr: {
+    noExternal: ['@tailwindcss/postcss'],
+  },
+  resolve: {
+    alias: {
+      '@': '/src',
     },
   },
 })
