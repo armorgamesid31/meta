@@ -57,6 +57,9 @@ export default defineConfig({
       },
     },
   },
+  css: {
+    postcss: null,
+  },
   resolve: {
     alias: {
       '@': '/src',
