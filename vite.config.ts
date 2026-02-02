@@ -58,12 +58,6 @@ export default defineConfig({
     },
     minify: 'terser',
   },
-  optimizeDeps: {
-    exclude: ['postcss', 'tailwindcss'],
-    esbuildOptions: {
-      target: 'esnext',
-    },
-  },
   resolve: {
     alias: {
       '@': '/src',
