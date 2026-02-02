@@ -54,9 +54,10 @@ export default defineConfig({
         manualChunks: undefined,
       },
     },
+    minify: 'terser',
   },
-  ssr: {
-    noExternal: ['@tailwindcss/postcss'],
+  optimizeDeps: {
+    include: ['react', 'react-dom', 'react-router-dom'],
   },
   resolve: {
     alias: {
