@@ -17,6 +17,7 @@ export default defineConfig({
     ],
     hmr: {
       port: 5173,
+      overlay: false,
     },
     middlewareMode: false,
     proxy: {
