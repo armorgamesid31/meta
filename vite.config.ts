@@ -6,6 +6,9 @@ const basePath = process.env.VITE_BASE_URL || '/';
 
 export default defineConfig({
   plugins: [react()],
+  css: {
+    postcss: './postcss.config.js',
+  },
   base: basePath,
   server: {
     host: '0.0.0.0',
@@ -63,5 +66,6 @@ export default defineConfig({
     alias: {
       '@': '/src',
     },
+    extensions: ['.js', '.ts', '.jsx', '.tsx', '.json', '.css'],
   },
 })
