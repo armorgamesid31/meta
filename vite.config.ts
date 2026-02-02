@@ -7,6 +7,7 @@ const basePath = process.env.VITE_BASE_URL || '/';
 export default defineConfig({
   plugins: [react()],
   base: basePath,
+  cacheDir: '.vite',
   server: {
     host: '0.0.0.0',
     port: 5173,
@@ -58,7 +59,10 @@ export default defineConfig({
     minify: 'terser',
   },
   optimizeDeps: {
-    include: ['react', 'react-dom', 'react-router-dom'],
+    exclude: ['postcss', 'tailwindcss'],
+    esbuildOptions: {
+      target: 'esnext',
+    },
   },
   resolve: {
     alias: {
