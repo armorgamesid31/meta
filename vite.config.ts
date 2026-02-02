@@ -7,7 +7,6 @@ const basePath = process.env.VITE_BASE_URL || '/';
 export default defineConfig({
   plugins: [react()],
   base: basePath,
-  cacheDir: '.vite',
   server: {
     host: '0.0.0.0',
     port: 5173,
@@ -18,6 +17,7 @@ export default defineConfig({
     ],
     hmr: {
       port: 5173,
+      overlay: false,
     },
     middlewareMode: false,
     proxy: {
@@ -56,7 +56,6 @@ export default defineConfig({
         manualChunks: undefined,
       },
     },
-    minify: 'terser',
   },
   resolve: {
     alias: {
