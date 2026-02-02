@@ -135,9 +135,6 @@ importers:
       supertest:
         specifier: ^7.2.2
         version: 7.2.2
-      terser:
-        specifier: ^5.37.1
-        version: 5.46.0
       tsx:
         specifier: ^4.21.0
         version: 4.21.0
@@ -3035,6 +3032,7 @@ snapshots:
     dependencies:
       '@jridgewell/gen-mapping': 0.3.13
       '@jridgewell/trace-mapping': 0.3.31
+    optional: true
 
   '@jridgewell/sourcemap-codec@1.5.5': {}
 
@@ -3725,7 +3723,8 @@ snapshots:
     dependencies:
       delayed-stream: 1.0.0
 
-  commander@2.20.3: {}
+  commander@2.20.3:
+    optional: true
 
   component-emitter@1.3.1: {}
 
@@ -4959,6 +4958,7 @@ snapshots:
       acorn: 8.15.0
       commander: 2.20.3
       source-map-support: 0.5.21
+    optional: true
 
   tinybench@2.9.0: {}
 

@@ -56,7 +56,6 @@ export default defineConfig({
         manualChunks: undefined,
       },
     },
-    minify: 'terser',
   },
   resolve: {
     alias: {
