@@ -18,6 +18,8 @@ export default defineConfig({
     hmr: {
       port: 5173,
     },
+    middlewareMode: false,
+  },
     proxy: {
       '/api': {
         target: process.env.VITE_API_PROXY_TARGET || 'http://localhost:8080',
@@ -58,6 +60,10 @@ export default defineConfig({
   },
   optimizeDeps: {
     include: ['react', 'react-dom', 'react-router-dom'],
+    exclude: ['tailwindcss'],
+  },
+  css: {
+    postcss: './postcss.config.js',
   },
   resolve: {
     alias: {
