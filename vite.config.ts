@@ -65,11 +65,4 @@ export default defineConfig({
       '@': '/src',
     },
   },
-  // Workaround for @tailwindcss/postcss with Vite 7.2.4
-  define: {
-    'process.env.VITE_DISABLE_SERVER_HMR': false,
-  },
-  ssr: {
-    external: ['@tailwindcss/node'],
-  },
 })
