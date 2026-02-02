@@ -17,7 +17,9 @@ export default defineConfig({
     ],
     hmr: {
       port: 5173,
+      overlay: false,
     },
+    middlewareMode: false,
     proxy: {
       '/api': {
         target: process.env.VITE_API_PROXY_TARGET || 'http://localhost:8080',
@@ -54,10 +56,9 @@ export default defineConfig({
         manualChunks: undefined,
       },
     },
-    minify: 'terser',
   },
-  optimizeDeps: {
-    include: ['react', 'react-dom', 'react-router-dom'],
+  css: {
+    postcss: null,
   },
   resolve: {
     alias: {
