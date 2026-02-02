@@ -10,7 +10,7 @@
     "dev": "vite",
     "dev:frontend": "vite",
     "dev:backend": "npx tsx watch src/server.ts",
-    "build": "vite build && tsc -p tsconfig.server.json",
+    "build": "vite build && prisma generate && tsc -p tsconfig.server.json",
     "start": "node dist/server.js",
     "lint": "eslint .",
     "preview": "vite preview",
