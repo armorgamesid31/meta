@@ -58,11 +58,6 @@ export default defineConfig({
   },
   optimizeDeps: {
     include: ['react', 'react-dom', 'react-router-dom'],
-    exclude: ['vite'],
-  },
-  ssr: {
-    noExternal: ['@tailwindcss/postcss'],
-    external: ['vite'],
   },
   resolve: {
     alias: {
