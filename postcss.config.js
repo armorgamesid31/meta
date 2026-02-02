@@ -1,10 +1,6 @@
 export default {
   plugins: {
-    '@tailwindcss/postcss': {
-      future: {
-        hoverOnlyWhenSupported: true,
-      },
-    },
+    tailwindcss: {},
     autoprefixer: {},
   },
 }
