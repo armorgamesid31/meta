@@ -44,7 +44,7 @@ html {
 
 /* Better button hover effects */
 .btn-premium {
-  @apply transition-all duration-200;
+  transition: all 0.2s ease;
 }
 
 .btn-premium:hover {
@@ -65,7 +65,7 @@ html {
 
 /* Better input styling */
 .input-premium {
-  @apply transition-all duration-200;
+  transition: all 0.2s ease;
 }
 
 .input-premium:focus {
@@ -75,7 +75,7 @@ html {
 
 /* Card hover effects */
 .card-premium {
-  @apply transition-all duration-200;
+  transition: all 0.2s ease;
 }
 
 .card-premium:hover {
