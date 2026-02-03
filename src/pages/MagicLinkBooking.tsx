@@ -103,7 +103,7 @@ export default function MagicLinkBooking() {
           onGenderClick={() => setIsWelcomeOpen(true)}
         />
 
-        <div className="px-4 py-4 space-y-4">
+        <div className="px-3 py-3 space-y-2.5">
           <QuickActionCards
             packageCount={3}
             onRepeatClick={() => {}}
