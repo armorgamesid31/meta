@@ -1,4 +1,5 @@
 import React from 'react';
+import { Check } from 'lucide-react';
 import { Service } from './types';
 
 export interface ServiceCardProps {
@@ -8,6 +9,8 @@ export interface ServiceCardProps {
   onDeselect?: (serviceId: string) => void;
   showCheckbox?: boolean;
   showPrice?: boolean;
+  showAddButton?: boolean;
+  variant?: 'default' | 'minimal';
 }
 
 export const ServiceCard: React.FC<ServiceCardProps> = ({
@@ -17,6 +20,8 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
   onDeselect,
   showCheckbox = true,
   showPrice = true,
+  showAddButton = false,
+  variant = 'default',
 }) => {
   const handleClick = () => {
     if (isSelected && onDeselect) {
@@ -25,6 +30,47 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
       onSelect(service);
     }
   };
+
+  if (variant === 'minimal' && showAddButton) {
+    return (
+      <button
+        onClick={handleClick}
+        className="w-full p-3 rounded-lg text-left transition-all duration-200 hover:bg-gray-50 border border-gray-200"
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex-1 min-w-0">
+            <h4 className="font-semibold text-gray-900 text-sm">{service.name}</h4>
+            {service.description && (
+              <p className="text-xs text-gray-600 mt-1">{service.description}</p>
+            )}
+            <div className="text-xs text-gray-500 mt-1">{service.duration} dk</div>
+          </div>
+          <div className="flex-shrink-0 flex items-center gap-3">
+            {showPrice && (
+              <div className="text-right">
+                <span className="text-sm font-bold text-amber-600">
+                  {service.price.toLocaleString('tr-TR')} TL
+                </span>
+              </div>
+            )}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleClick();
+              }}
+              className={`py-2 px-3 rounded-lg font-medium text-xs transition-all duration-200 ${
+                isSelected
+                  ? 'bg-amber-100 text-amber-600 border border-amber-300'
+                  : 'bg-amber-50 text-amber-600 border border-amber-200 hover:bg-amber-100'
+              }`}
+            >
+              {isSelected ? 'Seçili' : 'Ekle'}
+            </button>
+          </div>
+        </div>
+      </button>
+    );
+  }
 
   return (
     <button
@@ -39,11 +85,15 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
       <div className="flex items-start gap-3">
         {showCheckbox && (
           <div
-            className={`mt-1 w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 ${
-              isSelected ? 'bg-amber-600 border-amber-600' : 'border-gray-300'
+            className={`mt-1 w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all ${
+              isSelected
+                ? 'bg-amber-600 border-amber-600'
+                : 'border-gray-300 hover:border-amber-400'
             }`}
           >
-            {isSelected && <span className="text-white text-xs">✓</span>}
+            {isSelected && (
+              <Check className="w-3 h-3 text-white" strokeWidth={3} />
+            )}
           </div>
         )}
 
@@ -52,9 +102,7 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
           {service.description && (
             <p className="text-xs text-gray-600 mt-1">{service.description}</p>
           )}
-          <div className="text-xs text-gray-500 mt-2">
-            {service.duration} dk
-          </div>
+          <div className="text-xs text-gray-500 mt-2">{service.duration} dk</div>
         </div>
 
         {showPrice && (

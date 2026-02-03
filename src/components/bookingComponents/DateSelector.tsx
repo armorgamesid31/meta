@@ -1,4 +1,5 @@
 import React from 'react';
+import { Calendar } from 'lucide-react';
 
 interface DateOption {
   id: string;
@@ -6,6 +7,8 @@ interface DateOption {
   dayOfMonth: number;
   dayName: string;
   available: boolean;
+  isToday?: boolean;
+  isPast?: boolean;
 }
 
 export interface DateSelectorProps {
@@ -13,6 +16,7 @@ export interface DateSelectorProps {
   selectedDateId?: string;
   onSelectDate: (dateId: string) => void;
   label?: string;
+  showDayAbreviations?: boolean;
 }
 
 export const DateSelector: React.FC<DateSelectorProps> = ({
@@ -20,33 +24,39 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
   selectedDateId,
   onSelectDate,
   label = 'Tarih Seçin',
+  showDayAbreviations = true,
 }) => {
   return (
-    <div className="w-full">
+    <div className="w-full bg-white p-4 rounded-lg">
       {label && (
-        <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-          <span className="text-amber-600">📅</span>
+        <h3 className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2">
+          <Calendar className="w-4 h-4 text-amber-600" />
           {label}
         </h3>
       )}
-      <div className="flex gap-3 overflow-x-auto pb-2">
+      <div className="flex gap-2 overflow-x-auto pb-2">
         {dates.map((dateOption) => (
           <button
             key={dateOption.id}
             onClick={() => dateOption.available && onSelectDate(dateOption.id)}
             disabled={!dateOption.available}
-            className={`flex flex-col items-center justify-center p-3 rounded-lg min-w-[70px] transition-all duration-200 ${
+            className={`flex flex-col items-center justify-center py-2 px-3 rounded-lg min-w-[65px] text-center transition-all duration-200 ${
               selectedDateId === dateOption.id
-                ? 'bg-amber-600 text-white shadow-md scale-105'
-                : 'bg-white text-gray-900 border border-gray-200 hover:border-amber-300'
+                ? 'bg-amber-600 text-white shadow-md'
+                : dateOption.isPast
+                  ? 'bg-gray-100 text-gray-400 border border-gray-200'
+                  : 'bg-white text-gray-900 border border-gray-300 hover:border-amber-400'
             } ${!dateOption.available ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
             aria-pressed={selectedDateId === dateOption.id}
             aria-disabled={!dateOption.available}
+            title={dateOption.date.toLocaleDateString('tr-TR')}
           >
-            <span className="text-xs font-semibold text-gray-500 uppercase">
-              {dateOption.dayName.slice(0, 3)}
-            </span>
-            <span className="text-lg font-bold mt-1">{dateOption.dayOfMonth}</span>
+            {showDayAbreviations && (
+              <span className="text-xs font-medium text-gray-500 mb-1 uppercase">
+                {dateOption.dayName.slice(0, 3)}
+              </span>
+            )}
+            <span className="text-base font-bold">{dateOption.dayOfMonth}</span>
           </button>
         ))}
       </div>
