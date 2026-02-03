@@ -14,7 +14,7 @@ export function SearchBar({ value, onChange }: SearchBarProps) {
         placeholder="Hizmet ara..."
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full bg-white rounded-[20px] pl-12 pr-4 py-3 text-[#2D2D2D] placeholder:text-gray-400 border border-gray-100 focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/30 shadow-sm"
+        className="w-full bg-white rounded-[18px] pl-12 pr-4 py-3 text-[13px] text-[#2D2D2D] placeholder:text-[#9CA3AF] border border-gray-100 focus:outline-none focus:ring-2 focus:ring-[#BC952B]/20 shadow-sm transition-all"
       />
     </div>
   );

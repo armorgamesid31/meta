@@ -25,13 +25,13 @@ export function DateSelector({
   onWaitlistSubmit,
 }: DateSelectorProps) {
   return (
-    <div className="bg-white rounded-[20px] p-5 shadow-sm border border-gray-100">
-      <div className="flex items-center gap-2 mb-5">
-        <Calendar className="w-5 h-5 text-[#BC952B]" />
-        <h3 className="font-bold text-[#1a1a1a] text-[15px]">Tarih Seçin</h3>
+    <div className="bg-white rounded-[16px] p-4 shadow-sm border border-gray-100">
+      <div className="flex items-center gap-2 mb-4">
+        <Calendar className="w-4 h-4 text-[#BC952B]" />
+        <h3 className="font-bold text-[#1a1a1a] text-[13px]">Tarih Seçin</h3>
       </div>
 
-      <div className="flex gap-2.5 overflow-x-auto pb-2 scrollbar-hide">
+      <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
         {dates.map((date) => (
           <button
             key={date.fullDate}

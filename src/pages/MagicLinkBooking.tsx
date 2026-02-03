@@ -103,7 +103,7 @@ export default function MagicLinkBooking() {
           onGenderClick={() => setIsWelcomeOpen(true)}
         />
 
-        <div className="px-4 py-3 space-y-4">
+        <div className="px-4 py-4 space-y-4">
           <QuickActionCards
             packageCount={3}
             onRepeatClick={() => {}}
@@ -120,7 +120,7 @@ export default function MagicLinkBooking() {
           />
 
           {/* Service List */}
-          <div className="space-y-1">
+          <div className="space-y-2.5">
             <ServiceAccordion
               categoryName="Epilasyon & Tüy Alma"
               icon="✨"

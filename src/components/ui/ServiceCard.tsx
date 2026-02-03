@@ -27,11 +27,11 @@ export function ServiceCard({
 
   return (
     <div
-      className={`border-b border-gray-100 last:border-b-0 transition-all ${
-        isSelected ? 'bg-[#FFFDF5] border-l-[4px] border-l-[#BC952B]' : 'bg-white'
+      className={`border-b border-gray-100 last:border-b-0 transition-colors ${
+        isSelected ? 'bg-[#FFFBF0] border-l-[4px] border-l-[#BC952B]' : 'bg-white'
       }`}
     >
-      <div className="px-5 py-4">
+      <div className="px-4 py-5">
         {/* Main Service Row */}
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
@@ -47,8 +47,8 @@ export function ServiceCard({
               )}
             </div>
             
-            <div className="flex items-center gap-3">
-              <span className="text-xs text-[#6b7280] font-bold">
+            <div className="flex items-center gap-2.5">
+              <span className="text-[12px] text-[#6b7280] font-medium">
                 {service.duration}
               </span>
 
@@ -61,22 +61,22 @@ export function ServiceCard({
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             {/* Price */}
-            <div className="text-right flex flex-col items-end justify-center min-w-[70px]">
+            <div className="text-right flex flex-col items-end justify-center min-w-[75px]">
               {service.usePackage ? (
                 <p className="font-bold text-[#10B981] text-sm">Ücretsiz</p>
               ) : service.discountedPrice ? (
                 <>
-                  <p className="text-[11px] text-[#9ca3af] line-through font-bold leading-none mb-1">
+                  <p className="text-[10px] text-[#9ca3af] line-through font-bold leading-none mb-1">
                     {service.price} TL
                   </p>
-                  <p className="font-black text-[#10B981] text-[16px] leading-none">
+                  <p className="font-black text-[#10B981] text-[15px] leading-none">
                     {service.discountedPrice} TL
                   </p>
                 </>
               ) : (
-                <p className="font-black text-[#1a1a1a] text-[16px]">
+                <p className="font-black text-[#1a1a1a] text-[15px]">
                   {service.price} TL
                 </p>
               )}
@@ -85,10 +85,10 @@ export function ServiceCard({
             {/* Add/Added Button */}
             <button
               onClick={onToggle}
-              className={`min-w-[84px] h-[34px] rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1 shadow-sm cursor-pointer ${
+              className={`min-w-[90px] h-[36px] rounded-[12px] font-bold text-xs transition-all flex items-center justify-center gap-1.5 shadow-sm cursor-pointer ${
                 isSelected
-                  ? 'bg-[#BC952B] text-white'
-                  : 'bg-white border-2 border-[#BC952B] text-[#BC952B] hover:bg-[#BC952B]/5'
+                  ? 'bg-[#BC952B] text-white shadow-md'
+                  : 'bg-white border-2 border-[#BC952B] text-[#BC952B] hover:bg-[#BC952B]/5 active:scale-95'
               }`}
             >
               {isSelected ? (
