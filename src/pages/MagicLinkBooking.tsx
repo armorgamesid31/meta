@@ -92,17 +92,18 @@ export default function MagicLinkBooking() {
   const [accordionOpen, setAccordionOpen] = useState(true);
   const [selectedDate, setSelectedDate] = useState<string>('2026-01-13');
   const [selectedTime, setSelectedTime] = useState<string>('12:30');
+  const [isBookingInfoOpen, setIsBookingInfoOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-[#FAFAFA] pb-40 font-sans antialiased text-[#1a1a1a]">
-      <div className="max-w-[390px] mx-auto bg-[#FAFAFA] min-h-screen shadow-2xl relative border-x border-gray-100">
+    <div className="min-h-screen bg-white pb-40 font-sans antialiased text-[#1a1a1a]">
+      <div className="max-w-[390px] mx-auto bg-white min-h-screen shadow-2xl relative border-x border-gray-100">
         <Header
           customerName="Ayşe"
           selectedGender={selectedGender}
           onGenderClick={() => setIsWelcomeOpen(true)}
         />
 
-        <div className="px-4 py-2 space-y-6">
+        <div className="px-4 py-3 space-y-4">
           <QuickActionCards
             packageCount={3}
             onRepeatClick={() => {}}

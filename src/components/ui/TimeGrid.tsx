@@ -28,25 +28,25 @@ export function TimeGrid({
   totalDuration = 0,
 }: TimeGridProps) {
   return (
-    <div className="bg-white rounded-[24px] p-5 shadow-sm border border-gray-100">
+    <div className="bg-white rounded-[20px] p-5 shadow-sm border border-gray-100">
       <div className="flex items-center justify-between mb-5">
         <div className="flex items-center gap-2">
           <Clock className="w-5 h-5 text-[#BC952B]" />
           <h3 className="font-bold text-[#1a1a1a] text-[15px]">Saat Seçin</h3>
         </div>
         {totalDuration > 0 && (
-          <span className="text-[11px] font-bold text-[#6b7280] bg-[#f3f4f6] px-2 py-0.5 rounded-lg border border-gray-100">
-            ~{totalDuration} dakika
+          <span className="text-[10px] font-bold text-[#6b7280] bg-[#f3f4f6] px-2.5 py-1 rounded-lg border border-gray-200">
+            ~{totalDuration} dk
           </span>
         )}
       </div>
 
-      <div className="space-y-6">
+      <div className="space-y-5">
         {/* Morning */}
         {timeSlots.morning.length > 0 && (
           <div>
-            <p className="text-[12px] text-[#9ca3af] font-black uppercase tracking-widest mb-3 ml-0.5">Sabah</p>
-            <div className="grid grid-cols-3 gap-2.5">
+            <p className="text-[11px] text-[#9ca3af] font-black uppercase tracking-wider mb-3 ml-0.5">Sabah</p>
+            <div className="grid grid-cols-3 gap-2">
               {timeSlots.morning.map((time) => {
                 const endTime =
                   totalDuration > 0
@@ -58,16 +58,16 @@ export function TimeGrid({
                   <button
                     key={time}
                     onClick={() => onTimeSelect(time)}
-                    className={`h-[52px] rounded-[16px] text-[14px] font-black transition-all cursor-pointer flex flex-col items-center justify-center border ${
+                    className={`h-[50px] rounded-[14px] text-[13px] font-bold transition-all cursor-pointer flex flex-col items-center justify-center ${
                       isSelected
-                        ? 'bg-[#BC952B] text-white border-[#BC952B] shadow-md'
-                        : 'bg-[#F9FAFB] hover:bg-white hover:border-[#BC952B]/30 text-[#374151] border-transparent'
+                        ? 'bg-[#BC952B] text-white shadow-md'
+                        : 'bg-white border border-gray-200 hover:border-[#BC952B] hover:bg-[#FFF9E5] text-[#374151]'
                     }`}
                   >
                     <div>{time}</div>
                     {isSelected && endTime && (
-                      <div className="text-[10px] mt-0.5 text-white/80 font-bold leading-none">
-                        - {endTime}
+                      <div className="text-[9px] mt-0.5 text-white/80 font-semibold leading-none">
+                        {endTime}
                       </div>
                     )}
                   </button>
@@ -80,8 +80,8 @@ export function TimeGrid({
         {/* Afternoon */}
         {timeSlots.afternoon.length > 0 && (
           <div>
-            <p className="text-[12px] text-[#9ca3af] font-black uppercase tracking-widest mb-3 ml-0.5">Öğle</p>
-            <div className="grid grid-cols-3 gap-2.5">
+            <p className="text-[11px] text-[#9ca3af] font-black uppercase tracking-wider mb-3 ml-0.5">Öğle</p>
+            <div className="grid grid-cols-3 gap-2">
               {timeSlots.afternoon.map((time) => {
                 const endTime =
                   totalDuration > 0
@@ -93,16 +93,16 @@ export function TimeGrid({
                   <button
                     key={time}
                     onClick={() => onTimeSelect(time)}
-                    className={`h-[52px] rounded-[16px] text-[14px] font-black transition-all cursor-pointer flex flex-col items-center justify-center border ${
+                    className={`h-[50px] rounded-[14px] text-[13px] font-bold transition-all cursor-pointer flex flex-col items-center justify-center ${
                       isSelected
-                        ? 'bg-[#BC952B] text-white border-[#BC952B] shadow-md'
-                        : 'bg-[#F9FAFB] hover:bg-white hover:border-[#BC952B]/30 text-[#374151] border-transparent'
+                        ? 'bg-[#BC952B] text-white shadow-md'
+                        : 'bg-white border border-gray-200 hover:border-[#BC952B] hover:bg-[#FFF9E5] text-[#374151]'
                     }`}
                   >
                     <div>{time}</div>
                     {isSelected && endTime && (
-                      <div className="text-[10px] mt-0.5 text-white/80 font-bold leading-none">
-                        - {endTime}
+                      <div className="text-[9px] mt-0.5 text-white/80 font-semibold leading-none">
+                        {endTime}
                       </div>
                     )}
                   </button>
@@ -115,8 +115,8 @@ export function TimeGrid({
         {/* Evening */}
         {timeSlots.evening.length > 0 && (
           <div>
-            <p className="text-[12px] text-[#9ca3af] font-black uppercase tracking-widest mb-3 ml-0.5">Akşam</p>
-            <div className="grid grid-cols-3 gap-2.5">
+            <p className="text-[11px] text-[#9ca3af] font-black uppercase tracking-wider mb-3 ml-0.5">Akşam</p>
+            <div className="grid grid-cols-3 gap-2">
               {timeSlots.evening.map((time) => {
                 const endTime =
                   totalDuration > 0
@@ -128,16 +128,16 @@ export function TimeGrid({
                   <button
                     key={time}
                     onClick={() => onTimeSelect(time)}
-                    className={`h-[52px] rounded-[16px] text-[14px] font-black transition-all cursor-pointer flex flex-col items-center justify-center border ${
+                    className={`h-[50px] rounded-[14px] text-[13px] font-bold transition-all cursor-pointer flex flex-col items-center justify-center ${
                       isSelected
-                        ? 'bg-[#BC952B] text-white border-[#BC952B] shadow-md'
-                        : 'bg-[#F9FAFB] hover:bg-white hover:border-[#BC952B]/30 text-[#374151] border-transparent'
+                        ? 'bg-[#BC952B] text-white shadow-md'
+                        : 'bg-white border border-gray-200 hover:border-[#BC952B] hover:bg-[#FFF9E5] text-[#374151]'
                     }`}
                   >
                     <div>{time}</div>
                     {isSelected && endTime && (
-                      <div className="text-[10px] mt-0.5 text-white/80 font-bold leading-none">
-                        - {endTime}
+                      <div className="text-[9px] mt-0.5 text-white/80 font-semibold leading-none">
+                        {endTime}
                       </div>
                     )}
                   </button>

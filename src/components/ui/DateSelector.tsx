@@ -25,7 +25,7 @@ export function DateSelector({
   onWaitlistSubmit,
 }: DateSelectorProps) {
   return (
-    <div className="bg-white rounded-[24px] p-5 shadow-sm border border-gray-100">
+    <div className="bg-white rounded-[20px] p-5 shadow-sm border border-gray-100">
       <div className="flex items-center gap-2 mb-5">
         <Calendar className="w-5 h-5 text-[#BC952B]" />
         <h3 className="font-bold text-[#1a1a1a] text-[15px]">Tarih Seçin</h3>
@@ -36,20 +36,20 @@ export function DateSelector({
           <button
             key={date.fullDate}
             onClick={() => onDateSelect(date.fullDate)}
-            className={`flex-shrink-0 w-[68px] h-[80px] rounded-[18px] flex flex-col items-center justify-center transition-all cursor-pointer border ${
+            className={`flex-shrink-0 w-[70px] h-[85px] rounded-[16px] flex flex-col items-center justify-center transition-all cursor-pointer ${
               selectedDate === date.fullDate
-                ? 'bg-[#BC952B] text-white border-[#BC952B] shadow-md'
+                ? 'bg-[#BC952B] text-white shadow-lg border-0'
                 : date.available
-                ? 'bg-[#F9FAFB] hover:bg-gray-100 text-[#4B5563] border-transparent'
-                : 'bg-[#F3F4F6] text-[#9CA3AF] border-transparent'
+                ? 'bg-white hover:bg-gray-50 text-[#4B5563] border border-gray-200 hover:border-[#BC952B]'
+                : 'bg-gray-100 text-[#9CA3AF] border border-gray-200'
             }`}
           >
-            <div className={`text-[12px] mb-1 font-bold ${selectedDate === date.fullDate ? 'text-white/80' : 'text-[#6b7280]'}`}>
+            <div className={`text-[11px] mb-1.5 font-bold tracking-wide ${selectedDate === date.fullDate ? 'text-white/85' : 'text-[#6b7280]'}`}>
               {date.day}
             </div>
-            <div className="text-xl font-black">{date.date}</div>
+            <div className={`text-lg font-black ${selectedDate === date.fullDate ? 'text-white' : 'text-[#1a1a1a]'}`}>{date.date}</div>
             {!date.available && (
-              <div className="text-[10px] mt-0.5 font-bold">Dolu</div>
+              <div className="text-[9px] mt-1 font-bold opacity-75">Dolu</div>
             )}
           </button>
         ))}
