@@ -15,6 +15,7 @@ import SalonServices from './pages/salon/SalonServices.js';
 import SalonStaff from './pages/salon/SalonStaff.js';
 import SalonAppointments from './pages/salon/SalonAppointments.js';
 import { BookingPage } from './booking/BookingPage.js';
+import { BookingPage1 } from './booking1/BookingPage1.js';
 
 function App() {
   return (
@@ -78,6 +79,7 @@ function App() {
         
         {/* New Booking Flow */}
         <Route path="/booking" element={<BookingPage />} />
+        <Route path="/booking1" element={<BookingPage1 />} />
 
         {/* Müşteri Uygulaması Rotası - Henüz uygulanmadı, sadece yer tutucu */}
         <Route path="/book" element={<div>Customer Booking (Work in progress)</div>} />
