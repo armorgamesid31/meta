@@ -114,10 +114,10 @@ export function BookingPage() {
                 </div>
                 <h1 className="text-xl font-bold text-slate-900 tracking-tight truncate">SalonAsistan</h1>
             </div>
-            <div className="relative shrink-0 ml-4">
-                <div className="h-10 w-10 bg-amber-100 rounded-full flex items-center justify-center border-2 border-white shadow-sm overflow-hidden">
+            <div className="relative shrink-0 ml-4 w-10 h-10">
+                <div className="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center border-2 border-white shadow-sm overflow-hidden">
                     {/* Placeholder avatar or icon */}
-                    <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Ayse" alt="User" className="h-full w-full object-cover" />
+                    <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Ayse" alt="User" className="w-full h-full object-cover" style={{ width: '40px', height: '40px' }} />
                 </div>
                 <div className="absolute -bottom-1 -right-1 h-4 w-4 bg-green-500 border-2 border-white rounded-full"></div>
             </div>

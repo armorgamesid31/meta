@@ -117,7 +117,7 @@ export function StepService({ selectedServiceId, onSelect, onNext }: StepService
           placeholder="Hizmet ara..." 
           className="pl-12 h-12 rounded-2xl bg-white border-slate-200 shadow-sm text-base"
           value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
         />
       </div>
 
