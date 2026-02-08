@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
+import { Button } from "../../components/ui/button";
+import { Input } from "../../components/ui/input";
 import { Search, ChevronRight, Clock, History, Gift, Check, Zap, Plus, Sparkles, User, Scissors, Footprints, Eye, Minus, RefreshCw } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn } from "../../lib/utils";
 
 // Mock categories and services with enhanced metadata
 const CATEGORIES = [
@@ -11,11 +11,11 @@ const CATEGORIES = [
     id: 'cat1',
     name: 'Epilasyon & Tüy Alma',
     icon: Sparkles,
-    color: 'text-amber-500',
-    bg: 'bg-amber-50',
+    color: 'text-yellow-500',
+    bg: 'bg-yellow-50',
     count: 4,
     services: [
-      { id: 's1', name: 'Tam Vücut Lazer Paketi', duration: '60 dk', price: '1650 TL', oldPrice: '1800 TL', badge: 'Fast Track', badgeColor: 'bg-amber-400' },
+      { id: 's1', name: 'Tam Vücut Lazer Paketi', duration: '60 dk', price: '1650 TL', oldPrice: '1800 TL', badge: 'Fast Track', badgeColor: 'bg-yellow-400' },
       { id: 's2', name: 'Sırt Lazer', duration: '30 dk', price: '1100 TL', oldPrice: '1200 TL' },
       { id: 's2b', name: 'Bacak Lazer', duration: '45 dk', price: '1500 TL', badge: 'Paket var', badgeColor: 'bg-emerald-100 text-emerald-700' },
       { id: 's2c', name: 'Sir Ağda', duration: '20 dk', price: '400 TL' },
@@ -77,10 +77,10 @@ export function StepService({ selectedServiceId, onSelect, onNext }: StepService
       
       {/* Recent & Packages */}
       <div className="space-y-3">
-        <Card className="rounded-2xl border-none shadow-sm bg-white overflow-hidden">
+        <Card className="rounded-2xl border border-slate-100 shadow-sm bg-white overflow-hidden">
             <div className="p-4 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors">
                 <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-full bg-amber-50 flex items-center justify-center text-amber-600">
+                    <div className="h-10 w-10 rounded-full bg-yellow-50 flex items-center justify-center text-yellow-600">
                         <RefreshCw className="h-5 w-5" />
                     </div>
                     <div>
@@ -92,7 +92,7 @@ export function StepService({ selectedServiceId, onSelect, onNext }: StepService
             </div>
         </Card>
 
-        <Card className="rounded-2xl border-none shadow-sm bg-white overflow-hidden">
+        <Card className="rounded-2xl border border-slate-100 shadow-sm bg-white overflow-hidden">
             <div className="p-4 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors">
                 <div className="flex items-center gap-3">
                     <div className="h-10 w-10 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600">
@@ -162,7 +162,7 @@ export function StepService({ selectedServiceId, onSelect, onNext }: StepService
                         </span>
                         {service.badge && (
                             <span className={cn("px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1 shrink-0", 
-                                service.badge === 'Fast Track' ? 'bg-amber-400 text-slate-900' : service.badgeColor
+                                service.badge === 'Fast Track' ? 'bg-yellow-400 text-slate-900' : service.badgeColor
                             )}>
                                 {service.badge === 'Fast Track' && <Zap className="h-3 w-3 fill-slate-900" />}
                                 {service.badge}
@@ -181,8 +181,8 @@ export function StepService({ selectedServiceId, onSelect, onNext }: StepService
                             variant="outline"
                             size="sm"
                             className={cn(
-                                "rounded-xl border-amber-500 text-amber-600 hover:bg-amber-50 hover:text-amber-700 h-9 px-4 font-semibold shadow-sm transition-all active:scale-95",
-                                selectedServiceId === service.id && "bg-amber-500 text-white border-amber-500 hover:bg-amber-600 hover:text-white"
+                                "rounded-xl border-yellow-500 text-yellow-600 hover:bg-yellow-50 hover:text-yellow-700 h-9 px-4 font-semibold shadow-sm transition-all active:scale-95",
+                                selectedServiceId === service.id && "bg-yellow-500 text-white border-yellow-500 hover:bg-yellow-600 hover:text-white"
                             )}
                             onClick={() => onSelect(service.id)}
                         >

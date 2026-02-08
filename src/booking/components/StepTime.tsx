@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { Button } from "../../components/ui/button";
+import { cn } from "../../lib/utils";
 import { Calendar, ChevronLeft, ChevronRight, Clock } from "lucide-react";
 
 // Mock dates (Today + 14 days)
@@ -71,7 +71,7 @@ export function StepTime({ selectedDateTime, onSelect, onBack, onNext }: StepTim
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
       {/* Date Selection */}
       <div className="space-y-4">
-        <div className="flex items-center gap-2 text-amber-600 font-bold text-lg px-2">
+        <div className="flex items-center gap-2 text-yellow-600 font-bold text-lg px-2">
           <Calendar className="h-6 w-6" />
           <h3>Tarih Seçin</h3>
         </div>
@@ -92,12 +92,12 @@ export function StepTime({ selectedDateTime, onSelect, onBack, onNext }: StepTim
                   className={cn(
                     "flex flex-col items-center justify-center w-20 h-24 rounded-3xl border-2 transition-all duration-300",
                     selectedDateId === d.fullDate 
-                      ? "bg-amber-500 text-white border-amber-500 shadow-xl scale-110 z-10" 
-                      : "bg-white text-slate-500 border-transparent shadow-sm hover:border-amber-200 hover:bg-amber-50",
+                      ? "bg-yellow-500 text-white border-yellow-500 shadow-xl scale-110 z-10" 
+                      : "bg-white text-slate-500 border-transparent shadow-sm hover:border-yellow-200 hover:bg-yellow-50",
                     d.disabled && "opacity-40 cursor-not-allowed bg-slate-50 border-transparent shadow-none"
                   )}
                 >
-                  <span className={cn("text-xs font-medium uppercase mb-1", selectedDateId === d.fullDate ? "text-amber-100" : "text-slate-400")}>
+                  <span className={cn("text-xs font-medium uppercase mb-1", selectedDateId === d.fullDate ? "text-yellow-100" : "text-slate-400")}>
                       {d.dayName}
                   </span>
                   <span className={cn("text-3xl font-black", selectedDateId === d.fullDate ? "text-white" : "text-slate-800")}>
@@ -113,7 +113,7 @@ export function StepTime({ selectedDateTime, onSelect, onBack, onNext }: StepTim
 
       {/* Time Selection */}
       <div className="space-y-6 px-2">
-        <div className="flex items-center justify-between text-amber-600 font-bold text-lg">
+        <div className="flex items-center justify-between text-yellow-600 font-bold text-lg">
           <div className="flex items-center gap-2">
             <Clock className="h-6 w-6" />
             <h3>Saat Seçin</h3>
@@ -136,8 +136,8 @@ export function StepTime({ selectedDateTime, onSelect, onBack, onNext }: StepTim
                       className={cn(
                         "h-12 rounded-2xl text-sm font-bold transition-all duration-200 border-2",
                         isSelected 
-                          ? "bg-amber-500 text-white border-amber-500 shadow-lg scale-105" 
-                          : "bg-white text-slate-700 border-slate-100 shadow-sm hover:border-amber-300 hover:bg-amber-50 hover:text-amber-700"
+                          ? "bg-yellow-500 text-white border-yellow-500 shadow-lg scale-105" 
+                          : "bg-white text-slate-700 border-slate-100 shadow-sm hover:border-yellow-300 hover:bg-yellow-50 hover:text-yellow-700"
                       )}
                     >
                       {time}

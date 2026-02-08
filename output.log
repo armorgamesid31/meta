@@ -24,3 +24,6 @@ vite.config.ts:17:4: ERROR: Expected identifier but found "]"
 9:44:02 AM [vite] vite.config.ts changed, restarting server...
 9:44:03 AM [vite] (client) Re-optimizing dependencies because lockfile has changed
 9:44:03 AM [vite] server restarted.
+11:02:39 AM [vite] changed tsconfig file detected: /home/coder/project/salon-asistan/tsconfig.json - Clearing cache and forcing full-reload to ensure TypeScript is compiled with updated config values.
+11:02:41 AM [vite] changed tsconfig file detected: /home/coder/project/salon-asistan/tsconfig.json - Clearing cache and forcing full-reload to ensure TypeScript is compiled with updated config values.
+11:08:24 AM [vite] changed tsconfig file detected: /home/coder/project/salon-asistan/tsconfig.json - Clearing cache and forcing full-reload to ensure TypeScript is compiled with updated config values.

@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { BookingLayout } from './BookingLayout.js';
-import { StepService } from './components/StepService.js';
-import { StepTime } from './components/StepTime.js';
-import { StepConfirm } from './components/StepConfirm.js';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { BookingLayout } from './BookingLayout';
+import { StepService } from './components/StepService';
+import { StepTime } from './components/StepTime';
+import { StepConfirm } from './components/StepConfirm';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
+import { Button } from "../components/ui/button";
 import { Sparkles, User, Gift, Users } from "lucide-react";
 
 export function BookingPage() {
@@ -55,7 +55,7 @@ export function BookingPage() {
     return (
       <BookingLayout>
         <div className="flex justify-center p-8">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-500"></div>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-yellow-500"></div>
         </div>
       </BookingLayout>
     );
@@ -109,15 +109,15 @@ export function BookingPage() {
         {/* Top Bar */}
         <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 min-w-0">
-                <div className="bg-amber-500 rounded-lg p-1.5 shadow-sm shrink-0">
+                <div className="bg-yellow-500 rounded-lg p-1.5 shadow-sm shrink-0">
                     <Sparkles className="h-5 w-5 text-white fill-white" />
                 </div>
-                <h1 className="text-xl font-bold text-slate-900 tracking-tight truncate">SalonAsistan</h1>
+                <h1 className="text-xl font-bold text-slate-900 tracking-tight truncate">Salon Asistan</h1>
             </div>
             <div className="relative shrink-0 ml-4 w-10 h-10">
-                <div className="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center border-2 border-white shadow-sm overflow-hidden">
+                <div className="w-10 h-10 bg-yellow-100 rounded-full flex items-center justify-center border-2 border-white shadow-sm overflow-hidden">
                     {/* Placeholder avatar or icon */}
-                    <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Ayse" alt="User" className="w-full h-full object-cover" style={{ width: '40px', height: '40px' }} />
+                    <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Ayse" alt="User" className="w-full h-full object-cover block" style={{ width: '40px', height: '40px' }} />
                 </div>
                 <div className="absolute -bottom-1 -right-1 h-4 w-4 bg-green-500 border-2 border-white rounded-full"></div>
             </div>
@@ -130,12 +130,12 @@ export function BookingPage() {
 
         {/* Promo Banner */}
         {step === 1 && (
-            <div className="bg-white border-2 border-amber-400/30 rounded-2xl p-4 shadow-sm relative overflow-hidden">
+            <div className="bg-white border-2 border-yellow-400/30 rounded-2xl p-4 shadow-sm relative overflow-hidden">
                 <div className="absolute top-0 right-0 p-2 opacity-10">
                     <Users className="h-24 w-24" />
                 </div>
                 <div className="flex items-start gap-4 relative z-10">
-                    <div className="bg-amber-100 p-3 rounded-full shrink-0 text-amber-600">
+                    <div className="bg-yellow-100 p-3 rounded-full shrink-0 text-yellow-600">
                         <Users className="h-6 w-6" />
                     </div>
                     <div className="space-y-1 flex-1">

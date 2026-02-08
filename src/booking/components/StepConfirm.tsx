@@ -1,7 +1,7 @@
 import React from 'react';
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
+import { Button } from "../../components/ui/button";
+import { Card, CardContent } from "../../components/ui/card";
+import { Separator } from "../../components/ui/separator";
 import { Calendar, Clock, CheckCircle2, Scissors, Zap } from "lucide-react";
 
 // Mock services data (duplicated for simplicity in this context)
@@ -33,8 +33,8 @@ export function StepConfirm({ selectedServiceId, selectedDateTime, onBack, onCon
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
       <Card className="border-none shadow-xl rounded-3xl overflow-hidden bg-white">
-        <div className="bg-amber-50 p-8 border-b border-amber-100 flex flex-col items-center gap-4">
-            <div className="h-16 w-16 bg-white rounded-full flex items-center justify-center border-4 border-amber-100 shadow-sm text-amber-500">
+        <div className="bg-yellow-50 p-8 border-b border-yellow-100 flex flex-col items-center gap-4">
+            <div className="h-16 w-16 bg-white rounded-full flex items-center justify-center border-4 border-yellow-100 shadow-sm text-yellow-500">
                 <CheckCircle2 className="h-8 w-8" />
             </div>
             <div className="text-center space-y-1">
@@ -46,7 +46,7 @@ export function StepConfirm({ selectedServiceId, selectedDateTime, onBack, onCon
           
           {/* Service Info */}
           <div className="flex items-start gap-5">
-            <div className="h-12 w-12 rounded-2xl bg-amber-100 flex items-center justify-center text-amber-600 shrink-0 shadow-inner">
+            <div className="h-12 w-12 rounded-2xl bg-yellow-100 flex items-center justify-center text-yellow-600 shrink-0 shadow-inner">
                 <Scissors className="h-6 w-6" />
             </div>
             <div className="flex-1 space-y-2">
@@ -54,7 +54,7 @@ export function StepConfirm({ selectedServiceId, selectedDateTime, onBack, onCon
                 <div>
                     <p className="font-bold text-slate-900 text-lg leading-tight">{service.name}</p>
                     {service.badge && (
-                        <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-700 text-[10px] font-bold px-2 py-0.5 rounded-full mt-1">
+                        <span className="inline-flex items-center gap-1 bg-yellow-100 text-yellow-700 text-[10px] font-bold px-2 py-0.5 rounded-full mt-1">
                             <Zap className="h-3 w-3" />
                             {service.badge}
                         </span>
@@ -104,7 +104,7 @@ export function StepConfirm({ selectedServiceId, selectedDateTime, onBack, onCon
         <Button 
             onClick={onConfirm} 
             size="lg"
-            className="flex-[2] h-14 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-lg shadow-xl shadow-amber-200"
+            className="flex-[2] h-14 rounded-xl bg-yellow-500 hover:bg-yellow-600 text-white font-bold text-lg shadow-xl shadow-yellow-200"
         >
             Randevuyu Onayla
         </Button>
