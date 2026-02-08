@@ -6,7 +6,7 @@ import { StepTime } from './components/StepTime.js';
 import { StepConfirm } from './components/StepConfirm.js';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Sparkles, User } from "lucide-react";
+import { Sparkles, User, Gift, Users } from "lucide-react";
 
 export function BookingPage() {
   const [searchParams] = useSearchParams();
@@ -28,8 +28,7 @@ export function BookingPage() {
     // Simulate token validation
     const timer = setTimeout(() => {
       setIsValidating(false);
-      // Accept any token for now, or no token for testing if user just visits /booking
-      if (token || true) { // Always true for demo as requested "magic link looks like this" -> implying I should just show the UI
+      if (token || true) { 
         setIsValidToken(true);
       }
     }, 500);
@@ -38,6 +37,10 @@ export function BookingPage() {
 
   const handleServiceSelect = (serviceId: string) => {
     setSelectedServiceId(serviceId);
+    // Auto advance for better UX or stay? The screenshot has "Ekle" buttons, implying adding to cart.
+    // For simplicity, let's assume single selection and manual advance or auto advance.
+    // User wants "Ekle" buttons. Let's make "Devam Et" separate.
+    // So select just updates state.
   };
 
   const handleTimeSelect = (dateTime: { date: string; time: string }) => {
@@ -52,7 +55,7 @@ export function BookingPage() {
     return (
       <BookingLayout>
         <div className="flex justify-center p-8">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-900"></div>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-500"></div>
         </div>
       </BookingLayout>
     );
@@ -76,19 +79,19 @@ export function BookingPage() {
   if (isConfirmed) {
     return (
       <BookingLayout>
-        <Card className="border-green-500 bg-green-50 shadow-lg">
+        <Card className="border-green-500 bg-green-50 shadow-lg rounded-2xl overflow-hidden">
           <CardHeader>
-            <div className="mx-auto bg-green-100 p-3 rounded-full w-fit mb-4">
-              <Sparkles className="h-6 w-6 text-green-600" />
+            <div className="mx-auto bg-green-100 p-4 rounded-full w-fit mb-4">
+              <Sparkles className="h-8 w-8 text-green-600 fill-green-600" />
             </div>
-            <CardTitle className="text-green-700 text-center">Randevunuz Onaylandı!</CardTitle>
+            <CardTitle className="text-green-700 text-center text-xl">Randevunuz Onaylandı!</CardTitle>
             <CardDescription className="text-green-600 text-center">
               Teşekkürler, randevunuz başarıyla oluşturuldu.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <Button 
-              className="w-full bg-green-600 hover:bg-green-700 text-white shadow-md"
+              className="w-full bg-green-600 hover:bg-green-700 text-white shadow-md rounded-xl h-12 text-lg"
               onClick={() => window.location.reload()}
             >
               Yeni Randevu Al
@@ -103,29 +106,51 @@ export function BookingPage() {
     <BookingLayout>
       {/* Header Section */}
       <div className="mb-6 space-y-4">
+        {/* Top Bar */}
         <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-medium text-slate-500">Tekrar hoş geldin,</h2>
-            <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-              {USER_NAME} <Sparkles className="h-5 w-5 text-amber-500 fill-amber-500" />
-            </h1>
-          </div>
-          <div className="h-10 w-10 bg-slate-100 rounded-full flex items-center justify-center border border-slate-200">
-            <User className="h-5 w-5 text-slate-600" />
-          </div>
+            <div className="flex items-center gap-2">
+                <div className="bg-amber-500 rounded-lg p-1.5 shadow-sm">
+                    <Sparkles className="h-5 w-5 text-white fill-white" />
+                </div>
+                <h1 className="text-xl font-bold text-slate-900 tracking-tight">SalonAsistan</h1>
+            </div>
+            <div className="relative">
+                <div className="h-10 w-10 bg-amber-100 rounded-full flex items-center justify-center border-2 border-white shadow-sm overflow-hidden">
+                    {/* Placeholder avatar or icon */}
+                    <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Ayse" alt="User" className="h-full w-full object-cover" />
+                </div>
+                <div className="absolute -bottom-1 -right-1 h-4 w-4 bg-green-500 border-2 border-white rounded-full"></div>
+            </div>
         </div>
 
-        {/* Progress Steps (Subtle) */}
-        <div className="flex items-center gap-2">
-           {[1, 2, 3].map((s) => (
-             <div 
-               key={s}
-               className={`h-1.5 flex-1 rounded-full transition-all duration-300 ${
-                 s <= step ? 'bg-slate-900' : 'bg-slate-200'
-               }`} 
-             />
-           ))}
+        {/* Welcome Message */}
+        <div>
+            <h2 className="text-lg text-slate-600 font-medium">Tekrar hoş geldin, {USER_NAME} <span className="inline-block animate-pulse">✨</span></h2>
         </div>
+
+        {/* Promo Banner */}
+        {step === 1 && (
+            <div className="bg-white border-2 border-amber-400/30 rounded-2xl p-4 shadow-sm relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-2 opacity-10">
+                    <Users className="h-24 w-24" />
+                </div>
+                <div className="flex items-start gap-4 relative z-10">
+                    <div className="bg-amber-100 p-3 rounded-full shrink-0 text-amber-600">
+                        <Users className="h-6 w-6" />
+                    </div>
+                    <div className="space-y-1 flex-1">
+                        <h3 className="font-bold text-slate-900 leading-tight">Randevuna arkadaşını ekle, anında 100 TL kazan!</h3>
+                        <p className="text-xs text-slate-500 font-medium">Hem sen hem de arkadaşın indirim kazanın</p>
+                    </div>
+                    <div className="flex items-center">
+                        {/* Mock Switch since I don't have it installed */}
+                         <div className="w-11 h-6 bg-slate-200 rounded-full relative cursor-pointer">
+                            <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-transform"></div>
+                         </div>
+                    </div>
+                </div>
+            </div>
+        )}
       </div>
 
       {step === 1 && (
