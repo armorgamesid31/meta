@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
-import { Search, ChevronRight, Clock, History, Gift, Check, Zap, Plus, Sparkles, User, Scissors, Footprints, Eye, Minus, RefreshCw } from "lucide-react";
+import { Search, ChevronRight, Clock, History, Gift, Check, Zap, Plus, Sparkles, User, Scissors, Footprints, Eye, Minus, RefreshCw, Users } from "lucide-react";
 import { cn } from "../../lib/utils";
 
 // Mock categories and services with enhanced metadata
@@ -120,6 +120,29 @@ export function StepService({ selectedServiceId, onSelect, onNext }: StepService
           onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
         />
       </div>
+
+      {/* Promo Banner */}
+      {!searchQuery && (
+        <div className="bg-white border-2 border-yellow-400/30 rounded-2xl p-4 shadow-sm relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-2 opacity-10">
+                <Users className="h-24 w-24" />
+            </div>
+            <div className="flex items-start gap-4 relative z-10">
+                <div className="bg-yellow-100 p-3 rounded-full shrink-0 text-yellow-600">
+                    <Users className="h-6 w-6" />
+                </div>
+                <div className="space-y-1 flex-1">
+                    <h3 className="font-bold text-slate-900 leading-tight">Randevuna arkadaşını ekle, anında 100 TL kazan!</h3>
+                    <p className="text-xs text-slate-500 font-medium">Hem sen hem de arkadaşın indirim kazanın</p>
+                </div>
+                <div className="flex items-center">
+                     <div className="w-11 h-6 bg-slate-200 rounded-full relative cursor-pointer">
+                        <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-transform"></div>
+                     </div>
+                </div>
+            </div>
+        </div>
+      )}
 
       {/* Categories & Services */}
       <div className="space-y-4">

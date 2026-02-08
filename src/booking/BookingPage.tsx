@@ -109,10 +109,10 @@ export function BookingPage() {
         {/* Top Bar */}
         <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 min-w-0">
-                <div className="bg-yellow-500 rounded-lg p-1.5 shadow-sm shrink-0">
-                    <Sparkles className="h-5 w-5 text-white fill-white" />
+                <div className="bg-yellow-500 rounded-xl p-2 shadow-sm shrink-0">
+                    <Sparkles className="h-6 w-6 text-white fill-white" />
                 </div>
-                <h1 className="text-xl font-bold text-slate-900 tracking-tight truncate">Salon Asistan</h1>
+                <h1 className="text-2xl font-bold text-slate-900 tracking-tight truncate">SalonAsistan</h1>
             </div>
             <div className="relative shrink-0 ml-4 w-10 h-10">
                 <div className="w-10 h-10 bg-yellow-100 rounded-full flex items-center justify-center border-2 border-white shadow-sm overflow-hidden">
@@ -128,29 +128,6 @@ export function BookingPage() {
             <h2 className="text-lg text-slate-600 font-medium">Tekrar hoş geldin, {USER_NAME} <span className="inline-block animate-pulse">✨</span></h2>
         </div>
 
-        {/* Promo Banner */}
-        {step === 1 && (
-            <div className="bg-white border-2 border-yellow-400/30 rounded-2xl p-4 shadow-sm relative overflow-hidden">
-                <div className="absolute top-0 right-0 p-2 opacity-10">
-                    <Users className="h-24 w-24" />
-                </div>
-                <div className="flex items-start gap-4 relative z-10">
-                    <div className="bg-yellow-100 p-3 rounded-full shrink-0 text-yellow-600">
-                        <Users className="h-6 w-6" />
-                    </div>
-                    <div className="space-y-1 flex-1">
-                        <h3 className="font-bold text-slate-900 leading-tight">Randevuna arkadaşını ekle, anında 100 TL kazan!</h3>
-                        <p className="text-xs text-slate-500 font-medium">Hem sen hem de arkadaşın indirim kazanın</p>
-                    </div>
-                    <div className="flex items-center">
-                        {/* Mock Switch since I don't have it installed */}
-                         <div className="w-11 h-6 bg-slate-200 rounded-full relative cursor-pointer">
-                            <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-transform"></div>
-                         </div>
-                    </div>
-                </div>
-            </div>
-        )}
       </div>
 
       {step === 1 && (
