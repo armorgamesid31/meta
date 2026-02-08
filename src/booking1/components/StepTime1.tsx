@@ -56,24 +56,24 @@ export function StepTime1({ selectedDateTime, onSelect, onBack, onNext }: StepTi
     <div className="space-y-8 pb-24 animate-in fade-in slide-in-from-right-4 duration-500">
       {/* Date Selection */}
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-slate-900 font-bold">
-            <Calendar className="w-5 h-5 text-[#D4AF37]" />
-            <h3>Tarih Seçin</h3>
+        <div className="flex items-center justify-between px-1">
+          <div className="flex items-center gap-2 text-[#2D2D2D] font-bold">
+            <Calendar style={{ width: '20px', height: '20px', color: '#D4AF37' }} />
+            <h3 className="text-lg">Tarih Seçin</h3>
           </div>
           <div className="flex gap-1">
             <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={() => scroll('left')}>
-              <ChevronLeft className="w-4 h-4" />
+              <ChevronLeft style={{ width: '16px', height: '16px' }} />
             </Button>
             <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={() => scroll('right')}>
-              <ChevronRight className="w-4 h-4" />
+              <ChevronRight style={{ width: '16px', height: '16px' }} />
             </Button>
           </div>
         </div>
         
         <div 
           ref={scrollRef}
-          className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide snap-x"
+          className="flex gap-3 overflow-x-auto pb-4 pt-1 px-1 scrollbar-hide snap-x"
         >
           {DATES.map((d) => (
             <button
@@ -81,14 +81,14 @@ export function StepTime1({ selectedDateTime, onSelect, onBack, onNext }: StepTi
               disabled={d.disabled}
               onClick={() => setSelectedDateId(d.fullDate)}
               className={cn(
-                "flex flex-col items-center justify-center min-w-[70px] h-[90px] rounded-2xl border-2 transition-all snap-start",
+                "flex flex-col items-center justify-center rounded-[20px] border-2 transition-all snap-start shrink-0",
                 selectedDateId === d.fullDate 
-                  ? "bg-[#D4AF37] border-[#D4AF37] text-white shadow-[0px_4px_6px_-1px_rgba(0,0,0,0.1)] scale-105" 
-                  : "bg-white border-[#F3F4F6] text-slate-500 hover:border-[#D4AF37]/30 shadow-[0px_1px_3px_0px_rgba(0,0,0,0.1)]",
-                d.disabled && "opacity-30 cursor-not-allowed border-transparent shadow-none"
+                  ? "bg-[#D4AF37] border-[#D4AF37] text-white shadow-lg scale-105" 
+                  : "bg-white border-[#F3F4F6] text-slate-500 hover:border-[#D4AF37]/30 shadow-[0px_1px_3px_0px_rgba(0,0,0,0.1)]"
               )}
+              style={{ minWidth: '76px', height: '96px' }}
             >
-              <span className="text-[10px] font-bold uppercase tracking-wider mb-1">{d.dayName}</span>
+              <span className={cn("text-[10px] font-bold uppercase tracking-wider mb-1", selectedDateId === d.fullDate ? "text-white/80" : "text-slate-400")}>{d.dayName}</span>
               <span className="text-2xl font-black">{d.day}</span>
               {d.disabled && <span className="text-[8px] mt-1 font-bold">DOLU</span>}
             </button>
@@ -97,20 +97,20 @@ export function StepTime1({ selectedDateTime, onSelect, onBack, onNext }: StepTi
       </div>
 
       {/* Time Selection */}
-      <div className="space-y-6">
-        <div className="flex items-center justify-between text-slate-900 font-bold">
+      <div className="space-y-6 px-1">
+        <div className="flex items-center justify-between text-[#2D2D2D] font-bold">
           <div className="flex items-center gap-2">
-            <Clock className="w-5 h-5 text-[#D4AF37]" />
-            <h3>Saat Seçin</h3>
+            <Clock style={{ width: '20px', height: '20px', color: '#D4AF37' }} />
+            <h3 className="text-lg">Saat Seçin</h3>
           </div>
-          <span className="text-[11px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-full">~60 DK</span>
+          <span className="text-[11px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-full shrink-0">~60 DK</span>
         </div>
 
         <div className="space-y-8">
           {TIME_GROUPS.map((group) => (
-            <div key={group.label} className="space-y-3">
+            <div key={group.label} className="space-y-4">
               <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-widest pl-1">{group.label}</h4>
-              <div className="grid grid-cols-4 gap-2.5">
+              <div className="grid grid-cols-4 gap-3">
                 {group.times.map((time) => {
                   const isSelected = selectedDateTime?.time === time && selectedDateTime?.date === selectedDateId;
                   return (
@@ -118,10 +118,10 @@ export function StepTime1({ selectedDateTime, onSelect, onBack, onNext }: StepTi
                       key={time}
                       onClick={() => handleTimeClick(time)}
                       className={cn(
-                        "h-11 rounded-xl text-sm font-bold transition-all border-2",
+                        "h-12 rounded-[16px] text-sm font-bold transition-all border-2 flex items-center justify-center shrink-0",
                         isSelected 
-                          ? "bg-slate-900 border-slate-900 text-white shadow-[0px_2px_4px_-2px_rgba(0,0,0,0.1)] scale-105" 
-                          : "bg-white border-[#F3F4F6] text-slate-600 hover:border-[#D4AF37]/30 hover:bg-amber-50/30 shadow-[0px_1px_3px_0px_rgba(0,0,0,0.1)]"
+                          ? "bg-slate-900 border-slate-900 text-white shadow-md scale-105" 
+                          : "bg-white border-[#F3F4F6] text-slate-600 hover:border-[#D4AF37]/30 shadow-[0px_1px_3px_0px_rgba(0,0,0,0.1)]"
                       )}
                     >
                       {time}
@@ -135,18 +135,18 @@ export function StepTime1({ selectedDateTime, onSelect, onBack, onNext }: StepTi
       </div>
 
       {/* Navigation */}
-      <div className="fixed bottom-0 left-0 right-0 p-6 bg-white/80 backdrop-blur-lg border-t border-slate-100 z-20 flex justify-between gap-4">
+      <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur-md border-t border-[#F3F4F6] z-30 flex justify-between gap-4">
         <Button 
           variant="outline" 
           onClick={onBack} 
-          className="flex-1 h-12 rounded-xl border-slate-200 text-slate-500 font-bold hover:bg-slate-50"
+          className="flex-1 h-12 rounded-[16px] border-[#F3F4F6] text-slate-500 font-bold hover:bg-slate-50 shadow-sm"
         >
           Geri
         </Button>
         <Button 
           onClick={onNext} 
           disabled={!selectedDateTime}
-          className="flex-[2] h-12 rounded-xl bg-[#D4AF37] hover:bg-[#B8941F] text-white font-bold shadow-lg shadow-[#D4AF37]/20"
+          className="flex-[2] h-12 rounded-[16px] bg-[#D4AF37] hover:bg-[#B8941F] text-white font-bold shadow-lg shadow-[#D4AF37]/20 active:scale-95 transition-all"
         >
           Devam Et
         </Button>

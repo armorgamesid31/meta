@@ -47,138 +47,146 @@ export function StepService1({ selectedServices, onToggleService, onNext }: Step
   })).filter(cat => cat.services.length > 0 || !searchQuery);
 
   return (
-    <div className="space-y-6">
-      {/* 1. Quick Actions */}
-      <div className="grid grid-cols-2 gap-3">
-        <Card className="rounded-[20px] border border-[#F3F4F6] shadow-[0px_1px_3px_0px_rgba(0,0,0,0.1)] hover:shadow-md transition-all cursor-pointer group">
-          <CardContent className="p-4 flex flex-col gap-3">
+    <div className="space-y-6 pb-24">
+      {/* 1. Quick Actions - Isolated Flex */}
+      <div className="flex gap-3 w-full">
+        <div 
+            className="flex-1 bg-white rounded-[20px] border border-[#F3F4F6] shadow-[0px_1px_3px_0px_rgba(0,0,0,0.1)] hover:shadow-md transition-all cursor-pointer group p-4 flex flex-col gap-3 min-w-0"
+            onClick={() => {}}
+        >
             <div 
-                className="w-10 h-10 rounded-full flex items-center justify-center text-[#D4AF37] group-hover:scale-110 transition-transform"
-                style={{ background: 'rgba(212, 175, 55, 0.1)' }}
+                className="rounded-full flex items-center justify-center text-[#D4AF37] group-hover:scale-110 transition-transform shrink-0"
+                style={{ background: 'rgba(212, 175, 55, 0.1)', width: '40px', height: '40px' }}
             >
-              <RefreshCw className="w-5 h-5" />
+              <RefreshCw style={{ width: '20px', height: '20px' }} />
             </div>
-            <div>
-              <p className="font-bold text-[#2D2D2D] text-sm">Son İşlemler</p>
-              <p className="text-[11px] text-slate-500 font-medium">Hızlı tekrarla</p>
+            <div className="min-w-0">
+              <p className="font-bold text-[#2D2D2D] text-sm truncate">Son İşlemler</p>
+              <p className="text-[11px] text-slate-500 font-medium truncate">Hızlı tekrarla</p>
             </div>
-          </CardContent>
-        </Card>
-        <Card className="rounded-[20px] border border-[#F3F4F6] shadow-[0px_1px_3px_0px_rgba(0,0,0,0.1)] hover:shadow-md transition-all cursor-pointer group">
-          <CardContent className="p-4 flex flex-col gap-3 relative overflow-hidden">
+        </div>
+        <div 
+            className="flex-1 bg-white rounded-[20px] border border-[#F3F4F6] shadow-[0px_1px_3px_0px_rgba(0,0,0,0.1)] hover:shadow-md transition-all cursor-pointer group p-4 flex flex-col gap-3 min-w-0 relative overflow-hidden"
+            onClick={() => {}}
+        >
             <div 
-                className="w-10 h-10 rounded-full flex items-center justify-center text-[#10B981] group-hover:scale-110 transition-transform"
-                style={{ background: 'rgba(16, 185, 129, 0.1)' }}
+                className="rounded-full flex items-center justify-center text-[#10B981] group-hover:scale-110 transition-transform shrink-0"
+                style={{ background: 'rgba(16, 185, 129, 0.1)', width: '40px', height: '40px' }}
             >
-              <Gift className="w-5 h-5" />
+              <Gift style={{ width: '20px', height: '20px' }} />
             </div>
-            <div>
-              <p className="font-bold text-[#2D2D2D] text-sm">Paketlerim</p>
-              <p className="text-[11px] text-slate-500 font-medium">Aktif seanslar</p>
+            <div className="min-w-0">
+              <p className="font-bold text-[#2D2D2D] text-sm truncate">Paketlerim</p>
+              <p className="text-[11px] text-slate-500 font-medium truncate">Aktif seanslar</p>
             </div>
-            <div className="absolute top-2 right-2 bg-[#10B981] text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-sm">
+            <div 
+                className="absolute top-2 right-2 bg-[#10B981] text-white text-[10px] font-bold rounded-full shadow-sm flex items-center justify-center"
+                style={{ width: '18px', height: '18px' }}
+            >
               6
             </div>
-          </CardContent>
-        </Card>
+        </div>
       </div>
 
       {/* 2. Search */}
-      <div className="relative">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-        <Input 
+      <div className="relative w-full" style={{ height: '48px' }}>
+        <div className="absolute left-4 top-1/2 -translate-y-1/2 z-10 pointer-events-none">
+            <Search style={{ width: '20px', height: '20px', color: '#94a3b8' }} />
+        </div>
+        <input 
+          type="text"
           placeholder="Hizmet ara..." 
-          className="pl-12 h-12 rounded-[20px] border-[#F3F4F6] shadow-[0px_1px_3px_0px_rgba(0,0,0,0.1)] focus-visible:ring-[#D4AF37] bg-white text-base"
+          className="w-full h-full pl-12 pr-4 rounded-[20px] border border-[#F3F4F6] shadow-[0px_1px_3px_0px_rgba(0,0,0,0.1)] outline-none focus:border-[#D4AF37] bg-white text-base transition-all"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
         />
       </div>
 
-      {/* 3. Promo Banner - Exact Figma Design */}
+      {/* 3. Promo Banner - Isolated styling */}
       {!searchQuery && (
         <div 
-            className="rounded-[20px] p-5 shadow-[0px_4px_6px_-1px_rgba(0,0,0,0.1)] border border-[#D4AF37] relative overflow-hidden group hover:scale-[1.01] transition-all cursor-pointer"
+            className="rounded-[20px] p-5 shadow-[0px_4px_6px_-1px_rgba(0,0,0,0.1)] border border-[#D4AF37] relative overflow-hidden group hover:scale-[1.01] transition-all cursor-pointer flex items-center gap-4"
             style={{
                 background: 'linear-gradient(135deg, rgba(212, 175, 55, 0.1) 0%, rgba(255, 255, 255, 1) 50%, rgba(212, 175, 55, 0.05) 100%)'
             }}
         >
-            <div className="absolute -right-4 -bottom-4 opacity-5 group-hover:rotate-12 transition-transform">
-                <Users className="w-32 h-32 text-[#D4AF37]" />
+            <div className="absolute -right-4 -bottom-4 opacity-5 group-hover:rotate-12 transition-transform pointer-events-none">
+                <Users style={{ width: '128px', height: '128px', color: '#D4AF37' }} />
             </div>
             
-            <div className="flex items-center gap-4 relative z-10">
-                <div className="w-12 h-12 rounded-full bg-[#D4AF37] shadow-sm flex items-center justify-center border border-white/20">
-                    <Users className="w-6 h-6 text-white" />
-                </div>
-                <div className="flex-1 pr-6 space-y-1">
-                    <p className="font-bold text-[#2D2D2D] text-sm leading-tight">
-                        Randevuna arkadaşını ekle, anında 100 TL kazan!
-                    </p>
-                    <p className="text-[11px] text-slate-500 font-medium">Hem sen hem de arkadaşın indirim kazanın</p>
-                </div>
-                <div className="flex items-center absolute top-0 right-0">
-                     {/* Switch UI from Figma */}
-                     <div className="w-12 h-6 bg-[#D1D5DC] rounded-full relative shadow-inner">
-                        <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full shadow-md"></div>
-                     </div>
-                </div>
+            <div 
+                className="rounded-full bg-[#D4AF37] shadow-sm flex items-center justify-center border border-white/20 shrink-0"
+                style={{ width: '48px', height: '48px' }}
+            >
+                <Users style={{ width: '24px', height: '24px', color: 'white' }} />
+            </div>
+            <div className="flex-1 pr-6 space-y-1 min-w-0">
+                <p className="font-bold text-[#2D2D2D] text-sm leading-tight">
+                    Randevuna arkadaşını ekle, anında 100 TL kazan!
+                </p>
+                <p className="text-[11px] text-slate-500 font-medium truncate">Hem sen hem de arkadaşın indirim kazanın</p>
+            </div>
+            <div className="absolute top-4 right-4 shrink-0">
+                    {/* Switch UI */}
+                    <div className="bg-[#D1D5DC] rounded-full relative shadow-inner" style={{ width: '44px', height: '22px' }}>
+                    <div className="absolute left-1 top-1 bg-white rounded-full shadow-md" style={{ width: '14px', height: '14px' }}></div>
+                    </div>
             </div>
         </div>
       )}
 
       {/* 4. Categories */}
-      <div className="space-y-4">
+      <div className="space-y-4 w-full">
         {filteredCategories.map((cat) => (
-          <div key={cat.id} className="space-y-4">
+          <div key={cat.id} className="space-y-4 w-full">
             <button 
               onClick={() => setExpandedCategory(expandedCategory === cat.id ? null : cat.id)}
-              className="flex items-center justify-between w-full px-1"
+              className="flex items-center justify-between w-full px-1 hover:opacity-80 transition-opacity"
             >
-              <div className="flex items-center gap-3">
-                <span className="text-xl">{cat.icon}</span>
-                <span className="font-bold text-[#2D2D2D] text-lg">{cat.name}</span>
-                <span className="bg-slate-100 text-slate-500 text-[11px] font-bold px-2 py-0.5 rounded-full">
+              <div className="flex items-center gap-3 min-w-0">
+                <span className="text-xl shrink-0">{cat.icon}</span>
+                <span className="font-bold text-[#2D2D2D] text-lg truncate">{cat.name}</span>
+                <span className="bg-slate-100 text-slate-500 text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0">
                   {cat.services.length}
                 </span>
               </div>
-              <ChevronRight className={cn("w-5 h-5 text-slate-400 transition-transform duration-300", expandedCategory === cat.id && "rotate-90")} />
+              <ChevronRight className={cn("w-5 h-5 text-slate-400 transition-transform duration-300 shrink-0", expandedCategory === cat.id && "rotate-90")} />
             </button>
 
             {expandedCategory === cat.id && (
-              <div className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
+              <div className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-300 w-full">
                 {cat.services.map((service) => {
                   const selected = isSelected(service.id);
                   return (
-                    <Card 
+                    <div 
                       key={service.id}
                       onClick={() => onToggleService(service as any)}
                       className={cn(
-                        "rounded-[20px] border transition-all cursor-pointer overflow-hidden",
+                        "rounded-[20px] border transition-all cursor-pointer overflow-hidden p-5 flex items-center justify-between gap-4 w-full",
                         selected 
                           ? "border-[#D4AF37] bg-amber-50/20 shadow-md scale-[1.01]" 
                           : "border-[#F3F4F6] bg-white hover:border-slate-200 shadow-[0px_1px_3px_0px_rgba(0,0,0,0.1)]"
                       )}
                     >
-                      <CardContent className="p-5 flex items-center justify-between gap-4">
                         <div className="flex-1 min-w-0 space-y-2">
                           <div className="space-y-1">
                             <p className="font-bold text-[#2D2D2D] text-base leading-tight truncate">{service.name}</p>
                             <div className="flex items-center gap-3 text-[11px] text-slate-500 font-bold uppercase tracking-wider">
-                                <span className="flex items-center gap-1"><Clock className="w-3 h-3 text-slate-400" /> {service.duration} dk</span>
+                                <span className="flex items-center gap-1 shrink-0"><Clock style={{ width: '12px', height: '12px' }} className="text-slate-400" /> {service.duration} dk</span>
                                 {service.badge && (
-                                    <span className="bg-amber-400 text-slate-900 px-1.5 py-0.5 rounded-sm flex items-center gap-1">
-                                        <Zap className="w-2.5 h-2.5 fill-slate-900" /> {service.badge}
+                                    <span className="bg-[#D4AF37] text-white px-1.5 py-0.5 rounded-sm flex items-center gap-1 shrink-0">
+                                        <Zap style={{ width: '10px', height: '10px' }} fill="white" /> {service.badge}
                                     </span>
                                 )}
                             </div>
                           </div>
                           {service.hasPackage && (
-                            <div className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-full text-[10px] font-bold border border-emerald-100">
-                                <Check className="w-3 h-3" /> Paket var
+                            <div className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-full text-[10px] font-bold border border-emerald-100 shrink-0">
+                                <Check style={{ width: '12px', height: '12px' }} /> Paket var
                             </div>
                           )}
                         </div>
-                        <div className="flex flex-col items-end gap-3 shrink-0">
+                        <div className="flex flex-col items-end gap-3 shrink-0 ml-auto">
                           <div className="text-right">
                             {service.discountedPrice ? (
                               <>
@@ -189,21 +197,16 @@ export function StepService1({ selectedServices, onToggleService, onNext }: Step
                               <span className="text-xl font-black text-[#2D2D2D]">{service.price} ₺</span>
                             )}
                           </div>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className={cn(
-                                "rounded-xl h-9 px-4 font-bold border-2 transition-all",
+                          <div className={cn(
+                                "rounded-xl h-9 px-4 flex items-center justify-center font-bold border-2 transition-all text-sm",
                                 selected 
-                                    ? "bg-[#D4AF37] border-[#D4AF37] text-white hover:bg-[#B8941F] hover:border-[#B8941F]" 
+                                    ? "bg-[#D4AF37] border-[#D4AF37] text-white shadow-sm" 
                                     : "border-[#D4AF37] text-[#D4AF37] hover:bg-amber-50"
-                            )}
-                          >
-                            {selected ? <><Check className="w-4 h-4 mr-1.5" /> Seçildi</> : <><Plus className="w-4 h-4 mr-1.5" /> Ekle</>}
-                          </Button>
+                            )}>
+                            {selected ? <><Check style={{ width: '16px', height: '16px' }} className="mr-1.5" /> Seçildi</> : <><span className="text-lg mr-1">+</span> Ekle</>}
+                          </div>
                         </div>
-                      </CardContent>
-                    </Card>
+                    </div>
                   );
                 })}
               </div>
