@@ -36,7 +36,7 @@ const CATEGORIES = [
   {
     id: 'cat3',
     name: 'Vücut Şekillendirme',
-    icon: User, // Using User as placeholder for body icon
+    icon: User, 
     color: 'text-blue-500',
     bg: 'bg-blue-50',
     count: 3,
@@ -61,7 +61,7 @@ interface StepServiceProps {
 
 export function StepService({ selectedServiceId, onSelect, onNext }: StepServiceProps) {
   const [searchQuery, setSearchQuery] = useState("");
-  const [expandedCategory, setExpandedCategory] = useState<string | null>('cat1'); // Default open first category
+  const [expandedCategory, setExpandedCategory] = useState<string | null>('cat1');
 
   const toggleCategory = (catId: string) => {
     setExpandedCategory(expandedCategory === catId ? null : catId);
@@ -70,7 +70,7 @@ export function StepService({ selectedServiceId, onSelect, onNext }: StepService
   const filteredCategories = CATEGORIES.map(cat => ({
     ...cat,
     services: cat.services.filter(s => s.name.toLowerCase().includes(searchQuery.toLowerCase()))
-  })).filter(cat => cat.services.length > 0 || !searchQuery); // Keep categories visible even if empty when not searching, or adjust logic
+  })).filter(cat => cat.services.length > 0 || !searchQuery);
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
@@ -105,7 +105,6 @@ export function StepService({ selectedServiceId, onSelect, onNext }: StepService
                 </div>
                 <div className="flex items-center gap-2">
                     <span className="bg-emerald-500 text-white text-[10px] font-bold px-2 py-1 rounded-full">6 Seans</span>
-                    {/* Arrow implied or not needed if badge is prominent */}
                 </div>
             </div>
         </Card>
@@ -152,14 +151,17 @@ export function StepService({ selectedServiceId, onSelect, onNext }: StepService
                 {category.services.map((service) => (
                   <div 
                     key={service.id}
-                    className="p-5 hover:bg-slate-50 transition-colors flex items-center justify-between"
+                    className="p-5 hover:bg-slate-50 transition-colors flex flex-row items-center justify-between gap-4"
                   >
-                    <div className="flex-1 space-y-1 pr-4">
-                      <div className="font-bold text-slate-900 text-base">{service.name}</div>
-                      <div className="flex items-center gap-3 text-sm text-slate-500">
-                        <span>{service.duration}</span>
+                    <div className="flex-1 space-y-1 min-w-0 pr-2">
+                      <div className="font-bold text-slate-900 text-base leading-tight">{service.name}</div>
+                      <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500">
+                        <span className="flex items-center gap-1 shrink-0">
+                          <Clock className="h-3 w-3" />
+                          {service.duration}
+                        </span>
                         {service.badge && (
-                            <span className={cn("px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1", 
+                            <span className={cn("px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1 shrink-0", 
                                 service.badge === 'Fast Track' ? 'bg-amber-400 text-slate-900' : service.badgeColor
                             )}>
                                 {service.badge === 'Fast Track' && <Zap className="h-3 w-3 fill-slate-900" />}

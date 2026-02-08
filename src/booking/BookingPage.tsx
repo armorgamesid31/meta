@@ -108,13 +108,13 @@ export function BookingPage() {
       <div className="mb-6 space-y-4">
         {/* Top Bar */}
         <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-                <div className="bg-amber-500 rounded-lg p-1.5 shadow-sm">
+            <div className="flex items-center gap-2 min-w-0">
+                <div className="bg-amber-500 rounded-lg p-1.5 shadow-sm shrink-0">
                     <Sparkles className="h-5 w-5 text-white fill-white" />
                 </div>
-                <h1 className="text-xl font-bold text-slate-900 tracking-tight">SalonAsistan</h1>
+                <h1 className="text-xl font-bold text-slate-900 tracking-tight truncate">SalonAsistan</h1>
             </div>
-            <div className="relative">
+            <div className="relative shrink-0 ml-4">
                 <div className="h-10 w-10 bg-amber-100 rounded-full flex items-center justify-center border-2 border-white shadow-sm overflow-hidden">
                     {/* Placeholder avatar or icon */}
                     <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Ayse" alt="User" className="h-full w-full object-cover" />
