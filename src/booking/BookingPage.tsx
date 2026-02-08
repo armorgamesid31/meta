@@ -6,6 +6,7 @@ import { StepTime } from './components/StepTime.js';
 import { StepConfirm } from './components/StepConfirm.js';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Sparkles, User } from "lucide-react";
 
 export function BookingPage() {
   const [searchParams] = useSearchParams();
@@ -20,20 +21,16 @@ export function BookingPage() {
   const [isValidating, setIsValidating] = useState(true);
   const [isValidToken, setIsValidToken] = useState(false);
 
+  // Mock user data
+  const USER_NAME = "Ayşe";
+
   useEffect(() => {
     // Simulate token validation
     const timer = setTimeout(() => {
       setIsValidating(false);
       // Accept any token for now, or no token for testing if user just visits /booking
-      // But requirement says "Read the token... Assume validation".
-      // If token is present or we just want to allow testing:
-      if (token) {
+      if (token || true) { // Always true for demo as requested "magic link looks like this" -> implying I should just show the UI
         setIsValidToken(true);
-      } else {
-        // For development ease, let's allow without token or show error
-        // User said "Entry point is a Magic Link containing a token".
-        // I'll show error if no token, to be "production-ready but minimal".
-        setIsValidToken(false); 
       }
     }, 500);
     return () => clearTimeout(timer);
@@ -48,7 +45,6 @@ export function BookingPage() {
   };
 
   const handleConfirm = () => {
-    // Here we would submit to backend
     setIsConfirmed(true);
   };
 
@@ -69,7 +65,7 @@ export function BookingPage() {
           <CardHeader>
             <CardTitle className="text-destructive">Geçersiz Bağlantı</CardTitle>
             <CardDescription>
-              Randevu bağlantısı geçersiz veya süresi dolmuş. Lütfen yeni bir randevu bağlantısı isteyin.
+              Randevu bağlantısı geçersiz veya süresi dolmuş.
             </CardDescription>
           </CardHeader>
         </Card>
@@ -80,16 +76,19 @@ export function BookingPage() {
   if (isConfirmed) {
     return (
       <BookingLayout>
-        <Card className="border-green-500 bg-green-50">
+        <Card className="border-green-500 bg-green-50 shadow-lg">
           <CardHeader>
-            <CardTitle className="text-green-700">Randevunuz Onaylandı!</CardTitle>
-            <CardDescription className="text-green-600">
-              Teşekkürler, randevunuz başarıyla oluşturuldu. Size bir onay mesajı gönderdik.
+            <div className="mx-auto bg-green-100 p-3 rounded-full w-fit mb-4">
+              <Sparkles className="h-6 w-6 text-green-600" />
+            </div>
+            <CardTitle className="text-green-700 text-center">Randevunuz Onaylandı!</CardTitle>
+            <CardDescription className="text-green-600 text-center">
+              Teşekkürler, randevunuz başarıyla oluşturuldu.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <Button 
-              className="w-full bg-green-600 hover:bg-green-700 text-white"
+              className="w-full bg-green-600 hover:bg-green-700 text-white shadow-md"
               onClick={() => window.location.reload()}
             >
               Yeni Randevu Al
@@ -102,20 +101,30 @@ export function BookingPage() {
 
   return (
     <BookingLayout>
-      <div className="mb-6">
-        <div className="flex items-center justify-between text-sm text-slate-500 mb-2">
-          <span>Adım {step} / 3</span>
-          <span>
-            {step === 1 && "Hizmet Seçimi"}
-            {step === 2 && "Tarih & Saat"}
-            {step === 3 && "Onay"}
-          </span>
+      {/* Header Section */}
+      <div className="mb-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-medium text-slate-500">Tekrar hoş geldin,</h2>
+            <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+              {USER_NAME} <Sparkles className="h-5 w-5 text-amber-500 fill-amber-500" />
+            </h1>
+          </div>
+          <div className="h-10 w-10 bg-slate-100 rounded-full flex items-center justify-center border border-slate-200">
+            <User className="h-5 w-5 text-slate-600" />
+          </div>
         </div>
-        <div className="h-2 bg-slate-200 rounded-full">
-          <div 
-            className="h-full bg-slate-900 rounded-full transition-all duration-300"
-            style={{ width: `${(step / 3) * 100}%` }}
-          />
+
+        {/* Progress Steps (Subtle) */}
+        <div className="flex items-center gap-2">
+           {[1, 2, 3].map((s) => (
+             <div 
+               key={s}
+               className={`h-1.5 flex-1 rounded-full transition-all duration-300 ${
+                 s <= step ? 'bg-slate-900' : 'bg-slate-200'
+               }`} 
+             />
+           ))}
         </div>
       </div>
 
