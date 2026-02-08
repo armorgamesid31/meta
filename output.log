@@ -9,3 +9,18 @@ Port 5173 is in use, trying another one...
 
   ➜  Local:   http://localhost:5174/
   ➜  Network: http://10.0.1.12:5174/
+9:43:45 AM [vite] changed tsconfig file detected: /home/coder/project/salon-asistan/tsconfig.json - Clearing cache and forcing full-reload to ensure TypeScript is compiled with updated config values.
+9:44:01 AM [vite] vite.config.ts changed, restarting server...
+✘ [ERROR] Expected identifier but found "]"
+
+    vite.config.ts:17:4:
+      17 │     ],
+         ╵     ^
+
+failed to load config from /home/coder/project/salon-asistan/vite.config.ts
+9:44:01 AM [vite] Build failed with 1 error:
+vite.config.ts:17:4: ERROR: Expected identifier but found "]"
+9:44:01 AM [vite] server restart failed
+9:44:02 AM [vite] vite.config.ts changed, restarting server...
+9:44:03 AM [vite] (client) Re-optimizing dependencies because lockfile has changed
+9:44:03 AM [vite] server restarted.

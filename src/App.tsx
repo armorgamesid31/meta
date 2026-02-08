@@ -14,6 +14,7 @@ import SalonSettings from './pages/salon/SalonSettings.js';
 import SalonServices from './pages/salon/SalonServices.js';
 import SalonStaff from './pages/salon/SalonStaff.js';
 import SalonAppointments from './pages/salon/SalonAppointments.js';
+import { BookingPage } from './booking/BookingPage.js';
 
 function App() {
   return (
@@ -74,6 +75,9 @@ function App() {
         {/* Magic Link Booking - No authentication required */}
         <Route path="/m/:token" element={<MagicLinkBooking />} />
         <Route path="/magic-link" element={<MagicLinkBooking />} />
+        
+        {/* New Booking Flow */}
+        <Route path="/booking" element={<BookingPage />} />
 
         {/* Müşteri Uygulaması Rotası - Henüz uygulanmadı, sadece yer tutucu */}
         <Route path="/book" element={<div>Customer Booking (Work in progress)</div>} />

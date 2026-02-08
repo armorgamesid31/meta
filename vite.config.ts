@@ -1,3 +1,4 @@
+import path from "path"
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
@@ -6,6 +7,11 @@ const basePath = process.env.VITE_BASE_URL || '/';
 
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+    },
+  },
   base: basePath, // <-- CRITICAL: Dynamic base path for reverse proxy
   server: {
     host: '0.0.0.0', // Listen on all interfaces for Docker/reverse proxy

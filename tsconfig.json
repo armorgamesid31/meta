@@ -10,7 +10,11 @@
     "strict": true,
     "skipLibCheck": true,
     "types": ["vite/client"],
-    "jsx": "react-jsx"
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
   },
   "include": ["src/**/*.ts", "src/**/*.tsx", "src/vite-env.d.ts"],
   "exclude": ["node_modules", "src/app.ts", "src/**/*.test.ts", "src/comprehensive.test.ts", "tests/**/*"]
