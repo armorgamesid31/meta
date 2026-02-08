@@ -49,7 +49,7 @@ export function BookingPage1() {
              <div className="absolute inset-0 rounded-full animate-ping bg-emerald-200 opacity-20"></div>
           </div>
           <div className="space-y-2">
-            <h2 className="text-3xl font-black text-slate-900">Harika!</h2>
+            <h2 className="text-3xl font-black text-[#2D2D2D]">Harika!</h2>
             <p className="text-slate-500 font-bold text-lg">Randevunuz başarıyla oluşturuldu.</p>
           </div>
           <Card className="w-full bg-slate-50 border-none rounded-3xl p-6 shadow-none">
@@ -69,26 +69,29 @@ export function BookingPage1() {
   return (
     <BookingLayout1>
       {/* Header - Fixed like Figma */}
-      <header className="sticky top-0 z-20 bg-white border-b border-slate-100 px-6 py-4 space-y-4">
+      <header className="sticky top-0 z-20 bg-white border-b border-[#F3F4F6] px-4 pt-6 pb-4 space-y-4">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 bg-[#D4AF37]/10 border border-[#D4AF37]/30 rounded-xl flex items-center justify-center">
-              <Sparkles className="w-6 h-6 text-[#D4AF37] fill-[#D4AF37]" />
+          <div className="flex items-center gap-2">
+            <div 
+                className="w-10 h-10 rounded-[16px] flex items-center justify-center shrink-0 shadow-sm"
+                style={{ background: 'linear-gradient(180deg, rgba(212, 175, 55, 1) 0%, rgba(184, 148, 31, 1) 100%)' }}
+            >
+              <Sparkles className="w-6 h-6 text-white fill-white" />
             </div>
-            <h1 className="text-xl font-bold text-slate-900 tracking-tight">SalonAsistan</h1>
+            <h1 className="text-2xl font-bold text-[#2D2D2D] tracking-tight">SalonAsistan</h1>
           </div>
           <div className="relative">
-            <div className="w-11 h-11 bg-slate-100 rounded-full border-2 border-white shadow-sm overflow-hidden flex items-center justify-center">
+            <div className="w-12 h-12 bg-[#D4AF37]/10 rounded-full border-2 border-white shadow-sm overflow-hidden flex items-center justify-center">
               <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${USER_NAME}`} alt="User" className="w-full h-full object-cover" />
             </div>
-            <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 border-2 border-white rounded-full"></div>
+            <div className="absolute bottom-0.5 right-0.5 w-3.5 h-3.5 bg-[#10B981] border-2 border-white rounded-full"></div>
           </div>
         </div>
         
         {step === 1 && (
-          <div className="animate-in fade-in slide-in-from-top-2 duration-500">
-            <h2 className="text-[22px] font-semibold text-slate-900 leading-tight">
-              Tekrar hoş geldin, {USER_NAME} ✨
+          <div className="animate-in fade-in slide-in-from-top-2 duration-500 pt-2">
+            <h2 className="text-[18px] font-normal text-[#2D2D2D] leading-tight">
+              Tekrar hoş geldin, <span className="font-bold">{USER_NAME} ✨</span>
             </h2>
           </div>
         )}
@@ -98,8 +101,8 @@ export function BookingPage1() {
           {[1, 2, 3].map((i) => (
             <div 
               key={i} 
-              className={`h-1.5 rounded-full transition-all duration-300 ${
-                step === i ? 'w-8 bg-[#D4AF37]' : 'w-2 bg-slate-200'
+              className={`h-1 rounded-full transition-all duration-300 ${
+                step === i ? 'w-8 bg-[#D4AF37]' : 'w-2 bg-[#F3F4F6]'
               }`}
             />
           ))}
@@ -107,7 +110,7 @@ export function BookingPage1() {
       </header>
 
       {/* Main Content Area */}
-      <div className="flex-1 px-6 py-6">
+      <div className="flex-1 px-4 py-6">
         {step === 1 && (
           <StepService1 
             selectedServices={selectedServices}
@@ -137,15 +140,15 @@ export function BookingPage1() {
 
       {/* Sticky Bottom Summary for Step 1 */}
       {step === 1 && selectedServices.length > 0 && (
-        <div className="sticky bottom-0 p-6 bg-white/80 backdrop-blur-lg border-t border-slate-100 animate-in slide-in-from-bottom-full duration-300">
-          <div className="flex items-center justify-between mb-2">
+        <div className="sticky bottom-0 p-4 bg-white/90 backdrop-blur-md border-t border-[#F3F4F6] animate-in slide-in-from-bottom-full duration-300 z-30">
+          <div className="flex items-center justify-between gap-4">
             <div className="flex flex-col">
-              <span className="text-xs text-slate-500 font-bold uppercase tracking-tight">{selectedServices.length} Hizmet seçildi</span>
-              <span className="text-2xl font-black text-slate-900">{totalPrice} ₺</span>
+              <span className="text-[11px] text-slate-400 font-bold uppercase tracking-wider leading-none mb-1">{selectedServices.length} Hizmet seçildi</span>
+              <span className="text-2xl font-black text-[#2D2D2D]">{totalPrice} ₺</span>
             </div>
             <Button 
               onClick={() => setStep(2)}
-              className="bg-[#D4AF37] hover:bg-[#B8941F] text-white rounded-2xl px-10 h-14 font-black text-lg shadow-xl shadow-[#D4AF37]/20 active:scale-95 transition-all"
+              className="bg-[#D4AF37] hover:bg-[#B8941F] text-white rounded-[16px] px-8 h-12 font-bold shadow-lg shadow-[#D4AF37]/20 active:scale-95 transition-all flex-1"
             >
               Devam Et
             </Button>

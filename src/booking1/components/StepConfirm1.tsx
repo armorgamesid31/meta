@@ -25,9 +25,9 @@ export function StepConfirm1({ selectedServices, selectedDateTime, onBack, onCon
         <p className="text-sm text-slate-500 font-medium px-4">Randevu detaylarınızı kontrol edip onaylayın.</p>
       </div>
 
-      <Card className="border-none shadow-xl rounded-[32px] overflow-hidden bg-white border border-slate-50">
-        <div className="bg-slate-50/50 p-6 border-b border-slate-100">
-          <h3 className="font-bold text-slate-900">Seçilen Hizmetler</h3>
+      <Card className="border-none shadow-[0px_4px_6px_-1px_rgba(0,0,0,0.1)] rounded-[32px] overflow-hidden bg-white border border-[#F3F4F6]">
+        <div className="bg-[#F9FAFB] p-6 border-b border-[#F3F4F6]">
+          <h3 className="font-bold text-[#2D2D2D]">Seçilen Hizmetler</h3>
         </div>
         <CardContent className="p-6 space-y-4">
           {selectedServices.map((s) => (
@@ -63,8 +63,8 @@ export function StepConfirm1({ selectedServices, selectedDateTime, onBack, onCon
             </div>
           </div>
         </CardContent>
-        <div className="bg-[#D4AF37] p-6 text-white flex justify-between items-center shadow-inner">
-          <span className="text-sm font-bold opacity-90">Toplam Tutar</span>
+        <div className="bg-[#D4AF37] p-6 text-white flex justify-between items-center shadow-[inset_0px_2px_4px_0px_rgba(0,0,0,0.1)]">
+          <span className="text-sm font-bold opacity-90 uppercase tracking-widest">Toplam Tutar</span>
           <span className="text-3xl font-black">{totalPrice} ₺</span>
         </div>
       </Card>

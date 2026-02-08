@@ -83,8 +83,8 @@ export function StepTime1({ selectedDateTime, onSelect, onBack, onNext }: StepTi
               className={cn(
                 "flex flex-col items-center justify-center min-w-[70px] h-[90px] rounded-2xl border-2 transition-all snap-start",
                 selectedDateId === d.fullDate 
-                  ? "bg-[#D4AF37] border-[#D4AF37] text-white shadow-lg shadow-[#D4AF37]/30 scale-105" 
-                  : "bg-white border-slate-100 text-slate-500 hover:border-slate-200",
+                  ? "bg-[#D4AF37] border-[#D4AF37] text-white shadow-[0px_4px_6px_-1px_rgba(0,0,0,0.1)] scale-105" 
+                  : "bg-white border-[#F3F4F6] text-slate-500 hover:border-[#D4AF37]/30 shadow-[0px_1px_3px_0px_rgba(0,0,0,0.1)]",
                 d.disabled && "opacity-30 cursor-not-allowed border-transparent shadow-none"
               )}
             >
@@ -120,8 +120,8 @@ export function StepTime1({ selectedDateTime, onSelect, onBack, onNext }: StepTi
                       className={cn(
                         "h-11 rounded-xl text-sm font-bold transition-all border-2",
                         isSelected 
-                          ? "bg-slate-900 border-slate-900 text-white shadow-md scale-105" 
-                          : "bg-white border-slate-100 text-slate-600 hover:border-[#D4AF37]/30 hover:bg-amber-50/30"
+                          ? "bg-slate-900 border-slate-900 text-white shadow-[0px_2px_4px_-2px_rgba(0,0,0,0.1)] scale-105" 
+                          : "bg-white border-[#F3F4F6] text-slate-600 hover:border-[#D4AF37]/30 hover:bg-amber-50/30 shadow-[0px_1px_3px_0px_rgba(0,0,0,0.1)]"
                       )}
                     >
                       {time}
