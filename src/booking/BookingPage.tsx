@@ -37,10 +37,6 @@ export function BookingPage() {
 
   const handleServiceSelect = (serviceId: string) => {
     setSelectedServiceId(serviceId);
-    // Auto advance for better UX or stay? The screenshot has "Ekle" buttons, implying adding to cart.
-    // For simplicity, let's assume single selection and manual advance or auto advance.
-    // User wants "Ekle" buttons. Let's make "Devam Et" separate.
-    // So select just updates state.
   };
 
   const handleTimeSelect = (dateTime: { date: string; time: string }) => {
@@ -105,56 +101,56 @@ export function BookingPage() {
   return (
     <BookingLayout>
       {/* Header Section */}
-      <div className="mb-6 space-y-4">
+      <div className="mb-6 space-y-6 bg-white -mx-4 px-4 pt-6 pb-4 border-b border-slate-100">
         {/* Top Bar */}
         <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 min-w-0">
-                <div className="bg-yellow-500 rounded-xl p-2 shadow-sm shrink-0">
-                    <Sparkles className="h-6 w-6 text-white fill-white" />
+            <div className="flex items-center gap-3 min-w-0">
+                <div className="bg-yellow-50/50 border border-yellow-200 rounded-2xl w-12 h-12 flex items-center justify-center shrink-0">
+                    <Sparkles className="h-6 w-6 text-yellow-600 fill-yellow-600" />
                 </div>
-                <h1 className="text-2xl font-bold text-slate-900 tracking-tight truncate">SalonAsistan</h1>
+                <h1 className="text-xl font-bold text-slate-900 tracking-tight truncate">SalonAsistan</h1>
             </div>
-            <div className="relative shrink-0 ml-4 w-10 h-10">
-                <div className="w-10 h-10 bg-yellow-100 rounded-full flex items-center justify-center border-2 border-white shadow-sm overflow-hidden">
-                    {/* Placeholder avatar or icon */}
-                    <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Ayse" alt="User" className="w-full h-full object-cover block" style={{ width: '40px', height: '40px' }} />
+            <div className="relative shrink-0 ml-4">
+                <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center border-2 border-white shadow-sm overflow-hidden">
+                    <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Ayse" alt="User" className="w-full h-full object-cover block" />
                 </div>
-                <div className="absolute -bottom-1 -right-1 h-4 w-4 bg-green-500 border-2 border-white rounded-full"></div>
+                <div className="absolute bottom-0 right-0 h-3.5 w-3.5 bg-green-500 border-2 border-white rounded-full"></div>
             </div>
         </div>
 
         {/* Welcome Message */}
         <div>
-            <h2 className="text-lg text-slate-600 font-medium">Tekrar hoş geldin, {USER_NAME} <span className="inline-block animate-pulse">✨</span></h2>
+            <h2 className="text-xl text-slate-900 font-medium">Tekrar hoş geldin, {USER_NAME} ✨</h2>
         </div>
-
       </div>
 
-      {step === 1 && (
-        <StepService 
-          selectedServiceId={selectedServiceId}
-          onSelect={handleServiceSelect}
-          onNext={() => setStep(2)}
-        />
-      )}
+      <div className="space-y-6">
+        {step === 1 && (
+          <StepService 
+            selectedServiceId={selectedServiceId}
+            onSelect={handleServiceSelect}
+            onNext={() => setStep(2)}
+          />
+        )}
 
-      {step === 2 && (
-        <StepTime 
-          selectedDateTime={selectedDateTime}
-          onSelect={handleTimeSelect}
-          onBack={() => setStep(1)}
-          onNext={() => setStep(3)}
-        />
-      )}
+        {step === 2 && (
+          <StepTime 
+            selectedDateTime={selectedDateTime}
+            onSelect={handleTimeSelect}
+            onBack={() => setStep(1)}
+            onNext={() => setStep(3)}
+          />
+        )}
 
-      {step === 3 && selectedServiceId && selectedDateTime && (
-        <StepConfirm 
-          selectedServiceId={selectedServiceId}
-          selectedDateTime={selectedDateTime}
-          onBack={() => setStep(2)}
-          onConfirm={handleConfirm}
-        />
-      )}
+        {step === 3 && selectedServiceId && selectedDateTime && (
+          <StepConfirm 
+            selectedServiceId={selectedServiceId}
+            selectedDateTime={selectedDateTime}
+            onBack={() => setStep(2)}
+            onConfirm={handleConfirm}
+          />
+        )}
+      </div>
     </BookingLayout>
   );
 }

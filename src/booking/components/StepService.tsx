@@ -73,11 +73,11 @@ export function StepService({ selectedServiceId, onSelect, onNext }: StepService
   })).filter(cat => cat.services.length > 0 || !searchQuery);
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-24">
       
       {/* Recent & Packages */}
       <div className="space-y-3">
-        <Card className="rounded-2xl border border-slate-100 shadow-sm bg-white overflow-hidden">
+        <Card className="rounded-[20px] border border-slate-100 shadow-sm bg-white overflow-hidden">
             <div className="p-4 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors">
                 <div className="flex items-center gap-3">
                     <div className="h-10 w-10 rounded-full bg-yellow-50 flex items-center justify-center text-yellow-600">
@@ -92,7 +92,7 @@ export function StepService({ selectedServiceId, onSelect, onNext }: StepService
             </div>
         </Card>
 
-        <Card className="rounded-2xl border border-slate-100 shadow-sm bg-white overflow-hidden">
+        <Card className="rounded-[20px] border border-slate-100 shadow-sm bg-white overflow-hidden">
             <div className="p-4 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors">
                 <div className="flex items-center gap-3">
                     <div className="h-10 w-10 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600">
@@ -115,7 +115,7 @@ export function StepService({ selectedServiceId, onSelect, onNext }: StepService
         <Search className="absolute left-4 top-3.5 h-5 w-5 text-slate-400" />
         <Input 
           placeholder="Hizmet ara..." 
-          className="pl-12 h-12 rounded-2xl bg-white border-slate-200 shadow-sm text-base"
+          className="pl-12 h-12 rounded-[20px] bg-white border-slate-100 shadow-sm text-base focus-visible:ring-yellow-500"
           value={searchQuery}
           onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
         />
@@ -123,20 +123,28 @@ export function StepService({ selectedServiceId, onSelect, onNext }: StepService
 
       {/* Promo Banner */}
       {!searchQuery && (
-        <div className="bg-white border-2 border-yellow-400/30 rounded-2xl p-4 shadow-sm relative overflow-hidden">
-            <div className="absolute top-0 right-0 p-2 opacity-10">
-                <Users className="h-24 w-24" />
+        <div 
+            className="rounded-[20px] p-4 shadow-md relative overflow-hidden border border-yellow-500/50"
+            style={{
+                background: 'linear-gradient(135deg, rgba(212, 175, 55, 0.1) 0%, rgba(255, 255, 255, 1) 50%, rgba(212, 175, 55, 0.05) 100%)'
+            }}
+        >
+            {/* Background Icon */}
+            <div className="absolute -top-2 -right-2 opacity-5 pointer-events-none">
+                <Users className="h-24 w-24 text-yellow-600" />
             </div>
+            
             <div className="flex items-start gap-4 relative z-10">
-                <div className="bg-yellow-100 p-3 rounded-full shrink-0 text-yellow-600">
+                <div className="bg-yellow-100 p-3 rounded-full shrink-0 text-yellow-600 border border-yellow-200">
                     <Users className="h-6 w-6" />
                 </div>
                 <div className="space-y-1 flex-1">
-                    <h3 className="font-bold text-slate-900 leading-tight">Randevuna arkadaşını ekle, anında 100 TL kazan!</h3>
+                    <h3 className="font-bold text-slate-900 leading-tight pr-8">Randevuna arkadaşını ekle, anında 100 TL kazan!</h3>
                     <p className="text-xs text-slate-500 font-medium">Hem sen hem de arkadaşın indirim kazanın</p>
                 </div>
-                <div className="flex items-center">
-                     <div className="w-11 h-6 bg-slate-200 rounded-full relative cursor-pointer">
+                <div className="flex items-center absolute top-0 right-0">
+                     {/* Mock Switch */}
+                     <div className="w-11 h-6 bg-slate-300 rounded-full relative cursor-pointer transition-colors hover:bg-slate-400">
                         <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-transform"></div>
                      </div>
                 </div>
@@ -147,7 +155,7 @@ export function StepService({ selectedServiceId, onSelect, onNext }: StepService
       {/* Categories & Services */}
       <div className="space-y-4">
         {filteredCategories.map((category) => (
-          <div key={category.id} className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
+          <div key={category.id} className="bg-white rounded-[20px] shadow-sm border border-slate-100 overflow-hidden">
             <div 
               className={cn(
                 "p-5 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors",
