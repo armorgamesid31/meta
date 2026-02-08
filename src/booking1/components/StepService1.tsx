@@ -41,6 +41,11 @@ export function StepService1({ selectedServices, onToggleService, onNext }: Step
 
   const isSelected = (id: number) => selectedServices.some(s => s.id === id);
 
+  const filteredCategories = CATEGORIES.map(cat => ({
+    ...cat,
+    services: cat.services.filter(s => s.name.toLowerCase().includes(searchQuery.toLowerCase()))
+  })).filter(cat => cat.services.length > 0 || !searchQuery);
+
   return (
     <div className="space-y-6">
       {/* 1. Quick Actions */}
