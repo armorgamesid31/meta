@@ -140,15 +140,26 @@ model MagicLink {
   updatedAt DateTime    @updatedAt
 }
 
+enum CustomerGender {
+  male
+  female
+  other
+}
+
 model Customer {
-  id           Int           @id @default(autoincrement())
-  name         String?
-  phone        String        @unique
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  salonId      Int
-  salon        Salon         @relation(fields: [salonId], references: [id])
-  appointments Appointment[]
+  id              Int             @id @default(autoincrement())
+  name            String?
+  phone           String
+  gender          CustomerGender?
+  birthDate       DateTime?       @db.Date
+  acceptMarketing Boolean         @default(false)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  salonId         Int
+  salon           Salon           @relation(fields: [salonId], references: [id])
+  appointments    Appointment[]
+
+  @@unique([phone, salonId])
 }
 
 enum MagicLinkType {
