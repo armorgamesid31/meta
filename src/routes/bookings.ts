@@ -482,6 +482,75 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
   }
 });
 
+// POST /api/bookings - Create appointment (frontend booking flow)
+router.post('/', async (req: any, res: any, next: any) => {
+  const b = req.body || {};
+  if (
+    typeof b.salonId === 'number' &&
+    typeof b.customerId === 'number' &&
+    typeof b.customerName === 'string' &&
+    typeof b.customerPhone === 'string' &&
+    typeof b.staffId === 'number' &&
+    typeof b.serviceId === 'number' &&
+    typeof b.startTime === 'string' &&
+    typeof b.endTime === 'string' &&
+    (b.source === 'CUSTOMER' || b.source === 'SALON')
+  ) {
+    const {
+      salonId,
+      customerId,
+      customerName,
+      customerPhone,
+      staffId,
+      serviceId,
+      startTime,
+      endTime,
+      source,
+      token
+    } = b;
+
+    const start = new Date(startTime);
+    const end = new Date(endTime);
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      return res.status(400).json({ message: 'Invalid startTime or endTime' });
+    }
+
+    try {
+      const appointment = await prisma.appointment.create({
+        data: {
+          salonId,
+          customerId,
+          customerName: customerName.trim(),
+          customerPhone: customerPhone.trim(),
+          staffId,
+          serviceId,
+          startTime: start,
+          endTime: end,
+          status: 'BOOKED',
+          source: source === 'SALON' ? 'ADMIN' : 'CUSTOMER'
+        }
+      });
+
+      if (token && typeof token === 'string') {
+        try {
+          await prisma.magicLink.updateMany({
+            where: { token, usedAt: null },
+            data: { usedAt: new Date() }
+          });
+        } catch (_) {}
+      }
+
+      return res.status(201).json({
+        appointmentId: appointment.id,
+        status: 'BOOKED'
+      });
+    } catch (error) {
+      return res.status(500).json({ message: 'Internal server error' });
+    }
+  }
+  next();
+});
+
 // POST /appointments - Create appointment using magic link token
 router.post('/', async (req: any, res: any) => {
   const { token, salonId, datetime, people, campaignOptIn } = req.body as any;
