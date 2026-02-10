@@ -516,6 +516,26 @@ router.post('/', async (req: any, res: any, next: any) => {
     }
 
     try {
+      const date = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+      const engine = new AvailabilityEngine();
+      const availabilityResult = await engine.calculateAvailability({
+        date,
+        serviceId,
+        peopleCount: 1,
+        salonId
+      });
+
+      const startMs = Math.floor(start.getTime() / 60000) * 60000;
+      const slotAvailable = availabilityResult.slots.some(
+        (slot) =>
+          Math.floor(slot.startTime.getTime() / 60000) * 60000 === startMs &&
+          slot.availableStaff.includes(staffId)
+      );
+
+      if (!slotAvailable) {
+        return res.status(409).json({ error: 'SLOT_NOT_AVAILABLE' });
+      }
+
       const appointment = await prisma.appointment.create({
         data: {
           salonId,
