@@ -22,11 +22,12 @@ router.get('/context', async (req: any, res: any) => {
     return res.status(410).json({ message: 'Magic link has expired' });
   }
 
-  const salonId = (magicLink.context as { salonId?: number })?.salonId;
-  if (!salonId || typeof salonId !== 'number') {
-    return res.status(400).json({ message: 'Invalid magic link context' });
+  const context = magicLink.context as { salonId?: number } | null;
+  if (!context || typeof context.salonId !== 'number') {
+    return res.status(400).json({ message: 'Magic link context must contain salonId' });
   }
 
+  const salonId = context.salonId;
   const salon = await prisma.salon.findUnique({
     where: { id: salonId },
     select: { name: true }
@@ -36,9 +37,10 @@ router.get('/context', async (req: any, res: any) => {
     return res.status(404).json({ message: 'Salon not found' });
   }
 
+  const phone = magicLink.phone.trim();
   const customer = await prisma.customer.findFirst({
     where: {
-      phone: magicLink.phone,
+      phone,
       salonId
     }
   });
@@ -48,7 +50,11 @@ router.get('/context', async (req: any, res: any) => {
   let appointments: { id: number; startTime: Date; endTime: Date; status: string }[] = [];
   if (customer) {
     const raw = await prisma.appointment.findMany({
-      where: { customerId: customer.id, salonId },
+      where: {
+        customerId: customer.id,
+        salonId,
+        status: { not: 'CANCELLED' }
+      },
       select: { id: true, startTime: true, endTime: true, status: true },
       orderBy: { startTime: 'desc' },
       take: 5
@@ -68,7 +74,7 @@ router.get('/context', async (req: any, res: any) => {
   res.status(200).json({
     customerId: customer?.id ?? null,
     customerName: customer?.name ?? null,
-    customerPhone: magicLink.phone,
+    customerPhone: phone,
     customerGender,
     salonId,
     salonName: salon.name,

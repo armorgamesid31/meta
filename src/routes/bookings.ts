@@ -517,20 +517,19 @@ router.post('/', async (req: any, res: any) => {
       return res.status(400).json({ message: 'Salon ID mismatch' });
     }
 
-    // Auto-create or find customer
+    const phone = magicLink.phone.trim();
     let customer = await prisma.customer.findFirst({
       where: {
-        phone: magicLink.phone,
+        phone,
         salonId: salonId
       }
     });
 
     if (!customer) {
-      // Use the first person's name as customer name
-      const customerName = people[0].name || `Customer ${magicLink.phone}`;
+      const customerName = people[0].name || `Customer ${phone}`;
       customer = await prisma.customer.create({
         data: {
-          phone: magicLink.phone,
+          phone,
           name: customerName,
           salonId: salonId
         }
@@ -634,7 +633,7 @@ router.post('/', async (req: any, res: any) => {
               serviceId: serviceItem.serviceId,
               customerId: customer.id,
               customerName: person.name,
-              customerPhone: magicLink.phone,
+              customerPhone: phone,
               startTime: appointmentDateTime,
               endTime: endTime,
               status: 'BOOKED',
@@ -647,14 +646,17 @@ router.post('/', async (req: any, res: any) => {
         }
       }
 
-      // Mark magic link as used
-      await tx.magicLink.update({
-        where: { token },
-        data: { usedAt: new Date() }
-      });
-
       return appointments;
     });
+
+    if (magicLink.usedAt === null) {
+      try {
+        await prisma.magicLink.updateMany({
+          where: { token, usedAt: null },
+          data: { usedAt: new Date() }
+        });
+      } catch (_) {}
+    }
 
     // Emit WhatsApp event (this would be consumed by n8n)
     const salon = await prisma.salon.findUnique({
@@ -671,7 +673,7 @@ router.post('/', async (req: any, res: any) => {
         location: 'Salon Address' // This would come from salon settings
       },
       customer: {
-        phone: magicLink.phone,
+        phone,
         name: customer.name
       },
       datetime: appointmentDateTime.toLocaleString('tr-TR')
