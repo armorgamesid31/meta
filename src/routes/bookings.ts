@@ -365,14 +365,18 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
         return res.status(409).json({ message: 'New slot is not available.' });
       }
 
-      // 7. Create temporary lock for new slot
       const lockId = `reschedule-${bookingId}-${Date.now()}`;
+      const staffService = await tx.staffService.findFirst({
+        where: {
+          serviceId: newSlot.serviceId,
+          staffId: newSlot.staffIds[0],
+          staff: { salonId }
+        }
+      });
       const service = await tx.service.findUnique({
         where: { id: newSlot.serviceId, salonId }
       });
-
       if (!service) {
-        // Rollback: reset booking status
         await tx.$executeRaw`
           UPDATE randevular
           SET hizmet_durumu = 'aktif',
@@ -382,10 +386,11 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
         `;
         return res.status(404).json({ message: 'Service not found.' });
       }
+      const duration = staffService?.duration ?? service.duration;
 
       await tx.$executeRaw`
         INSERT INTO temporary_locks (id, salon_id, tarih, saat, sure, expires_at, created_at)
-        VALUES (${lockId}, ${salonId}, ${newSlot.date}, ${newSlot.startTime}, ${service.duration}, ${new Date(Date.now() + 5 * 60 * 1000)}, NOW())
+        VALUES (${lockId}, ${salonId}, ${newSlot.date}, ${newSlot.startTime}, ${duration}, ${new Date(Date.now() + 5 * 60 * 1000)}, NOW())
       `;
 
       // 8. Validate staff for new slot
@@ -411,8 +416,7 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
         return res.status(400).json({ message: 'Invalid staff selection for new slot.' });
       }
 
-      // 9. Create new booking(s) for the rescheduled slot
-      const newSlotEnd = new Date(newSlotStart.getTime() + service.duration * 60 * 1000);
+      const newSlotEnd = new Date(newSlotStart.getTime() + duration * 60 * 1000);
       const newAppointments = [];
 
       for (const staffId of newSlot.staffIds) {
@@ -666,16 +670,18 @@ router.post('/', async (req: any, res: any) => {
             throw new Error('Invalid service data');
           }
 
-          // Validate service and staff exist
-          const service = await (tx.service.findUnique as any)({
+          const staffService = await tx.staffService.findFirst({
             where: {
-              id: serviceItem.serviceId
-            },
-            include: {
-              category: true
+              serviceId: serviceItem.serviceId,
+              staffId: serviceItem.staffId,
+              staff: { salonId },
+              OR: [{ isactive: true }, { isactive: null }]
             }
           });
 
+          const service = await tx.service.findUnique({
+            where: { id: serviceItem.serviceId, salonId }
+          });
           if (!service) {
             throw new Error('Service not found');
           }
@@ -686,23 +692,20 @@ router.post('/', async (req: any, res: any) => {
               salonId: salonId
             }
           });
-
           if (!staff) {
             throw new Error('Staff not found');
           }
 
-          // Add service to collection for smart duration calculation
+          const duration = staffService?.duration ?? service.duration;
+          const price = staffService?.price ?? service.price;
+
           personServices.push({
             id: service.id,
             name: service.name,
-            duration: service.duration,
-            price: service.price,
-            isSynergyEnabled: service.isSynergyEnabled,
-            category: service.category ? {
-              schedulingRule: service.category.schedulingRule,
-              synergyFactor: service.category.synergyFactor,
-              bufferMinutes: service.category.bufferMinutes
-            } : undefined
+            duration,
+            price,
+            isSynergyEnabled: false,
+            category: undefined
           });
         }
 

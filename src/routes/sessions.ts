@@ -316,7 +316,11 @@ router.post("/:token/confirm", async (req: any, res: any) => {
         }
       }
 
-      // 3. Create appointments linked to customer
+      const lock = lockRecord[0];
+      const lockDuration = parseInt(lock.sure, 10) || 60;
+      const slotStart = new Date(`${slot.date}T${slot.startTime}`);
+      const slotEnd = new Date(slotStart.getTime() + lockDuration * 60 * 1000);
+
       const appointments = [];
       for (const staffId of slot.staffIds) {
         const appointment = await tx.appointment.create({
@@ -327,8 +331,8 @@ router.post("/:token/confirm", async (req: any, res: any) => {
             customerId: customer.id,
             customerName: customer.name,
             customerPhone: customer.phone,
-            startTime: new Date(`${slot.date}T${slot.startTime}`),
-            endTime: new Date(`${slot.date}T${slot.startTime}`), // Will be updated with proper duration
+            startTime: slotStart,
+            endTime: slotEnd,
             status: 'BOOKED',
             source: 'CUSTOMER'
           }
