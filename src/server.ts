@@ -13,6 +13,8 @@ import salonRoutes from './routes/salon.js';
 import bookingRoutes from './routes/bookings.js';
 import availabilityRoutes from './routes/availability.js';
 import authRoutes from './routes/auth.js';
+import customerRoutes from './routes/customers.js';
+import bookingContextRoutes from './routes/bookingContext.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -129,6 +131,8 @@ app.use('/auth', authRoutes);
 // Core routes for booking functionality
 app.use('/api/salon', salonRoutes);
 app.use('/api/bookings', bookingRoutes);
+app.use('/api/customers', customerRoutes);
+app.use('/api/booking', bookingContextRoutes);
 app.use('/availability', availabilityRoutes);
 app.use('/appointments', bookingRoutes);
 

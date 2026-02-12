@@ -14,11 +14,11 @@ model Salon {
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
   appointments Appointment[]
+  customers    Customer[]
   settings     SalonSettings?
   users        SalonUser[]
   services     Service[]
   staff        Staff[]
-  customers    Customer[]
 }
 
 model SalonSettings {
@@ -46,18 +46,19 @@ model SalonUser {
 }
 
 model Staff {
-  id           Int           @id @default(autoincrement())
-  name         String
-  phone        String?
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  salonId      Int
-  userId       Int?          @unique
-  appointments Appointment[]
-  leaves       Leave[]
-  salon        Salon         @relation(fields: [salonId], references: [id])
-  user         SalonUser?    @relation(fields: [userId], references: [id])
-  services     Service[]     @relation("StaffServices")
+  id                Int                 @id @default(autoincrement())
+  name              String
+  phone             String?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  salonId           Int
+  userId            Int?                @unique
+  appointments      Appointment[]
+  leaves            Leave[]
+  salon             Salon               @relation(fields: [salonId], references: [id])
+  user              SalonUser?          @relation(fields: [userId], references: [id])
+  StaffWorkingHours StaffWorkingHours[]
+  staffServices     StaffService[]
 }
 
 model Leave {
@@ -71,17 +72,22 @@ model Leave {
 }
 
 model Service {
-  id           Int           @id @default(autoincrement())
-  name         String
-  description  String?
-  price        Float
-  duration     Int
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  salonId      Int
-  appointments Appointment[]
-  salon        Salon         @relation(fields: [salonId], references: [id])
-  staff        Staff[]       @relation("StaffServices")
+  id                 Int           @id @default(autoincrement())
+  name               String
+  description        String?
+  price              Float
+  duration           Int
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @default(now()) @updatedAt
+  salonId            Int
+  category           String?
+  requiresSpecialist Boolean       @default(false)
+  appointments       Appointment[]
+  salon              Salon         @relation(fields: [salonId], references: [id])
+  staffServices      StaffService[]
+  serviceStats       ServiceStats?
+
+  @@unique([name, salonId], map: "service_unique_name_per_salon")
 }
 
 model Appointment {
@@ -95,16 +101,121 @@ model Appointment {
   source        AppointmentSource @default(CUSTOMER)
   notes         String?
   createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
+  updatedAt     DateTime          @default(now()) @updatedAt
   salonId       Int
   staffId       Int
   serviceId     Int
+  customer      Customer?         @relation(fields: [customerId], references: [id])
   salon         Salon             @relation(fields: [salonId], references: [id])
   service       Service           @relation(fields: [serviceId], references: [id])
   staff         Staff             @relation(fields: [staffId], references: [id])
-  customer      Customer?         @relation(fields: [customerId], references: [id])
 
   @@index([staffId, startTime, endTime])
+}
+
+model MagicLink {
+  id        Int           @id @default(autoincrement())
+  token     String        @unique
+  phone     String
+  type      MagicLinkType
+  context   Json?
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+}
+
+model Customer {
+  id              Int             @id @default(autoincrement())
+  name            String?
+  phone           String
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  salonId         Int
+  gender          CustomerGender?
+  birthDate       DateTime?       @db.Date
+  acceptMarketing Boolean         @default(false)
+  appointments    Appointment[]
+  salon           Salon           @relation(fields: [salonId], references: [id])
+
+  @@unique([phone, salonId])
+}
+
+model CustomerBehaviorLog {
+  id            Int      @id @default(autoincrement())
+  customerId    Int
+  salonId       Int
+  appointmentId Int?
+  action        String
+  behaviorType  String?
+  severityScore Float?
+  metadata      Json?
+  occurredAt    DateTime @default(now())
+  createdAt     DateTime @default(now())
+}
+
+model CustomerRiskProfile {
+  id                      Int       @id @default(autoincrement())
+  customerId              Int
+  salonId                 Int
+  riskScore               Float     @default(0)
+  riskLevel               String?
+  noShowCount             Int       @default(0)
+  noShows                 Int       @default(0)
+  lastMinuteCount         Int       @default(0)
+  lastMinuteCancellations Int       @default(0)
+  totalBookings           Int       @default(0)
+  lastCalculatedAt        DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  @@unique([customerId, salonId])
+}
+
+model SalonRiskConfig {
+  id                       Int      @id @default(autoincrement())
+  salonId                  Int      @unique
+  isEnabled                Boolean  @default(false)
+  lastMinuteHoursThreshold Int      @default(24)
+  noShowPenalty            Float    @default(0.1)
+  lastMinutePenalty        Float    @default(0.05)
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+}
+
+model ServiceStats {
+  serviceId    Int      @id
+  minPrice     Float
+  maxPrice     Float
+  minDuration  Int
+  maxDuration  Int
+  calculatedAt DateTime @default(now()) @db.Timestamp(6)
+  service      Service  @relation(fields: [serviceId], references: [id])
+}
+
+model StaffService {
+  id        Int      @id @default(autoincrement())
+  staffId   Int
+  serviceId Int
+  price     Float
+  duration  Int
+  isactive  Boolean? @default(true)
+  staff     Staff    @relation(fields: [staffId], references: [id])
+  service   Service  @relation(fields: [serviceId], references: [id])
+
+  @@unique([staffId, serviceId])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model StaffWorkingHours {
+  id        Int      @id @default(autoincrement())
+  staffId   Int
+  dayOfWeek Int
+  startHour Int
+  endHour   Int
+  createdAt DateTime @default(now()) @db.Timestamp(6)
+  updatedAt DateTime @default(now()) @db.Timestamp(6)
+  Staff     Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
 
 enum UserRole {
@@ -128,72 +239,13 @@ enum AppointmentSource {
   AUTOMATION
 }
 
-model MagicLink {
-  id        Int         @id @default(autoincrement())
-  token     String      @unique
-  phone     String
-  type      MagicLinkType
-  context   Json?
-  expiresAt DateTime
-  usedAt    DateTime?
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
-}
-
-model Customer {
-  id           Int           @id @default(autoincrement())
-  name         String?
-  phone        String        @unique
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  salonId      Int
-  salon        Salon         @relation(fields: [salonId], references: [id])
-  appointments Appointment[]
+enum CustomerGender {
+  male
+  female
+  other
 }
 
 enum MagicLinkType {
   BOOKING
   RESCHEDULE
-}
-
-model CustomerBehaviorLog {
-  id             Int      @id @default(autoincrement())
-  customerId     Int
-  salonId        Int
-  appointmentId  Int?
-  action         String
-  behaviorType   String?
-  severityScore  Float?
-  metadata       Json?
-  occurredAt     DateTime @default(now())
-  createdAt      DateTime @default(now())
-}
-
-model CustomerRiskProfile {
-  id                      Int     @id @default(autoincrement())
-  customerId              Int
-  salonId                 Int
-  riskScore               Float   @default(0)
-  riskLevel               String?
-  noShowCount             Int     @default(0)
-  noShows                 Int     @default(0)
-  lastMinuteCount         Int     @default(0)
-  lastMinuteCancellations Int     @default(0)
-  totalBookings           Int     @default(0)
-  lastCalculatedAt        DateTime?
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
-
-  @@unique([customerId, salonId])
-}
-
-model SalonRiskConfig {
-  id                      Int     @id @default(autoincrement())
-  salonId                 Int     @unique
-  isEnabled               Boolean @default(false)
-  lastMinuteHoursThreshold Int    @default(24)
-  noShowPenalty           Float   @default(0.1)
-  lastMinutePenalty       Float   @default(0.05)
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
 }

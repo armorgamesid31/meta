@@ -62,7 +62,11 @@ router.get("/appointments", authenticateToken, async (req: any, res: any) => {
     const appointments = await prisma.appointment.findMany({
       where,
       include: {
-        service: true,
+        service: {
+          include: {
+            staffServices: true
+          }
+        },
         staff: {
           select: {
             id: true,
@@ -73,9 +77,7 @@ router.get("/appointments", authenticateToken, async (req: any, res: any) => {
           select: {
             id: true,
             name: true,
-            phone: true,
-            email: true,
-            notes: true
+            phone: true
           }
         }
       },
@@ -89,23 +91,28 @@ router.get("/appointments", authenticateToken, async (req: any, res: any) => {
     const total = await prisma.appointment.count({ where });
 
     res.json({
-      appointments: appointments.map(apt => ({
-        id: apt.id,
-        startTime: apt.startTime,
-        endTime: apt.endTime,
-        status: apt.status,
-        customerName: apt.customerName,
-        customerPhone: apt.customerPhone,
-        service: {
-          id: apt.service.id,
-          name: apt.service.name,
-          duration: apt.service.duration,
-          price: apt.service.price
-        },
-        staff: apt.staff,
-        customer: apt.customer,
-        createdAt: apt.createdAt
-      })),
+      appointments: appointments.map(apt => {
+        const staffService = apt.service.staffServices?.find(
+          (ss) => ss.staffId === apt.staffId
+        );
+        return {
+          id: apt.id,
+          startTime: apt.startTime,
+          endTime: apt.endTime,
+          status: apt.status,
+          customerName: apt.customerName,
+          customerPhone: apt.customerPhone,
+          service: {
+            id: apt.service.id,
+            name: apt.service.name,
+            duration: staffService?.duration ?? apt.service.duration,
+            price: staffService?.price ?? apt.service.price
+          },
+          staff: apt.staff,
+          customer: apt.customer,
+          createdAt: apt.createdAt
+        };
+      }),
       total,
       limit: parseInt(String(limitStr || '50')),
       offset: parseInt(String(offsetStr || '0'))

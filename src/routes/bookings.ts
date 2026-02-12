@@ -365,14 +365,18 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
         return res.status(409).json({ message: 'New slot is not available.' });
       }
 
-      // 7. Create temporary lock for new slot
       const lockId = `reschedule-${bookingId}-${Date.now()}`;
+      const staffService = await tx.staffService.findFirst({
+        where: {
+          serviceId: newSlot.serviceId,
+          staffId: newSlot.staffIds[0],
+          staff: { salonId }
+        }
+      });
       const service = await tx.service.findUnique({
         where: { id: newSlot.serviceId, salonId }
       });
-
       if (!service) {
-        // Rollback: reset booking status
         await tx.$executeRaw`
           UPDATE randevular
           SET hizmet_durumu = 'aktif',
@@ -382,10 +386,11 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
         `;
         return res.status(404).json({ message: 'Service not found.' });
       }
+      const duration = staffService?.duration ?? service.duration;
 
       await tx.$executeRaw`
         INSERT INTO temporary_locks (id, salon_id, tarih, saat, sure, expires_at, created_at)
-        VALUES (${lockId}, ${salonId}, ${newSlot.date}, ${newSlot.startTime}, ${service.duration}, ${new Date(Date.now() + 5 * 60 * 1000)}, NOW())
+        VALUES (${lockId}, ${salonId}, ${newSlot.date}, ${newSlot.startTime}, ${duration}, ${new Date(Date.now() + 5 * 60 * 1000)}, NOW())
       `;
 
       // 8. Validate staff for new slot
@@ -411,8 +416,7 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
         return res.status(400).json({ message: 'Invalid staff selection for new slot.' });
       }
 
-      // 9. Create new booking(s) for the rescheduled slot
-      const newSlotEnd = new Date(newSlotStart.getTime() + service.duration * 60 * 1000);
+      const newSlotEnd = new Date(newSlotStart.getTime() + duration * 60 * 1000);
       const newAppointments = [];
 
       for (const staffId of newSlot.staffIds) {
@@ -482,6 +486,95 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
   }
 });
 
+// POST /api/bookings - Create appointment (frontend booking flow)
+router.post('/', async (req: any, res: any, next: any) => {
+  const b = req.body || {};
+  if (
+    typeof b.salonId === 'number' &&
+    typeof b.customerId === 'number' &&
+    typeof b.customerName === 'string' &&
+    typeof b.customerPhone === 'string' &&
+    typeof b.staffId === 'number' &&
+    typeof b.serviceId === 'number' &&
+    typeof b.startTime === 'string' &&
+    typeof b.endTime === 'string' &&
+    (b.source === 'CUSTOMER' || b.source === 'SALON')
+  ) {
+    const {
+      salonId,
+      customerId,
+      customerName,
+      customerPhone,
+      staffId,
+      serviceId,
+      startTime,
+      endTime,
+      source,
+      token
+    } = b;
+
+    const start = new Date(startTime);
+    const end = new Date(endTime);
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      return res.status(400).json({ message: 'Invalid startTime or endTime' });
+    }
+
+    try {
+      const date = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+      const engine = new AvailabilityEngine();
+      const availabilityResult = await engine.calculateAvailability({
+        date,
+        serviceId,
+        peopleCount: 1,
+        salonId
+      });
+
+      const startMs = Math.floor(start.getTime() / 60000) * 60000;
+      const slotAvailable = availabilityResult.slots.some(
+        (slot) =>
+          Math.floor(slot.startTime.getTime() / 60000) * 60000 === startMs &&
+          slot.availableStaff.includes(staffId)
+      );
+
+      if (!slotAvailable) {
+        return res.status(409).json({ error: 'SLOT_NOT_AVAILABLE' });
+      }
+
+      const appointment = await prisma.appointment.create({
+        data: {
+          salonId,
+          customerId,
+          customerName: customerName.trim(),
+          customerPhone: customerPhone.trim(),
+          staffId,
+          serviceId,
+          startTime: start,
+          endTime: end,
+          status: 'BOOKED',
+          source: source === 'SALON' ? 'ADMIN' : 'CUSTOMER'
+        }
+      });
+
+      if (token && typeof token === 'string') {
+        try {
+          await prisma.magicLink.updateMany({
+            where: { token, usedAt: null },
+            data: { usedAt: new Date() }
+          });
+        } catch (_) {}
+      }
+
+      return res.status(201).json({
+        appointmentId: appointment.id,
+        status: 'BOOKED'
+      });
+    } catch (error) {
+      return res.status(500).json({ message: 'Internal server error' });
+    }
+  }
+  next();
+});
+
 // POST /appointments - Create appointment using magic link token
 router.post('/', async (req: any, res: any) => {
   const { token, salonId, datetime, people, campaignOptIn } = req.body as any;
@@ -517,20 +610,19 @@ router.post('/', async (req: any, res: any) => {
       return res.status(400).json({ message: 'Salon ID mismatch' });
     }
 
-    // Auto-create or find customer
+    const phone = magicLink.phone.trim();
     let customer = await prisma.customer.findFirst({
       where: {
-        phone: magicLink.phone,
+        phone,
         salonId: salonId
       }
     });
 
     if (!customer) {
-      // Use the first person's name as customer name
-      const customerName = people[0].name || `Customer ${magicLink.phone}`;
+      const customerName = people[0].name || `Customer ${phone}`;
       customer = await prisma.customer.create({
         data: {
-          phone: magicLink.phone,
+          phone,
           name: customerName,
           salonId: salonId
         }
@@ -578,16 +670,18 @@ router.post('/', async (req: any, res: any) => {
             throw new Error('Invalid service data');
           }
 
-          // Validate service and staff exist
-          const service = await (tx.service.findUnique as any)({
+          const staffService = await tx.staffService.findFirst({
             where: {
-              id: serviceItem.serviceId
-            },
-            include: {
-              category: true
+              serviceId: serviceItem.serviceId,
+              staffId: serviceItem.staffId,
+              staff: { salonId },
+              OR: [{ isactive: true }, { isactive: null }]
             }
           });
 
+          const service = await tx.service.findUnique({
+            where: { id: serviceItem.serviceId, salonId }
+          });
           if (!service) {
             throw new Error('Service not found');
           }
@@ -598,23 +692,20 @@ router.post('/', async (req: any, res: any) => {
               salonId: salonId
             }
           });
-
           if (!staff) {
             throw new Error('Staff not found');
           }
 
-          // Add service to collection for smart duration calculation
+          const duration = staffService?.duration ?? service.duration;
+          const price = staffService?.price ?? service.price;
+
           personServices.push({
             id: service.id,
             name: service.name,
-            duration: service.duration,
-            price: service.price,
-            isSynergyEnabled: service.isSynergyEnabled,
-            category: service.category ? {
-              schedulingRule: service.category.schedulingRule,
-              synergyFactor: service.category.synergyFactor,
-              bufferMinutes: service.category.bufferMinutes
-            } : undefined
+            duration,
+            price,
+            isSynergyEnabled: false,
+            category: undefined
           });
         }
 
@@ -634,7 +725,7 @@ router.post('/', async (req: any, res: any) => {
               serviceId: serviceItem.serviceId,
               customerId: customer.id,
               customerName: person.name,
-              customerPhone: magicLink.phone,
+              customerPhone: phone,
               startTime: appointmentDateTime,
               endTime: endTime,
               status: 'BOOKED',
@@ -647,14 +738,17 @@ router.post('/', async (req: any, res: any) => {
         }
       }
 
-      // Mark magic link as used
-      await tx.magicLink.update({
-        where: { token },
-        data: { usedAt: new Date() }
-      });
-
       return appointments;
     });
+
+    if (magicLink.usedAt === null) {
+      try {
+        await prisma.magicLink.updateMany({
+          where: { token, usedAt: null },
+          data: { usedAt: new Date() }
+        });
+      } catch (_) {}
+    }
 
     // Emit WhatsApp event (this would be consumed by n8n)
     const salon = await prisma.salon.findUnique({
@@ -671,7 +765,7 @@ router.post('/', async (req: any, res: any) => {
         location: 'Salon Address' // This would come from salon settings
       },
       customer: {
-        phone: magicLink.phone,
+        phone,
         name: customer.name
       },
       datetime: appointmentDateTime.toLocaleString('tr-TR')

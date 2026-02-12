@@ -3,52 +3,81 @@ import {
   AvailabilitySlot,
   AvailabilityOptions,
   AvailabilityResult,
-  LockToken,
-  LegacyAppointmentRecord,
-  LegacyLeaveRecord,
-  LegacyLockRecord
+  LockToken
 } from './types.js';
-import {
-  DateNormalizer,
-  AppointmentNormalizer,
-  LeaveNormalizer,
-  LockNormalizer
-} from './normalizer.js';
-import { calculateSmartDuration, ServiceWithCategory } from '../../utils/durationCalculator.js';
+import type { ServiceWithCategory } from '../../utils/durationCalculator.js';
+import { prisma } from '../../prisma.js';
+
+type ConstraintAppointment = {
+  id: number;
+  staffId: number;
+  startTime: Date;
+  endTime: Date;
+};
+
+type ConstraintLeave = {
+  id: number;
+  staffId: number;
+  startDate: Date;
+  endDate: Date;
+};
+
+type ConstraintLock = {
+  id: string;
+  startTime: Date;
+  endTime: Date;
+  expiresAt: Date;
+};
 
 class AvailabilityEngine {
-  private readonly SLOT_INTERVAL_MINUTES = 15;
-
   /**
    * Calculate available time slots for a given date and service
    */
   async calculateAvailability(options: AvailabilityOptions): Promise<AvailabilityResult> {
     const { date, serviceId, peopleCount, salonId } = options;
 
-    // Generate all possible 15-minute slots for the day
-    const allSlots = this.generateTimeSlots(date);
+    const staffServices = await this.getStaffForService(serviceId, salonId);
+    if (staffServices.length === 0) {
+      return { slots: [], lockToken: this.generateLockToken() };
+    }
 
-    // Get all constraints (appointments, leaves, locks)
+    const dayOfWeek = date.getDay();
+    const salonSettings = await prisma.salonSettings.findUnique({
+      where: { salonId }
+    });
+    const fallbackStart = salonSettings?.workStartHour ?? 9;
+    const fallbackEnd = salonSettings?.workEndHour ?? 18;
+    const slotInterval = salonSettings?.slotInterval ?? 30;
+
+    const staffIds = staffServices.map((ss) => ss.staffId);
+    const workingHoursMap = await this.getStaffWorkingHours(staffIds, dayOfWeek, fallbackStart, fallbackEnd);
+
     const constraints = await this.getConstraints(salonId, date);
 
-    // Filter available slots
-    const availableSlots = this.filterAvailableSlots(allSlots, constraints, peopleCount);
+    const slotStartCandidates = this.generateSlotStartTimes(
+      date,
+      staffIds,
+      workingHoursMap,
+      staffServices,
+      slotInterval
+    );
 
-    // Rank and limit slots
+    const availableSlots = this.filterAvailableSlots(
+      slotStartCandidates,
+      staffServices,
+      workingHoursMap,
+      constraints,
+      peopleCount
+    );
+
     const rankedSlots = this.rankSlots(availableSlots);
-
-    // Generate lock token
-    const lockToken = this.generateLockToken();
 
     return {
       slots: rankedSlots,
-      lockToken
+      lockToken: this.generateLockToken()
     };
   }
 
-  /**
-   * Calculate available time slots for service bundles with scheduling rules
-   */
   async calculateBundleAvailability(options: {
     date: Date;
     services: ServiceWithCategory[];
@@ -56,198 +85,254 @@ class AvailabilityEngine {
     salonId: number;
   }): Promise<AvailabilityResult> {
     const { date, services, peopleCount, salonId } = options;
-
-    // Check if services require CONSECUTIVE_BLOCK scheduling
-    const hasConsecutiveBlock = services.some(service =>
-      service.category?.schedulingRule === 'CONSECUTIVE_BLOCK'
-    );
-
-    if (hasConsecutiveBlock) {
-      return this.calculateConsecutiveBlockAvailability(date, services, peopleCount, salonId);
-    }
-
-    // Fall back to standard availability calculation
-    // Use the first service for compatibility
-    const firstService = services[0];
-    if (!firstService) {
+    const first = services[0];
+    if (!first) {
       return { slots: [], lockToken: this.generateLockToken() };
     }
-
     return this.calculateAvailability({
       date,
-      serviceId: firstService.id,
+      serviceId: first.id,
       peopleCount,
       salonId
     });
   }
 
-  /**
-   * Calculate availability for CONSECUTIVE_BLOCK services
-   * Services must be booked as a continuous time slot with synergy
-   */
-  private async calculateConsecutiveBlockAvailability(
-    date: Date,
-    services: ServiceWithCategory[],
-    peopleCount: number,
-    salonId: number
-  ): Promise<AvailabilityResult> {
-    // Calculate total duration using smart duration calculation
-    const totalDuration = calculateSmartDuration(services);
+  private async getStaffForService(serviceId: number, salonId: number): Promise<{ staffId: number; duration: number }[]> {
+    const rows = await prisma.staffService.findMany({
+      where: {
+        serviceId,
+        staff: { salonId },
+        OR: [{ isactive: true }, { isactive: null }]
+      },
+      select: { staffId: true, duration: true }
+    });
+    return rows;
+  }
 
-    // Generate all possible start times for the day
-    const allSlots = this.generateTimeSlots(date);
+  private async getStaffWorkingHours(
+    staffIds: number[],
+    dayOfWeek: number,
+    fallbackStart: number,
+    fallbackEnd: number
+  ): Promise<Map<number, { startHour: number; endHour: number }>> {
+    const map = new Map<number, { startHour: number; endHour: number }>();
 
-    // Get all constraints
-    const constraints = await this.getConstraints(salonId, date);
+    const hours = await prisma.staffWorkingHours.findMany({
+      where: { staffId: { in: staffIds }, dayOfWeek }
+    });
 
-    const availableSlots: AvailabilitySlot[] = [];
+    for (const h of hours) {
+      map.set(h.staffId, { startHour: h.startHour, endHour: h.endHour });
+    }
 
-    for (const slotStart of allSlots) {
-      const slotEnd = new Date(slotStart.getTime() + totalDuration * 60 * 1000);
-
-      // Check if the entire block conflicts with any constraints
-      const conflicts = this.checkSlotConflicts(slotStart, slotEnd, constraints);
-
-      if (conflicts.length === 0) {
-        // Block is available - find staff available for the entire duration
-        const availableStaff = this.findAvailableStaff(slotStart, slotEnd, constraints, peopleCount);
-
-        if (availableStaff.length >= peopleCount) {
-          availableSlots.push({
-            startTime: slotStart,
-            endTime: slotEnd,
-            availableStaff,
-            optionId: uuidv4(),
-            // Add metadata for CONSECUTIVE_BLOCK
-            metadata: {
-              schedulingRule: 'CONSECUTIVE_BLOCK',
-              totalDuration,
-              serviceCount: services.length
-            }
-          });
-        }
+    for (const staffId of staffIds) {
+      if (!map.has(staffId)) {
+        map.set(staffId, { startHour: fallbackStart, endHour: fallbackEnd });
       }
     }
 
-    // Rank and limit slots
-    const rankedSlots = this.rankSlots(availableSlots);
-
-    // Generate lock token
-    const lockToken = this.generateLockToken();
-
-    return {
-      slots: rankedSlots,
-      lockToken
-    };
+    return map;
   }
 
-  /**
-   * Generate all possible 15-minute time slots for a day (9 AM - 6 PM default)
-   */
-  private generateTimeSlots(date: Date): Date[] {
-    const slots: Date[] = [];
-    const startHour = 9; // 9 AM
-    const endHour = 18; // 6 PM
-
-    const startMinutes = startHour * 60;
-    const endMinutes = endHour * 60;
-
-    for (let minutes = startMinutes; minutes < endMinutes; minutes += this.SLOT_INTERVAL_MINUTES) {
-      const slotTime = new Date(date);
-      slotTime.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
-      slots.push(slotTime);
+  private generateSlotStartTimes(
+    date: Date,
+    staffIds: number[],
+    workingHoursMap: Map<number, { startHour: number; endHour: number }>,
+    staffServices: { staffId: number; duration: number }[],
+    slotInterval: number
+  ): Date[] {
+    const staffDurations = new Map<number, number>();
+    for (const ss of staffServices) {
+      const existing = staffDurations.get(ss.staffId);
+      if (existing === undefined || ss.duration < existing) {
+        staffDurations.set(ss.staffId, ss.duration);
+      }
     }
 
-    return slots;
+    let globalStart = 24 * 60;
+    let globalEnd = 0;
+
+    for (const staffId of staffIds) {
+      const wh = workingHoursMap.get(staffId);
+      if (!wh) continue;
+      const duration = staffDurations.get(staffId) ?? 60;
+      const staffStart = wh.startHour * 60;
+      const staffEnd = (wh.endHour * 60) - duration;
+      if (staffStart < globalStart) globalStart = staffStart;
+      if (staffEnd > globalEnd) globalEnd = staffEnd;
+    }
+
+    if (globalStart >= globalEnd) return [];
+
+    const starts: Date[] = [];
+    for (let minutes = globalStart; minutes <= globalEnd; minutes += slotInterval) {
+      const slotTime = new Date(date);
+      slotTime.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
+      starts.push(slotTime);
+    }
+    return starts;
   }
 
-  /**
-   * Get all constraints for availability calculation
-   */
-  private async getConstraints(salonId: number, date: Date) {
-    // This would normally query the database
-    // For now, return empty arrays as placeholders
-    const appointments: LegacyAppointmentRecord[] = [];
-    const leaves: LegacyLeaveRecord[] = [];
-    const locks: LegacyLockRecord[] = [];
+  private async getConstraints(
+    salonId: number,
+    date: Date
+  ): Promise<{
+    appointments: ConstraintAppointment[];
+    leaves: ConstraintLeave[];
+    locks: ConstraintLock[];
+  }> {
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const [appointments, leaves, lockRows] = await Promise.all([
+      prisma.appointment.findMany({
+        where: {
+          salonId,
+          status: 'BOOKED',
+          startTime: { lt: endOfDay },
+          endTime: { gt: startOfDay }
+        },
+        select: { id: true, staffId: true, startTime: true, endTime: true }
+      }),
+      prisma.leave.findMany({
+        where: {
+          staff: { salonId },
+          startDate: { lte: endOfDay },
+          endDate: { gte: startOfDay }
+        },
+        select: { id: true, staffId: true, startDate: true, endDate: true }
+      }),
+      prisma.$queryRaw<
+        { id: string; tarih: string; saat: string; sure: string; expires_at: Date }[]
+      >`
+        SELECT id, tarih, saat, sure, expires_at
+        FROM temporary_locks
+        WHERE salon_id = ${salonId}
+        AND expires_at > NOW()
+        AND tarih = ${date.toISOString().split('T')[0]}
+      `.catch(() => [])
+    ]);
+
+    const locks: ConstraintLock[] = lockRows.map((row) => {
+      const [h, m] = row.saat.split(':').map(Number);
+      const startMinutes = h * 60 + m;
+      const duration = parseInt(row.sure, 10) || 60;
+      const startTime = new Date(row.tarih);
+      startTime.setHours(Math.floor(startMinutes / 60), startMinutes % 60, 0, 0);
+      const endTime = new Date(startTime.getTime() + duration * 60 * 1000);
+      return {
+        id: row.id,
+        startTime,
+        endTime,
+        expiresAt: row.expires_at
+      };
+    });
 
     return {
-      appointments: appointments.map(AppointmentNormalizer.normalize),
-      leaves: leaves.map(LeaveNormalizer.normalize),
-      locks: locks.map(LockNormalizer.normalize)
+      appointments: appointments.map((a) => ({
+        id: a.id,
+        staffId: a.staffId,
+        startTime: a.startTime,
+        endTime: a.endTime
+      })),
+      leaves: leaves.map((l) => ({
+        id: l.id,
+        staffId: l.staffId,
+        startDate: l.startDate,
+        endDate: l.endDate
+      })),
+      locks
     };
   }
 
-  /**
-   * Filter slots based on constraints
-   */
   private filterAvailableSlots(
-    slots: Date[],
+    slotStarts: Date[],
+    staffServices: { staffId: number; duration: number }[],
+    workingHoursMap: Map<number, { startHour: number; endHour: number }>,
     constraints: {
-      appointments: any[];
-      leaves: any[];
-      locks: any[];
+      appointments: ConstraintAppointment[];
+      leaves: ConstraintLeave[];
+      locks: ConstraintLock[];
     },
     peopleCount: number
   ): AvailabilitySlot[] {
-    const availableSlots: AvailabilitySlot[] = [];
+    const slotMap = new Map<string, AvailabilitySlot>();
 
-    for (const slotStart of slots) {
-      const slotEnd = new Date(slotStart.getTime() + this.SLOT_INTERVAL_MINUTES * 60 * 1000);
+    for (const ss of staffServices) {
+      const wh = workingHoursMap.get(ss.staffId);
+      if (!wh) continue;
 
-      // Check if slot conflicts with any constraints
-      const conflicts = this.checkSlotConflicts(slotStart, slotEnd, constraints);
+      for (const slotStart of slotStarts) {
+        const hour = slotStart.getHours();
+        const minute = slotStart.getMinutes();
+        const slotStartMinutes = hour * 60 + minute;
 
-      if (conflicts.length === 0) {
-        // Slot is available - find available staff
-        const availableStaff = this.findAvailableStaff(slotStart, slotEnd, constraints, peopleCount);
+        const workStartMinutes = wh.startHour * 60;
+        const workEndMinutes = wh.endHour * 60;
+        const slotEndMinutes = slotStartMinutes + ss.duration;
 
-        if (availableStaff.length >= peopleCount) {
-          availableSlots.push({
-            startTime: slotStart,
-            endTime: slotEnd,
-            availableStaff,
+        if (slotStartMinutes < workStartMinutes || slotEndMinutes > workEndMinutes) {
+          continue;
+        }
+
+        const slotEnd = new Date(slotStart.getTime() + ss.duration * 60 * 1000);
+
+        const conflicts = this.checkSlotConflicts(slotStart, slotEnd, constraints);
+        if (conflicts.some((c) => 'expiresAt' in c)) continue;
+
+        const staffConflict = conflicts.some(
+          (c) => 'staffId' in c && c.staffId === ss.staffId
+        );
+        if (staffConflict) continue;
+
+        const key = `${slotStart.getTime()}-${slotEnd.getTime()}`;
+        let slot = slotMap.get(key);
+        if (!slot) {
+          slot = {
+            startTime: new Date(slotStart),
+            endTime: new Date(slotEnd),
+            availableStaff: [],
             optionId: uuidv4()
-          });
+          };
+          slotMap.set(key, slot);
+        }
+        if (!slot.availableStaff.includes(ss.staffId)) {
+          slot.availableStaff.push(ss.staffId);
         }
       }
     }
 
-    return availableSlots;
+    return [...slotMap.values()].filter((s) => s.availableStaff.length >= peopleCount);
   }
 
-  /**
-   * Check if a time slot conflicts with any constraints
-   */
   private checkSlotConflicts(
     slotStart: Date,
     slotEnd: Date,
     constraints: {
-      appointments: any[];
-      leaves: any[];
-      locks: any[];
+      appointments: ConstraintAppointment[];
+      leaves: ConstraintLeave[];
+      locks: ConstraintLock[];
     }
-  ): any[] {
-    const conflicts: any[] = [];
+  ): (ConstraintAppointment | ConstraintLeave | ConstraintLock)[] {
+    const conflicts: (ConstraintAppointment | ConstraintLeave | ConstraintLock)[] = [];
 
-    // Check appointments
-    for (const appointment of constraints.appointments) {
-      if (this.timesOverlap(slotStart, slotEnd, appointment.startTime, appointment.endTime)) {
-        conflicts.push(appointment);
+    for (const apt of constraints.appointments) {
+      if (this.timesOverlap(slotStart, slotEnd, apt.startTime, apt.endTime)) {
+        conflicts.push(apt);
       }
     }
 
-    // Check leaves
     for (const leave of constraints.leaves) {
       if (this.dateInRange(slotStart, leave.startDate, leave.endDate)) {
         conflicts.push(leave);
       }
     }
 
-    // Check active locks
+    const now = new Date();
     for (const lock of constraints.locks) {
-      if (lock.expiresAt > new Date() &&
-          this.timesOverlap(slotStart, slotEnd, lock.startTime, lock.endTime)) {
+      if (lock.expiresAt > now && this.timesOverlap(slotStart, slotEnd, lock.startTime, lock.endTime)) {
         conflicts.push(lock);
       }
     }
@@ -255,99 +340,32 @@ class AvailabilityEngine {
     return conflicts;
   }
 
-  /**
-   * Find staff available for a time slot
-   */
-  private findAvailableStaff(
-    slotStart: Date,
-    slotEnd: Date,
-    constraints: {
-      appointments: any[];
-      leaves: any[];
-      locks: any[];
-    },
-    peopleCount: number
-  ): number[] {
-    // This is a simplified implementation
-    // In reality, this would check staff schedules and availability
-    const allStaffIds = [1, 2, 3, 4, 5]; // Example staff IDs
-
-    const availableStaff: number[] = [];
-
-    for (const staffId of allStaffIds) {
-      let isAvailable = true;
-
-      // Check if staff has appointments during this slot
-      for (const appointment of constraints.appointments) {
-        if (appointment.staffId === staffId &&
-            this.timesOverlap(slotStart, slotEnd, appointment.startTime, appointment.endTime)) {
-          isAvailable = false;
-          break;
-        }
-      }
-
-      // Check if staff is on leave
-      if (isAvailable) {
-        for (const leave of constraints.leaves) {
-          if (leave.staffId === staffId &&
-              this.dateInRange(slotStart, leave.startDate, leave.endDate)) {
-            isAvailable = false;
-            break;
-          }
-        }
-      }
-
-      if (isAvailable) {
-        availableStaff.push(staffId);
-      }
-    }
-
-    return availableStaff;
-  }
-
-  /**
-   * Rank slots by preference (earliest first, then by staff availability)
-   */
   private rankSlots(slots: AvailabilitySlot[]): AvailabilitySlot[] {
-    return slots.sort((a, b) => {
-      // Sort by start time first
+    return [...slots].sort((a, b) => {
       const timeDiff = a.startTime.getTime() - b.startTime.getTime();
       if (timeDiff !== 0) return timeDiff;
-
-      // Then by number of available staff (more is better)
       return b.availableStaff.length - a.availableStaff.length;
     });
   }
 
-  /**
-   * Generate a lock token for the availability result
-   */
   private generateLockToken(): LockToken {
     const expiresAt = new Date();
-    expiresAt.setMinutes(expiresAt.getMinutes() + 15); // 15 minute lock
-
+    expiresAt.setMinutes(expiresAt.getMinutes() + 15);
     return {
       id: uuidv4(),
       expiresAt
     };
   }
 
-  /**
-   * Check if two time ranges overlap
-   */
   private timesOverlap(start1: Date, end1: Date, start2: Date, end2: Date): boolean {
-    return start1 < end2 && end1 > start2;
+    return start1.getTime() < end2.getTime() && end1.getTime() > start2.getTime();
   }
 
-  /**
-   * Check if a date is within a date range
-   */
-  private dateInRange(date: Date, start: Date, end: Date): boolean {
-    const checkDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-    const rangeStart = new Date(start.getFullYear(), start.getMonth(), start.getDate());
-    const rangeEnd = new Date(end.getFullYear(), end.getMonth(), end.getDate());
-
-    return checkDate >= rangeStart && checkDate <= rangeEnd;
+  private dateInRange(date: Date, rangeStart: Date, rangeEnd: Date): boolean {
+    const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const rs = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), rangeStart.getDate());
+    const re = new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), rangeEnd.getDate());
+    return d.getTime() >= rs.getTime() && d.getTime() <= re.getTime();
   }
 }
 
