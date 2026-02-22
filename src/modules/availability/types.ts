@@ -106,3 +106,49 @@ export type AppointmentRow = {
   endTime: Date;
   status: string;
 };
+
+export type AvailabilitySlot = {
+  startTime: Date;
+  endTime: Date;
+  availableStaff: number[];
+  optionId: string;
+};
+
+export type AvailabilityOptions = {
+  date: Date;
+  serviceId: number;
+  peopleCount: number;
+  salonId: number;
+};
+
+export type AvailabilityResult = {
+  slots: AvailabilitySlot[];
+  lockToken: LockToken;
+};
+
+export type LegacyAppointmentRecord = {
+  id: string;
+  calisan_id: string;
+  tarih: string;
+  saat: string;
+  sure: string;
+  durum: string;
+};
+
+export type LegacyLeaveRecord = {
+  id: string;
+  calisan_id: string;
+  baslangic_tarihi: string;
+  bitis_tarihi: string;
+  neden: string;
+};
+
+export type LegacyLockRecord = {
+  id: string;
+  salon_id: string;
+  tarih: string;
+  saat: string;
+  sure: string;
+  expires_at: string;
+  created_at: string;
+};

@@ -5,8 +5,6 @@ import { generateToken } from '../utils/jwt.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { UserRole } from '@prisma/client';
 
-// Fixed: Regenerated Prisma Client to export UserRole enum on Windows
-
 const router = Router();
 
 // Test route to verify auth routes are loaded
@@ -28,7 +26,7 @@ router.post('/register-salon', async (req: any, res: any) => {
   }
 
   try {
-    const existingUser = await prisma.salonUser.findUnique({ where: { email } });
+    const existingUser = await prisma.salonUser.findFirst({ where: { email } });
     if (existingUser) {
       return res.status(409).json({ message: 'Bu email adresi ile zaten bir kullanıcı var.' });
     }
@@ -60,7 +58,7 @@ router.post('/register-salon', async (req: any, res: any) => {
     const token = generateToken({
       userId: ownerUser.id,
       salonId: salon.id,
-      role: UserRole.OWNER,
+      role: ownerUser.role as any,
     });
 
     res.status(201).json({ token, user: { id: ownerUser.id, email: ownerUser.email, role: ownerUser.role, salonId: salon.id } });
@@ -79,7 +77,7 @@ router.post('/login', async (req: any, res: any) => {
   }
 
   try {
-    const user = await prisma.salonUser.findUnique({
+    const user = await prisma.salonUser.findFirst({
       where: { email },
     });
 
@@ -95,7 +93,7 @@ router.post('/login', async (req: any, res: any) => {
     const token = generateToken({
       userId: user.id,
       salonId: user.salonId,
-      role: user.role,
+      role: user.role as any,
     });
 
     res.status(200).json({

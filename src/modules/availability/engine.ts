@@ -101,7 +101,7 @@ class AvailabilityEngine {
     const rows = await prisma.staffService.findMany({
       where: {
         serviceId,
-        staff: { salonId },
+        Staff: { salonId },
         OR: [{ isactive: true }, { isactive: null }]
       },
       select: { staffId: true, duration: true }

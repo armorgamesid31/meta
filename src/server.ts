@@ -144,7 +144,7 @@ app.get('/debug/staff-hours/:serviceId/:salonId', async (req, res) => {
 // Debug service stats
 app.get('/debug/service-stats/:serviceId', async (req, res) => {
   try {
-    const stats = await prisma.serviceStats.findUnique({
+    const stats = await prisma.serviceStats.findFirst({
       where: { serviceId: parseInt(req.params.serviceId) }
     });
     res.json(stats);
