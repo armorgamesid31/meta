@@ -1,7 +1,11 @@
-import dotenv from 'dotenv';
-dotenv.config();
+import 'dotenv/config';
 
 import express from 'express';
+
+// Log DATABASE_URL at startup (mask password)
+const dbUrl = process.env.DATABASE_URL || '';
+const maskedDbUrl = dbUrl.replace(/:([^:@]{4})[^:@]*@/, ':$1****@');
+console.log('DATABASE_URL:', maskedDbUrl);
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -34,6 +38,168 @@ app.get("/health", (_req, res) => {
 app.get('/test-direct', (req, res) => {
   res.json({ message: 'Direct route working' });
 });
+
+// Debug DB check route
+app.get('/debug/db-check', async (req, res) => {
+  try {
+    const salons = await prisma.salon.findMany({ select: { id: true } });
+    res.json({ count: salons.length, ids: salons.map(s => s.id) });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// Debug salon check
+app.get('/debug/salon/:id', async (req, res) => {
+  try {
+    const salon = await prisma.salon.findUnique({
+      where: { id: parseInt(req.params.id) },
+      select: { id: true, name: true }
+    });
+    res.json(salon);
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// Debug service check
+app.get('/debug/service/:id', async (req, res) => {
+  try {
+    const service = await prisma.service.findUnique({
+      where: { id: parseInt(req.params.id) },
+      select: { id: true, name: true, salonId: true }
+    });
+    res.json(service);
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// Debug services for salon
+app.get('/debug/services/:salonId', async (req, res) => {
+  try {
+    const services = await prisma.service.findMany({
+      where: { salonId: parseInt(req.params.salonId) },
+      select: { id: true, name: true, salonId: true }
+    });
+    res.json(services);
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// Debug staff service check
+app.get('/debug/staff-service/:serviceId/:salonId', async (req, res) => {
+  try {
+    // First check if service belongs to salon
+    const service = await prisma.service.findUnique({
+      where: { id: parseInt(req.params.serviceId) },
+      select: { salonId: true }
+    });
+
+    if (!service || service.salonId !== parseInt(req.params.salonId)) {
+      return res.json([]);
+    }
+
+    const staffServices = await prisma.staffService.findMany({
+      where: { serviceId: parseInt(req.params.serviceId) },
+      select: { id: true, staffId: true, serviceId: true }
+    });
+    res.json(staffServices);
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// Debug staff working hours
+app.get('/debug/staff-hours/:serviceId/:salonId', async (req, res) => {
+  try {
+    // First check if service belongs to salon
+    const service = await prisma.service.findUnique({
+      where: { id: parseInt(req.params.serviceId) },
+      select: { salonId: true }
+    });
+
+    if (!service || service.salonId !== parseInt(req.params.salonId)) {
+      return res.json([]);
+    }
+
+    const staffIds = await prisma.staffService.findMany({
+      where: { serviceId: parseInt(req.params.serviceId) },
+      select: { staffId: true }
+    });
+
+    const hours = await prisma.staffWorkingHours.findMany({
+      where: {
+        staffId: { in: staffIds.map(s => s.staffId) }
+      }
+    });
+
+    res.json(hours);
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// Debug service stats
+app.get('/debug/service-stats/:serviceId', async (req, res) => {
+  try {
+    const stats = await prisma.serviceStats.findUnique({
+      where: { serviceId: parseInt(req.params.serviceId) }
+    });
+    res.json(stats);
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// Debug staff for salon
+app.get('/debug/staff/:salonId', async (req, res) => {
+  try {
+    const staff = await prisma.staff.findMany({
+      where: { salonId: parseInt(req.params.salonId) },
+      select: { id: true, name: true, salonId: true }
+    });
+    res.json(staff);
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// Debug all staff services
+app.get('/debug/all-staff-services', async (req, res) => {
+  try {
+    const staffServices = await prisma.staffService.findMany({
+      select: { id: true, staffId: true, serviceId: true }
+    });
+    res.json(staffServices);
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// Debug services with detailed data
+app.get('/debug/services', async (req, res) => {
+  try {
+    const services = await prisma.service.findMany({
+      take: 10 // Limit for testing
+    });
+
+    res.json(services.map(service => ({
+      id: service.id,
+      name: service.name,
+      salonId: service.salonId,
+      categoryId: service.categoryId,
+      requiresSpecialist: service.requiresSpecialist,
+      price: service.price,
+      duration: service.duration
+    })));
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+
 
 // NOW apply middleware AFTER health endpoint
 // Debug middleware - log all requests (only in development)
@@ -75,58 +241,7 @@ app.post('/test-auth-post', (req, res) => {
   res.json({ message: 'Server POST working', body: req.body });
 });
 
-// API routes - full registration implementation
-console.log('Setting up direct auth routes...');
-app.post('/auth/register-salon', async (req, res) => {
-  const { email, password, salonName } = req.body;
-
-  if (!email || !password || !salonName) {
-    return res.status(400).json({ message: 'Email, password, and salonName are required.' });
-  }
-
-  try {
-    const existingUser = await prisma.salonUser.findUnique({ where: { email } });
-    if (existingUser) {
-      return res.status(409).json({ message: 'Bu email adresi ile zaten bir kullanıcı var.' });
-    }
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    const salon = await prisma.salon.create({
-      data: {
-        name: salonName,
-        users: {
-          create: {
-            email,
-            passwordHash: hashedPassword,
-            role: UserRole.OWNER,
-          },
-        },
-      },
-      include: {
-        users: true,
-      },
-    });
-
-    const ownerUser = salon.users.find(user => user.role === UserRole.OWNER);
-
-    if (!ownerUser) {
-      return res.status(500).json({ message: 'Sahip kullanıcısı oluşturulamadı.' });
-    }
-
-    const token = generateToken({
-      userId: ownerUser.id,
-      salonId: salon.id,
-      role: UserRole.OWNER,
-    });
-
-    res.status(201).json({ token, user: { id: ownerUser.id, email: ownerUser.email, role: ownerUser.role, salonId: salon.id } });
-  } catch (error) {
-    console.error('Salon registration error:', error);
-    res.status(500).json({ message: 'Sunucu hatası.' });
-  }
-});
-console.log('Direct auth routes set up');
+// API routes
 app.use('/auth', authRoutes);
 // Core routes for booking functionality
 app.use('/api/salon', salonRoutes);
@@ -170,8 +285,21 @@ app.use((req, res, next) => {
   res.sendFile(path.join(__dirname, '../dist/index.html'));
 });
 
-const PORT = parseInt(process.env.PORT || '3000', 10);
+const PORT = process.env.PORT === '8080' ? 3000 : (Number(process.env.PORT) || 3000);
 const HOST = process.env.HOST || '0.0.0.0';
+
+console.log("PORT ENV:", process.env.PORT);
+
+// Startup DB test
+(async () => {
+  try {
+    await prisma.$connect();
+    const salonCount = await prisma.salon.count();
+    console.log("Connected DB salon count:", salonCount);
+  } catch (error) {
+    console.error("DB connection failed:", (error as Error).message);
+  }
+})();
 
 app.listen(PORT, HOST, () => {
   console.log(`🚀 Server running on ${HOST}:${PORT}`);

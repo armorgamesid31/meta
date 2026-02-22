@@ -8,109 +8,123 @@ datasource db {
 }
 
 model Salon {
-  id           Int            @id @default(autoincrement())
-  name         String
-  logoUrl      String?
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
-  appointments Appointment[]
-  customers    Customer[]
-  settings     SalonSettings?
-  users        SalonUser[]
-  services     Service[]
-  staff        Staff[]
+  id              Int               @id @default(autoincrement())
+  name            String
+  logoUrl         String?
+  createdAt       DateTime?         @default(now()) @db.Timestamp(6)
+  updatedAt       DateTime?         @default(now()) @updatedAt @db.Timestamp(6)
+  appointments    Appointment[]
+  customers       Customer[]
+  settings        SalonSettings?
+  users           SalonUser[]
+  services        Service[]
+  ServiceCategory ServiceCategory[]
+  staff           Staff[]
 }
 
 model SalonSettings {
-  id            Int      @id @default(autoincrement())
-  workStartHour Int      @default(9)
-  workEndHour   Int      @default(18)
-  slotInterval  Int      @default(30)
-  timezone      String   @default("Europe/Istanbul")
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  salonId       Int      @unique
-  salon         Salon    @relation(fields: [salonId], references: [id])
+  id            Int       @id @default(autoincrement())
+  workStartHour Int       @default(9)
+  workEndHour   Int       @default(18)
+  slotInterval  Int       @default(30)
+  timezone      String    @default("Europe/Istanbul")
+  createdAt     DateTime? @default(now()) @db.Timestamp(6)
+  updatedAt     DateTime? @default(now()) @updatedAt @db.Timestamp(6)
+  salonId       Int       @unique
+  salon         Salon     @relation(fields: [salonId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 }
 
 model SalonUser {
-  id           Int      @id @default(autoincrement())
-  email        String   @unique
+  id           Int       @id @default(autoincrement())
+  email        String
   passwordHash String
-  role         UserRole
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  role         String
+  createdAt    DateTime? @default(now()) @db.Timestamp(6)
+  updatedAt    DateTime? @default(now()) @updatedAt @db.Timestamp(6)
   salonId      Int
-  salon        Salon    @relation(fields: [salonId], references: [id])
-  staffProfile Staff?
+  salon        Salon     @relation(fields: [salonId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 }
 
 model Staff {
   id                Int                 @id @default(autoincrement())
   name              String
   phone             String?
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
+  createdAt         DateTime?           @default(now()) @db.Timestamp(6)
+  updatedAt         DateTime?           @default(now()) @updatedAt @db.Timestamp(6)
   salonId           Int
-  userId            Int?                @unique
+  userId            Int?
   appointments      Appointment[]
   leaves            Leave[]
-  salon             Salon               @relation(fields: [salonId], references: [id])
-  user              SalonUser?          @relation(fields: [userId], references: [id])
+  salon             Salon               @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  StaffService      StaffService[]
   StaffWorkingHours StaffWorkingHours[]
-  staffServices     StaffService[]
 }
 
 model Leave {
-  id        Int      @id @default(autoincrement())
-  startDate DateTime @db.Date
-  endDate   DateTime @db.Date
+  id        Int       @id @default(autoincrement())
+  startDate DateTime  @db.Date
+  endDate   DateTime  @db.Date
   reason    String?
-  createdAt DateTime @default(now())
+  createdAt DateTime? @default(now()) @db.Timestamp(6)
   staffId   Int
-  staff     Staff    @relation(fields: [staffId], references: [id])
+  staff     Staff     @relation(fields: [staffId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 }
 
 model Service {
-  id                 Int           @id @default(autoincrement())
+  id                 Int              @id @default(autoincrement())
   name               String
   description        String?
   price              Float
   duration           Int
-  createdAt          DateTime      @default(now())
-  updatedAt          DateTime      @default(now()) @updatedAt
+  createdAt          DateTime?        @default(now()) @db.Timestamp(6)
+  updatedAt          DateTime?        @default(now()) @updatedAt @db.Timestamp(6)
   salonId            Int
   category           String?
-  requiresSpecialist Boolean       @default(false)
+  requiresSpecialist Boolean?         @default(false)
+  categoryId         Int?
+  capacityOverride   Int?
+  sequentialOverride Boolean?
+  bufferOverride     Int?
   appointments       Appointment[]
-  salon              Salon         @relation(fields: [salonId], references: [id])
-  staffServices      StaffService[]
-  serviceStats       ServiceStats?
+  ServiceCategory    ServiceCategory? @relation(fields: [categoryId], references: [id], onUpdate: NoAction)
+  salon              Salon            @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  ServiceGender      ServiceGender[]
+  ServiceStats       ServiceStats[]
+  StaffService       StaffService[]
 
-  @@unique([name, salonId], map: "service_unique_name_per_salon")
+  @@unique([name, salonId])
 }
 
 model Appointment {
-  id            Int               @id @default(autoincrement())
+  id            Int                @id @default(autoincrement())
   customerName  String
   customerPhone String
   customerId    Int?
-  startTime     DateTime
-  endTime       DateTime
-  status        AppointmentStatus @default(BOOKED)
-  source        AppointmentSource @default(CUSTOMER)
+  startTime     DateTime           @db.Timestamp(6)
+  endTime       DateTime           @db.Timestamp(6)
+  status        AppointmentStatus? @default(BOOKED)
+  source        AppointmentSource? @default(CUSTOMER)
   notes         String?
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @default(now()) @updatedAt
+  createdAt     DateTime?          @default(now()) @db.Timestamp(6)
+  updatedAt     DateTime?          @default(now()) @updatedAt @db.Timestamp(6)
   salonId       Int
   staffId       Int
   serviceId     Int
-  customer      Customer?         @relation(fields: [customerId], references: [id])
-  salon         Salon             @relation(fields: [salonId], references: [id])
-  service       Service           @relation(fields: [serviceId], references: [id])
-  staff         Staff             @relation(fields: [staffId], references: [id])
+  gender        CustomerGender     @default(female)
+  customer      Customer?          @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  salon         Salon              @relation(fields: [salonId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  service       Service            @relation(fields: [serviceId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  staff         Staff              @relation(fields: [staffId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
-  @@index([staffId, startTime, endTime])
+  @@index([staffId, startTime, endTime], map: "idx_staff_time")
+}
+
+model SearchContext {
+  id        String   @id @default(uuid())
+  salonId   Int
+  data      Json
+  expiresAt DateTime
+  createdAt DateTime @default(now())
 }
 
 model MagicLink {
@@ -119,30 +133,30 @@ model MagicLink {
   phone     String
   type      MagicLinkType
   context   Json?
-  expiresAt DateTime
-  usedAt    DateTime?
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
+  expiresAt DateTime      @db.Timestamp(6)
+  usedAt    DateTime?     @db.Timestamp(6)
+  createdAt DateTime?     @default(now()) @db.Timestamp(6)
+  updatedAt DateTime?     @default(now()) @updatedAt @db.Timestamp(6)
 }
 
 model Customer {
   id              Int             @id @default(autoincrement())
   name            String?
   phone           String
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+  createdAt       DateTime?       @default(now()) @db.Timestamp(6)
+  updatedAt       DateTime?       @default(now()) @updatedAt @db.Timestamp(6)
   salonId         Int
   gender          CustomerGender?
   birthDate       DateTime?       @db.Date
-  acceptMarketing Boolean         @default(false)
+  acceptMarketing Boolean?        @default(false)
   appointments    Appointment[]
-  salon           Salon           @relation(fields: [salonId], references: [id])
+  salon           Salon           @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([phone, salonId])
 }
 
 model CustomerBehaviorLog {
-  id            Int      @id @default(autoincrement())
+  id            Int       @id @default(autoincrement())
   customerId    Int
   salonId       Int
   appointmentId Int?
@@ -150,72 +164,109 @@ model CustomerBehaviorLog {
   behaviorType  String?
   severityScore Float?
   metadata      Json?
-  occurredAt    DateTime @default(now())
-  createdAt     DateTime @default(now())
+  occurredAt    DateTime? @default(now()) @db.Timestamp(6)
+  createdAt     DateTime? @default(now()) @db.Timestamp(6)
 }
 
 model CustomerRiskProfile {
   id                      Int       @id @default(autoincrement())
   customerId              Int
   salonId                 Int
-  riskScore               Float     @default(0)
+  riskScore               Float?    @default(0)
   riskLevel               String?
-  noShowCount             Int       @default(0)
-  noShows                 Int       @default(0)
-  lastMinuteCount         Int       @default(0)
-  lastMinuteCancellations Int       @default(0)
-  totalBookings           Int       @default(0)
-  lastCalculatedAt        DateTime?
-  createdAt               DateTime  @default(now())
-  updatedAt               DateTime  @updatedAt
+  noShowCount             Int?      @default(0)
+  noShows                 Int?      @default(0)
+  lastMinuteCount         Int?      @default(0)
+  lastMinuteCancellations Int?      @default(0)
+  totalBookings           Int?      @default(0)
+  lastCalculatedAt        DateTime? @db.Timestamp(6)
+  createdAt               DateTime? @default(now()) @db.Timestamp(6)
+  updatedAt               DateTime? @default(now()) @updatedAt @db.Timestamp(6)
 
   @@unique([customerId, salonId])
 }
 
 model SalonRiskConfig {
-  id                       Int      @id @default(autoincrement())
-  salonId                  Int      @unique
-  isEnabled                Boolean  @default(false)
-  lastMinuteHoursThreshold Int      @default(24)
-  noShowPenalty            Float    @default(0.1)
-  lastMinutePenalty        Float    @default(0.05)
-  createdAt                DateTime @default(now())
-  updatedAt                DateTime @updatedAt
+  id                       Int       @id @default(autoincrement())
+  salonId                  Int       @unique
+  isEnabled                Boolean?  @default(false)
+  lastMinuteHoursThreshold Int?      @default(24)
+  noShowPenalty            Float?    @default(0.1)
+  lastMinutePenalty        Float?    @default(0.05)
+  createdAt                DateTime? @default(now()) @db.Timestamp(6)
+  updatedAt                DateTime? @default(now()) @updatedAt @db.Timestamp(6)
 }
 
 model ServiceStats {
-  serviceId    Int      @id
+  serviceId    Int
   minPrice     Float
   maxPrice     Float
   minDuration  Int
   maxDuration  Int
-  calculatedAt DateTime @default(now()) @db.Timestamp(6)
-  service      Service  @relation(fields: [serviceId], references: [id])
+  calculatedAt DateTime?      @default(now()) @db.Timestamp(6)
+  salonId      Int
+  gender       CustomerGender @default(female)
+  Service      Service        @relation(fields: [serviceId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([serviceId, salonId, gender])
 }
 
 model StaffService {
-  id        Int      @id @default(autoincrement())
-  staffId   Int
-  serviceId Int
-  price     Float
-  duration  Int
-  isactive  Boolean? @default(true)
-  staff     Staff    @relation(fields: [staffId], references: [id])
-  service   Service  @relation(fields: [serviceId], references: [id])
+  id                     Int                      @id @default(autoincrement())
+  staffId                Int
+  serviceId              Int
+  price                  Float
+  duration               Int
+  isactive               Boolean?                 @default(true)
+  gender                 CustomerGender           @default(female)
+  Service                Service                  @relation(fields: [serviceId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  Staff                  Staff                    @relation(fields: [staffId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  StaffServiceCustomSlot StaffServiceCustomSlot[]
 
-  @@unique([staffId, serviceId])
+  @@unique([staffId, serviceId, gender], map: "StaffService_staff_service_gender_key")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model StaffWorkingHours {
-  id        Int      @id @default(autoincrement())
+  id        Int       @id @default(autoincrement())
   staffId   Int
-  dayOfWeek Int
+  dayOfWeek Int?
   startHour Int
   endHour   Int
-  createdAt DateTime @default(now()) @db.Timestamp(6)
-  updatedAt DateTime @default(now()) @db.Timestamp(6)
-  Staff     Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  createdAt DateTime? @default(now()) @db.Timestamp(6)
+  updatedAt DateTime? @default(now()) @db.Timestamp(6)
+  Staff     Staff     @relation(fields: [staffId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model ServiceCategory {
+  id                 Int       @id @default(autoincrement())
+  name               String
+  salonId            Int
+  capacity           Int?      @default(1)
+  sequentialRequired Boolean?  @default(false)
+  bufferMinutes      Int?      @default(0)
+  createdAt          DateTime? @default(now()) @db.Timestamp(6)
+  updatedAt          DateTime? @default(now()) @db.Timestamp(6)
+  Service            Service[]
+  Salon              Salon     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model ServiceGender {
+  serviceId Int
+  gender    CustomerGender
+  Service   Service        @relation(fields: [serviceId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([serviceId, gender])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model StaffServiceCustomSlot {
+  id             Int          @id @default(autoincrement())
+  staffServiceId Int
+  dayOfWeek      Int
+  startTime      DateTime     @db.Time(6)
+  createdAt      DateTime?    @default(now()) @db.Timestamp(6)
+  StaffService   StaffService @relation(fields: [staffServiceId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_staffservice")
 }
 
 enum UserRole {

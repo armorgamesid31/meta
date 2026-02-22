@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { AvailabilityEngine } from '../modules/availability/engine.js';
+import { SlotsEngine } from '../modules/availability/slots-engine.js';
 import { DateNormalizer } from '../modules/availability/normalizer.js';
 import { calculateSmartDuration, ServiceWithCategory } from '../utils/durationCalculator.js';
 
@@ -40,13 +41,13 @@ interface RescheduleBookingRequest {
 
 // POST /api/bookings/confirm - Confirm a booking using a lock token
 router.post("/confirm", authenticateToken, async (req: any, res: any) => {
-  const { lockToken, customerName, customerPhone, serviceId, staffIds } = req.body as ConfirmBookingRequest;
+  const { lockToken, customerName, customerPhone, appointments: requestedAppointments } = req.body;
 
   if (!req.user) {
     return res.status(401).json({ message: 'Unauthorized.' });
   }
 
-  if (!lockToken || !customerName || !customerPhone || !serviceId || !Array.isArray(staffIds) || staffIds.length === 0) {
+  if (!lockToken || !customerName || !customerPhone || !Array.isArray(requestedAppointments)) {
     return res.status(400).json({ message: 'Missing required fields.' });
   }
 
@@ -54,119 +55,92 @@ router.post("/confirm", authenticateToken, async (req: any, res: any) => {
 
   try {
     // Start a database transaction
-    await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       // 1. Validate lock token exists and is not expired
-      const lockRecord = await tx.$queryRaw`
-        SELECT * FROM temporary_locks
-        WHERE id = ${lockToken}
-        AND salon_id = ${salonId}
-        AND expires_at > NOW()
-        FOR UPDATE
-      ` as any[];
-
-      if (lockRecord.length === 0) {
-        // Check if lock exists but is expired
-        const expiredLock = await tx.$queryRaw`
-          SELECT * FROM temporary_locks
-          WHERE id = ${lockToken}
-          AND salon_id = ${salonId}
-        ` as any[];
-
-        if (expiredLock.length > 0) {
-          return res.status(410).json({ message: 'Lock token has expired.' });
-        } else {
-          return res.status(404).json({ message: 'Lock token not found.' });
-        }
-      }
-
-      const lock = lockRecord[0];
-
-      // 2. Parse lock data
-      const lockDate = DateNormalizer.parseDate(lock.tarih);
-      const lockStartMinutes = DateNormalizer.parseTimeToMinutes(lock.saat);
-      const lockDuration = DateNormalizer.parseDuration(lock.sure);
-
-      const slotStart = DateNormalizer.createDateTime(lock.tarih, lockStartMinutes);
-      const slotEnd = new Date(slotStart.getTime() + lockDuration * 60 * 1000);
-
-      // 3. Re-run availability engine to ensure slot is still valid
-      const engine = new AvailabilityEngine();
-      const availabilityResult = await engine.calculateAvailability({
-        date: lockDate,
-        serviceId,
-        peopleCount: staffIds.length,
-        salonId
+      const searchContext = await tx.searchContext.findUnique({
+        where: { id: lockToken },
       });
 
-      // Check if our locked slot is still available
-      const slotStillAvailable = availabilityResult.slots.some(slot =>
-        slot.startTime.getTime() === slotStart.getTime() &&
-        slot.availableStaff.length >= staffIds.length &&
-        staffIds.every((staffId: number) => slot.availableStaff.includes(staffId))
-      );
-
-      if (!slotStillAvailable) {
-        return res.status(409).json({ message: 'Slot is no longer available.' });
+      if (!searchContext) {
+        return { error: 'Lock token not found.', status: 404 };
       }
 
-      // 4. Get service details
-      const service = await tx.service.findUnique({
-        where: { id: serviceId, salonId }
+      if (searchContext.expiresAt < new Date()) {
+        return { error: 'Lock token has expired.', status: 410 };
+      }
+
+      if (searchContext.salonId !== salonId) {
+        return { error: 'Salon mismatch.', status: 403 };
+      }
+
+      // 2. Re-run strict availability validation using SlotsEngine
+      const engine = new SlotsEngine();
+      const availabilityResult = await engine.generateSlots(searchContext.data as any);
+
+      // Verify that all requested slots are still available in the fresh results
+      for (const reqApt of requestedAppointments) {
+          const group = availabilityResult.groups.find(g => g.personId === reqApt.personId);
+          if (!group) return { error: 'Slot no longer available (person not found).', status: 409 };
+
+          const slot = group.slots.find(s => 
+              s.startTime === reqApt.startTime && 
+              s.staffId === reqApt.staffId
+          );
+
+          if (!slot) return { error: 'Slot no longer available.', status: 409 };
+      }
+
+      // 3. Create appointments
+      const createdAppointments = [];
+      for (const reqApt of requestedAppointments) {
+          // Parse HH:mm to Date
+          const [hours, minutes] = reqApt.startTime.split(':').map(Number);
+          const startTime = new Date((searchContext.data as any).date);
+          startTime.setHours(hours, minutes, 0, 0);
+
+          const [endHours, endMinutes] = reqApt.endTime.split(':').map(Number);
+          const endTime = new Date((searchContext.data as any).date);
+          endTime.setHours(endHours, endMinutes, 0, 0);
+
+          const appointment = await tx.appointment.create({
+            data: {
+              salonId,
+              staffId: reqApt.staffId,
+              serviceId: reqApt.serviceId,
+              customerName: customerName.trim(),
+              customerPhone: customerPhone.trim(),
+              startTime,
+              endTime,
+              status: 'BOOKED',
+              source: 'CUSTOMER'
+            }
+          });
+          createdAppointments.push(appointment);
+      }
+
+      // 4. Delete the search context
+      await tx.searchContext.delete({
+        where: { id: lockToken }
       });
 
-      if (!service) {
-        return res.status(404).json({ message: 'Service not found.' });
-      }
+      return { success: true, appointments: createdAppointments };
+    }, {
+        isolationLevel: 'Serializable' // Highest isolation level to prevent race conditions
+    });
 
-      // 5. Validate staff are available for this salon
-      const validStaff = await tx.staff.findMany({
-        where: {
-          id: { in: staffIds },
-          salonId
-        }
-      });
+    if ('error' in result) {
+        return res.status(result.status).json({ message: result.error });
+    }
 
-      if (validStaff.length !== staffIds.length) {
-        return res.status(400).json({ message: 'Invalid staff selection.' });
-      }
-
-      // 6. Create appointments for each staff member
-      const appointments = [];
-      for (const staffId of staffIds) {
-        const appointment = await tx.appointment.create({
-          data: {
-            salonId,
-            staffId,
-            serviceId,
-            customerName,
-            customerPhone,
-            startTime: slotStart,
-            endTime: slotEnd,
-            status: 'BOOKED',
-            source: 'CUSTOMER'
-          }
-        });
-        appointments.push(appointment);
-      }
-
-      // 7. Delete the lock token
-      await tx.$executeRaw`
-        DELETE FROM temporary_locks
-        WHERE id = ${lockToken}
-        AND salon_id = ${salonId}
-      `;
-
-      // Return success response
-      res.status(201).json({
-        message: 'Booking confirmed successfully.',
-        appointments: appointments.map(apt => ({
-          id: apt.id,
-          startTime: apt.startTime,
-          endTime: apt.endTime,
-          staffId: apt.staffId,
-          serviceId: apt.serviceId
-        }))
-      });
+    res.status(201).json({
+      message: 'Booking confirmed successfully.',
+      appointments: result.appointments.map(apt => ({
+        id: apt.id,
+        startTime: apt.startTime,
+        endTime: apt.endTime,
+        staffId: apt.staffId,
+        serviceId: apt.serviceId
+      }))
     });
 
   } catch (error) {
@@ -370,7 +344,7 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
         where: {
           serviceId: newSlot.serviceId,
           staffId: newSlot.staffIds[0],
-          staff: { salonId }
+          Staff: { salonId }
         }
       });
       const service = await tx.service.findUnique({
@@ -674,7 +648,7 @@ router.post('/', async (req: any, res: any) => {
             where: {
               serviceId: serviceItem.serviceId,
               staffId: serviceItem.staffId,
-              staff: { salonId },
+              Staff: { salonId },
               OR: [{ isactive: true }, { isactive: null }]
             }
           });
