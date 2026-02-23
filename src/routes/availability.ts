@@ -7,10 +7,11 @@ const router = Router();
 // POST /availability/dates
 router.post('/dates', async (req: any, res: any) => {
   try {
-    const { salonId, startDate, endDate, groups } = req.body;
+    const { startDate, endDate, groups } = req.body;
+    const salonId = req.salon?.id;
 
     if (!salonId || !startDate || !endDate || !groups) {
-      return res.status(400).json({ message: 'Missing required fields' });
+      return res.status(400).json({ message: 'Missing required fields or tenant context' });
     }
 
     const engine = new DatesEngine();
@@ -31,10 +32,11 @@ router.post('/dates', async (req: any, res: any) => {
 // POST /availability/slots
 router.post('/slots', async (req: any, res: any) => {
   try {
-    const { salonId, date, groups } = req.body;
+    const { date, groups } = req.body;
+    const salonId = req.salon?.id;
 
     if (!salonId || !date || !groups) {
-      return res.status(400).json({ message: 'Missing required fields' });
+      return res.status(400).json({ message: 'Missing required fields or tenant context' });
     }
 
     const engine = new SlotsEngine();
@@ -51,14 +53,13 @@ router.post('/slots', async (req: any, res: any) => {
   }
 });
 
-// GET /availability?salonId=ID&serviceId=ID&date=YYYY-MM-DD
+// GET /availability?serviceId=ID&date=YYYY-MM-DD
 router.get('/', async (req: any, res: any) => {
-  const { salonId, serviceId, date } = req.query as any;
-
-  console.log('typeof salonId:', typeof salonId, 'salonId:', salonId, 'serviceId:', serviceId);
+  const { serviceId, date } = req.query as any;
+  const salonId = req.salon?.id;
 
   if (!salonId || !serviceId || !date) {
-    return res.status(400).json({ message: 'salonId, serviceId and date are required' });
+    return res.status(400).json({ message: 'serviceId and date are required, and must be in a tenant subdomain' });
   }
 
   try {
@@ -70,7 +71,7 @@ router.get('/', async (req: any, res: any) => {
 
     // Get staff IDs for this salon
     const staffIds = await prisma.staff.findMany({
-      where: { salonId: parseInt(salonId) },
+      where: { salonId },
       select: { id: true }
     });
 
@@ -91,7 +92,7 @@ router.get('/', async (req: any, res: any) => {
 
     // Get salon settings as fallback
     const salonSettings = await prisma.salonSettings.findUnique({
-      where: { salonId: parseInt(salonId) }
+      where: { salonId }
     });
 
     if (!salonSettings) {

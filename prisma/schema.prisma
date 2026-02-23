@@ -13,6 +13,7 @@ model Salon {
   logoUrl         String?
   createdAt       DateTime?         @default(now()) @db.Timestamp(6)
   updatedAt       DateTime?         @default(now()) @updatedAt @db.Timestamp(6)
+  slug            String?           @unique(map: "salon_slug_unique")
   appointments    Appointment[]
   customers       Customer[]
   settings        SalonSettings?

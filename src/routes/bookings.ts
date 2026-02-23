@@ -54,9 +54,7 @@ router.post("/confirm", authenticateToken, async (req: any, res: any) => {
   const salonId = req.user.salonId;
 
   try {
-    // Start a database transaction
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Validate lock token exists and is not expired
       const searchContext = await tx.searchContext.findUnique({
         where: { id: lockToken },
       });
@@ -73,11 +71,9 @@ router.post("/confirm", authenticateToken, async (req: any, res: any) => {
         return { error: 'Salon mismatch.', status: 403 };
       }
 
-      // 2. Re-run strict availability validation using SlotsEngine
       const engine = new SlotsEngine();
       const availabilityResult = await engine.generateSlots(searchContext.data as any);
 
-      // Verify that all requested slots are still available in the fresh results
       for (const reqApt of requestedAppointments) {
           const group = availabilityResult.groups.find(g => g.personId === reqApt.personId);
           if (!group) return { error: 'Slot no longer available (person not found).', status: 409 };
@@ -90,10 +86,8 @@ router.post("/confirm", authenticateToken, async (req: any, res: any) => {
           if (!slot) return { error: 'Slot no longer available.', status: 409 };
       }
 
-      // 3. Create appointments
       const createdAppointments = [];
       for (const reqApt of requestedAppointments) {
-          // Parse HH:mm to Date
           const [hours, minutes] = reqApt.startTime.split(':').map(Number);
           const startTime = new Date((searchContext.data as any).date);
           startTime.setHours(hours, minutes, 0, 0);
@@ -118,14 +112,13 @@ router.post("/confirm", authenticateToken, async (req: any, res: any) => {
           createdAppointments.push(appointment);
       }
 
-      // 4. Delete the search context
       await tx.searchContext.delete({
         where: { id: lockToken }
       });
 
       return { success: true, appointments: createdAppointments };
     }, {
-        isolationLevel: 'Serializable' // Highest isolation level to prevent race conditions
+        isolationLevel: 'Serializable'
     });
 
     if ('error' in result) {
@@ -164,9 +157,7 @@ router.post("/cancel", authenticateToken, async (req: any, res: any) => {
   const salonId = req.user.salonId;
 
   try {
-    // Start a database transaction
     await prisma.$transaction(async (tx) => {
-      // 1. Check if booking exists and belongs to this salon
       const bookingRecord = await tx.$queryRaw`
         SELECT * FROM randevular
         WHERE id = ${bookingId}
@@ -180,7 +171,6 @@ router.post("/cancel", authenticateToken, async (req: any, res: any) => {
 
       const booking = bookingRecord[0];
 
-      // 2. Check if booking is already cancelled (idempotency)
       if (booking.hizmet_durumu === 'iptal') {
         return res.status(200).json({
           message: 'Booking is already cancelled.',
@@ -188,7 +178,6 @@ router.post("/cancel", authenticateToken, async (req: any, res: any) => {
         });
       }
 
-      // 3. Parse booking time and check if it's in the future
       const bookingDate = DateNormalizer.parseDate(booking.tarih);
       const bookingTimeMinutes = DateNormalizer.parseTimeToMinutes(booking.saat);
       const bookingStartTime = DateNormalizer.createDateTime(booking.tarih, bookingTimeMinutes);
@@ -197,7 +186,6 @@ router.post("/cancel", authenticateToken, async (req: any, res: any) => {
         return res.status(400).json({ message: 'Cannot cancel past bookings.' });
       }
 
-      // 4. Update booking status in legacy table
       await tx.$executeRaw`
         UPDATE randevular
         SET hizmet_durumu = 'iptal',
@@ -207,12 +195,11 @@ router.post("/cancel", authenticateToken, async (req: any, res: any) => {
         AND salon_id = ${salonId}
       `;
 
-      // 5. Update Prisma appointment record as well (for consistency)
       const appointment = await tx.appointment.findUnique({
         where: { id: bookingId }
       });
 
-      if (appointment) {
+      if (appointment && appointment.salonId === salonId) {
         await tx.appointment.update({
           where: { id: bookingId },
           data: {
@@ -222,8 +209,6 @@ router.post("/cancel", authenticateToken, async (req: any, res: any) => {
         });
       }
 
-      // 6. Release any related temporary locks (if they exist)
-      // Find locks that might be related to this booking's time slot
       await tx.$executeRaw`
         DELETE FROM temporary_locks
         WHERE salon_id = ${salonId}
@@ -232,7 +217,6 @@ router.post("/cancel", authenticateToken, async (req: any, res: any) => {
         AND sure = ${booking.sure}
       `;
 
-      // Return success response
       res.status(200).json({
         message: 'Booking cancelled successfully.',
         bookingId
@@ -263,9 +247,7 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
   const salonId = req.user.salonId;
 
   try {
-    // Start a database transaction
     await prisma.$transaction(async (tx) => {
-      // 1. Lock existing booking row (FOR UPDATE)
       const bookingRecord = await tx.$queryRaw`
         SELECT * FROM randevular
         WHERE id = ${bookingId}
@@ -279,17 +261,14 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
 
       const booking = bookingRecord[0];
 
-      // 2. Check if booking is already cancelled
       if (booking.hizmet_durumu === 'iptal') {
         return res.status(400).json({ message: 'Cannot reschedule a cancelled booking.' });
       }
 
-      // 3. Check if booking is already being rescheduled (idempotency)
       if (booking.hizmet_durumu === 'rescheduling') {
         return res.status(409).json({ message: 'Booking is currently being rescheduled.' });
       }
 
-      // 4. Parse booking time and check if it's in the future
       const bookingDate = DateNormalizer.parseDate(booking.tarih);
       const bookingTimeMinutes = DateNormalizer.parseTimeToMinutes(booking.saat);
       const bookingStartTime = DateNormalizer.createDateTime(booking.tarih, bookingTimeMinutes);
@@ -298,7 +277,6 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
         return res.status(400).json({ message: 'Cannot reschedule past bookings.' });
       }
 
-      // 5. Temporarily mark old booking as "rescheduling"
       await tx.$executeRaw`
         UPDATE randevular
         SET hizmet_durumu = 'rescheduling',
@@ -307,7 +285,6 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
         AND salon_id = ${salonId}
       `;
 
-      // 6. Run availability engine for new slot
       const engine = new AvailabilityEngine();
       const availabilityResult = await engine.calculateAvailability({
         date: new Date(newSlot.date),
@@ -316,11 +293,9 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
         salonId
       });
 
-      // Parse new slot time
       const newSlotStartMinutes = DateNormalizer.parseTimeToMinutes(newSlot.startTime);
       const newSlotStart = DateNormalizer.createDateTime(newSlot.date, newSlotStartMinutes);
 
-      // Check if new slot is available
       const slotAvailable = availabilityResult.slots.some(slot =>
         slot.startTime.getTime() === newSlotStart.getTime() &&
         slot.availableStaff.length >= newSlot.staffIds.length &&
@@ -328,7 +303,6 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
       );
 
       if (!slotAvailable) {
-        // Rollback: reset booking status
         await tx.$executeRaw`
           UPDATE randevular
           SET hizmet_durumu = 'aktif',
@@ -347,7 +321,7 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
           Staff: { salonId }
         }
       });
-      const service = await tx.service.findUnique({
+      const service = await tx.service.findFirst({
         where: { id: newSlot.serviceId, salonId }
       });
       if (!service) {
@@ -367,7 +341,6 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
         VALUES (${lockId}, ${salonId}, ${newSlot.date}, ${newSlot.startTime}, ${duration}, ${new Date(Date.now() + 5 * 60 * 1000)}, NOW())
       `;
 
-      // 8. Validate staff for new slot
       const validStaff = await tx.staff.findMany({
         where: {
           id: { in: newSlot.staffIds },
@@ -376,7 +349,6 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
       });
 
       if (validStaff.length !== newSlot.staffIds.length) {
-        // Rollback: reset booking status and delete lock
         await tx.$executeRaw`
           UPDATE randevular
           SET hizmet_durumu = 'aktif',
@@ -404,13 +376,12 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
             startTime: newSlotStart,
             endTime: newSlotEnd,
             status: 'BOOKED',
-            source: 'ADMIN' // Rescheduled bookings
+            source: 'ADMIN' 
           }
         });
         newAppointments.push(appointment);
       }
 
-      // 10. Mark old booking as cancelled with erteleme_iptal_zamani
       await tx.$executeRaw`
         UPDATE randevular
         SET hizmet_durumu = 'iptal',
@@ -420,12 +391,11 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
         AND salon_id = ${salonId}
       `;
 
-      // 11. Update old Prisma appointment record
       const oldAppointment = await tx.appointment.findUnique({
         where: { id: bookingId }
       });
 
-      if (oldAppointment) {
+      if (oldAppointment && oldAppointment.salonId === salonId) {
         await tx.appointment.update({
           where: { id: bookingId },
           data: {
@@ -435,12 +405,10 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
         });
       }
 
-      // 12. Remove temporary lock
       await tx.$executeRaw`
         DELETE FROM temporary_locks WHERE id = ${lockId}
       `;
 
-      // Return success response
       res.status(200).json({
         message: 'Booking rescheduled successfully.',
         oldBookingId: bookingId,
@@ -463,8 +431,10 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
 // POST /api/bookings - Create appointment (frontend booking flow)
 router.post('/', async (req: any, res: any, next: any) => {
   const b = req.body || {};
+  const salonId = req.salon?.id;
+
   if (
-    typeof b.salonId === 'number' &&
+    salonId &&
     typeof b.customerId === 'number' &&
     typeof b.customerName === 'string' &&
     typeof b.customerPhone === 'string' &&
@@ -475,7 +445,6 @@ router.post('/', async (req: any, res: any, next: any) => {
     (b.source === 'CUSTOMER' || b.source === 'SALON')
   ) {
     const {
-      salonId,
       customerId,
       customerName,
       customerPhone,
@@ -532,7 +501,11 @@ router.post('/', async (req: any, res: any, next: any) => {
       if (token && typeof token === 'string') {
         try {
           await prisma.magicLink.updateMany({
-            where: { token, usedAt: null },
+            where: { 
+                token, 
+                usedAt: null,
+                context: { path: ['salonId'], equals: salonId }
+            },
             data: { usedAt: new Date() }
           });
         } catch (_) {}
@@ -550,21 +523,24 @@ router.post('/', async (req: any, res: any, next: any) => {
 });
 
 // POST /appointments - Create appointment using magic link token
-router.post('/', async (req: any, res: any) => {
-  const { token, salonId, datetime, people, campaignOptIn } = req.body as any;
+router.post('/appointments-by-token', async (req: any, res: any) => {
+  const { token, datetime, people, campaignOptIn } = req.body as any;
+  const salonId = req.salon?.id;
 
   if (!token || !salonId || !datetime || !Array.isArray(people) || people.length === 0) {
-    return res.status(400).json({ message: 'Missing required fields' });
+    return res.status(400).json({ message: 'Missing required fields or tenant context' });
   }
 
   try {
-    // Validate magic link token
-    const magicLink = await prisma.magicLink.findUnique({
-      where: { token }
+    const magicLink = await prisma.magicLink.findFirst({
+      where: { 
+          token,
+          context: { path: ['salonId'], equals: salonId }
+      }
     });
 
     if (!magicLink) {
-      return res.status(404).json({ message: 'Magic link not found' });
+      return res.status(404).json({ message: 'Magic link not found for this salon' });
     }
 
     if (magicLink.expiresAt < new Date()) {
@@ -575,13 +551,8 @@ router.post('/', async (req: any, res: any) => {
       return res.status(410).json({ message: 'Magic link has already been used' });
     }
 
-    if (magicLink.type !== 'BOOKING') {
+    if (magicLink.type !== 'BOOKING' && magicLink.type !== 'RESCHEDULE') {
       return res.status(400).json({ message: 'Invalid magic link type' });
-    }
-
-    // Validate salon matches
-    if (magicLink.context && (magicLink.context as any).salonId !== salonId) {
-      return res.status(400).json({ message: 'Salon ID mismatch' });
     }
 
     const phone = magicLink.phone.trim();
@@ -603,19 +574,16 @@ router.post('/', async (req: any, res: any) => {
       });
     }
 
-    // Parse datetime
     const appointmentDateTime = new Date(datetime);
     if (isNaN(appointmentDateTime.getTime())) {
       return res.status(400).json({ message: 'Invalid datetime format' });
     }
 
-    // Start transaction
     const result = await prisma.$transaction(async (tx) => {
-      // Handle reschedule: cancel old appointment
       if (magicLink.type === 'RESCHEDULE' && magicLink.context) {
         const oldAppointmentId = (magicLink.context as any).appointmentId;
         await tx.appointment.update({
-          where: { id: oldAppointmentId },
+          where: { id: oldAppointmentId, salonId },
           data: {
             status: 'CANCELLED',
             updatedAt: new Date()
@@ -625,18 +593,15 @@ router.post('/', async (req: any, res: any) => {
 
       const appointments = [];
 
-      // Create appointments for each person
       for (const person of people) {
         if (!person.name || !person.birthDate || !person.gender || !Array.isArray(person.services)) {
           throw new Error('Invalid person data');
         }
 
-        // Validate gender
         if (!['kadin', 'erkek', 'belirtmek-istemiyorum'].includes(person.gender)) {
           throw new Error('Invalid gender value');
         }
 
-        // Collect all services for this person to calculate smart duration
         const personServices: ServiceWithCategory[] = [];
 
         for (const serviceItem of person.services) {
@@ -653,7 +618,7 @@ router.post('/', async (req: any, res: any) => {
             }
           });
 
-          const service = await tx.service.findUnique({
+          const service = await tx.service.findFirst({
             where: { id: serviceItem.serviceId, salonId }
           });
           if (!service) {
@@ -683,15 +648,11 @@ router.post('/', async (req: any, res: any) => {
           });
         }
 
-        // Calculate smart duration for all services this person is getting
         const totalDuration = calculateSmartDuration(personServices);
 
-        // Create appointment for each service in this person
         for (const serviceItem of person.services) {
-          // Calculate end time using smart duration
           const endTime = new Date(appointmentDateTime.getTime() + totalDuration * 60 * 1000);
 
-          // Create appointment
           const appointment = await tx.appointment.create({
             data: {
               salonId: salonId,
@@ -724,19 +685,17 @@ router.post('/', async (req: any, res: any) => {
       } catch (_) {}
     }
 
-    // Emit WhatsApp event (this would be consumed by n8n)
     const salon = await prisma.salon.findUnique({
       where: { id: salonId },
       select: { name: true }
     });
 
-    // Simple event emission (in production, this would go to a message queue)
     console.log('📱 WhatsApp Event:', {
       event: 'appointment.created',
       appointmentId: result[0].id,
       salon: {
         name: salon?.name || 'Unknown Salon',
-        location: 'Salon Address' // This would come from salon settings
+        location: 'Salon Address'
       },
       customer: {
         phone,

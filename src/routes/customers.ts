@@ -13,15 +13,11 @@ interface RegisterRequest {
 }
 
 router.post('/register', async (req: any, res: any) => {
-  const { fullName, phone, gender, birthDate, acceptMarketing, salonId } = req.body as RegisterRequest;
+  const { fullName, phone, gender, birthDate, acceptMarketing } = req.body as RegisterRequest;
+  const salonIdNum = req.salon?.id;
 
-  if (!fullName || !phone || typeof acceptMarketing !== 'boolean' || !salonId) {
-    return res.status(400).json({ message: 'fullName, phone, acceptMarketing, and salonId are required' });
-  }
-
-  const salonIdNum = typeof salonId === 'string' ? parseInt(salonId, 10) : salonId;
-  if (isNaN(salonIdNum)) {
-    return res.status(400).json({ message: 'salonId must be a valid number' });
+  if (!fullName || !phone || typeof acceptMarketing !== 'boolean' || !salonIdNum) {
+    return res.status(400).json({ message: 'fullName, phone, and acceptMarketing are required, and must be in a tenant subdomain' });
   }
 
   try {
