@@ -29,6 +29,7 @@ model SalonSettings {
   workEndHour   Int       @default(18)
   slotInterval  Int       @default(30)
   timezone      String    @default("Europe/Istanbul")
+  categoryOrder Json?     // List of category keys for custom ordering
   createdAt     DateTime? @default(now()) @db.Timestamp(6)
   updatedAt     DateTime? @default(now()) @updatedAt @db.Timestamp(6)
   salonId       Int       @unique

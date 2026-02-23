@@ -32,7 +32,8 @@ router.get('/public', async (req: any, res: any) => {
         name: salon.name,
         workStartHour: salon.settings?.workStartHour || 9,
         workEndHour: salon.settings?.workEndHour || 18,
-        slotInterval: salon.settings?.slotInterval || 30
+        slotInterval: salon.settings?.slotInterval || 30,
+        categoryOrder: salon.settings?.categoryOrder || null
       }
     });
   } catch (error) {
@@ -94,7 +95,7 @@ router.put('/settings', authenticateToken, async (req: any, res: any) => {
     return res.status(401).json({ message: 'Unauthorized' });
   }
 
-  const { name, phone, address, workStartHour, workEndHour, slotInterval, isOnboarded } = req.body;
+  const { name, phone, address, workStartHour, workEndHour, slotInterval, isOnboarded, categoryOrder } = req.body;
 
   try {
     if (name || phone || address) {
@@ -106,7 +107,7 @@ router.put('/settings', authenticateToken, async (req: any, res: any) => {
       });
     }
 
-    if (workStartHour !== undefined || workEndHour !== undefined || slotInterval !== undefined || isOnboarded !== undefined) {
+    if (workStartHour !== undefined || workEndHour !== undefined || slotInterval !== undefined || isOnboarded !== undefined || categoryOrder !== undefined) {
       const settings = await prisma.salonSettings.upsert({
         where: { salonId: req.user.salonId },
         update: {
@@ -114,6 +115,7 @@ router.put('/settings', authenticateToken, async (req: any, res: any) => {
           ...(workEndHour !== undefined && { workEndHour }),
           ...(slotInterval !== undefined && { slotInterval }),
           ...(isOnboarded !== undefined && { isOnboarded }),
+          ...(categoryOrder !== undefined && { categoryOrder }),
         },
         create: {
           salonId: req.user.salonId,
@@ -121,6 +123,7 @@ router.put('/settings', authenticateToken, async (req: any, res: any) => {
           ...(workEndHour !== undefined && { workEndHour }),
           ...(slotInterval !== undefined && { slotInterval }),
           ...(isOnboarded !== undefined && { isOnboarded }),
+          ...(categoryOrder !== undefined && { categoryOrder }),
         }
       });
 
@@ -168,15 +171,29 @@ router.get('/services', authenticateToken, async (req: any, res: any) => {
 // GET /api/salon/services/public - Get salon services grouped by category
 router.get('/services/public', async (req: any, res: any) => {
   const salonId = req.salon?.id;
+  const { gender } = req.query;
 
   if (!salonId) {
     return res.status(400).json({ message: 'Tenant context required' });
   }
 
   try {
+    // 1. Fetch salon settings for category order
+    const settings = await prisma.salonSettings.findUnique({
+      where: { salonId },
+      select: { categoryOrder: true }
+    });
+
+    // 2. Fetch services with optional gender filter
     const rawServices = await prisma.service.findMany({
       where: {
-        salonId
+        salonId,
+        ...(gender && {
+            OR: [
+                { ServiceGender: { some: { gender: gender as any } } },
+                { ServiceGender: { none: {} } } // Fallback for services with no specific gender
+            ]
+        })
       },
       select: {
         id: true,
@@ -188,7 +205,7 @@ router.get('/services/public', async (req: any, res: any) => {
       }
     });
 
-    // Group services by category
+    // 3. Group services by category
     const groupedMap: Record<string, any[]> = {};
     
     rawServices.forEach(service => {
@@ -217,14 +234,29 @@ router.get('/services/public', async (req: any, res: any) => {
       });
     });
 
-    // Format according to CATEGORY_ORDER
-    const response = CATEGORY_ORDER
+    // 4. Use custom order if exists, otherwise default order
+    const customOrder = settings?.categoryOrder as string[] | null;
+    const finalOrder = (customOrder && Array.isArray(customOrder)) ? customOrder : CATEGORY_ORDER;
+
+    // 5. Build response
+    const response = finalOrder
       .filter(key => groupedMap[key] && groupedMap[key].length > 0)
       .map(key => ({
         key: key,
-        name: CATEGORIES[key],
+        name: CATEGORIES[key] || key,
         services: groupedMap[key]
       }));
+
+    // Add any categories present in DB but missing from the order (safety fallback)
+    Object.keys(groupedMap).forEach(key => {
+        if (!finalOrder.includes(key)) {
+            response.push({
+                key,
+                name: CATEGORIES[key] || key,
+                services: groupedMap[key]
+            });
+        }
+    });
 
     res.json({ categories: response });
   } catch (error) {
