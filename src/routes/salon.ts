@@ -192,9 +192,18 @@ router.get('/services/public', async (req: any, res: any) => {
     const groupedMap: Record<string, any[]> = {};
     
     rawServices.forEach(service => {
-      const catKey = (service.category || 'OTHER').toUpperCase();
-      const finalKey = CATEGORIES[catKey] ? catKey : 'OTHER';
-      
+      const dbCat = (service.category || '').toUpperCase().trim();
+      let finalKey = 'OTHER';
+
+      if (dbCat.includes('LAZER') || dbCat === 'LASER') finalKey = 'LASER';
+      else if (dbCat.includes('AĞDA') || dbCat.includes('AGDA') || dbCat === 'WAX') finalKey = 'WAX';
+      else if (dbCat.includes('TIRNAK') || dbCat.includes('MANİKÜR') || dbCat.includes('PEDİKÜR') || dbCat === 'NAIL') finalKey = 'NAIL';
+      else if (dbCat.includes('CİLT') || dbCat.includes('YÜZ') || dbCat === 'FACIAL') finalKey = 'FACIAL';
+      else if (dbCat.includes('MASAJ') || dbCat.includes('BODY') || dbCat.includes('VÜCUT')) finalKey = 'BODY';
+      else if (dbCat.includes('SAÇ') || dbCat.includes('HAIR')) finalKey = 'HAIR';
+      else if (dbCat.includes('MEDİKAL') || dbCat === 'MEDICAL') finalKey = 'MEDICAL';
+      else if (dbCat.includes('DANIŞMANLIK') || dbCat === 'CONSULTATION') finalKey = 'CONSULTATION';
+
       if (!groupedMap[finalKey]) {
         groupedMap[finalKey] = [];
       }
