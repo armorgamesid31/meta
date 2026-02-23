@@ -5,6 +5,41 @@ import { logCustomerBehavior, calculateCancellationSeverity, BehaviorType } from
 
 const router = Router();
 
+// GET /api/salon/public - Get salon info (public for tenant subdomain)
+router.get('/public', async (req: any, res: any) => {
+  const salonId = req.salon?.id;
+
+  if (!salonId) {
+    return res.status(400).json({ message: 'Tenant context required' });
+  }
+
+  try {
+    const salon = await prisma.salon.findUnique({
+      where: { id: salonId },
+      include: {
+        settings: true
+      }
+    });
+
+    if (!salon) {
+      return res.status(404).json({ message: 'Salon not found' });
+    }
+
+    res.json({
+      salon: {
+        id: salon.id,
+        name: salon.name,
+        workStartHour: salon.settings?.workStartHour || 9,
+        workEndHour: salon.settings?.workEndHour || 18,
+        slotInterval: salon.settings?.slotInterval || 30
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching salon public info:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 // GET /api/salon/me - Get salon info and settings
 router.get('/me', authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
