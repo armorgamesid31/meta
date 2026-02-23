@@ -35,11 +35,13 @@ export const multiTenantMiddleware = async (req: Request, res: Response, next: N
     }
   }
 
+  // Debug log for production troubleshooting
+  // console.log(`[MultiTenant] Origin: ${origin}, Host: ${host}, Slug: ${slug}`);
+
   // 3. Validate extracted slug
   const restrictedSlugs = ['api', 'www', 'admin', 'portal'];
   if (!slug || restrictedSlugs.includes(slug.toLowerCase())) {
     // If it's a specific route like /health or /auth, we might want to allow it
-    // But for general multi-tenant isolation, we require a valid tenant slug
     if (req.path === '/health' || req.path.startsWith('/auth/')) {
         return next();
     }
