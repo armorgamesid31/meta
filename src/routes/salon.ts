@@ -233,6 +233,46 @@ router.get('/services/public', async (req: any, res: any) => {
   }
 });
 
+// GET /api/salon/services/:serviceId/staff - Get staff for a specific service
+router.get('/services/:serviceId/staff', async (req: any, res: any) => {
+  const salonId = req.salon?.id;
+  const { serviceId } = req.params;
+
+  if (!salonId) {
+    return res.status(400).json({ message: 'Tenant context required' });
+  }
+
+  try {
+    const staffServices = await prisma.staffService.findMany({
+      where: {
+        serviceId: parseInt(serviceId),
+        Staff: { salonId },
+        isactive: true
+      },
+      include: {
+        Staff: {
+          select: {
+            id: true,
+            name: true
+          }
+        }
+      }
+    });
+
+    const response = staffServices.map(ss => ({
+      id: ss.Staff.id,
+      name: ss.Staff.name,
+      price: ss.price,
+      duration: ss.duration
+    }));
+
+    res.json({ staff: response });
+  } catch (error) {
+    console.error('Error fetching service-specific staff:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 // POST /api/salon/services - Create a new service
 router.post('/services', authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
