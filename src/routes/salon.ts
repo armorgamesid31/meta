@@ -30,6 +30,7 @@ router.get('/public', async (req: any, res: any) => {
       salon: {
         id: salon.id,
         name: salon.name,
+        logoUrl: salon.logoUrl,
         workStartHour: salon.settings?.workStartHour || 9,
         workEndHour: salon.settings?.workEndHour || 18,
         slotInterval: salon.settings?.slotInterval || 30,
@@ -76,6 +77,7 @@ router.get('/me', authenticateToken, async (req: any, res: any) => {
       salon: {
         id: salon.id,
         name: salon.name,
+        logoUrl: salon.logoUrl,
         workStartHour: salon.settings?.workStartHour || 9,
         workEndHour: salon.settings?.workEndHour || 18,
         slotInterval: salon.settings?.slotInterval || 30,
