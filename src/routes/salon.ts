@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { logCustomerBehavior, calculateCancellationSeverity, BehaviorType } from '../utils/behaviorTracking.js';
+import { CATEGORIES, CATEGORY_ORDER } from '../constants/categories.js';
 
 const router = Router();
 
@@ -64,14 +65,10 @@ router.get('/me', authenticateToken, async (req: any, res: any) => {
       return res.status(404).json({ message: 'Salon not found' });
     }
 
-    // Single source of truth for salon readiness
     const hasServices = salon._count.services > 0;
     const hasWorkingHours = (salon.settings?.workStartHour !== undefined &&
                             salon.settings?.workEndHour !== undefined);
-    // Staff is optional for basic onboarding - can be added later
     const onboardingComplete = hasServices && hasWorkingHours;
-
-    // Default to trial status (no real subscription system yet)
     const subscriptionStatus = 'trial';
 
     res.json({
@@ -100,7 +97,6 @@ router.put('/settings', authenticateToken, async (req: any, res: any) => {
   const { name, phone, address, workStartHour, workEndHour, slotInterval, isOnboarded } = req.body;
 
   try {
-    // Update salon basic info if provided
     if (name || phone || address) {
       await prisma.salon.update({
         where: { id: req.user.salonId },
@@ -110,7 +106,6 @@ router.put('/settings', authenticateToken, async (req: any, res: any) => {
       });
     }
 
-    // Update or create salon settings
     if (workStartHour !== undefined || workEndHour !== undefined || slotInterval !== undefined || isOnboarded !== undefined) {
       const settings = await prisma.salonSettings.upsert({
         where: { salonId: req.user.salonId },
@@ -156,44 +151,9 @@ router.get('/services', authenticateToken, async (req: any, res: any) => {
         id: true,
         name: true,
         duration: true,
-        price: true
-      },
-      orderBy: { name: 'asc' }
-    });
-
-    const servicesWithStatus = services.map(service => ({
-      id: service.id,
-      name: service.name,
-      price: service.price,
-      duration: service.duration,
-      enabled: true 
-    }));
-
-    res.json({ services: servicesWithStatus });
-  } catch (error) {
-    console.error('Error fetching services:', error);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-});
-
-// GET /api/salon/services/public - Get salon services (public for tenant subdomain)
-router.get('/services/public', async (req: any, res: any) => {
-  const salonId = req.salon?.id;
-
-  if (!salonId) {
-    return res.status(400).json({ message: 'Tenant context required' });
-  }
-
-  try {
-    const services = await prisma.service.findMany({
-      where: {
-        salonId
-      },
-      select: {
-        id: true,
-        name: true,
-        duration: true,
-        price: true
+        price: true,
+        category: true,
+        requiresSpecialist: true
       },
       orderBy: { name: 'asc' }
     });
@@ -205,13 +165,72 @@ router.get('/services/public', async (req: any, res: any) => {
   }
 });
 
+// GET /api/salon/services/public - Get salon services grouped by category
+router.get('/services/public', async (req: any, res: any) => {
+  const salonId = req.salon?.id;
+
+  if (!salonId) {
+    return res.status(400).json({ message: 'Tenant context required' });
+  }
+
+  try {
+    const rawServices = await prisma.service.findMany({
+      where: {
+        salonId
+      },
+      select: {
+        id: true,
+        name: true,
+        duration: true,
+        price: true,
+        category: true,
+        requiresSpecialist: true
+      }
+    });
+
+    // Group services by category
+    const groupedMap: Record<string, any[]> = {};
+    
+    rawServices.forEach(service => {
+      const catKey = (service.category || 'OTHER').toUpperCase();
+      const finalKey = CATEGORIES[catKey] ? catKey : 'OTHER';
+      
+      if (!groupedMap[finalKey]) {
+        groupedMap[finalKey] = [];
+      }
+      
+      groupedMap[finalKey].push({
+        id: service.id,
+        name: service.name,
+        duration: service.duration,
+        price: service.price,
+        requiresSpecialist: service.requiresSpecialist || false
+      });
+    });
+
+    // Format according to CATEGORY_ORDER
+    const response = CATEGORY_ORDER
+      .filter(key => groupedMap[key] && groupedMap[key].length > 0)
+      .map(key => ({
+        key: key,
+        name: CATEGORIES[key],
+        services: groupedMap[key]
+      }));
+
+    res.json({ categories: response });
+  } catch (error) {
+    console.error('Error fetching grouped services:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 // POST /api/salon/services - Create a new service
 router.post('/services', authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
     return res.status(401).json({ message: 'Unauthorized' });
   }
 
-  const { name, duration, price } = req.body;
+  const { name, duration, price, category, requiresSpecialist } = req.body;
 
   if (!name || !duration || price === undefined) {
     return res.status(400).json({ message: 'Name, duration, and price are required' });
@@ -222,19 +241,14 @@ router.post('/services', authenticateToken, async (req: any, res: any) => {
       data: {
         name,
         duration: parseInt(duration),
-        price: parseInt(price),
+        price: parseFloat(price),
+        category: category || 'OTHER',
+        requiresSpecialist: !!requiresSpecialist,
         salonId: req.user.salonId,
       },
     });
 
-    res.status(201).json({
-      service: {
-        id: service.id,
-        name: service.name,
-        duration: service.duration,
-        price: service.price,
-      }
-    });
+    res.status(201).json({ service });
   } catch (error) {
     console.error('Error creating service:', error);
     res.status(500).json({ message: 'Internal server error' });
@@ -259,13 +273,7 @@ router.get('/staff', authenticateToken, async (req: any, res: any) => {
       orderBy: { name: 'asc' }
     });
 
-    const staffWithStatus = staff.map(person => ({
-      id: person.id,
-      name: person.name,
-      enabled: true 
-    }));
-
-    res.json({ staff: staffWithStatus });
+    res.json({ staff });
   } catch (error) {
     console.error('Error fetching staff:', error);
     res.status(500).json({ message: 'Internal server error' });
@@ -319,12 +327,7 @@ router.post('/staff', authenticateToken, async (req: any, res: any) => {
       },
     });
 
-    res.status(201).json({
-      staff: {
-        id: staff.id,
-        name: staff.name,
-      }
-    });
+    res.status(201).json({ staff });
   } catch (error) {
     console.error('Error creating staff:', error);
     res.status(500).json({ message: 'Internal server error' });
@@ -359,12 +362,7 @@ router.put('/staff/:id', authenticateToken, async (req: any, res: any) => {
       },
     });
 
-    res.json({
-      staff: {
-        id: updatedStaff.id,
-        name: updatedStaff.name,
-      }
-    });
+    res.json({ staff: updatedStaff });
   } catch (error) {
     console.error('Error updating staff:', error);
     res.status(500).json({ message: 'Internal server error' });
