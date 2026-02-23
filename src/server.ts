@@ -20,25 +20,54 @@ const app = express();
 // Trust proxy for reverse proxy setups (Coolify/Traefik)
 app.set('trust proxy', 1);
 
-// CRITICAL: Health endpoint MUST be defined BEFORE any middleware
+// Dynamic CORS configuration
+const corsOptions: cors.CorsOptions = {
+  origin: (origin, callback) => {
+    // If no origin (like server-to-server or tools), allow it
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    const baseDomain = 'kedyapp.com';
+    try {
+      const url = new URL(origin);
+      const hostname = url.hostname;
+
+      // Check if it's the base domain or any subdomain of kedyapp.com
+      const isAllowed = hostname === baseDomain || hostname.endsWith(`.${baseDomain}`);
+      
+      if (isAllowed) {
+        callback(null, true);
+      } else {
+        // Also allow local development origins if needed
+        const localOrigins = ['localhost', '127.0.0.1'];
+        if (localOrigins.some(loc => hostname === loc)) {
+          callback(null, true);
+        } else {
+          callback(new Error('Not allowed by CORS'));
+        }
+      }
+    } catch (e) {
+      callback(new Error('Invalid Origin'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  preflightContinue: false,
+  optionsSuccessStatus: 204
+};
+
+// 1. CRITICAL: Pre-flight OPTIONS handling and CORS must be first
+app.use(cors(corsOptions));
+
+// 2. Health endpoint (no tenant context required)
 app.get("/health", (_req, res) => {
   res.status(200).json({ status: "ok" });
 });
 
-// Global multi-tenant middleware
+// 3. Multi-tenant context extraction
 app.use(multiTenantMiddleware);
-
-// Configure CORS
-const corsOrigins = process.env.CORS_ORIGINS
-  ? process.env.CORS_ORIGINS.split(',').map(origin => origin.trim())
-  : ['http://localhost:5173', 'http://localhost:5174', 'https://localhost:5173'];
-
-app.use(cors({
-  origin: corsOrigins,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  credentials: true,
-}));
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
