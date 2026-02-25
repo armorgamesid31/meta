@@ -8,7 +8,7 @@ export const multiTenantMiddleware = async (req: Request, res: Response, next: N
 
   let slug: string | null = null;
 
-  // 1. Try to extract slug from Origin (most reliable for cross-origin API calls)
+  // 1. Try to extract slug from Origin
   if (origin) {
     try {
       const originUrl = new URL(origin);
@@ -16,36 +16,24 @@ export const multiTenantMiddleware = async (req: Request, res: Response, next: N
 
       if (hostname.endsWith(`.${baseDomain}`)) {
         slug = hostname.replace(`.${baseDomain}`, '');
-      } else if (hostname === baseDomain) {
-        // Base domain, no subdomain
-        return next();
       }
     } catch (e) {
-      console.error('Error parsing Origin header:', e);
+      // Ignore invalid origin format
     }
   }
 
-  // 2. Fallback to Host header if Origin is missing or didn't yield a slug
+  // 2. Fallback to Host header
   if (!slug && host) {
     const cleanHost = host.split(':')[0];
     if (cleanHost.endsWith(`.${baseDomain}`)) {
       slug = cleanHost.replace(`.${baseDomain}`, '');
-    } else if (cleanHost === baseDomain) {
-      return next();
     }
   }
 
-  // Debug log for production troubleshooting
-  // console.log(`[MultiTenant] Origin: ${origin}, Host: ${host}, Slug: ${slug}`);
-
-  // 3. Validate extracted slug
-  const restrictedSlugs = ['api', 'www', 'admin', 'portal'];
+  // 3. Skip tenant requirement for non-tenant subdomains
+  const restrictedSlugs = ['api', 'www', 'admin', 'portal', ''];
   if (!slug || restrictedSlugs.includes(slug.toLowerCase())) {
-    // If it's a specific route like /health or /auth, we might want to allow it
-    if (req.path === '/health' || req.path.startsWith('/auth/')) {
-        return next();
-    }
-    return res.status(400).json({ message: 'Tenant context required' });
+    return next();
   }
 
   // 4. Find Salon by slug
@@ -55,7 +43,9 @@ export const multiTenantMiddleware = async (req: Request, res: Response, next: N
     });
 
     if (!salon) {
-      return res.status(404).json({ message: `Salon with slug '${slug}' not found` });
+      // Instead of JSON 404 here, we just don't attach the salon
+      // The routes that require a salon will check for req.salon and handle it
+      return next();
     }
 
     // Attach salon to request object
@@ -63,6 +53,6 @@ export const multiTenantMiddleware = async (req: Request, res: Response, next: N
     next();
   } catch (error) {
     console.error('Error in multiTenantMiddleware:', error);
-    return res.status(500).json({ message: 'Internal server error during tenant lookup' });
+    next(); // Continue even on error, let the route decide if req.salon is needed
   }
 };
