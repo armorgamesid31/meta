@@ -9,7 +9,6 @@ interface RegisterRequest {
   gender?: 'male' | 'female' | 'other';
   birthDate?: string;
   acceptMarketing: boolean;
-  salonId: number;
 }
 
 router.post('/register', async (req: any, res: any) => {

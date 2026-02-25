@@ -25,20 +25,20 @@ const corsOptions: cors.CorsOptions = {
   origin: (origin, callback) => {
     // console.log('CORS Origin Check:', origin); // Debug log
     if (!origin) return callback(null, true);
-    
+
     const baseDomain = 'kedyapp.com';
     try {
       const url = new URL(origin);
       const hostname = url.hostname;
-      
+
       // Strict check for production security
-      const isAllowed = hostname === baseDomain || 
-                        hostname.endsWith(`.${baseDomain}`) || 
-                        hostname === 'localhost' || 
+      const isAllowed = hostname === baseDomain ||
+                        hostname.endsWith(`.${baseDomain}`) ||
+                        hostname === 'localhost' ||
                         hostname === '127.0.0.1';
-      
+
       if (isAllowed) {
-        callback(null, true);
+        callback(null, origin); // FIX: Return the exact origin to echo it in Access-Control-Allow-Origin
       } else {
         // Return explicit error for debugging instead of silent failure
         console.warn(`Blocked CORS origin: ${origin}`);
@@ -96,10 +96,10 @@ app.use(express.static(distPath));
 
 // Catch all handler
 app.use((req, res, next) => {
-  if (req.path.startsWith('/api/') || 
-      req.path.startsWith('/auth/') || 
-      req.path.startsWith('/availability/') || 
-      req.path.startsWith('/appointments/') || 
+  if (req.path.startsWith('/api/') ||
+      req.path.startsWith('/auth/') ||
+      req.path.startsWith('/availability/') ||
+      req.path.startsWith('/appointments/') ||
       req.path.startsWith('/health')) {
     // Ensure API 404s return JSON, not HTML
     return res.status(404).json({ message: 'API route not found' });
