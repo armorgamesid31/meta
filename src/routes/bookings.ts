@@ -433,66 +433,71 @@ router.post('/', async (req: any, res: any, next: any) => {
   const b = req.body || {};
   const salonId = req.salon?.id;
 
+  // Support for multiple services
   if (
     salonId &&
     typeof b.customerId === 'number' &&
     typeof b.customerName === 'string' &&
     typeof b.customerPhone === 'string' &&
-    typeof b.staffId === 'number' &&
-    typeof b.serviceId === 'number' &&
-    typeof b.startTime === 'string' &&
-    typeof b.endTime === 'string' &&
+    Array.isArray(b.services) &&
+    b.services.length > 0 &&
     (b.source === 'CUSTOMER' || b.source === 'SALON')
   ) {
     const {
       customerId,
       customerName,
       customerPhone,
-      staffId,
-      serviceId,
-      startTime,
-      endTime,
+      services,
       source,
       token
     } = b;
 
-    const start = new Date(startTime);
-    const end = new Date(endTime);
-    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-      return res.status(400).json({ message: 'Invalid startTime or endTime' });
-    }
-
     try {
-      // Validate availability (Simple check for now as SlotsEngine/AvailabilityEngine are complex)
-      // Check if another appointment exists for same staff at same time
-      const conflicting = await prisma.appointment.findFirst({
-          where: {
-              salonId,
-              staffId,
-              startTime: { lte: start },
-              endTime: { gte: start },
-              status: 'BOOKED'
+      const createdAppointments = [];
+      let currentStartTime = new Date(b.startTime);
+
+      for (const serviceItem of services) {
+          const serviceId = parseInt(serviceItem.serviceId);
+          const staffId = parseInt(serviceItem.staffId);
+          const duration = parseInt(serviceItem.duration) || 30;
+          
+          const start = new Date(currentStartTime);
+          const end = new Date(start.getTime() + duration * 60 * 1000);
+
+          // Simple collision check
+          const conflicting = await prisma.appointment.findFirst({
+              where: {
+                  salonId,
+                  staffId,
+                  startTime: { lt: end },
+                  endTime: { gt: start },
+                  status: 'BOOKED'
+              }
+          });
+
+          if (conflicting) {
+              return res.status(409).json({ error: 'SLOT_NOT_AVAILABLE', message: `Personel (${staffId}) bu saatte dolu.` });
           }
-      });
 
-      if (conflicting) {
-          return res.status(409).json({ error: 'SLOT_NOT_AVAILABLE', message: 'Personel bu saatte dolu.' });
+          const appointment = await prisma.appointment.create({
+            data: {
+              salonId,
+              customerId,
+              customerName: customerName.trim(),
+              customerPhone: customerPhone.trim(),
+              staffId,
+              serviceId,
+              startTime: start,
+              endTime: end,
+              status: 'BOOKED',
+              source: source === 'SALON' ? 'ADMIN' : 'CUSTOMER'
+            }
+          });
+          createdAppointments.push(appointment);
+          
+          // Next service starts after this one
+          currentStartTime = new Date(end.getTime());
       }
-
-      const appointment = await prisma.appointment.create({
-        data: {
-          salonId,
-          customerId,
-          customerName: customerName.trim(),
-          customerPhone: customerPhone.trim(),
-          staffId,
-          serviceId,
-          startTime: start,
-          endTime: end,
-          status: 'BOOKED',
-          source: source === 'SALON' ? 'ADMIN' : 'CUSTOMER'
-        }
-      });
 
       if (token && typeof token === 'string') {
         try {
@@ -508,10 +513,11 @@ router.post('/', async (req: any, res: any, next: any) => {
       }
 
       return res.status(201).json({
-        appointmentId: appointment.id,
+        appointments: createdAppointments.map(a => ({ id: a.id })),
         status: 'BOOKED'
       });
     } catch (error) {
+      console.error('Booking Error:', error);
       return res.status(500).json({ message: 'Internal server error' });
     }
   }
