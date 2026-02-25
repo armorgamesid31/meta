@@ -70,7 +70,8 @@ app.use('/appointments', bookingRoutes);
 const distPath = path.join(__dirname, '../dist');
 app.use(express.static(distPath));
 
-app.get('*', (req, res) => {
+// Use a catch-all route compatible with newer path-to-regexp (regex or (.*))
+app.get('/*', (req, res) => {
   if (req.path.startsWith('/api/') || req.path.startsWith('/auth/') || req.path.startsWith('/availability/')) {
     return res.status(404).json({ message: 'API route not found' });
   }
