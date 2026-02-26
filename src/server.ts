@@ -69,15 +69,7 @@ app.use('/api/app/chakra', chakraRoutes);
 app.use('/availability', availabilityRoutes);
 app.use('/appointments', bookingRoutes);
 
-const distPath = path.join(__dirname, '../dist');
-app.use(express.static(distPath));
-
-// catch-all route using regex for compatibility with Express 5 / path-to-regexp v8
-app.get(/^(?!\/api|\/auth|\/availability).*$/, (req, res) => {
-  res.sendFile(path.join(distPath, 'index.html'));
-});
-
-// Chakra Test Page (Independent of Booking Frontend)
+// Chakra Test Page (BEFORE catch-all routes)
 app.get('/chakratest', (req: any, res) => {
   const subdomain = req.headers.host?.split('.')[0] || 'unknown';
   res.send(`
@@ -147,6 +139,14 @@ app.get('/chakratest', (req: any, res) => {
     </body>
     </html>
   `);
+});
+
+const distPath = path.join(__dirname, '../dist');
+app.use(express.static(distPath));
+
+// catch-all route using regex for compatibility with Express 5 / path-to-regexp v8
+app.get(/^(?!\/api|\/auth|\/availability|\/chakratest).*$/, (req, res) => {
+  res.sendFile(path.join(distPath, 'index.html'));
 });
 
 // Final Error Handler
