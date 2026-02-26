@@ -71,9 +71,23 @@ app.use('/appointments', bookingRoutes);
 
 // Proper header for iframe/CORS support
 app.use((req, res, next) => {
-  res.removeHeader('X-Frame-Options'); // Best practice to remove for allowing embedding
-  res.setHeader('Content-Security-Policy', "frame-ancestors *");
+  res.removeHeader('X-Frame-Options'); // Remove to allow embedding in iframe
+  // Refine CSP to allow chakra iframe sources explicitly
+  res.setHeader(
+    'Content-Security-Policy',
+    "frame-ancestors * https://embed.chakrahq.com https://api.chakrahq.com; default-src \'self\'; script-src \'self\' https://embed.chakrahq.com; connect-src \'self\' https://api.chakrahq.com;"
+  );
   next();
+});
+
+// Proxy /connect route to Chakra API to handle SDK's internal calls
+app.get('/connect', (req, res) => {
+  const token = req.query.connectToken;
+  if (!token) {
+    return res.status(400).json({ message: 'Missing connectToken for proxy.' });
+  }
+  // Redirect to Chakra's actual connect endpoint
+  res.redirect(`https://api.chakrahq.com/v1/ext/whatsapp-partner/connect?connectToken=${token}`);
 });
 
 // Chakra Test Page
@@ -108,54 +122,51 @@ app.get('/chakratest', (req: any, res) => {
             <div id="status">Lütfen bir işlem seçin.</div>
         </div>
         <script>
-            const statusEl = document.getElementById('status');
-            const btnContainer = document.getElementById('chakra-button-container');
+            const statusEl = document.getElementById("status");
+            const btnContainer = document.getElementById("chakra-button-container");
 
-            document.getElementById('btn-create').onclick = async () => {
-                statusEl.innerText = 'Plugin oluşturuluyor...';
+            document.getElementById("btn-create").onclick = async () => {
+                statusEl.innerText = "Plugin oluşturuluyor...";
                 try {
-                    const res = await fetch('/api/app/chakra/create-plugin', { method: 'POST' });
+                    const res = await fetch("/api/app/chakra/create-plugin", { method: "POST" });
                     const data = await res.json();
-                    statusEl.innerText = data.success ? '✅ Plugin OK: ' + data.pluginId : '❌ Hata: ' + (data.message || 'Bilinmiyor');
-                } catch (err) { statusEl.innerText = '❌ Hata: ' + err.message; }
+                    statusEl.innerText = data.success ? "✅ Plugin OK: " + data.pluginId : "❌ Hata: " + (data.message || "Bilinmiyor");
+                } catch (err) { statusEl.innerText = "❌ Hata: " + err.message; }
             };
 
-            document.getElementById('btn-connect').onclick = async () => {
-                statusEl.innerText = 'Token alınıyor...';
-                btnContainer.innerHTML = ''; 
+            document.getElementById("btn-connect").onclick = async () => {
+                statusEl.innerText = "Token alınıyor...";
+                btnContainer.innerHTML = ""; 
 
                 try {
-                    const response = await fetch('/api/app/chakra/connect-token');
+                    const response = await fetch("/api/app/chakra/connect-token");
                     const data = await response.json();
-                    if (!data.connectToken) throw new Error(data.message || 'Önce plugin oluşturun.');
+                    if (!data.connectToken) throw new Error(data.message || "Önce plugin oluşturun.");
                     
-                    if (typeof window.ChakraWhatsappConnect === 'undefined') {
-                        throw new Error('SDK (ChakraWhatsappConnect) yüklenemedi.');
+                    if (typeof window.ChakraWhatsappConnect === "undefined") {
+                        throw new Error("SDK (ChakraWhatsappConnect) yüklenemedi.");
                     }
 
-                    statusEl.innerText = 'SDK başlatılıyor...';
+                    statusEl.innerText = "SDK başlatılıyor...";
                     
-                    // The Documentation snippet suggests connectToken, container, onMessage, onReady, onError.
-                    // Let's remove baseUrl to let it use its defaults if our manual one is causing 404.
-                    // Or set it to the root if that's what it wants.
                     const chakra = window.ChakraWhatsappConnect.init({
                         connectToken: data.connectToken,
-                        container: '#chakra-button-container',
+                        container: "#chakra-button-container",
                         onMessage: (event, payload) => {
-                            console.log('Chakra Event:', event, payload);
-                            statusEl.innerText = 'Event: ' + event;
+                            console.log("Chakra Event:", event, payload);
+                            statusEl.innerText = "Event: " + event;
                         },
                         onReady: () => {
-                            console.log('Chakra SDK Ready');
-                            statusEl.innerText = '✅ SDK Hazır. Buton aşağıda belirmeli.';
+                            console.log("Chakra SDK Ready");
+                            statusEl.innerText = "✅ SDK Hazır. Buton aşağıda belirmeli.";
                         },
                         onError: (err) => {
-                            console.error('Chakra Error:', err);
-                            statusEl.innerText = '❌ SDK Hatası: ' + (err.message || 'Bilinmiyor');
+                            console.error("Chakra Error:", err);
+                            statusEl.innerText = "❌ SDK Hatası: " + (err.message || "Bilinmiyor");
                         }
                     });
                     
-                } catch (err) { statusEl.innerText = '❌ Hata: ' + err.message; }
+                } catch (err) { statusEl.innerText = "❌ Hata: " + err.message; }
             };
         </script>
     </body>
@@ -172,7 +183,7 @@ app.get(/^(?!\/api|\/auth|\/availability|\/chakratest).*$/, (req, res) => {
 
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error('Final Error Catch:', err);
-  res.status(err.status || 500).json({ 
+  res.status(err.status || 500).json({
     message: err.message || 'Internal server error'
   });
 });
