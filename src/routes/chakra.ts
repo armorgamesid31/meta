@@ -44,7 +44,12 @@ router.get('/connect-token', async (req: any, res: any) => {
         }
       );
 
-      pluginId = pluginResponse.data.id;
+      // Chakra returns data inside _data property
+      pluginId = pluginResponse.data._data?.id;
+
+      if (!pluginId) {
+          throw new Error('Chakra API did not return a valid plugin ID in _data.');
+      }
 
       // Update salon record
       await prisma.salon.update({
@@ -67,7 +72,14 @@ router.get('/connect-token', async (req: any, res: any) => {
       }
     );
 
-    res.json({ connectToken: tokenResponse.data.connectToken });
+    // Chakra returns data inside _data property
+    const connectToken = tokenResponse.data._data?.connectToken;
+    
+    if (!connectToken) {
+        throw new Error('Chakra API did not return a valid connectToken in _data.');
+    }
+
+    res.json({ connectToken });
   } catch (error: any) {
     console.error('Chakra Integration Error:', error.response?.data || error.message);
     res.status(500).json({
