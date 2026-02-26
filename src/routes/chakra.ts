@@ -8,10 +8,16 @@ const CHAKRA_API_BASE = 'https://api.chakrahq.com';
 const CHAKRA_API_TOKEN = process.env.CHAKRA_API_TOKEN;
 
 router.get('/connect-token', async (req: any, res: any) => {
-  const salon = req.salon;
+  let salon = req.salon;
+
+  // Fallback to Palm Beauty (ID: 1) if no salon context found (for testing on api.kedyapp.com)
+  if (!salon) {
+    console.log('No salon context found, falling back to ID 1 for testing.');
+    salon = await prisma.salon.findUnique({ where: { id: 1 } });
+  }
 
   if (!salon) {
-    return res.status(400).json({ message: 'Salon context missing.' });
+    return res.status(400).json({ message: 'Salon context missing and fallback failed.' });
   }
 
   if (!CHAKRA_API_TOKEN) {
