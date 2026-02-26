@@ -135,14 +135,15 @@ app.get('/chakratest', (req: any, res) => {
 
                     statusEl.innerText = 'SDK başlatılıyor...';
                     
+                    // The Documentation snippet suggests connectToken, container, onMessage, onReady, onError.
+                    // Let's remove baseUrl to let it use its defaults if our manual one is causing 404.
+                    // Or set it to the root if that's what it wants.
                     const chakra = window.ChakraWhatsappConnect.init({
                         connectToken: data.connectToken,
                         container: '#chakra-button-container',
-                        baseUrl: 'https://api.chakrahq.com/v1/ext/whatsapp-partner',
                         onMessage: (event, payload) => {
                             console.log('Chakra Event:', event, payload);
                             statusEl.innerText = 'Event: ' + event;
-                            if (event === 'CHAKRA_CONNECT_SUCCESS') statusEl.innerText = '✅ Bağlantı Başarılı!';
                         },
                         onReady: () => {
                             console.log('Chakra SDK Ready');
