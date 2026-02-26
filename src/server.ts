@@ -115,40 +115,37 @@ app.get('/chakratest', (req: any, res) => {
 
             document.getElementById('btn-connect').onclick = async () => {
                 statusEl.innerText = 'Token alınıyor...';
+                btnContainer.innerHTML = ''; 
+
                 try {
                     const response = await fetch('/api/app/chakra/connect-token');
                     const data = await response.json();
                     if (!data.connectToken) throw new Error(data.message || 'Önce plugin oluşturun.');
                     
-                    // Flexible discovery logic for Chakra SDK
-                    let SDK = window.ChakraWhatsappConnect;
-                    let initMethod = (SDK && typeof SDK.init === 'function') ? SDK.init.bind(SDK) : SDK;
-
-                    if (typeof initMethod !== 'function') {
-                        console.log('Chakra SDK Discovery Failed:', { SDK, windowChakra: window.Chakra });
-                        throw new Error('Chakra SDK (init) metodu bulunamadı. Detaylar konsolda.');
+                    if (typeof window.ChakraWhatsappConnect === 'undefined') {
+                        throw new Error('SDK (ChakraWhatsappConnect) yüklenemedi.');
                     }
 
-                    btnContainer.innerHTML = 'Başlatılıyor...';
+                    statusEl.innerText = 'SDK başlatılıyor...';
                     
-                    const chakra = initMethod({
+                    const chakra = window.ChakraWhatsappConnect.init({
                         connectToken: data.connectToken,
                         container: '#chakra-button-container',
-                        onMessage: (event, data) => {
-                            console.log('Chakra Event:', event, data);
-                            if (event === 'SUCCESS') statusEl.innerText = '✅ Bağlantı Başarılı!';
+                        onMessage: (event, payload) => {
+                            console.log('Chakra Event:', event, payload);
+                            statusEl.innerText = 'Event: ' + event;
+                            if (event === 'CHAKRA_CONNECT_SUCCESS') statusEl.innerText = '✅ Bağlantı Başarılı!';
                         },
                         onReady: () => {
-                            statusEl.innerText = 'SDK Hazır. Buton geldi.';
+                            console.log('Chakra SDK Ready');
+                            statusEl.innerText = '✅ SDK Hazır. Buton aşağıda belirmeli.';
                         },
                         onError: (err) => {
-                            statusEl.innerText = '❌ SDK Hatası: ' + (err.message || 'Bağlantı kurulamadı');
                             console.error('Chakra Error:', err);
+                            statusEl.innerText = '❌ SDK Hatası: ' + (err.message || 'Bilinmiyor');
                         }
                     });
                     
-                    btnContainer.innerHTML = ''; 
-                    statusEl.innerText = 'SDK Başlatıldı. Buton gelmiş olmalı.';
                 } catch (err) { statusEl.innerText = '❌ Hata: ' + err.message; }
             };
         </script>
