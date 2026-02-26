@@ -82,12 +82,12 @@ app.get('/chakratest', (req: any, res) => {
         <script src="https://embed.chakrahq.com/whatsapp-partner-connect/v1/sdk.js"></script>
         <style>
             body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #f4f4f9; padding: 20px; }
-            #container { padding: 2rem; background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); text-align: center; max-width: 400px; width: 100%; }
+            #container { padding: 2rem; background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); text-align: center; max-width: 450px; width: 100%; }
             h1 { color: #333; margin-bottom: 1.5rem; font-size: 1.5rem; }
             .btn { display: block; width: 100%; padding: 12px; margin: 10px 0; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: background 0.2s; }
             .btn-primary { background: #007bff; color: white; }
             .btn-success { background: #28a745; color: white; }
-            #status { margin-top: 1.5rem; padding: 10px; border-radius: 4px; background: #eee; color: #555; font-size: 0.85rem; word-break: break-all; }
+            #status { margin-top: 1.5rem; padding: 10px; border-radius: 4px; background: #eee; color: #555; font-size: 0.85rem; word-break: break-all; min-height: 40px; }
             .error { color: #dc3545; background: #fceea7; }
         </style>
     </head>
@@ -109,7 +109,7 @@ app.get('/chakratest', (req: any, res) => {
                 try {
                     const res = await fetch('/api/app/chakra/create-plugin', { method: 'POST' });
                     const data = await res.json();
-                    statusEl.innerText = data.success ? '✅ Plugin OK: ' + data.pluginId : '❌ Hata: ' + data.message;
+                    statusEl.innerText = data.success ? '✅ Plugin OK: ' + data.pluginId : '❌ Hata: ' + (data.message || 'Bilinmiyor');
                 } catch (err) { statusEl.innerText = '❌ Hata: ' + err.message; }
             };
 
@@ -120,17 +120,36 @@ app.get('/chakratest', (req: any, res) => {
                     const data = await response.json();
                     if (!data.connectToken) throw new Error(data.message || 'Önce plugin oluşturun.');
                     
+                    // Comprehensive SDK finding logic
                     const ChakraSDK = window.ChakraWhatsappConnect || (window.Chakra && window.Chakra.WhatsappConnect);
-                    if (!ChakraSDK) throw new Error('SDK bulunamadı.');
+                    if (!ChakraSDK) throw new Error('Chakra SDK nesnesi bulunamadı.');
 
-                    const chakra = new ChakraSDK({
+                    btnContainer.innerHTML = 'Yükleniyor...';
+                    
+                    const options = {
                         connectToken: data.connectToken,
                         container: btnContainer,
-                        onSuccess: () => statusEl.innerText = '✅ Bağlantı Başarılı!',
-                        onError: (err) => statusEl.innerText = '❌ SDK Hatası: ' + err.message
-                    });
-                    btnContainer.innerHTML = '';
-                    chakra.render();
+                        onSuccess: (res) => {
+                            statusEl.innerText = '✅ Bağlantı Başarılı!';
+                            console.log('Chakra Success:', res);
+                        },
+                        onError: (err) => {
+                            statusEl.innerText = '❌ SDK Hatası: ' + (err.message || 'Bağlantı kurulamadı');
+                            console.error('Chakra Error:', err);
+                        }
+                    };
+
+                    let chakra;
+                    try {
+                        chakra = new ChakraSDK(options);
+                        if (chakra && typeof chakra.render === 'function') chakra.render();
+                    } catch (e) {
+                        console.log('Constructor failed, trying as function...');
+                        chakra = ChakraSDK(options);
+                    }
+                    
+                    btnContainer.innerHTML = ''; 
+                    statusEl.innerText = 'SDK Başlatıldı. Buton gelmiş olmalı.';
                 } catch (err) { statusEl.innerText = '❌ Hata: ' + err.message; }
             };
         </script>
