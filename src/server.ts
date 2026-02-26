@@ -69,7 +69,7 @@ app.use('/api/app/chakra', chakraRoutes);
 app.use('/availability', availabilityRoutes);
 app.use('/appointments', bookingRoutes);
 
-// Chakra Test Page (BEFORE catch-all routes)
+// Chakra Test Page
 app.get('/chakratest', (req: any, res) => {
   const subdomain = req.headers.host?.split('.')[0] || 'unknown';
   res.send(`
@@ -78,127 +78,61 @@ app.get('/chakratest', (req: any, res) => {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Chakra WhatsApp Partner Connect Test</title>
+        <title>Chakra Test</title>
         <script src="https://embed.chakrahq.com/whatsapp-partner-connect/v1/sdk.js"></script>
         <style>
-            body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #f4f4f9; }
-            #container { padding: 2rem; background: white; border-radius: 8px; shadow: 0 4px 6px rgba(0,0,0,0.1); text-align: center; }
-            h1 { color: #333; margin-bottom: 1.5rem; }
-            #status { margin-top: 1rem; color: #666; font-size: 0.9rem; }
-            .error { color: #dc3545; }
+            body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #f4f4f9; padding: 20px; }
+            #container { padding: 2rem; background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); text-align: center; max-width: 400px; width: 100%; }
+            h1 { color: #333; margin-bottom: 1.5rem; font-size: 1.5rem; }
+            .btn { display: block; width: 100%; padding: 12px; margin: 10px 0; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: background 0.2s; }
+            .btn-primary { background: #007bff; color: white; }
+            .btn-success { background: #28a745; color: white; }
+            #status { margin-top: 1.5rem; padding: 10px; border-radius: 4px; background: #eee; color: #555; font-size: 0.85rem; word-break: break-all; }
+            .error { color: #dc3545; background: #fceea7; }
         </style>
     </head>
     <body>
         <div id="container">
-            <h1>WhatsApp Bağlantı Testi</h1>
+            <h1>Chakra WhatsApp Test</h1>
             <p>Salon: <strong>${subdomain}</strong></p>
-            <div id="chakra-button-container">Yükleniyor...</div>
-            <div id="status">Token alınıyor...</div>
+            <button id="btn-create" class="btn btn-primary">1. Yeni Plugin Oluştur</button>
+            <button id="btn-connect" class="btn btn-success">2. WhatsApp Bağla (SDK)</button>
+            <div id="chakra-button-container"></div>
+            <div id="status">Lütfen bir işlem seçin.</div>
         </div>
-
         <script>
-            async function initChakra() {
-                const statusEl = document.getElementById('status');
-                const btnContainer = document.getElementById('chakra-button-container');
+            const statusEl = document.getElementById('status');
+            const btnContainer = document.getElementById('chakra-button-container');
 
+            document.getElementById('btn-create').onclick = async () => {
+                statusEl.innerText = 'Plugin oluşturuluyor...';
+                try {
+                    const res = await fetch('/api/app/chakra/create-plugin', { method: 'POST' });
+                    const data = await res.json();
+                    statusEl.innerText = data.success ? '✅ Plugin OK: ' + data.pluginId : '❌ Hata: ' + data.message;
+                } catch (err) { statusEl.innerText = '❌ Hata: ' + err.message; }
+            };
+
+            document.getElementById('btn-connect').onclick = async () => {
+                statusEl.innerText = 'Token alınıyor...';
                 try {
                     const response = await fetch('/api/app/chakra/connect-token');
                     const data = await response.json();
+                    if (!data.connectToken) throw new Error(data.message || 'Önce plugin oluşturun.');
+                    
+                    const ChakraSDK = window.ChakraWhatsappConnect || (window.Chakra && window.Chakra.WhatsappConnect);
+                    if (!ChakraSDK) throw new Error('SDK bulunamadı.');
 
-                    if (data.connectToken) {
-                        statusEl.innerText = 'Token alındı, SDK başlatılıyor...';
-                        
-                        // Log global objects for debugging
-                        console.log('Global window state:', {
-                            Chakra: window.Chakra,
-                            ChakraWhatsappConnect: window.ChakraWhatsappConnect
-                        });
-
-                        // Check common SDK patterns
-                        let ChakraSDK = window.ChakraWhatsappConnect;
-                        
-                        if (!ChakraSDK && window.Chakra) {
-                            ChakraSDK = window.Chakra.WhatsappConnect || window.Chakra.PartnerConnect;
-                        }
-
-                        if (!ChakraSDK) {
-                            throw new Error('Chakra SDK global nesnesi bulunamadı. Konsolu kontrol edin.');
-                        }
-
-                        // Just in case it's not a constructor but a factory function
-                        let chakra;
-                        if (typeof ChakraSDK === 'function') {
-                            try {
-                                chakra = new ChakraSDK({
-                                    connectToken: data.connectToken,
-                                    container: btnContainer,
-                                    onSuccess: (data) => {
-                                        console.log('Bağlantı Başarılı:', data);
-                                        statusEl.innerText = '✅ Bağlantı Başarıyla Tamamlandı!';
-                                    },
-                                    onError: (err) => {
-                                        console.error('Bağlantı Hatası:', err);
-                                        statusEl.innerHTML = '<span class="error">❌ Bağlantı Hatası: ' + err.message + '</span>';
-                                    }
-                                });
-                            } catch (e) {
-                                // If "new" fails, try calling it as a function
-                                chakra = ChakraSDK({
-                                    connectToken: data.connectToken,
-                                    container: btnContainer,
-                                    onSuccess: (data) => {
-                                        console.log('Bağlantı Başarılı:', data);
-                                        statusEl.innerText = '✅ Bağlantı Başarıyla Tamamlandı!';
-                                    },
-                                    onError: (err) => {
-                                        console.error('Bağlantı Hatası:', err);
-                                        statusEl.innerHTML = '<span class="error">❌ Bağlantı Hatası: ' + err.message + '</span>';
-                                    }
-                                });
-                            }
-                        } else {
-                            throw new Error('Chakra SDK bir fonksiyon/sınıf değil: ' + typeof ChakraSDK);
-                        }
-
-                        btnContainer.innerHTML = ''; // Clear loading text
-                        if (chakra && typeof chakra.render === 'function') {
-                            chakra.render();
-                        } else {
-                            console.log('SDK initialized but render method missing or already rendered.');
-                        }
-                    } else {
-                        throw new Error(data.message || 'Token alınamadı.');
-                    }
-                } catch (err) {
-                    statusEl.innerHTML = '<span class="error">❌ Hata: ' + err.message + '</span>';
+                    const chakra = new ChakraSDK({
+                        connectToken: data.connectToken,
+                        container: btnContainer,
+                        onSuccess: () => statusEl.innerText = '✅ Bağlantı Başarılı!',
+                        onError: (err) => statusEl.innerText = '❌ SDK Hatası: ' + err.message
+                    });
                     btnContainer.innerHTML = '';
-                }
-            }
-                            connectToken: data.connectToken,
-                            container: btnContainer,
-                            onSuccess: (data) => {
-                                console.log('Bağlantı Başarılı:', data);
-                                statusEl.innerText = '✅ Bağlantı Başarıyla Tamamlandı!';
-                            },
-                            onError: (err) => {
-                                console.error('Bağlantı Hatası:', err);
-                                statusEl.innerHTML = '<span class="error">❌ Bağlantı Hatası: ' + err.message + '</span>';
-                            }
-                        });
-
-                        btnContainer.innerHTML = ''; // Clear loading text
-                        chakra.render();
-                    } else {
-                        throw new Error(data.message || 'Token alınamadı.');
-                    }
-                } catch (err) {
-                    statusEl.innerHTML = '<span class="error">❌ Hata: ' + err.message + '</span>';
-                    btnContainer.innerHTML = '';
-                }
-            }
-
-            // Start initialization when DOM is ready
-            window.addEventListener('DOMContentLoaded', initChakra);
+                    chakra.render();
+                } catch (err) { statusEl.innerText = '❌ Hata: ' + err.message; }
+            };
         </script>
     </body>
     </html>
@@ -208,25 +142,20 @@ app.get('/chakratest', (req: any, res) => {
 const distPath = path.join(__dirname, '../dist');
 app.use(express.static(distPath));
 
-// catch-all route using regex for compatibility with Express 5 / path-to-regexp v8
 app.get(/^(?!\/api|\/auth|\/availability|\/chakratest).*$/, (req, res) => {
   res.sendFile(path.join(distPath, 'index.html'));
 });
 
-// Final Error Handler
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error('Final Error Catch:', err);
   res.status(err.status || 500).json({ 
-    message: err.message || 'Internal server error',
-    error: process.env.NODE_ENV === 'development' ? err : undefined
+    message: err.message || 'Internal server error'
   });
 });
 
 const PORT = (Number(process.env.PORT) || 3000);
 const HOST = '0.0.0.0';
-
 app.listen(PORT, HOST, () => {
   console.log(`🚀 Server running on ${HOST}:${PORT}`);
 });
-
 export default app;

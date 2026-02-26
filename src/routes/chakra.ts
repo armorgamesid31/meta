@@ -7,86 +7,74 @@ const router = Router();
 const CHAKRA_API_BASE = 'https://api.chakrahq.com';
 const CHAKRA_API_TOKEN = process.env.CHAKRA_API_TOKEN;
 
+// Helper to get salon for testing
+const getTestSalon = async (req: any) => {
+    let salon = req.salon;
+    if (!salon) {
+        salon = await prisma.salon.findUnique({ where: { id: 1 } });
+    }
+    return salon;
+};
+
+// 1. Create Plugin Manually
+router.post('/create-plugin', async (req: any, res: any) => {
+    const salon = await getTestSalon(req);
+    if (!salon) return res.status(400).json({ message: 'Salon not found.' });
+    if (!CHAKRA_API_TOKEN) return res.status(500).json({ message: 'CHAKRA_API_TOKEN missing.' });
+
+    try {
+        const pluginResponse = await axios.post(
+            `${CHAKRA_API_BASE}/plugin`,
+            {
+                type: 'whatsapp',
+                name: `${salon.name} - WhatsApp Auto`,
+            },
+            {
+                headers: {
+                    Authorization: `Bearer ${CHAKRA_API_TOKEN}`,
+                    'Content-Type': 'application/json',
+                },
+            }
+        );
+
+        const pluginId = pluginResponse.data._data?.id;
+        if (!pluginId) throw new Error('No pluginId returned from Chakra.');
+
+        await prisma.salon.update({
+            where: { id: salon.id },
+            data: { chakraPluginId: pluginId },
+        });
+
+        res.json({ success: true, pluginId, salonName: salon.name });
+    } catch (error: any) {
+        res.status(500).json({ message: 'Create plugin failed.', error: error.response?.data || error.message });
+    }
+});
+
+// 2. Generate Connect Token Manually
 router.get('/connect-token', async (req: any, res: any) => {
-  let salon = req.salon;
+    const salon = await getTestSalon(req);
+    if (!salon?.chakraPluginId) return res.status(400).json({ message: 'Salon does not have a pluginId yet. Create one first.' });
 
-  // Fallback to Palm Beauty (ID: 1) if no salon context found (for testing on api.kedyapp.com)
-  if (!salon) {
-    console.log('No salon context found, falling back to ID 1 for testing.');
-    salon = await prisma.salon.findUnique({ where: { id: 1 } });
-  }
+    try {
+        const tokenResponse = await axios.post(
+            `${CHAKRA_API_BASE}/v1/ext/whatsapp-partner/create-connect-token`,
+            { pluginId: salon.chakraPluginId },
+            {
+                headers: {
+                    Authorization: `Bearer ${CHAKRA_API_TOKEN}`,
+                    'Content-Type': 'application/json',
+                },
+            }
+        );
 
-  if (!salon) {
-    return res.status(400).json({ message: 'Salon context missing and fallback failed.' });
-  }
+        const connectToken = tokenResponse.data._data?.connectToken;
+        if (!connectToken) throw new Error('No connectToken returned from Chakra.');
 
-  if (!CHAKRA_API_TOKEN) {
-    return res.status(500).json({ message: 'CHAKRA_API_TOKEN not configured.' });
-  }
-
-  try {
-    let pluginId = salon.chakraPluginId;
-
-    // 1. Create plugin if it doesn't exist
-    if (!pluginId) {
-      console.log(`Creating Chakra plugin for salon: ${salon.name}`);
-      const pluginResponse = await axios.post(
-        `${CHAKRA_API_BASE}/plugin`,
-        {
-          type: 'whatsapp',
-          name: `${salon.name} - WhatsApp`,
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${CHAKRA_API_TOKEN}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
-      // Chakra returns data inside _data property
-      pluginId = pluginResponse.data._data?.id;
-
-      if (!pluginId) {
-          throw new Error('Chakra API did not return a valid plugin ID in _data.');
-      }
-
-      // Update salon record
-      await prisma.salon.update({
-        where: { id: salon.id },
-        data: { chakraPluginId: pluginId },
-      });
-      console.log(`Saved chakraPluginId ${pluginId} for salon ${salon.id}`);
+        res.json({ connectToken, pluginId: salon.chakraPluginId });
+    } catch (error: any) {
+        res.status(500).json({ message: 'Token generation failed.', error: error.response?.data || error.message });
     }
-
-    // 2. Generate connect token
-    console.log(`Generating connect token for pluginId: ${pluginId}`);
-    const tokenResponse = await axios.post(
-      `${CHAKRA_API_BASE}/v1/ext/whatsapp-partner/create-connect-token`,
-      { pluginId },
-      {
-        headers: {
-          Authorization: `Bearer ${CHAKRA_API_TOKEN}`,
-          'Content-Type': 'application/json',
-        },
-      }
-    );
-
-    // Chakra returns data inside _data property
-    const connectToken = tokenResponse.data._data?.connectToken;
-    
-    if (!connectToken) {
-        throw new Error('Chakra API did not return a valid connectToken in _data.');
-    }
-
-    res.json({ connectToken });
-  } catch (error: any) {
-    console.error('Chakra Integration Error:', error.response?.data || error.message);
-    res.status(500).json({
-      message: 'Failed to integrate with Chakra.',
-      error: error.response?.data || error.message,
-    });
-  }
 });
 
 export default router;
