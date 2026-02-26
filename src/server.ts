@@ -75,7 +75,7 @@ app.use((req, res, next) => {
   // Refine CSP to allow chakra iframe sources explicitly
   res.setHeader(
     'Content-Security-Policy',
-    "frame-ancestors * https://embed.chakrahq.com https://api.chakrahq.com; default-src \'self\'; script-src \'self\' https://embed.chakrahq.com; connect-src \'self\' https://api.chakrahq.com;"
+    "frame-ancestors * https://embed.chakrahq.com https://api.chakrahq.com; default-src \'self\'; script-src \'self\' \'unsafe-inline\' https://embed.chakrahq.com https://static.cloudflareinsights.com; connect-src \'self\' https://api.chakrahq.com https://static.cloudflareinsights.com; style-src \'self\' \'unsafe-inline\';"
   );
   next();
 });
