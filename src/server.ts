@@ -10,6 +10,7 @@ import availabilityRoutes from './routes/availability.js';
 import authRoutes from './routes/auth.js';
 import customerRoutes from './routes/customers.js';
 import bookingContextRoutes from './routes/bookingContext.js';
+import chakraRoutes from './routes/chakra.js';
 import { multiTenantMiddleware } from './middleware/multiTenant.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -64,6 +65,7 @@ app.use('/api/salon', salonRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/booking', bookingContextRoutes);
+app.use('/api/app/chakra', chakraRoutes);
 app.use('/availability', availabilityRoutes);
 app.use('/appointments', bookingRoutes);
 
@@ -73,6 +75,78 @@ app.use(express.static(distPath));
 // catch-all route using regex for compatibility with Express 5 / path-to-regexp v8
 app.get(/^(?!\/api|\/auth|\/availability).*$/, (req, res) => {
   res.sendFile(path.join(distPath, 'index.html'));
+});
+
+// Chakra Test Page (Independent of Booking Frontend)
+app.get('/chakratest', (req: any, res) => {
+  const subdomain = req.headers.host?.split('.')[0] || 'unknown';
+  res.send(`
+    <!DOCTYPE html>
+    <html lang="tr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Chakra WhatsApp Partner Connect Test</title>
+        <script src="https://embed.chakrahq.com/whatsapp-partner-connect/v1/sdk.js"></script>
+        <style>
+            body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #f4f4f9; }
+            #container { padding: 2rem; background: white; border-radius: 8px; shadow: 0 4px 6px rgba(0,0,0,0.1); text-align: center; }
+            h1 { color: #333; margin-bottom: 1.5rem; }
+            #status { margin-top: 1rem; color: #666; font-size: 0.9rem; }
+            .error { color: #dc3545; }
+        </style>
+    </head>
+    <body>
+        <div id="container">
+            <h1>WhatsApp Bağlantı Testi</h1>
+            <p>Salon: <strong>${subdomain}</strong></p>
+            <div id="chakra-button-container">Yükleniyor...</div>
+            <div id="status">Token alınıyor...</div>
+        </div>
+
+        <script>
+            async function initChakra() {
+                const statusEl = document.getElementById('status');
+                const btnContainer = document.getElementById('chakra-button-container');
+
+                try {
+                    const response = await fetch('/api/app/chakra/connect-token');
+                    const data = await response.json();
+
+                    if (data.connectToken) {
+                        statusEl.innerText = 'Token alındı, SDK başlatılıyor...';
+                        
+                        // Initialize Chakra SDK
+                        const chakra = new ChakraWhatsappConnect({
+                            connectToken: data.connectToken,
+                            container: btnContainer,
+                            onSuccess: (data) => {
+                                console.log('Bağlantı Başarılı:', data);
+                                statusEl.innerText = '✅ Bağlantı Başarıyla Tamamlandı!';
+                            },
+                            onError: (err) => {
+                                console.error('Bağlantı Hatası:', err);
+                                statusEl.innerHTML = '<span class="error">❌ Bağlantı Hatası: ' + err.message + '</span>';
+                            }
+                        });
+
+                        btnContainer.innerHTML = ''; // Clear loading text
+                        chakra.render();
+                    } else {
+                        throw new Error(data.message || 'Token alınamadı.');
+                    }
+                } catch (err) {
+                    statusEl.innerHTML = '<span class="error">❌ Hata: ' + err.message + '</span>';
+                    btnContainer.innerHTML = '';
+                }
+            }
+
+            // Start initialization when DOM is ready
+            window.addEventListener('DOMContentLoaded', initChakra);
+        </script>
+    </body>
+    </html>
+  `);
 });
 
 // Final Error Handler
