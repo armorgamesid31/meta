@@ -69,6 +69,13 @@ app.use('/api/app/chakra', chakraRoutes);
 app.use('/availability', availabilityRoutes);
 app.use('/appointments', bookingRoutes);
 
+// Proper header for iframe/CORS support
+app.use((req, res, next) => {
+  res.setHeader('X-Frame-Options', 'ALLOWALL');
+  res.setHeader('Content-Security-Policy', "frame-ancestors *");
+  next();
+});
+
 // Chakra Test Page
 app.get('/chakratest', (req: any, res) => {
   const subdomain = req.headers.host?.split('.')[0] || 'unknown';
