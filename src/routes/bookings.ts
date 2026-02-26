@@ -463,10 +463,24 @@ router.post('/', async (req: any, res: any, next: any) => {
 
       for (const serviceItem of services) {
           const serviceId = parseInt(serviceItem.serviceId);
-          const staffId = parseInt(serviceItem.staffId);
+          let staffId = parseInt(serviceItem.staffId);
           
           if (!staffId) {
-              return res.status(400).json({ message: `${serviceId} ID'li hizmet için personel seçilmemiş.` });
+              // Auto-assign: Find any staff that can perform this service in this salon
+              const autoStaff = await prisma.staffService.findFirst({
+                  where: {
+                      serviceId,
+                      Staff: { salonId },
+                      isactive: true
+                  },
+                  select: { staffId: true }
+              });
+              
+              if (autoStaff) {
+                  staffId = autoStaff.staffId;
+              } else {
+                  return res.status(400).json({ message: `${serviceId} ID'li hizmeti verebilecek aktif personel bulunamadı.` });
+              }
           }
 
           const duration = parseInt(serviceItem.duration) || 30;
