@@ -496,8 +496,12 @@ router.post('/', async (req: any, res: any, next: any) => {
           createdAppointments.push(appointment);
           
           // Next service starts after this one
+          // Sequential: next service starts when previous one ends
           currentStartTime = new Date(end.getTime());
       }
+
+      // Record behavior tracking or other logs if needed
+      console.log(`Successfully created ${createdAppointments.length} sequential appointments for customer ${customerId}`);
 
       if (token && typeof token === 'string') {
         try {
@@ -513,12 +517,21 @@ router.post('/', async (req: any, res: any, next: any) => {
       }
 
       return res.status(201).json({
-        appointments: createdAppointments.map(a => ({ id: a.id })),
-        status: 'BOOKED'
+        data: {
+            appointments: createdAppointments.map(a => ({ id: a.id })),
+            status: 'BOOKED'
+        }
       });
-    } catch (error) {
-      console.error('Booking Error:', error);
-      return res.status(500).json({ message: 'Internal server error' });
+    } catch (error: any) {
+      console.error('Booking Error Details:', {
+          message: error.message,
+          stack: error.stack,
+          body: b
+      });
+      return res.status(500).json({ 
+          message: 'Randevu oluşturulurken bir sunucu hatası oluştu.',
+          error: error.message 
+      });
     }
   }
   next();
