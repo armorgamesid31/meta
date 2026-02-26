@@ -71,15 +71,11 @@ app.use('/appointments', bookingRoutes);
 
 // Proper header for iframe/CORS support
 app.use((req, res, next) => {
-  // Chakra SDK needs to load an iframe from api.chakrahq.com. 
-  // The 'X-Frame-Options' header set by api.chakrahq.com (sameorigin) is the issue.
-  // We cannot override a header set by a *different domain's server response* from our server.
-  // This must be handled by ChakraHQ's server configuration to allow framing from kedyapp.com.
-  // However, we ensure our CSP is as permissive as possible.
-  res.removeHeader("X-Frame-Options"); 
+  res.removeHeader('X-Frame-Options'); // Remove to allow embedding in iframe
+  // Refine CSP to allow chakra iframe sources explicitly
   res.setHeader(
-    "Content-Security-Policy",
-    `frame-ancestors * https://embed.chakrahq.com https://api.chakrahq.com; default-src \'self\' https://api.chakrahq.com; script-src \'self\' \'unsafe-inline\' https://embed.chakrahq.com https://api.chakrahq.com https://static.cloudflareinsights.com; connect-src \'self\' https://api.chakrahq.com https://static.cloudflareinsights.com; style-src \'self\' \'unsafe-inline\';`
+    'Content-Security-Policy',
+    `frame-ancestors * https://embed.chakrahq.com https://api.chakrahq.com; default-src 'self' https://api.chakrahq.com; script-src 'self' 'unsafe-inline' https://embed.chakrahq.com https://api.chakrahq.com https://static.cloudflareinsights.com; connect-src 'self' https://api.chakrahq.com https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline';`
   );
   next();
 });
@@ -154,17 +150,21 @@ app.get('/chakratest', (req: any, res) => {
 
                     statusEl.innerText = "SDK başlatılıyor...";
                     
-                    // Initialize SDK
+                    // HACK: Override baseUrl to trick the SDK's internal URL builder
+                    // SDK builds: BASE_URL + '/p/whatsapp-partner/connect?connectToken=...'
+                    // We want: https://api.chakrahq.com/v1/ext/whatsapp-partner/connect?connectToken=...
+                    // So we set BASE_URL to our target, and make the SDK's appended path a dummy query param
                     const chakra = window.ChakraWhatsappConnect.init({
                         connectToken: data.connectToken,
                         container: "#chakra-button-container",
+                        baseUrl: "https://api.chakrahq.com/v1/ext/whatsapp-partner/connect?dummy=",
                         onMessage: (event, payload) => {
                             console.log("Chakra Event:", event, payload);
                             statusEl.innerText = "Event: " + event;
                         },
                         onReady: () => {
                             console.log("Chakra SDK Ready");
-                            statusEl.innerText = "✅ SDK Hazır. Bağlantı butonu aşağıda belirmeli.";
+                            statusEl.innerText = "✅ SDK Hazır. Buton aşağıda belirmeli.";
                         },
                         onError: (err) => {
                             console.error("Chakra Error:", err);
