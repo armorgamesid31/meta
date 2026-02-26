@@ -455,10 +455,20 @@ router.post('/', async (req: any, res: any, next: any) => {
     try {
       const createdAppointments = [];
       let currentStartTime = new Date(b.startTime);
+      
+      // Double check date validity
+      if (isNaN(currentStartTime.getTime())) {
+          return res.status(400).json({ message: 'Geçersiz randevu saati formatı (ISO beklenen).' });
+      }
 
       for (const serviceItem of services) {
           const serviceId = parseInt(serviceItem.serviceId);
           const staffId = parseInt(serviceItem.staffId);
+          
+          if (!staffId) {
+              return res.status(400).json({ message: `${serviceId} ID'li hizmet için personel seçilmemiş.` });
+          }
+
           const duration = parseInt(serviceItem.duration) || 30;
           
           const start = new Date(currentStartTime);
