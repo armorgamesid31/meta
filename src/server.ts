@@ -143,12 +143,14 @@ app.get('/chakratest', (req: any, res) => {
                     const data = await response.json();
                     if (!data.connectToken) throw new Error(data.message || "Önce plugin oluşturun.");
                     
+                    // Check if SDK is available globally
                     if (typeof window.ChakraWhatsappConnect === "undefined") {
-                        throw new Error("SDK (ChakraWhatsappConnect) yüklenemedi.");
+                        throw new Error("SDK (ChakraWhatsappConnect) yüklenemedi veya henüz hazır değil. Sayfayı yenilemeyi deneyin.");
                     }
 
                     statusEl.innerText = "SDK başlatılıyor...";
                     
+                    // Initialize SDK
                     const chakra = window.ChakraWhatsappConnect.init({
                         connectToken: data.connectToken,
                         container: "#chakra-button-container",
@@ -158,7 +160,7 @@ app.get('/chakratest', (req: any, res) => {
                         },
                         onReady: () => {
                             console.log("Chakra SDK Ready");
-                            statusEl.innerText = "✅ SDK Hazır. Buton aşağıda belirmeli.";
+                            statusEl.innerText = "✅ SDK Hazır. Bağlantı butonu aşağıda belirmeli.";
                         },
                         onError: (err) => {
                             console.error("Chakra Error:", err);
