@@ -108,15 +108,72 @@ app.get('/chakratest', (req: any, res) => {
                     if (data.connectToken) {
                         statusEl.innerText = 'Token alındı, SDK başlatılıyor...';
                         
-                        // Initialize Chakra SDK (Checking for potential different global names)
-                        const ChakraSDK = window.ChakraWhatsappConnect || 
-                                         (window.Chakra ? window.Chakra.WhatsappConnect : null);
+                        // Log global objects for debugging
+                        console.log('Global window state:', {
+                            Chakra: window.Chakra,
+                            ChakraWhatsappConnect: window.ChakraWhatsappConnect
+                        });
+
+                        // Check common SDK patterns
+                        let ChakraSDK = window.ChakraWhatsappConnect;
                         
-                        if (!ChakraSDK) {
-                            throw new Error('Chakra SDK yüklendi ancak başlatılamadı (Global nesne bulunamadı).');
+                        if (!ChakraSDK && window.Chakra) {
+                            ChakraSDK = window.Chakra.WhatsappConnect || window.Chakra.PartnerConnect;
                         }
 
-                        const chakra = new ChakraSDK({
+                        if (!ChakraSDK) {
+                            throw new Error('Chakra SDK global nesnesi bulunamadı. Konsolu kontrol edin.');
+                        }
+
+                        // Just in case it's not a constructor but a factory function
+                        let chakra;
+                        if (typeof ChakraSDK === 'function') {
+                            try {
+                                chakra = new ChakraSDK({
+                                    connectToken: data.connectToken,
+                                    container: btnContainer,
+                                    onSuccess: (data) => {
+                                        console.log('Bağlantı Başarılı:', data);
+                                        statusEl.innerText = '✅ Bağlantı Başarıyla Tamamlandı!';
+                                    },
+                                    onError: (err) => {
+                                        console.error('Bağlantı Hatası:', err);
+                                        statusEl.innerHTML = '<span class="error">❌ Bağlantı Hatası: ' + err.message + '</span>';
+                                    }
+                                });
+                            } catch (e) {
+                                // If "new" fails, try calling it as a function
+                                chakra = ChakraSDK({
+                                    connectToken: data.connectToken,
+                                    container: btnContainer,
+                                    onSuccess: (data) => {
+                                        console.log('Bağlantı Başarılı:', data);
+                                        statusEl.innerText = '✅ Bağlantı Başarıyla Tamamlandı!';
+                                    },
+                                    onError: (err) => {
+                                        console.error('Bağlantı Hatası:', err);
+                                        statusEl.innerHTML = '<span class="error">❌ Bağlantı Hatası: ' + err.message + '</span>';
+                                    }
+                                });
+                            }
+                        } else {
+                            throw new Error('Chakra SDK bir fonksiyon/sınıf değil: ' + typeof ChakraSDK);
+                        }
+
+                        btnContainer.innerHTML = ''; // Clear loading text
+                        if (chakra && typeof chakra.render === 'function') {
+                            chakra.render();
+                        } else {
+                            console.log('SDK initialized but render method missing or already rendered.');
+                        }
+                    } else {
+                        throw new Error(data.message || 'Token alınamadı.');
+                    }
+                } catch (err) {
+                    statusEl.innerHTML = '<span class="error">❌ Hata: ' + err.message + '</span>';
+                    btnContainer.innerHTML = '';
+                }
+            }
                             connectToken: data.connectToken,
                             container: btnContainer,
                             onSuccess: (data) => {
