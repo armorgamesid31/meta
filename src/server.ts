@@ -71,7 +71,7 @@ app.use('/appointments', bookingRoutes);
 
 // Proper header for iframe/CORS support
 app.use((req, res, next) => {
-  res.setHeader('X-Frame-Options', 'ALLOWALL');
+  res.removeHeader('X-Frame-Options'); // Best practice to remove for allowing embedding
   res.setHeader('Content-Security-Policy', "frame-ancestors *");
   next();
 });
