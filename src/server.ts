@@ -128,20 +128,22 @@ app.get('/chakratest', (req: any, res) => {
 
                     btnContainer.innerHTML = 'Başlatılıyor...';
                     
-                    const chakra = new window.ChakraWhatsappConnect({
+                    // Documentation says ChakraWhatsappConnect.init() is the way
+                    const chakra = ChakraWhatsappConnect.init({
                         connectToken: data.connectToken,
-                        container: btnContainer,
-                        onSuccess: (res) => {
-                            statusEl.innerText = '✅ Bağlantı Başarılı!';
-                            console.log('Chakra Success:', res);
+                        container: '#chakra-button-container',
+                        onMessage: (event, data) => {
+                            console.log('Chakra Event:', event, data);
+                            if (event === 'SUCCESS') statusEl.innerText = '✅ Bağlantı Başarılı!';
+                        },
+                        onReady: () => {
+                            statusEl.innerText = 'SDK Hazır. Buton geldi.';
                         },
                         onError: (err) => {
                             statusEl.innerText = '❌ SDK Hatası: ' + (err.message || 'Bağlantı kurulamadı');
                             console.error('Chakra Error:', err);
                         }
                     });
-
-                    chakra.render();
                     
                     btnContainer.innerHTML = ''; 
                     statusEl.innerText = 'SDK Başlatıldı. Buton gelmiş olmalı.';
