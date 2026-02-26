@@ -108,8 +108,15 @@ app.get('/chakratest', (req: any, res) => {
                     if (data.connectToken) {
                         statusEl.innerText = 'Token alındı, SDK başlatılıyor...';
                         
-                        // Initialize Chakra SDK
-                        const chakra = new ChakraWhatsappConnect({
+                        // Initialize Chakra SDK (Checking for potential different global names)
+                        const ChakraSDK = window.ChakraWhatsappConnect || 
+                                         (window.Chakra ? window.Chakra.WhatsappConnect : null);
+                        
+                        if (!ChakraSDK) {
+                            throw new Error('Chakra SDK yüklendi ancak başlatılamadı (Global nesne bulunamadı).');
+                        }
+
+                        const chakra = new ChakraSDK({
                             connectToken: data.connectToken,
                             container: btnContainer,
                             onSuccess: (data) => {
