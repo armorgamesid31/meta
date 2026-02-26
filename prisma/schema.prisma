@@ -83,7 +83,6 @@ model Service {
   salonId            Int
   category           String?
   requiresSpecialist Boolean?         @default(false)
-  allowStaffSelection Boolean?        @default(true)
   categoryId         Int?
   capacityOverride   Int?
   sequentialOverride Boolean?
