@@ -11,6 +11,7 @@ model Salon {
   id              Int               @id @default(autoincrement())
   name            String
   logoUrl         String?
+  chakraPluginId  String?
   createdAt       DateTime?         @default(now()) @db.Timestamp(6)
   updatedAt       DateTime?         @default(now()) @updatedAt @db.Timestamp(6)
   slug            String?           @unique(map: "salon_slug_unique")
