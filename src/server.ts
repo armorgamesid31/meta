@@ -120,16 +120,18 @@ app.get('/chakratest', (req: any, res) => {
                     const data = await response.json();
                     if (!data.connectToken) throw new Error(data.message || 'Önce plugin oluşturun.');
                     
-                    // Direct initialization as per Chakra Partner Connect documentation
-                    if (typeof window.ChakraWhatsappConnect !== 'function') {
-                        console.log('Current window state:', window);
-                        throw new Error('SDK (ChakraWhatsappConnect) yüklenmiş görünüyor ama bir fonksiyon değil. Konsolu kontrol edin.');
+                    // Flexible discovery logic for Chakra SDK
+                    let SDK = window.ChakraWhatsappConnect;
+                    let initMethod = (SDK && typeof SDK.init === 'function') ? SDK.init.bind(SDK) : SDK;
+
+                    if (typeof initMethod !== 'function') {
+                        console.log('Chakra SDK Discovery Failed:', { SDK, windowChakra: window.Chakra });
+                        throw new Error('Chakra SDK (init) metodu bulunamadı. Detaylar konsolda.');
                     }
 
                     btnContainer.innerHTML = 'Başlatılıyor...';
                     
-                    // Documentation says ChakraWhatsappConnect.init() is the way
-                    const chakra = ChakraWhatsappConnect.init({
+                    const chakra = initMethod({
                         connectToken: data.connectToken,
                         container: '#chakra-button-container',
                         onMessage: (event, data) => {
