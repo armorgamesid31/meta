@@ -120,13 +120,15 @@ app.get('/chakratest', (req: any, res) => {
                     const data = await response.json();
                     if (!data.connectToken) throw new Error(data.message || 'Önce plugin oluşturun.');
                     
-                    // Comprehensive SDK finding logic
-                    const ChakraSDK = window.ChakraWhatsappConnect || (window.Chakra && window.Chakra.WhatsappConnect);
-                    if (!ChakraSDK) throw new Error('Chakra SDK nesnesi bulunamadı.');
+                    // Direct initialization as per Chakra Partner Connect documentation
+                    if (typeof window.ChakraWhatsappConnect !== 'function') {
+                        console.log('Current window state:', window);
+                        throw new Error('SDK (ChakraWhatsappConnect) yüklenmiş görünüyor ama bir fonksiyon değil. Konsolu kontrol edin.');
+                    }
 
-                    btnContainer.innerHTML = 'Yükleniyor...';
+                    btnContainer.innerHTML = 'Başlatılıyor...';
                     
-                    const options = {
+                    const chakra = new window.ChakraWhatsappConnect({
                         connectToken: data.connectToken,
                         container: btnContainer,
                         onSuccess: (res) => {
@@ -137,16 +139,9 @@ app.get('/chakratest', (req: any, res) => {
                             statusEl.innerText = '❌ SDK Hatası: ' + (err.message || 'Bağlantı kurulamadı');
                             console.error('Chakra Error:', err);
                         }
-                    };
+                    });
 
-                    let chakra;
-                    try {
-                        chakra = new ChakraSDK(options);
-                        if (chakra && typeof chakra.render === 'function') chakra.render();
-                    } catch (e) {
-                        console.log('Constructor failed, trying as function...');
-                        chakra = ChakraSDK(options);
-                    }
+                    chakra.render();
                     
                     btnContainer.innerHTML = ''; 
                     statusEl.innerText = 'SDK Başlatıldı. Buton gelmiş olmalı.';
