@@ -131,6 +131,7 @@ app.get('/chakratest', (req: any, res) => {
                     const chakra = window.ChakraWhatsappConnect.init({
                         connectToken: data.connectToken,
                         container: '#chakra-button-container',
+                        baseUrl: 'https://api.chakrahq.com',
                         onMessage: (event, payload) => {
                             console.log('Chakra Event:', event, payload);
                             statusEl.innerText = 'Event: ' + event;
