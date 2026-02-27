@@ -71,11 +71,12 @@ app.use('/appointments', bookingRoutes);
 
 // Proper header for iframe/CORS support
 app.use((req, res, next) => {
-  res.removeHeader('X-Frame-Options'); // Remove to allow embedding in iframe
-  // Refine CSP to allow chakra iframe sources explicitly
+  // Chakra SDK needs to load an iframe from api.chakrahq.com. 
+  // We must allow framing and bypass strict CSP for testing.
+  res.removeHeader("X-Frame-Options"); 
   res.setHeader(
-    'Content-Security-Policy',
-    `frame-ancestors * https://embed.chakrahq.com https://api.chakrahq.com; default-src 'self' https://api.chakrahq.com; script-src 'self' 'unsafe-inline' https://embed.chakrahq.com https://api.chakrahq.com https://static.cloudflareinsights.com; connect-src 'self' https://api.chakrahq.com https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline';`
+    "Content-Security-Policy",
+    "frame-ancestors *; default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval'; style-src * 'unsafe-inline'; img-src * data: blob:; connect-src *;"
   );
   next();
 });
@@ -99,7 +100,7 @@ app.get('/chakratest', (req: any, res) => {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Chakra Test</title>
+        <title>Chakra Test - Extreme Bypass</title>
         <script src="https://embed.chakrahq.com/whatsapp-partner-connect/v1/sdk.js"></script>
         <style>
             body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #f4f4f9; padding: 20px; }
@@ -108,16 +109,19 @@ app.get('/chakratest', (req: any, res) => {
             .btn { display: block; width: 100%; padding: 12px; margin: 10px 0; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: background 0.2s; }
             .btn-primary { background: #007bff; color: white; }
             .btn-success { background: #28a745; color: white; }
+            .btn-warning { background: #ffc107; color: #212529; }
             #status { margin-top: 1.5rem; padding: 10px; border-radius: 4px; background: #eee; color: #555; font-size: 0.85rem; word-break: break-all; min-height: 40px; }
             .error { color: #dc3545; background: #fceea7; }
+            #chakra-button-container { margin-top: 20px; min-height: 100px; border: 1px dashed #ccc; padding: 10px; }
         </style>
     </head>
     <body>
         <div id="container">
-            <h1>Chakra WhatsApp Test</h1>
+            <h1>Chakra Test (Extreme Bypass)</h1>
             <p>Salon: <strong>${subdomain}</strong></p>
             <button id="btn-create" class="btn btn-primary">1. Yeni Plugin Oluştur</button>
-            <button id="btn-connect" class="btn btn-success">2. WhatsApp Bağla (SDK)</button>
+            <button id="btn-connect-sdk" class="btn btn-success">2. WhatsApp Bağla (Official SDK)</button>
+            <button id="btn-connect-manual" class="btn btn-warning">3. WhatsApp Bağla (Direct Iframe)</button>
             <div id="chakra-button-container"></div>
             <div id="status">Lütfen bir işlem seçin.</div>
         </div>
@@ -134,44 +138,43 @@ app.get('/chakratest', (req: any, res) => {
                 } catch (err) { statusEl.innerText = "❌ Hata: " + err.message; }
             };
 
-            document.getElementById("btn-connect").onclick = async () => {
-                statusEl.innerText = "Token alınıyor...";
+            document.getElementById("btn-connect-sdk").onclick = async () => {
+                statusEl.innerText = "Token alınıyor (SDK)...";
                 btnContainer.innerHTML = ""; 
-
                 try {
                     const response = await fetch("/api/app/chakra/connect-token");
                     const data = await response.json();
-                    if (!data.connectToken) throw new Error(data.message || "Önce plugin oluşturun.");
+                    if (!data.connectToken) throw new Error("Token alınamadı.");
                     
-                    // Check if SDK is available globally
-                    if (typeof window.ChakraWhatsappConnect === "undefined") {
-                        throw new Error("SDK (ChakraWhatsappConnect) yüklenemedi veya henüz hazır değil. Sayfayı yenilemeyi deneyin.");
-                    }
-
                     statusEl.innerText = "SDK başlatılıyor...";
-                    
-                    // HACK: Override baseUrl to trick the SDK's internal URL builder
-                    // SDK builds: BASE_URL + '/p/whatsapp-partner/connect?connectToken=...'
-                    // We want: https://api.chakrahq.com/v1/ext/whatsapp-partner/connect?connectToken=...
-                    // So we set BASE_URL to our target, and make the SDK's appended path a dummy query param
                     const chakra = window.ChakraWhatsappConnect.init({
                         connectToken: data.connectToken,
                         container: "#chakra-button-container",
-                        baseUrl: "https://api.chakrahq.com/v1/ext/whatsapp-partner/connect?dummy=",
-                        onMessage: (event, payload) => {
-                            console.log("Chakra Event:", event, payload);
-                            statusEl.innerText = "Event: " + event;
-                        },
-                        onReady: () => {
-                            console.log("Chakra SDK Ready");
-                            statusEl.innerText = "✅ SDK Hazır. Buton aşağıda belirmeli.";
-                        },
-                        onError: (err) => {
-                            console.error("Chakra Error:", err);
-                            statusEl.innerText = "❌ SDK Hatası: " + (err.message || "Bilinmiyor");
-                        }
+                        // baseUrl: "https://api.chakrahq.com",
+                        onMessage: (event, payload) => console.log("Event:", event, payload),
+                        onReady: () => statusEl.innerText = "✅ SDK Ready. Buton belirmeli.",
+                        onError: (err) => statusEl.innerText = "❌ SDK Error: " + err.message
                     });
+                } catch (err) { statusEl.innerText = "❌ Hata: " + err.message; }
+            };
+
+            document.getElementById("btn-connect-manual").onclick = async () => {
+                statusEl.innerText = "Token alınıyor (Manual)...";
+                btnContainer.innerHTML = ""; 
+                try {
+                    const response = await fetch("/api/app/chakra/connect-token");
+                    const data = await response.json();
+                    if (!data.connectToken) throw new Error("Token alınamadı.");
                     
+                    statusEl.innerText = "Direct Iframe enjekte ediliyor...";
+                    const iframe = document.createElement("iframe");
+                    // Using the path that seemed to work in logs but with correct token
+                    iframe.src = "https://api.chakrahq.com/v1/ext/whatsapp-partner/connect?connectToken=" + encodeURIComponent(data.connectToken);
+                    iframe.style.width = "100%";
+                    iframe.style.height = "150px";
+                    iframe.style.border = "none";
+                    btnContainer.appendChild(iframe);
+                    statusEl.innerText = "✅ Iframe enjekte edildi.";
                 } catch (err) { statusEl.innerText = "❌ Hata: " + err.message; }
             };
         </script>
