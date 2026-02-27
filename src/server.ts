@@ -71,7 +71,6 @@ app.use('/appointments', bookingRoutes);
 
 // Proper header for iframe/CORS support
 app.use((req, res, next) => {
-  // Chakra SDK needs to load an iframe from api.chakrahq.com. 
   // We must allow framing and bypass strict CSP for testing.
   res.removeHeader("X-Frame-Options"); 
   res.setHeader(
@@ -100,82 +99,53 @@ app.get('/chakratest', (req: any, res) => {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Chakra Test - Extreme Bypass</title>
-        <script src="https://embed.chakrahq.com/whatsapp-partner-connect/v1/sdk.js"></script>
+        <title>Chakra Test - Direct Link</title>
         <style>
             body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #f4f4f9; padding: 20px; }
             #container { padding: 2rem; background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); text-align: center; max-width: 450px; width: 100%; }
             h1 { color: #333; margin-bottom: 1.5rem; font-size: 1.5rem; }
-            .btn { display: block; width: 100%; padding: 12px; margin: 10px 0; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: background 0.2s; }
+            .btn { display: block; width: 100%; padding: 12px; margin: 10px 0; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: background 0.2s; text-decoration: none; text-align: center; }
             .btn-primary { background: #007bff; color: white; }
             .btn-success { background: #28a745; color: white; }
             .btn-warning { background: #ffc107; color: #212529; }
             #status { margin-top: 1.5rem; padding: 10px; border-radius: 4px; background: #eee; color: #555; font-size: 0.85rem; word-break: break-all; min-height: 40px; }
             .error { color: #dc3545; background: #fceea7; }
-            #chakra-button-container { margin-top: 20px; min-height: 100px; border: 1px dashed #ccc; padding: 10px; }
         </style>
     </head>
     <body>
         <div id="container">
-            <h1>Chakra Test (Extreme Bypass)</h1>
+            <h1>Chakra Test (Direct Link)</h1>
             <p>Salon: <strong>${subdomain}</strong></p>
             <button id="btn-create" class="btn btn-primary">1. Yeni Plugin Oluştur</button>
-            <button id="btn-connect-sdk" class="btn btn-success">2. WhatsApp Bağla (Official SDK)</button>
-            <button id="btn-connect-manual" class="btn btn-warning">3. WhatsApp Bağla (Direct Iframe)</button>
-            <div id="chakra-button-container"></div>
-            <div id="status">Lütfen bir işlem seçin.</div>
+            <a id="lnk-connect" href="#" target="_blank" class="btn btn-success" style="display:none;">2. WhatsApp Bağla (Yeni Sekmede Aç)</a>
+            <div id="status">Lütfen önce plugin oluşturun veya mevcutsa 1. adıma basın.</div>
         </div>
         <script>
             const statusEl = document.getElementById("status");
-            const btnContainer = document.getElementById("chakra-button-container");
+            const lnkConnect = document.getElementById("lnk-connect");
 
             document.getElementById("btn-create").onclick = async () => {
-                statusEl.innerText = "Plugin oluşturuluyor...";
+                statusEl.innerText = "Plugin hazırlanıyor...";
                 try {
                     const res = await fetch("/api/app/chakra/create-plugin", { method: "POST" });
                     const data = await res.json();
-                    statusEl.innerText = data.success ? "✅ Plugin OK: " + data.pluginId : "❌ Hata: " + (data.message || "Bilinmiyor");
-                } catch (err) { statusEl.innerText = "❌ Hata: " + err.message; }
-            };
-
-            document.getElementById("btn-connect-sdk").onclick = async () => {
-                statusEl.innerText = "Token alınıyor (SDK)...";
-                btnContainer.innerHTML = ""; 
-                try {
-                    const response = await fetch("/api/app/chakra/connect-token");
-                    const data = await response.json();
-                    if (!data.connectToken) throw new Error("Token alınamadı.");
                     
-                    statusEl.innerText = "SDK başlatılıyor...";
-                    const chakra = window.ChakraWhatsappConnect.init({
-                        connectToken: data.connectToken,
-                        container: "#chakra-button-container",
-                        // baseUrl: "https://api.chakrahq.com",
-                        onMessage: (event, payload) => console.log("Event:", event, payload),
-                        onReady: () => statusEl.innerText = "✅ SDK Ready. Buton belirmeli.",
-                        onError: (err) => statusEl.innerText = "❌ SDK Error: " + err.message
-                    });
-                } catch (err) { statusEl.innerText = "❌ Hata: " + err.message; }
-            };
-
-            document.getElementById("btn-connect-manual").onclick = async () => {
-                statusEl.innerText = "Token alınıyor (Manual)...";
-                btnContainer.innerHTML = ""; 
-                try {
-                    const response = await fetch("/api/app/chakra/connect-token");
-                    const data = await response.json();
-                    if (!data.connectToken) throw new Error("Token alınamadı.");
-                    
-                    statusEl.innerText = "Direct Iframe enjekte ediliyor...";
-                    const iframe = document.createElement("iframe");
-                    // Using the path that seemed to work in logs but with correct token
-                    iframe.src = "https://api.chakrahq.com/v1/ext/whatsapp-partner/connect?connectToken=" + encodeURIComponent(data.connectToken);
-                    iframe.style.width = "100%";
-                    iframe.style.height = "150px";
-                    iframe.style.border = "none";
-                    btnContainer.appendChild(iframe);
-                    statusEl.innerText = "✅ Iframe enjekte edildi.";
-                } catch (err) { statusEl.innerText = "❌ Hata: " + err.message; }
+                    if (data.success || data.pluginId) {
+                        const tokenRes = await fetch("/api/app/chakra/connect-token");
+                        const tokenData = await tokenRes.json();
+                        
+                        if (tokenData.connectToken) {
+                            const url = "https://api.chakrahq.com/v1/ext/whatsapp-partner/connect?connectToken=" + encodeURIComponent(tokenData.connectToken);
+                            lnkConnect.href = url;
+                            lnkConnect.style.display = "block";
+                            statusEl.innerText = "✅ Hazır! Lütfen aşağıdaki butona tıklayarak yeni sekmede devam edin.";
+                        } else {
+                            throw new Error("Token alınamadı.");
+                        }
+                    } else {
+                        throw new Error(data.message || "Plugin oluşturulamadı.");
+                    }
+                } catch (err) { statusEl.innerHTML = '<span class="error">❌ Hata: ' + err.message + '</span>'; }
             };
         </script>
     </body>
