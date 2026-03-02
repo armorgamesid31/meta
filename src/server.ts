@@ -12,6 +12,7 @@ import customerRoutes from './routes/customers.js';
 import bookingContextRoutes from './routes/bookingContext.js';
 import chakraRoutes from './routes/chakra.js';
 import { multiTenantMiddleware } from './middleware/multiTenant.js';
+import { createProxyMiddleware } from 'http-proxy-middleware';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -69,50 +70,71 @@ app.use('/api/app/chakra', chakraRoutes);
 app.use('/availability', availabilityRoutes);
 app.use('/appointments', bookingRoutes);
 
-// Proper header for iframe/CORS support
-app.use((req, res, next) => {
-  res.removeHeader("X-Frame-Options"); 
-  res.setHeader(
-    "Content-Security-Policy",
-    "frame-ancestors *; default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval'; style-src * 'unsafe-inline'; img-src * data: blob:; connect-src *;"
-  );
-  next();
-});
+// Chakra Mirror Proxy: To bypass SAMEORIGIN policy
+// We'll use a specific path that doesn't conflict with Chakra's internal relative paths
+app.use('/chakra-proxy', createProxyMiddleware({
+  target: 'https://api.chakrahq.com',
+  changeOrigin: true,
+  pathRewrite: {
+    '^/chakra-proxy': '', // Keep everything after /chakra-proxy as is
+  },
+  on: {
+    proxyRes: (proxyRes) => {
+        delete proxyRes.headers['x-frame-options'];
+        delete proxyRes.headers['content-security-policy'];
+    }
+  }
+}));
 
-// Chakra Test Page (Mirror-Embedded Onboarding Flow)
+// Chakra Test Page (Scenario 2 Fix: Hybrid Proxy + Iframe)
 app.get('/chakratest', (req: any, res) => {
+  const subdomain = req.headers.host?.split('.')[0] || 'unknown';
   res.send(`
     <!DOCTYPE html>
     <html>
     <head>
         <meta charset="UTF-8">
-        <title>Chakra Mirror Test</title>
-        <script src="https://embed.chakrahq.com/whatsapp-partner-connect/v1/sdk.js"></script>
+        <title>Chakra Proxy Bypass Test</title>
+        <style>
+            body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #f4f4f9; padding: 20px; }
+            #container { padding: 2rem; background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); text-align: center; max-width: 500px; width: 100%; }
+            .btn { display: block; width: 100%; padding: 14px; margin: 10px 0; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; background: #007bff; color: white; }
+            #status { margin-top: 1.5rem; padding: 10px; border-radius: 4px; background: #eee; font-size: 0.85rem; }
+        </style>
     </head>
     <body>
-        <h1>Chakra Mirror Test</h1>
-        <button id="btn-init">Start WhatsApp Onboarding</button>
-        
-        <div id="container" style="margin-top:20px; border:1px solid #ccc; min-height:100px; padding:10px;">
-            Button will appear here...
+        <div id="container">
+            <h1>Chakra Proxy Bypass</h1>
+            <p>Salon: <strong>${subdomain}</strong></p>
+            <button id="btn-init">Start WhatsApp Link (Proxy)</button>
+            <div id="iframe-target" style="margin-top:20px; min-height:200px; border:1px dashed #ccc;"></div>
+            <div id="status">Ready.</div>
         </div>
-
         <script>
             document.getElementById('btn-init').onclick = async () => {
-                const res = await fetch('/api/app/chakra/connect-token');
-                const data = await res.json();
+                const statusEl = document.getElementById('status');
+                statusEl.innerText = 'Fetching token...';
                 
-                if (data.connectToken) {
-                    // Initialize SDK via our Mirror Proxy
-                    // This forces the iframe to load from OUR domain, stripping SAMEORIGIN
-                    const chakra = ChakraWhatsappConnect.init({
-                        connectToken: data.connectToken,
-                        container: '#container',
-                        baseUrl: window.location.origin + '/chakra-mirror',
-                        onMessage: (event, data) => console.log('Message:', event, data),
-                        onReady: () => console.log('Iframe mirrored and ready'),
-                        onError: (err) => console.error('Error:', err),
-                    });
+                try {
+                    const res = await fetch('/api/app/chakra/connect-token');
+                    const data = await res.json();
+                    
+                    if (data.connectToken) {
+                        statusEl.innerText = 'Token received. Injecting proxied iframe...';
+                        
+                        // We use OUR proxy path instead of api.chakrahq.com
+                        // This makes the browser think the iframe is on the same domain as us
+                        const proxyUrl = "/chakra-proxy/v1/ext/whatsapp-partner/connect?connectToken=" + encodeURIComponent(data.connectToken);
+                        
+                        document.getElementById('iframe-target').innerHTML = 
+                            '<iframe src="' + proxyUrl + '" style="width:100%; height:300px; border:none;"></iframe>';
+                            
+                        statusEl.innerText = '✅ Proxied Iframe injected.';
+                    } else {
+                        throw new Error(data.message || 'Token failed.');
+                    }
+                } catch (err) {
+                    statusEl.innerText = '❌ Error: ' + err.message;
                 }
             };
         </script>
@@ -124,7 +146,7 @@ app.get('/chakratest', (req: any, res) => {
 const distPath = path.join(__dirname, '../dist');
 app.use(express.static(distPath));
 
-app.get(/^(?!\/api|\/auth|\/availability|\/chakratest).*$/, (req, res) => {
+app.get(/^(?!\/api|\/auth|\/availability|\/chakratest|\/chakra-proxy).*$/, (req, res) => {
   res.sendFile(path.join(distPath, 'index.html'));
 });
 
