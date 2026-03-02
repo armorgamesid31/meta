@@ -93,6 +93,7 @@ app.get('/connect', (req, res) => {
 // Chakra Test Page
 app.get('/chakratest', (req: any, res) => {
   const subdomain = req.headers.host?.split('.')[0] || 'unknown';
+  const timestamp = new Date().getTime();
   res.send(`
     <!DOCTYPE html>
     <html lang="tr">
@@ -114,8 +115,9 @@ app.get('/chakratest', (req: any, res) => {
     </head>
     <body>
         <div id="container">
-            <h1>Chakra Test (Direct Link)</h1>
+            <h1>Chakra Test (Direct Link) v2</h1>
             <p>Salon: <strong>${subdomain}</strong></p>
+            <p><small>Versiyon: ${timestamp}</small></p>
             <button id="btn-create" class="btn btn-primary">1. Yeni Plugin Oluştur</button>
             <a id="lnk-connect" href="#" target="_blank" class="btn btn-success" style="display:none;">2. WhatsApp Bağla (Yeni Sekmede Aç)</a>
             <div id="status">Lütfen önce plugin oluşturun veya mevcutsa 1. adıma basın.</div>
