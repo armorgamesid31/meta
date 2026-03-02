@@ -122,28 +122,17 @@ app.get('/chakratest', (req: any, res) => {
                     
                     if (!tokenData.connectToken) throw new Error("Güvenlik token'ı alınamadı.");
 
-                    statusEl.innerText = "Facebook penceresi açılıyor...";
+                    statusEl.innerText = "Chakra sayfasına yönlendiriliyorsunuz...";
 
-                    // 2. Dinamik Facebook URL Oluştur (Tersine Mühendislik Verileriyle)
-                    const fbUrl = "https://www.facebook.com/v24.0/dialog/oauth" +
-                        "?app_id=287715906538935" +
-                        "&client_id=287715906538935" +
-                        "&config_id=721295116725582" +
-                        "&display=popup" +
-                        "&response_type=code" +
-                        "&scope=email,business_management,whatsapp_business_management,whatsapp_business_messaging" +
-                        "&extras=" + encodeURIComponent(JSON.stringify({featureType: "whatsapp_business_app_onboarding", sessionInfoVersion: "3"})) +
-                        "&fallback_redirect_uri=" + encodeURIComponent("https://app.chakrahq.com/admin/plugin/" + pluginData.pluginId) +
-                        "&redirect_uri=" + encodeURIComponent("https://app.chakrahq.com/v1/ext/whatsapp-partner/connect?connectToken=" + tokenData.connectToken);
+                    // 2. DOĞRUDAN YÖNLENDİRME (Redirect)
+                    // Kullanıcıyı Facebook'a değil, önce Chakra'nın kendi endpoint'ine gönderiyoruz.
+                    // Chakra, kendi domaini üzerinden Facebook'u tetiklediğinde Meta domain hatası vermeyecektir.
+                    const targetUrl = "https://api.chakrahq.com/v1/ext/whatsapp-partner/connect?connectToken=" + tokenData.connectToken;
 
-                    // 3. Popup Olarak Aç
-                    const width = 600, height = 700;
-                    const left = (window.innerWidth / 2) - (width / 2);
-                    const top = (window.innerHeight / 2) - (height / 2);
+                    // Mevcut sayfayı yönlendir
+                    window.location.href = targetUrl;
                     
-                    window.open(fbUrl, "ChakraConnect", "width="+width+",height="+height+",top="+top+",left="+left);
-                    
-                    statusEl.innerText = "✅ Pencere açıldı. Lütfen işlemleri oradan tamamlayın.";
+                    statusEl.innerText = "✅ Yönlendirme yapıldı.";
 
                 } catch (err) { 
                     statusEl.innerHTML = '<span class="error">❌ Hata: ' + err.message + '</span>'; 
