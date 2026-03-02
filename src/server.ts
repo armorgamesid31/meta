@@ -71,20 +71,26 @@ app.use('/availability', availabilityRoutes);
 app.use('/appointments', bookingRoutes);
 
 // Chakra Mirror Proxy: To bypass SAMEORIGIN policy
-// We'll use a specific path that doesn't conflict with Chakra's internal relative paths
-app.use('/chakra-proxy', createProxyMiddleware({
-  target: 'https://api.chakrahq.com',
-  changeOrigin: true,
-  pathRewrite: {
-    '^/chakra-proxy': '', // Keep everything after /chakra-proxy as is
-  },
-  on: {
-    proxyRes: (proxyRes) => {
+// Ensure it's mounted BEFORE multiTenantMiddleware if needed, 
+// but here we keep it simple.
+app.use('/chakra-proxy', (req, res, next) => {
+  createProxyMiddleware({
+    target: 'https://api.chakrahq.com',
+    changeOrigin: true,
+    pathRewrite: {
+      '^/chakra-proxy': '',
+    },
+    on: {
+      proxyRes: (proxyRes) => {
+        // Force removal of security headers
         delete proxyRes.headers['x-frame-options'];
         delete proxyRes.headers['content-security-policy'];
+        // Ensure iframe can be displayed
+        proxyRes.headers['access-control-allow-origin'] = '*';
+      }
     }
-  }
-}));
+  })(req, res, next);
+});
 
 // Chakra Test Page (Scenario 2 Fix: Hybrid Proxy + Iframe)
 app.get('/chakratest', (req: any, res) => {
