@@ -12,6 +12,7 @@ import customerRoutes from './routes/customers.js';
 import bookingContextRoutes from './routes/bookingContext.js';
 import chakraRoutes from './routes/chakra.js';
 import { multiTenantMiddleware } from './middleware/multiTenant.js';
+import { createProxyMiddleware } from 'http-proxy-middleware';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -80,15 +81,20 @@ app.use((req, res, next) => {
   next();
 });
 
-// Proxy /connect route to Chakra API to handle SDK's internal calls
-app.get('/connect', (req, res) => {
-  const token = req.query.connectToken;
-  if (!token) {
-    return res.status(400).json({ message: 'Missing connectToken for proxy.' });
+// Chakra Mirror Proxy: To bypass SAMEORIGIN policy
+app.use('/chakra-mirror', createProxyMiddleware({
+  target: 'https://api.chakrahq.com',
+  changeOrigin: true,
+  pathRewrite: {
+    '^/chakra-mirror': '/p/whatsapp-partner/connect',
+  },
+  on: {
+    proxyRes: (proxyRes) => {
+        delete proxyRes.headers['x-frame-options'];
+        delete proxyRes.headers['content-security-policy'];
+    }
   }
-  // Redirect to Chakra's actual connect endpoint
-  res.redirect(`https://api.chakrahq.com/v1/ext/whatsapp-partner/connect?connectToken=${token}`);
-});
+}));
 
 // Chakra Test Page
 app.get('/chakratest', (req: any, res) => {
@@ -100,7 +106,7 @@ app.get('/chakratest', (req: any, res) => {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Chakra Test - Direct Link</title>
+        <title>Chakra Test - Mirroring</title>
         <style>
             body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #f4f4f9; padding: 20px; }
             #container { padding: 2rem; background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); text-align: center; max-width: 450px; width: 100%; }
@@ -108,26 +114,25 @@ app.get('/chakratest', (req: any, res) => {
             .btn { display: block; width: 100%; padding: 12px; margin: 10px 0; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: background 0.2s; text-decoration: none; text-align: center; }
             .btn-primary { background: #007bff; color: white; }
             .btn-success { background: #28a745; color: white; }
-            .btn-warning { background: #ffc107; color: #212529; }
             #status { margin-top: 1.5rem; padding: 10px; border-radius: 4px; background: #eee; color: #555; font-size: 0.85rem; word-break: break-all; min-height: 40px; }
             .error { color: #dc3545; background: #fceea7; }
         </style>
     </head>
     <body>
         <div id="container">
-            <h1>Chakra Test (Direct Link) v2</h1>
+            <h1>Chakra Test (Mirroring)</h1>
             <p>Salon: <strong>${subdomain}</strong></p>
             <p><small>Versiyon: ${timestamp}</small></p>
-            <button id="btn-create" class="btn btn-primary">1. Yeni Plugin Oluştur</button>
-            <a id="lnk-connect" href="#" target="_blank" class="btn btn-success" style="display:none;">2. WhatsApp Bağla (Yeni Sekmede Aç)</a>
-            <div id="status">Lütfen önce plugin oluşturun veya mevcutsa 1. adıma basın.</div>
+            <button id="btn-create" class="btn btn-primary">Bağlantıyı Başlat</button>
+            <div id="chakra-button-container" style="margin-top:20px; min-height:100px;"></div>
+            <div id="status">Lütfen butona basarak testi başlatın.</div>
         </div>
         <script>
             const statusEl = document.getElementById("status");
-            const lnkConnect = document.getElementById("lnk-connect");
+            const btnContainer = document.getElementById("chakra-button-container");
 
             document.getElementById("btn-create").onclick = async () => {
-                statusEl.innerText = "Plugin hazırlanıyor...";
+                statusEl.innerText = "Bağlantı hazırlanıyor (Proxy Mirroring)...";
                 try {
                     const res = await fetch("/api/app/chakra/create-plugin", { method: "POST" });
                     const data = await res.json();
@@ -137,10 +142,9 @@ app.get('/chakratest', (req: any, res) => {
                         const tokenData = await tokenRes.json();
                         
                         if (tokenData.connectToken) {
-                            const url = "https://api.chakrahq.com/v1/ext/whatsapp-partner/connect?connectToken=" + encodeURIComponent(tokenData.connectToken);
-                            lnkConnect.href = url;
-                            lnkConnect.style.display = "block";
-                            statusEl.innerText = "✅ Hazır! Lütfen aşağıdaki butona tıklayarak yeni sekmede devam edin.";
+                            const mirrorUrl = "/chakra-mirror?connectToken=" + encodeURIComponent(tokenData.connectToken);
+                            btnContainer.innerHTML = '<iframe src="' + mirrorUrl + '" style="width:100%; height:150px; border:1px solid #ddd; border-radius:8px;"></iframe>';
+                            statusEl.innerText = "✅ Iframe Mirror üzerinden yüklendi. SAMEORIGIN engeli sunucu seviyesinde temizlendi.";
                         } else {
                             throw new Error("Token alınamadı.");
                         }
@@ -158,7 +162,7 @@ app.get('/chakratest', (req: any, res) => {
 const distPath = path.join(__dirname, '../dist');
 app.use(express.static(distPath));
 
-app.get(/^(?!\/api|\/auth|\/availability|\/chakratest).*$/, (req, res) => {
+app.get(/^(?!\/api|\/auth|\/availability|\/chakratest|\/chakra-mirror).*$/, (req, res) => {
   res.sendFile(path.join(distPath, 'index.html'));
 });
 

@@ -38,6 +38,7 @@
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
     "framer-motion": "^12.33.0",
+    "http-proxy-middleware": "^3.0.5",
     "jsonwebtoken": "^9.0.3",
     "lucide-react": "^0.563.0",
     "pg": "^8.17.2",
