@@ -48,6 +48,22 @@ app.get("/health", (_req, res) => {
   res.status(200).json({ status: "ok" });
 });
 
+// Chakra Mirror Proxy: MUST be before multiTenantMiddleware and catch-all
+app.use('/chakra-proxy', createProxyMiddleware({
+  target: 'https://api.chakrahq.com',
+  changeOrigin: true,
+  pathRewrite: {
+    '^/chakra-proxy': '',
+  },
+  on: {
+    proxyRes: (proxyRes) => {
+      delete proxyRes.headers['x-frame-options'];
+      delete proxyRes.headers['content-security-policy'];
+      proxyRes.headers['access-control-allow-origin'] = '*';
+    }
+  }
+}));
+
 // Admin/System debug routes (no tenant needed)
 app.get('/debug/db-check', async (req, res) => {
   try {
@@ -70,26 +86,14 @@ app.use('/api/app/chakra', chakraRoutes);
 app.use('/availability', availabilityRoutes);
 app.use('/appointments', bookingRoutes);
 
-// Chakra Mirror Proxy: To bypass SAMEORIGIN policy
-// Ensure it's mounted BEFORE multiTenantMiddleware if needed, 
-// but here we keep it simple.
-app.use('/chakra-proxy', (req, res, next) => {
-  createProxyMiddleware({
-    target: 'https://api.chakrahq.com',
-    changeOrigin: true,
-    pathRewrite: {
-      '^/chakra-proxy': '',
-    },
-    on: {
-      proxyRes: (proxyRes) => {
-        // Force removal of security headers
-        delete proxyRes.headers['x-frame-options'];
-        delete proxyRes.headers['content-security-policy'];
-        // Ensure iframe can be displayed
-        proxyRes.headers['access-control-allow-origin'] = '*';
-      }
-    }
-  })(req, res, next);
+// Proper header for iframe/CORS support
+app.use((req, res, next) => {
+  res.removeHeader("X-Frame-Options"); 
+  res.setHeader(
+    "Content-Security-Policy",
+    "frame-ancestors *; default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval'; style-src * 'unsafe-inline'; img-src * data: blob:; connect-src *;"
+  );
+  next();
 });
 
 // Chakra Test Page (Scenario 2 Fix: Hybrid Proxy + Iframe)
@@ -128,8 +132,7 @@ app.get('/chakratest', (req: any, res) => {
                     if (data.connectToken) {
                         statusEl.innerText = 'Token received. Injecting proxied iframe...';
                         
-                        // We use OUR proxy path instead of api.chakrahq.com
-                        // This makes the browser think the iframe is on the same domain as us
+                        // Use OUR proxy path with correct v1 path
                         const proxyUrl = "/chakra-proxy/v1/ext/whatsapp-partner/connect?connectToken=" + encodeURIComponent(data.connectToken);
                         
                         document.getElementById('iframe-target').innerHTML = 
