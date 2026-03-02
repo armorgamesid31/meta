@@ -12,7 +12,6 @@ import customerRoutes from './routes/customers.js';
 import bookingContextRoutes from './routes/bookingContext.js';
 import chakraRoutes from './routes/chakra.js';
 import { multiTenantMiddleware } from './middleware/multiTenant.js';
-import { createProxyMiddleware } from 'http-proxy-middleware';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -70,33 +69,7 @@ app.use('/api/app/chakra', chakraRoutes);
 app.use('/availability', availabilityRoutes);
 app.use('/appointments', bookingRoutes);
 
-// Proper header for iframe/CORS support
-app.use((req, res, next) => {
-  // We must allow framing and bypass strict CSP for testing.
-  res.removeHeader("X-Frame-Options"); 
-  res.setHeader(
-    "Content-Security-Policy",
-    "frame-ancestors *; default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval'; style-src * 'unsafe-inline'; img-src * data: blob:; connect-src *;"
-  );
-  next();
-});
-
-// Chakra Mirror Proxy: To bypass SAMEORIGIN policy
-app.use('/chakra-mirror', createProxyMiddleware({
-  target: 'https://api.chakrahq.com',
-  changeOrigin: true,
-  pathRewrite: {
-    '^/chakra-mirror': '/p/whatsapp-partner/connect',
-  },
-  on: {
-    proxyRes: (proxyRes) => {
-        delete proxyRes.headers['x-frame-options'];
-        delete proxyRes.headers['content-security-policy'];
-    }
-  }
-}));
-
-// Chakra Test Page
+// Chakra Test Page (Popup Version - Rev 3)
 app.get('/chakratest', (req: any, res) => {
   const subdomain = req.headers.host?.split('.')[0] || 'unknown';
   const timestamp = new Date().getTime();
@@ -106,52 +79,76 @@ app.get('/chakratest', (req: any, res) => {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Chakra Test - Mirroring</title>
+        <title>Chakra Test - Popup Flow</title>
         <style>
             body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #f4f4f9; padding: 20px; }
-            #container { padding: 2rem; background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); text-align: center; max-width: 450px; width: 100%; }
-            h1 { color: #333; margin-bottom: 1.5rem; font-size: 1.5rem; }
-            .btn { display: block; width: 100%; padding: 12px; margin: 10px 0; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: background 0.2s; text-decoration: none; text-align: center; }
-            .btn-primary { background: #007bff; color: white; }
-            .btn-success { background: #28a745; color: white; }
-            #status { margin-top: 1.5rem; padding: 10px; border-radius: 4px; background: #eee; color: #555; font-size: 0.85rem; word-break: break-all; min-height: 40px; }
-            .error { color: #dc3545; background: #fceea7; }
+            #container { padding: 2.5rem; background: white; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); text-align: center; max-width: 450px; width: 100%; }
+            h1 { color: #1a1a1a; margin-bottom: 0.5rem; font-size: 1.6rem; }
+            p { color: #666; margin-bottom: 2rem; }
+            .btn { display: block; width: 100%; padding: 14px; margin: 12px 0; border: none; border-radius: 10px; font-weight: bold; cursor: pointer; transition: all 0.2s; font-size: 1rem; }
+            .btn-fb { background: #1877F2; color: white; display: flex; align-items: center; justify-content: center; gap: 10px; }
+            .btn-fb:hover { background: #166fe5; transform: translateY(-1px); }
+            #status { margin-top: 1.5rem; padding: 12px; border-radius: 8px; background: #f8f9fa; color: #555; font-size: 0.9rem; border: 1px solid #eee; }
+            .error { color: #d63031; background: #fff5f5; border-color: #fab1a0; }
         </style>
     </head>
     <body>
         <div id="container">
-            <h1>Chakra Test (Mirroring)</h1>
+            <h1>WhatsApp Entegrasyonu</h1>
             <p>Salon: <strong>${subdomain}</strong></p>
-            <p><small>Versiyon: ${timestamp}</small></p>
-            <button id="btn-create" class="btn btn-primary">Bağlantıyı Başlat</button>
-            <div id="chakra-button-container" style="margin-top:20px; min-height:100px;"></div>
-            <div id="status">Lütfen butona basarak testi başlatın.</div>
+            
+            <button id="btn-start" class="btn btn-fb">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+                Facebook ile Bağlan
+            </button>
+
+            <div id="status">Bağlantıyı başlatmak için butona tıklayın.</div>
         </div>
+
         <script>
             const statusEl = document.getElementById("status");
-            const btnContainer = document.getElementById("chakra-button-container");
 
-            document.getElementById("btn-create").onclick = async () => {
-                statusEl.innerText = "Bağlantı hazırlanıyor (Proxy Mirroring)...";
+            document.getElementById("btn-start").onclick = async () => {
+                statusEl.innerText = "Bağlantı hazırlanıyor...";
                 try {
-                    const res = await fetch("/api/app/chakra/create-plugin", { method: "POST" });
-                    const data = await res.json();
+                    // 1. Backend'den PluginID ve Token al
+                    const pluginRes = await fetch("/api/app/chakra/create-plugin", { method: "POST" });
+                    const pluginData = await pluginRes.json();
                     
-                    if (data.success || data.pluginId) {
-                        const tokenRes = await fetch("/api/app/chakra/connect-token");
-                        const tokenData = await tokenRes.json();
-                        
-                        if (tokenData.connectToken) {
-                            const mirrorUrl = "/chakra-mirror?connectToken=" + encodeURIComponent(tokenData.connectToken);
-                            btnContainer.innerHTML = '<iframe src="' + mirrorUrl + '" style="width:100%; height:150px; border:1px solid #ddd; border-radius:8px;"></iframe>';
-                            statusEl.innerText = "✅ Iframe Mirror üzerinden yüklendi. SAMEORIGIN engeli sunucu seviyesinde temizlendi.";
-                        } else {
-                            throw new Error("Token alınamadı.");
-                        }
-                    } else {
-                        throw new Error(data.message || "Plugin oluşturulamadı.");
-                    }
-                } catch (err) { statusEl.innerHTML = '<span class="error">❌ Hata: ' + err.message + '</span>'; }
+                    if (!pluginData.pluginId) throw new Error("Plugin hazırlanamadı.");
+
+                    const tokenRes = await fetch("/api/app/chakra/connect-token");
+                    const tokenData = await tokenRes.json();
+                    
+                    if (!tokenData.connectToken) throw new Error("Güvenlik token'ı alınamadı.");
+
+                    statusEl.innerText = "Facebook penceresi açılıyor...";
+
+                    // 2. Dinamik Facebook URL Oluştur (Tersine Mühendislik Verileriyle)
+                    const fbUrl = "https://www.facebook.com/v24.0/dialog/oauth" +
+                        "?app_id=287715906538935" +
+                        "&client_id=287715906538935" +
+                        "&config_id=721295116725582" +
+                        "&display=popup" +
+                        "&response_type=code" +
+                        "&scope=email,business_management,whatsapp_business_management,whatsapp_business_messaging" +
+                        "&extras=" + encodeURIComponent(JSON.stringify({featureType: "whatsapp_business_app_onboarding", sessionInfoVersion: "3"})) +
+                        "&fallback_redirect_uri=" + encodeURIComponent("https://app.chakrahq.com/admin/plugin/" + pluginData.pluginId) +
+                        "&redirect_uri=" + encodeURIComponent("https://app.chakrahq.com/v1/ext/whatsapp-partner/connect?connectToken=" + tokenData.connectToken);
+
+                    // 3. Popup Olarak Aç
+                    const width = 600, height = 700;
+                    const left = (window.innerWidth / 2) - (width / 2);
+                    const top = (window.innerHeight / 2) - (height / 2);
+                    
+                    window.open(fbUrl, "ChakraConnect", "width="+width+",height="+height+",top="+top+",left="+left);
+                    
+                    statusEl.innerText = "✅ Pencere açıldı. Lütfen işlemleri oradan tamamlayın.";
+
+                } catch (err) { 
+                    statusEl.innerHTML = '<span class="error">❌ Hata: ' + err.message + '</span>'; 
+                    console.error(err);
+                }
             };
         </script>
     </body>
@@ -162,7 +159,7 @@ app.get('/chakratest', (req: any, res) => {
 const distPath = path.join(__dirname, '../dist');
 app.use(express.static(distPath));
 
-app.get(/^(?!\/api|\/auth|\/availability|\/chakratest|\/chakra-mirror).*$/, (req, res) => {
+app.get(/^(?!\/api|\/auth|\/availability|\/chakratest).*$/, (req, res) => {
   res.sendFile(path.join(distPath, 'index.html'));
 });
 
