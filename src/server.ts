@@ -79,36 +79,41 @@ app.use((req, res, next) => {
   next();
 });
 
-// Chakra Test Page (Literal Documentation Test)
+// Chakra Test Page (Mirror-Embedded Onboarding Flow)
 app.get('/chakratest', (req: any, res) => {
   res.send(`
     <!DOCTYPE html>
     <html>
     <head>
         <meta charset="UTF-8">
-        <title>Chakra SDK Literal Test</title>
+        <title>Chakra Mirror Test</title>
         <script src="https://embed.chakrahq.com/whatsapp-partner-connect/v1/sdk.js"></script>
     </head>
     <body>
-        <h1>Chakra SDK Literal Test</h1>
-        <button id="btn-init">Step 1: Get Token & Init SDK</button>
+        <h1>Chakra Mirror Test</h1>
+        <button id="btn-init">Start WhatsApp Onboarding</button>
+        
         <div id="container" style="margin-top:20px; border:1px solid #ccc; min-height:100px; padding:10px;">
-            Container Area
+            Button will appear here...
         </div>
+
         <script>
             document.getElementById('btn-init').onclick = async () => {
                 const res = await fetch('/api/app/chakra/connect-token');
                 const data = await res.json();
+                
                 if (data.connectToken) {
-                    const chakraWhatsappConnect = ChakraWhatsappConnect.init({
+                    // Initialize SDK via our Mirror Proxy
+                    // This forces the iframe to load from OUR domain, stripping SAMEORIGIN
+                    const chakra = ChakraWhatsappConnect.init({
                         connectToken: data.connectToken,
                         container: '#container',
+                        baseUrl: window.location.origin + '/chakra-mirror',
                         onMessage: (event, data) => console.log('Message:', event, data),
-                        onReady: () => console.log('iframe ready'),
+                        onReady: () => console.log('Iframe mirrored and ready'),
                         onError: (err) => console.error('Error:', err),
                     });
-                    document.getElementById('btn-init').innerText = 'SDK Initialized';
-                } else { alert('Token error'); }
+                }
             };
         </script>
     </body>
