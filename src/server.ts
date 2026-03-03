@@ -13,7 +13,6 @@ import customerRoutes from './routes/customers.js';
 import bookingContextRoutes from './routes/bookingContext.js';
 import chakraRoutes from './routes/chakra.js';
 import { multiTenantMiddleware } from './middleware/multiTenant.js';
-import { createProxyMiddleware, Options } from 'http-proxy-middleware';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -21,25 +20,6 @@ const __dirname = path.dirname(__filename);
 const app = express();
 
 app.set('trust proxy', 1);
-
-// Chakra Mirror Proxy: MUST be at the very top
-app.use('/chakra-proxy', createProxyMiddleware({
-  target: 'https://api.chakrahq.com',
-  changeOrigin: true,
-  pathRewrite: {
-    '^/chakra-proxy': '',
-  },
-  onProxyRes: (proxyRes: any) => {
-    delete proxyRes.headers['x-frame-options'];
-    delete proxyRes.headers['content-security-policy'];
-    proxyRes.headers['access-control-allow-origin'] = '*';
-  },
-  onError: (err: any, req: any, res: any) => {
-    console.error('Proxy Error:', err);
-    res.status(500).send('Proxy Error: ' + err.message);
-  },
-  logger: console // Enable proxy logging for debugging
-} as Options));
 
 const corsOptions: cors.CorsOptions = {
   origin: (origin, callback) => {
@@ -90,15 +70,15 @@ app.use('/api/app/chakra', chakraRoutes);
 app.use('/availability', availabilityRoutes);
 app.use('/appointments', bookingRoutes);
 
-// Chakra Test Page (Scenario 2 Fix: Hybrid Proxy + Iframe)
+// Chakra Test Page (Official SDK Replication)
 app.get('/chakratest', (req: any, res) => {
-  const subdomain = req.headers.host?.split('.')[0] || 'unknown';
   res.send(`
     <!DOCTYPE html>
     <html>
     <head>
         <meta charset="UTF-8">
-        <title>Chakra Proxy Bypass Test</title>
+        <title>Chakra SDK Official Test</title>
+        <script src="https://embed.chakrahq.com/whatsapp-partner-connect/v1_0_1/sdk.js"></script>
         <style>
             body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #f4f4f9; padding: 20px; }
             #container { padding: 2rem; background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); text-align: center; max-width: 500px; width: 100%; }
@@ -108,35 +88,52 @@ app.get('/chakratest', (req: any, res) => {
     </head>
     <body>
         <div id="container">
-            <h1>Chakra Proxy Bypass</h1>
-            <p>Salon: <strong>${subdomain}</strong></p>
-            <button id="btn-init">Start WhatsApp Link (Proxy)</button>
-            <div id="iframe-target" style="margin-top:20px; min-height:200px; border:1px dashed #ccc;"></div>
+            <h1>Chakra SDK Official Test</h1>
+            <button id="btn-init">Get Token & Init SDK</button>
+            <div id="sdk-container" style="margin-top:20px; border:1px dashed #ccc; min-height:100px; padding:10px;">
+                SDK will load here...
+            </div>
             <div id="status">Ready.</div>
         </div>
         <script>
             document.getElementById("btn-init").onclick = async () => {
                 const statusEl = document.getElementById("status");
+                const sdkContainer = document.getElementById("sdk-container");
+
                 statusEl.innerText = "Fetching token...";
-                
                 try {
                     const res = await fetch("/api/app/chakra/connect-token");
                     const data = await res.json();
                     
-                    if (data.connectToken) {
-                        statusEl.innerText = "Token received. Injecting proxied iframe...";
-                        
-                        const proxyUrl = "/chakra-proxy/v1/ext/whatsapp-partner/connect?connectToken=" + encodeURIComponent(data.connectToken);
-                        
-                        document.getElementById("iframe-target").innerHTML = 
-                            "<iframe src=" + proxyUrl + " style=\"width:100%; height:300px; border:none;\"><\/iframe>";
-                            
-                        statusEl.innerText = "✅ Proxied Iframe injected.";
-                    } else {
-                        throw new Error(data.message || "Token failed.");
-                    }
+                    if (!data.connectToken) throw new Error(data.message || "Token failed.");
+
+                    statusEl.innerText = "Token received. Initializing SDK...";
+                    
+                    // Official SDK initialization
+                    const chakraWhatsappConnect = window.ChakraWhatsappConnect.init({
+                        connectToken: data.connectToken,
+                        container: sdkContainer,
+                        // No baseUrl needed as per latest docs
+                        onMessage: (event, payload) => {
+                            console.log("Chakra Event:", event, payload);
+                            statusEl.innerText = "Event: " + event;
+                        },
+                        onReady: () => {
+                            console.log("Chakra SDK Ready");
+                            statusEl.innerText = "✅ SDK Initialized. Button should be visible.";
+                        },
+                        onError: (err) => {
+                            console.error("Chakra Error:", err);
+                            statusEl.innerText = "❌ SDK Error: " + (err.message || "Unknown");
+                        }
+                    });
+
+                    // You can optionally store chakraWhatsappConnect to call its destroy method later
+                    // window.chakraInstance = chakraWhatsappConnect;
+
                 } catch (err) {
                     statusEl.innerText = "❌ Error: " + err.message;
+                    console.error(err);
                 }
             };
         </script>
@@ -148,7 +145,7 @@ app.get('/chakratest', (req: any, res) => {
 const distPath = path.join(__dirname, "../dist");
 app.use(express.static(distPath));
 
-app.get(/^(?!\/api|\/auth|\/availability|\/chakratest|\/chakra-proxy).*$/, (req, res) => {
+app.get(/^(?!\/api|\/auth|\/availability|\/chakratest).*$/, (req, res) => {
   res.sendFile(path.join(distPath, "index.html"));
 });
 
