@@ -154,7 +154,7 @@ app.get('/chakratest', (req: any, res) => {
 const distPath = path.join(__dirname, "../dist");
 app.use(express.static(distPath));
 
-app.get(/^(?!\/api|\/auth|\/availability|\/chakratest).*$/, (req, res) => {
+app.get(/^(?!\/api|\/auth|\/availability|\/chakratest|\/api\/internal\/chakra\/webhook).*$/, (req, res) => {
   res.sendFile(path.join(distPath, "index.html"));
 });
 
