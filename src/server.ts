@@ -13,7 +13,7 @@ import customerRoutes from './routes/customers.js';
 import bookingContextRoutes from './routes/bookingContext.js';
 import chakraRoutes from './routes/chakra.js';
 import { multiTenantMiddleware } from './middleware/multiTenant.js';
-import { createProxyMiddleware, Options } from 'http-proxy-middleware'; // Import Options type
+import { createProxyMiddleware, Options } from 'http-proxy-middleware';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -39,7 +39,7 @@ app.use('/chakra-proxy', createProxyMiddleware({
     res.status(500).send('Proxy Error: ' + err.message);
   },
   logger: console // Enable proxy logging for debugging
-} as Options)); // Cast to Options to satisfy TypeScript
+} as Options));
 
 const corsOptions: cors.CorsOptions = {
   origin: (origin, callback) => {
@@ -99,7 +99,6 @@ app.get('/chakratest', (req: any, res) => {
     <head>
         <meta charset="UTF-8">
         <title>Chakra Proxy Bypass Test</title>
-        <script src="https://embed.chakrahq.com/whatsapp-partner-connect/v1/sdk.js"></script>
         <style>
             body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #f4f4f9; padding: 20px; }
             #container { padding: 2rem; background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); text-align: center; max-width: 500px; width: 100%; }
