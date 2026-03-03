@@ -21,6 +21,22 @@ const app = express();
 
 app.set('trust proxy', 1);
 
+// Chakra Mirror Proxy: MUST be at the very top
+app.use('/chakra-proxy', createProxyMiddleware({
+  target: 'https://api.chakrahq.com',
+  changeOrigin: true,
+  pathRewrite: {
+    '^/chakra-proxy': '',
+  },
+  on: {
+    proxyRes: (proxyRes: any) => {
+      delete proxyRes.headers['x-frame-options'];
+      delete proxyRes.headers['content-security-policy'];
+      proxyRes.headers['access-control-allow-origin'] = '*';
+    }
+  }
+}));
+
 const corsOptions: cors.CorsOptions = {
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
@@ -47,22 +63,6 @@ app.use(express.urlencoded({ extended: true }));
 app.get("/health", (_req, res) => {
   res.status(200).json({ status: "ok" });
 });
-
-// Chakra Mirror Proxy: MUST be before multiTenantMiddleware and catch-all
-app.use('/chakra-proxy', createProxyMiddleware({
-  target: 'https://api.chakrahq.com',
-  changeOrigin: true,
-  pathRewrite: {
-    '^/chakra-proxy': '',
-  },
-  on: {
-    proxyRes: (proxyRes) => {
-      delete proxyRes.headers['x-frame-options'];
-      delete proxyRes.headers['content-security-policy'];
-      proxyRes.headers['access-control-allow-origin'] = '*';
-    }
-  }
-}));
 
 // Admin/System debug routes (no tenant needed)
 app.get('/debug/db-check', async (req, res) => {
