@@ -13,7 +13,7 @@ import customerRoutes from './routes/customers.js';
 import bookingContextRoutes from './routes/bookingContext.js';
 import chakraRoutes from './routes/chakra.js';
 import { multiTenantMiddleware } from './middleware/multiTenant.js';
-import { createProxyMiddleware } from 'http-proxy-middleware';
+import { createProxyMiddleware, Options } from 'http-proxy-middleware'; // Import Options type
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -39,7 +39,7 @@ app.use('/chakra-proxy', createProxyMiddleware({
     res.status(500).send('Proxy Error: ' + err.message);
   },
   logger: console // Enable proxy logging for debugging
-}));
+} as Options)); // Cast to Options to satisfy TypeScript
 
 const corsOptions: cors.CorsOptions = {
   origin: (origin, callback) => {
@@ -90,16 +90,6 @@ app.use('/api/app/chakra', chakraRoutes);
 app.use('/availability', availabilityRoutes);
 app.use('/appointments', bookingRoutes);
 
-// Proper header for iframe/CORS support
-app.use((req, res, next) => {
-  res.removeHeader("X-Frame-Options"); 
-  res.setHeader(
-    "Content-Security-Policy",
-    "frame-ancestors *; default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval'; style-src * 'unsafe-inline'; img-src * data: blob:; connect-src *;"
-  );
-  next();
-});
-
 // Chakra Test Page (Scenario 2 Fix: Hybrid Proxy + Iframe)
 app.get('/chakratest', (req: any, res) => {
   const subdomain = req.headers.host?.split('.')[0] || 'unknown';
@@ -109,6 +99,7 @@ app.get('/chakratest', (req: any, res) => {
     <head>
         <meta charset="UTF-8">
         <title>Chakra Proxy Bypass Test</title>
+        <script src="https://embed.chakrahq.com/whatsapp-partner-connect/v1/sdk.js"></script>
         <style>
             body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #f4f4f9; padding: 20px; }
             #container { padding: 2rem; background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); text-align: center; max-width: 500px; width: 100%; }
