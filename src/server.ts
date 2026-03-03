@@ -49,13 +49,22 @@ app.get("/health", (_req, res) => {
 });
 
 // Admin/System debug routes (no tenant needed)
-app.get('/debug/db-check', async (req, res) => {
+app.get("/debug/db-check", async (req, res) => {
   try {
     const salons = await prisma.salon.findMany({ select: { id: true, slug: true } });
     res.json({ count: salons.length, salons });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }
+});
+
+// Chakra Pass-through Webhook (DEBUG ONLY - NO BUSINESS LOGIC)
+app.post("/api/internal/chakra/webhook", (req, res) => {
+  console.log("--- CHAKRA WEBHOOK RECEIVED ---");
+  console.log("Headers:", req.headers);
+  console.log("Body:", req.body);
+  // Always return 200 OK to prevent webhook retry loops during debugging
+  res.status(200).send("OK");
 });
 
 // Apply tenant middleware to ALL other API routes
