@@ -1,4 +1,5 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
+dotenv.config();
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
@@ -28,13 +29,16 @@ app.use('/chakra-proxy', createProxyMiddleware({
   pathRewrite: {
     '^/chakra-proxy': '',
   },
-  on: {
-    proxyRes: (proxyRes: any) => {
-      delete proxyRes.headers['x-frame-options'];
-      delete proxyRes.headers['content-security-policy'];
-      proxyRes.headers['access-control-allow-origin'] = '*';
-    }
-  }
+  onProxyRes: (proxyRes: any) => {
+    delete proxyRes.headers['x-frame-options'];
+    delete proxyRes.headers['content-security-policy'];
+    proxyRes.headers['access-control-allow-origin'] = '*';
+  },
+  onError: (err: any, req: any, res: any) => {
+    console.error('Proxy Error:', err);
+    res.status(500).send('Proxy Error: ' + err.message);
+  },
+  logger: console // Enable proxy logging for debugging
 }));
 
 const corsOptions: cors.CorsOptions = {
@@ -121,29 +125,28 @@ app.get('/chakratest', (req: any, res) => {
             <div id="status">Ready.</div>
         </div>
         <script>
-            document.getElementById('btn-init').onclick = async () => {
-                const statusEl = document.getElementById('status');
-                statusEl.innerText = 'Fetching token...';
+            document.getElementById("btn-init").onclick = async () => {
+                const statusEl = document.getElementById("status");
+                statusEl.innerText = "Fetching token...";
                 
                 try {
-                    const res = await fetch('/api/app/chakra/connect-token');
+                    const res = await fetch("/api/app/chakra/connect-token");
                     const data = await res.json();
                     
                     if (data.connectToken) {
-                        statusEl.innerText = 'Token received. Injecting proxied iframe...';
+                        statusEl.innerText = "Token received. Injecting proxied iframe...";
                         
-                        // Use OUR proxy path with correct v1 path
                         const proxyUrl = "/chakra-proxy/v1/ext/whatsapp-partner/connect?connectToken=" + encodeURIComponent(data.connectToken);
                         
-                        document.getElementById('iframe-target').innerHTML = 
-                            '<iframe src="' + proxyUrl + '" style="width:100%; height:300px; border:none;"></iframe>';
+                        document.getElementById("iframe-target").innerHTML = 
+                            "<iframe src=" + proxyUrl + " style=\"width:100%; height:300px; border:none;\"><\/iframe>";
                             
-                        statusEl.innerText = '✅ Proxied Iframe injected.';
+                        statusEl.innerText = "✅ Proxied Iframe injected.";
                     } else {
-                        throw new Error(data.message || 'Token failed.');
+                        throw new Error(data.message || "Token failed.");
                     }
                 } catch (err) {
-                    statusEl.innerText = '❌ Error: ' + err.message;
+                    statusEl.innerText = "❌ Error: " + err.message;
                 }
             };
         </script>
@@ -152,22 +155,22 @@ app.get('/chakratest', (req: any, res) => {
   `);
 });
 
-const distPath = path.join(__dirname, '../dist');
+const distPath = path.join(__dirname, "../dist");
 app.use(express.static(distPath));
 
 app.get(/^(?!\/api|\/auth|\/availability|\/chakratest|\/chakra-proxy).*$/, (req, res) => {
-  res.sendFile(path.join(distPath, 'index.html'));
+  res.sendFile(path.join(distPath, "index.html"));
 });
 
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  console.error('Final Error Catch:', err);
+  console.error("Final Error Catch:", err);
   res.status(err.status || 500).json({
-    message: err.message || 'Internal server error'
+    message: err.message || "Internal server error"
   });
 });
 
 const PORT = (Number(process.env.PORT) || 3000);
-const HOST = '0.0.0.0';
+const HOST = "0.0.0.0";
 app.listen(PORT, HOST, () => {
   console.log(`🚀 Server running on ${HOST}:${PORT}`);
 });
