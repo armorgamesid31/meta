@@ -22,7 +22,7 @@ router.get('/context', async (req: any, res: any) => {
     return res.status(410).json({ message: 'Magic link has expired' });
   }
 
-  const context = magicLink.context as { salonId?: number } | null;
+  const context = magicLink.context as { salonId?: number; language?: string; lang?: string } | null;
   if (!context || typeof context.salonId !== 'number') {
     return res.status(400).json({ message: 'Magic link context must contain salonId' });
   }
@@ -70,12 +70,14 @@ router.get('/context', async (req: any, res: any) => {
   const customerGender = customer?.gender
     ? (customer.gender as 'male' | 'female' | 'other')
     : null;
+  const customerLanguage = context?.language || context?.lang || null;
 
   res.status(200).json({
     customerId: customer?.id ?? null,
     customerName: customer?.name ?? null,
     customerPhone: phone,
     customerGender,
+    customerLanguage,
     salonId,
     salonName: salon.name,
     isKnownCustomer,
