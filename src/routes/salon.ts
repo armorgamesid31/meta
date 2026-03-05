@@ -31,6 +31,7 @@ router.get('/public', async (req: any, res: any) => {
         id: salon.id,
         name: salon.name,
         logoUrl: salon.logoUrl,
+        whatsappPhone: salon.whatsappPhone,
         workStartHour: salon.settings?.workStartHour || 9,
         workEndHour: salon.settings?.workEndHour || 18,
         slotInterval: salon.settings?.slotInterval || 30,

@@ -6,6 +6,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { prisma } from './prisma.js';
 import salonRoutes from './routes/salon.js';
+import salonsRoutes from './routes/salons.js';
 import bookingRoutes from './routes/bookings.js';
 import availabilityRoutes from './routes/availability.js';
 import authRoutes from './routes/auth.js';
@@ -72,6 +73,7 @@ app.use(multiTenantMiddleware);
 
 app.use('/auth', authRoutes);
 app.use('/api/salon', salonRoutes);
+app.use('/api/salons', salonsRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/booking', bookingContextRoutes);
