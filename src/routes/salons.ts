@@ -3,6 +3,7 @@ import { prisma } from '../prisma.js';
 
 const router = Router();
 const DEFAULT_GALLERY_IMAGES = ['/placeholder.jpg', '/placeholder.jpg?slide=2', '/placeholder.jpg?slide=3'];
+const DEFAULT_WORKING_DAYS = [1, 2, 3, 4, 5, 6];
 
 function normalizeWhatsappPhone(phone?: string | null): string {
   if (!phone) return '';
@@ -38,12 +39,18 @@ router.get('/:slug/homepage', async (req: any, res: any) => {
           },
         },
         ServiceCategory: {
+          where: {
+            Service: {
+              some: {},
+            },
+          },
           orderBy: [{ displayOrder: 'asc' }, { id: 'asc' }],
           select: {
             id: true,
             name: true,
             marketingDescription: true,
             icon: true,
+            coverImageUrl: true,
             displayOrder: true,
             _count: {
               select: {
@@ -59,6 +66,17 @@ router.get('/:slug/homepage', async (req: any, res: any) => {
             name: true,
             title: true,
             bio: true,
+            profileImageUrl: true,
+            StaffService: {
+              select: {
+                serviceId: true,
+                Service: {
+                  select: {
+                    categoryId: true,
+                  },
+                },
+              },
+            },
           },
         },
         galleryImages: {
@@ -99,6 +117,23 @@ router.get('/:slug/homepage', async (req: any, res: any) => {
       return res.status(404).json({ message: 'Salon not found' });
     }
 
+    const workingDayRows = await prisma.staffWorkingHours.findMany({
+      where: {
+        Staff: {
+          salonId: salon.id,
+        },
+      },
+      distinct: ['dayOfWeek'],
+      select: {
+        dayOfWeek: true,
+      },
+    });
+
+    const workingDays = workingDayRows
+      .map((row) => row.dayOfWeek)
+      .filter((day): day is number => typeof day === 'number')
+      .sort((a, b) => a - b);
+
     const bookingMode = salon.bookingMode || 'INTERNAL';
     const normalizedWhatsappPhone = normalizeWhatsappPhone(salon.whatsappPhone);
     const bookingUrl =
@@ -137,9 +172,9 @@ router.get('/:slug/homepage', async (req: any, res: any) => {
             const generated: any[] = [];
 
             if (categories.length === 0 || experts.length === 0) {
-              return [
-                {
-                  id: 'generated-1',
+            return [
+              {
+                id: 'generated-1',
                   templateType: 'GENERIC',
                   generatedText:
                     'Professional team, clean environment, and excellent service quality. Highly recommended.',
@@ -151,7 +186,11 @@ router.get('/:slug/homepage', async (req: any, res: any) => {
             }
 
             categories.forEach((category, index) => {
-              const expert = experts[index % experts.length];
+              const matchedExperts = experts.filter((expert) =>
+                expert.StaffService.some((staffService) => staffService.Service?.categoryId === category.id),
+              );
+              const fallbackExperts = matchedExperts.length > 0 ? matchedExperts : experts;
+              const expert = fallbackExperts[index % fallbackExperts.length];
               generated.push({
                 id: `generated-${index + 1}`,
                 templateType: 'CATEGORY_EXPERT',
@@ -186,6 +225,7 @@ router.get('/:slug/homepage', async (req: any, res: any) => {
           workStartHour: salon.settings?.workStartHour ?? 9,
           workEndHour: salon.settings?.workEndHour ?? 18,
           timezone: salon.settings?.timezone ?? 'Europe/Istanbul',
+          workingDays: workingDays.length > 0 ? workingDays : DEFAULT_WORKING_DAYS,
         },
       },
       categories: salon.ServiceCategory.map((category) => ({
@@ -193,6 +233,7 @@ router.get('/:slug/homepage', async (req: any, res: any) => {
         name: category.name,
         marketingDescription: category.marketingDescription,
         icon: category.icon,
+        coverImageUrl: category.coverImageUrl,
         displayOrder: category.displayOrder,
         serviceCount: category._count.Service,
       })),
@@ -201,6 +242,7 @@ router.get('/:slug/homepage', async (req: any, res: any) => {
         name: expert.name,
         title: expert.title,
         bio: expert.bio,
+        profileImageUrl: expert.profileImageUrl,
       })),
       gallery,
       testimonials,

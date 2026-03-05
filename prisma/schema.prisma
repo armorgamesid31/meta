@@ -61,6 +61,7 @@ model Staff {
   name              String
   title             String?
   bio               String?
+  profileImageUrl   String?
   phone             String?
   createdAt         DateTime?         @default(now()) @db.Timestamp(6)
   updatedAt         DateTime?         @default(now()) @updatedAt @db.Timestamp(6)
@@ -258,6 +259,7 @@ model ServiceCategory {
   salonId              Int
   marketingDescription String?
   icon                 String?
+  coverImageUrl        String?
   displayOrder         Int?
   capacity             Int?              @default(1)
   sequentialRequired   Boolean?          @default(false)
