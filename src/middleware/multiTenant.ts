@@ -4,9 +4,15 @@ import { prisma } from '../prisma.js';
 export const multiTenantMiddleware = async (req: Request, res: Response, next: NextFunction) => {
   const origin = req.headers.origin;
   const host = req.headers.host;
+  const tenantHeader = req.headers['x-tenant-slug'];
   const baseDomain = 'kedyapp.com';
 
   let slug: string | null = null;
+
+  // 0. Explicit tenant header (server-to-server safe fallback)
+  if (typeof tenantHeader === 'string' && tenantHeader.trim()) {
+    slug = tenantHeader.trim().toLowerCase();
+  }
 
   // 1. Try to extract slug from Origin
   if (origin) {
