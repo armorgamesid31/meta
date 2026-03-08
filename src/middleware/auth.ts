@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { verifyToken } from '../utils/jwt.js';
-import { PrismaClient, UserRole } from '@prisma/client';
+import { UserRole } from '@prisma/client';
 import { prisma } from '../prisma.js';
 
 interface AuthRequest extends Request {
@@ -11,9 +11,10 @@ interface AuthRequest extends Request {
   };
 }
 
-export const authenticateToken = (req: AuthRequest, res: Response, next: NextFunction) => {
+export const authenticateToken = async (req: AuthRequest, res: Response, next: NextFunction) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
+  const salonHeaderRaw = req.headers['x-salon-id'];
 
   if (token == null) return res.sendStatus(401); // No token
 
@@ -21,8 +22,49 @@ export const authenticateToken = (req: AuthRequest, res: Response, next: NextFun
 
   if (!payload) return res.sendStatus(403); // Invalid token
 
-  req.user = payload;
-  next();
+  const salonHeader = Array.isArray(salonHeaderRaw) ? salonHeaderRaw[0] : salonHeaderRaw;
+  const requestedSalonId =
+    typeof salonHeader === 'string' && salonHeader.trim() ? Number(salonHeader.trim()) : null;
+
+  if (requestedSalonId !== null && (!Number.isInteger(requestedSalonId) || requestedSalonId <= 0)) {
+    return res.status(400).json({ message: 'x-salon-id must be a positive integer.' });
+  }
+
+  try {
+    const user = await prisma.salonUser.findUnique({
+      where: { id: payload.userId },
+      select: { salonId: true },
+    });
+
+    if (!user) {
+      return res.sendStatus(401);
+    }
+
+    let resolvedSalonId = payload.salonId;
+
+    if (requestedSalonId !== null) {
+      if (resolvedSalonId && resolvedSalonId !== requestedSalonId) {
+        return res.status(403).json({ message: 'x-salon-id does not match token scope.' });
+      }
+      if (user.salonId !== requestedSalonId) {
+        return res.status(403).json({ message: 'x-salon-id is outside user scope.' });
+      }
+      resolvedSalonId = requestedSalonId;
+    }
+
+    if (!resolvedSalonId) {
+      return res.status(403).json({ message: 'Salon scope could not be resolved.' });
+    }
+
+    req.user = {
+      ...payload,
+      salonId: resolvedSalonId,
+    };
+    next();
+  } catch (error) {
+    console.error('authenticateToken error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
 };
 
 export const authorizeRoles = (roles: UserRole[]) => {

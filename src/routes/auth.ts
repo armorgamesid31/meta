@@ -1,9 +1,9 @@
 import { Router } from 'express';
 import bcrypt from 'bcrypt';
 import { prisma } from '../prisma.js';
-import { generateToken } from '../utils/jwt.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { UserRole } from '@prisma/client';
+import { createAuthTokens, revokeRefreshToken, rotateRefreshToken } from '../services/mobileAuth.js';
 
 const router = Router();
 
@@ -55,13 +55,18 @@ router.post('/register-salon', async (req: any, res: any) => {
       return res.status(500).json({ message: 'Sahip kullanıcısı oluşturulamadı.' });
     }
 
-    const token = generateToken({
-      userId: ownerUser.id,
+    const { accessToken, refreshToken } = await createAuthTokens({
+      id: ownerUser.id,
       salonId: salon.id,
-      role: ownerUser.role as any,
-    });
+      role: ownerUser.role as string,
+    } as any);
 
-    res.status(201).json({ token, user: { id: ownerUser.id, email: ownerUser.email, role: ownerUser.role, salonId: salon.id } });
+    res.status(201).json({
+      token: accessToken,
+      accessToken,
+      refreshToken,
+      user: { id: ownerUser.id, email: ownerUser.email, role: ownerUser.role, salonId: salon.id },
+    });
   } catch (error) {
     console.error('Salon registration error:', error);
     res.status(500).json({ message: 'Sunucu hatası.' });
@@ -90,14 +95,16 @@ router.post('/login', async (req: any, res: any) => {
       return res.status(401).json({ message: 'Hatalı giriş bilgileri.' });
     }
 
-    const token = generateToken({
-      userId: user.id,
+    const { accessToken, refreshToken } = await createAuthTokens({
+      id: user.id,
       salonId: user.salonId,
-      role: user.role as any,
-    });
+      role: user.role as string,
+    } as any);
 
     res.status(200).json({
-      token,
+      token: accessToken,
+      accessToken,
+      refreshToken,
       user: {
         id: user.id,
         email: user.email,
@@ -108,6 +115,54 @@ router.post('/login', async (req: any, res: any) => {
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ message: 'Sunucu hatası.' });
+  }
+});
+
+// POST /auth/refresh - Rotate refresh token and issue new access token
+router.post('/refresh', async (req: any, res: any) => {
+  const { refreshToken } = req.body || {};
+
+  if (!refreshToken || typeof refreshToken !== 'string') {
+    return res.status(400).json({ message: 'refreshToken is required.' });
+  }
+
+  try {
+    const rotated = await rotateRefreshToken(refreshToken);
+    if (!rotated) {
+      return res.status(401).json({ message: 'Invalid refresh token.' });
+    }
+
+    return res.status(200).json({
+      token: rotated.accessToken,
+      accessToken: rotated.accessToken,
+      refreshToken: rotated.refreshToken,
+      user: {
+        id: rotated.user.id,
+        email: rotated.user.email,
+        role: rotated.user.role,
+        salonId: rotated.user.salonId,
+      },
+    });
+  } catch (error) {
+    console.error('Refresh token error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+// POST /auth/logout - Revoke refresh token
+router.post('/logout', async (req: any, res: any) => {
+  const { refreshToken } = req.body || {};
+
+  if (!refreshToken || typeof refreshToken !== 'string') {
+    return res.status(400).json({ message: 'refreshToken is required.' });
+  }
+
+  try {
+    await revokeRefreshToken(refreshToken);
+    return res.status(204).send();
+  } catch (error) {
+    console.error('Logout error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
   }
 });
 

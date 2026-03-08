@@ -13,6 +13,8 @@ import translationsRoutes from './routes/translations.js';
 import bookingRoutes from './routes/bookings.js';
 import availabilityRoutes from './routes/availability.js';
 import authRoutes from './routes/auth.js';
+import adminMobileRoutes from './routes/adminMobile.js';
+import mobileRoutes from './routes/mobile.js';
 import customerRoutes from './routes/customers.js';
 import bookingContextRoutes from './routes/bookingContext.js';
 import chakraRoutes from './routes/chakra.js';
@@ -41,7 +43,7 @@ const corsOptions: cors.CorsOptions = {
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'x-salon-id', 'x-tenant-slug'],
 };
 
 app.use(cors(corsOptions));
@@ -75,6 +77,8 @@ app.post("/api/internal/chakra/webhook", (req, res) => {
 app.use(multiTenantMiddleware);
 
 app.use('/auth', authRoutes);
+app.use('/api/mobile', mobileRoutes);
+app.use('/api/admin', adminMobileRoutes);
 app.use('/api/salon', salonRoutes);
 app.use('/api/salons', salonsRoutes);
 app.use('/api/categories', categoriesRoutes);
