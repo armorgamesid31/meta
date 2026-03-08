@@ -27,19 +27,55 @@ const app = express();
 
 app.set('trust proxy', 1);
 
+const configuredOrigins = (process.env.CORS_ORIGINS || '')
+  .split(',')
+  .map((item) => item.trim())
+  .filter(Boolean);
+
+function isOriginAllowed(origin?: string | null): boolean {
+  if (!origin) {
+    return true;
+  }
+
+  try {
+    const url = new URL(origin);
+    const hostname = url.hostname.toLowerCase();
+
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      return true;
+    }
+
+    for (const rule of configuredOrigins) {
+      const normalized = rule.toLowerCase();
+      if (!normalized.startsWith('http://') && !normalized.startsWith('https://')) {
+        continue;
+      }
+
+      const parsedRule = new URL(normalized);
+      const ruleHost = parsedRule.hostname;
+
+      if (ruleHost.startsWith('*.')) {
+        const suffix = ruleHost.slice(2);
+        if (hostname === suffix || hostname.endsWith(`.${suffix}`)) {
+          return true;
+        }
+      } else if (hostname === ruleHost) {
+        return true;
+      }
+    }
+  } catch {
+    return false;
+  }
+
+  return false;
+}
+
 const corsOptions: cors.CorsOptions = {
   origin: (origin, callback) => {
-    if (!origin) return callback(null, true);
-    const baseDomain = 'kedyapp.com';
-    try {
-      const url = new URL(origin);
-      const hostname = url.hostname;
-      const isAllowed = hostname === baseDomain || hostname.endsWith(`.${baseDomain}`) || hostname === 'localhost' || hostname === '127.0.0.1';
-      if (isAllowed) callback(null, origin);
-      else callback(null, false);
-    } catch (e) {
-      callback(null, false);
+    if (isOriginAllowed(origin)) {
+      return callback(null, true);
     }
+    return callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
@@ -47,6 +83,7 @@ const corsOptions: cors.CorsOptions = {
 };
 
 app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
