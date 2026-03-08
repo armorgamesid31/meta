@@ -31,6 +31,34 @@ function getSalonId(req: any, res: any): number | null {
   return req.user.salonId;
 }
 
+function normalizeInstagramUrl(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    return trimmed;
+  }
+  const username = trimmed.startsWith('@') ? trimmed.slice(1) : trimmed;
+  return `https://instagram.com/${username}`;
+}
+
+function buildGeneratedWebsiteCopy(input: { salonName?: string; city?: string | null }) {
+  const salonName = (input.salonName || '').trim() || 'Salonunuz';
+  const city = (input.city || '').trim() || 'şehrinizde';
+
+  return {
+    heroText: `${salonName} ile kendinize zaman ayırın`,
+    tagline: `${city} profesyonel güzellik deneyimi`,
+    description:
+      `${salonName}, uzman ekibiyle saç, cilt ve bakım hizmetlerinde güvenilir sonuçlar sunar. ` +
+      'Hijyenik salon ortamı, kaliteli ürünler ve kişiselleştirilmiş dokunuşlarla her ziyareti keyifli bir deneyime dönüştürür.',
+  };
+}
+
 router.get('/appointments', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
   if (!salonId) {
@@ -391,6 +419,172 @@ router.put('/setup', authenticateToken, async (req: any, res: any) => {
     return res.status(200).json({ salon, settings });
   } catch (error) {
     console.error('Admin setup update error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.get('/website/content', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  try {
+    const [salon, gallery] = await prisma.$transaction([
+      prisma.salon.findUnique({
+        where: { id: salonId },
+        select: {
+          id: true,
+          name: true,
+          tagline: true,
+          about: true,
+          heroImageUrl: true,
+          instagramUrl: true,
+          whatsappPhone: true,
+          city: true,
+        },
+      }),
+      prisma.salonGalleryImage.findMany({
+        where: { salonId },
+        orderBy: [{ displayOrder: 'asc' }, { id: 'asc' }],
+        select: {
+          id: true,
+          imageUrl: true,
+          altText: true,
+          displayOrder: true,
+        },
+      }),
+    ]);
+
+    if (!salon) {
+      return res.status(404).json({ message: 'Salon not found.' });
+    }
+
+    return res.status(200).json({
+      salon: {
+        name: salon.name,
+        tagline: salon.tagline,
+        heroText: salon.tagline,
+        about: salon.about,
+        heroImageUrl: salon.heroImageUrl,
+        instagramUrl: salon.instagramUrl,
+        whatsappPhone: salon.whatsappPhone,
+        city: salon.city,
+      },
+      gallery,
+    });
+  } catch (error) {
+    console.error('Admin website content read error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.put('/website/content', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const payload = req.body || {};
+  const gallery = Array.isArray(payload.gallery) ? payload.gallery : null;
+
+  try {
+    const updatedSalon = await prisma.salon.update({
+      where: { id: salonId },
+      data: {
+        ...(typeof payload.salonName === 'string' ? { name: payload.salonName.trim() } : {}),
+        ...(typeof payload.tagline === 'string' ? { tagline: payload.tagline.trim() } : {}),
+        ...(typeof payload.description === 'string' ? { about: payload.description.trim() } : {}),
+        ...(typeof payload.heroImageUrl === 'string' ? { heroImageUrl: payload.heroImageUrl.trim() } : {}),
+        ...(payload.instagram !== undefined ? { instagramUrl: normalizeInstagramUrl(payload.instagram) } : {}),
+        ...(typeof payload.whatsapp === 'string' ? { whatsappPhone: payload.whatsapp.trim() } : {}),
+      },
+      select: {
+        id: true,
+        name: true,
+        tagline: true,
+        about: true,
+        heroImageUrl: true,
+        instagramUrl: true,
+        whatsappPhone: true,
+      },
+    });
+
+    if (gallery) {
+      const sanitizedGallery = gallery
+        .map((item: any, index: number) => {
+          const imageUrl = typeof item?.imageUrl === 'string' ? item.imageUrl.trim() : '';
+          if (!imageUrl) {
+            return null;
+          }
+          return {
+            salonId,
+            imageUrl,
+            altText: typeof item?.altText === 'string' ? item.altText.trim() || null : null,
+            displayOrder: Number.isInteger(item?.displayOrder) ? Number(item.displayOrder) : index,
+          };
+        })
+        .filter(Boolean) as Array<{
+        salonId: number;
+        imageUrl: string;
+        altText: string | null;
+        displayOrder: number;
+      }>;
+
+      await prisma.$transaction([
+        prisma.salonGalleryImage.deleteMany({ where: { salonId } }),
+        ...(sanitizedGallery.length > 0 ? [prisma.salonGalleryImage.createMany({ data: sanitizedGallery })] : []),
+      ]);
+    }
+
+    const galleryResponse = await prisma.salonGalleryImage.findMany({
+      where: { salonId },
+      orderBy: [{ displayOrder: 'asc' }, { id: 'asc' }],
+      select: {
+        id: true,
+        imageUrl: true,
+        altText: true,
+        displayOrder: true,
+      },
+    });
+
+    return res.status(200).json({
+      salon: {
+        ...updatedSalon,
+        heroText: updatedSalon.tagline,
+      },
+      gallery: galleryResponse,
+    });
+  } catch (error) {
+    console.error('Admin website content update error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.post('/website/generate', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  try {
+    const salon = await prisma.salon.findUnique({
+      where: { id: salonId },
+      select: { name: true, city: true },
+    });
+
+    if (!salon) {
+      return res.status(404).json({ message: 'Salon not found.' });
+    }
+
+    const generated = buildGeneratedWebsiteCopy({
+      salonName: typeof req.body?.salonName === 'string' ? req.body.salonName : salon.name,
+      city: typeof req.body?.city === 'string' ? req.body.city : salon.city,
+    });
+
+    return res.status(200).json({ generated });
+  } catch (error) {
+    console.error('Admin website copy generate error:', error);
     return res.status(500).json({ message: 'Internal server error.' });
   }
 });
