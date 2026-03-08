@@ -105,7 +105,7 @@ router.put('/settings', authenticateToken, async (req: any, res: any) => {
     return res.status(401).json({ message: 'Unauthorized' });
   }
 
-  const { name, phone, address, workStartHour, workEndHour, slotInterval, isOnboarded, categoryOrder } = req.body;
+  const { name, phone, address, workStartHour, workEndHour, slotInterval, categoryOrder, workingDays } = req.body;
 
   try {
     if (name || phone || address) {
@@ -117,23 +117,23 @@ router.put('/settings', authenticateToken, async (req: any, res: any) => {
       });
     }
 
-    if (workStartHour !== undefined || workEndHour !== undefined || slotInterval !== undefined || isOnboarded !== undefined || categoryOrder !== undefined) {
+    if (workStartHour !== undefined || workEndHour !== undefined || slotInterval !== undefined || categoryOrder !== undefined || workingDays !== undefined) {
       const settings = await prisma.salonSettings.upsert({
         where: { salonId: req.user.salonId },
         update: {
           ...(workStartHour !== undefined && { workStartHour }),
           ...(workEndHour !== undefined && { workEndHour }),
           ...(slotInterval !== undefined && { slotInterval }),
-          ...(isOnboarded !== undefined && { isOnboarded }),
           ...(categoryOrder !== undefined && { categoryOrder }),
+          ...(workingDays !== undefined && { workingDays }),
         },
         create: {
           salonId: req.user.salonId,
           ...(workStartHour !== undefined && { workStartHour }),
           ...(workEndHour !== undefined && { workEndHour }),
           ...(slotInterval !== undefined && { slotInterval }),
-          ...(isOnboarded !== undefined && { isOnboarded }),
           ...(categoryOrder !== undefined && { categoryOrder }),
+          ...(workingDays !== undefined && { workingDays }),
         }
       });
 

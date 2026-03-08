@@ -31,6 +31,15 @@ const configuredOrigins = (process.env.CORS_ORIGINS || '')
   .split(',')
   .map((item) => item.trim())
   .filter(Boolean);
+const frontendOrigin = process.env.FRONTEND_URL || '';
+
+function extractRootDomain(hostname: string): string | null {
+  const parts = hostname.toLowerCase().split('.').filter(Boolean);
+  if (parts.length < 2) {
+    return null;
+  }
+  return `${parts[parts.length - 2]}.${parts[parts.length - 1]}`;
+}
 
 function isOriginAllowed(origin?: string | null): boolean {
   if (!origin) {
@@ -60,6 +69,19 @@ function isOriginAllowed(origin?: string | null): boolean {
           return true;
         }
       } else if (hostname === ruleHost) {
+        return true;
+      }
+    }
+
+    if (frontendOrigin) {
+      const parsedFrontend = new URL(frontendOrigin);
+      const frontendHost = parsedFrontend.hostname.toLowerCase();
+      const frontendRoot = extractRootDomain(frontendHost);
+
+      if (hostname === frontendHost) {
+        return true;
+      }
+      if (frontendRoot && (hostname === frontendRoot || hostname.endsWith(`.${frontendRoot}`))) {
         return true;
       }
     }

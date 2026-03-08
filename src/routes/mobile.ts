@@ -28,6 +28,7 @@ router.get('/bootstrap', authenticateToken, async (req: any, res: any) => {
             countryCode: true,
             bookingMode: true,
             whatsappPhone: true,
+            address: true,
           },
         },
       },
@@ -38,6 +39,29 @@ router.get('/bootstrap', authenticateToken, async (req: any, res: any) => {
     }
 
     const normalizedWhatsapp = (user.salon.whatsappPhone || '').replace(/[^\d]/g, '');
+
+    const [settings, serviceCount, staffCount] = await prisma.$transaction([
+      prisma.salonSettings.findUnique({
+        where: { salonId: user.salon.id },
+        select: {
+          workStartHour: true,
+          workEndHour: true,
+          slotInterval: true,
+          workingDays: true,
+        },
+      }),
+      prisma.service.count({ where: { salonId: user.salon.id } }),
+      prisma.staff.count({ where: { salonId: user.salon.id } }),
+    ]);
+
+    const setupChecklist = {
+      workingHours:
+        typeof settings?.workStartHour === 'number' && typeof settings?.workEndHour === 'number',
+      address: Boolean((user.salon.address || '').trim()),
+      phone: Boolean(normalizedWhatsapp),
+      service: serviceCount > 0,
+      staff: staffCount > 0,
+    };
 
     const payload = {
       user: buildBootstrapUser(user),
@@ -51,6 +75,16 @@ router.get('/bootstrap', authenticateToken, async (req: any, res: any) => {
       capabilities: buildCapabilities(user.role),
       featureFlags: buildFeatureFlags(user.role, user.salon.bookingMode, Boolean(normalizedWhatsapp)),
       subscription: buildSubscription(),
+      setupChecklist: {
+        ...setupChecklist,
+        completed: Object.values(setupChecklist).every(Boolean),
+      },
+      setup: {
+        workStartHour: settings?.workStartHour ?? null,
+        workEndHour: settings?.workEndHour ?? null,
+        slotInterval: settings?.slotInterval ?? null,
+        workingDays: settings?.workingDays ?? null,
+      },
     };
 
     return res.status(200).json(payload);
