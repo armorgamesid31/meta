@@ -20,6 +20,16 @@ function sanitizePluginName(value: string): string {
   return normalized.slice(0, 48) || 'kedyapp-salon';
 }
 
+function isConnectSuccessEvent(event: unknown, data: unknown): boolean {
+  const eventText = typeof event === 'string' ? event.toLowerCase() : '';
+  const dataObj = data && typeof data === 'object' && !Array.isArray(data) ? (data as Record<string, any>) : null;
+  const dataStatus = typeof dataObj?.status === 'string' ? dataObj.status.toLowerCase() : '';
+  const dataState = typeof dataObj?.state === 'string' ? dataObj.state.toLowerCase() : '';
+
+  const successPattern = /(connected|linked|success|complete|completed)/i;
+  return successPattern.test(eventText) || successPattern.test(dataStatus) || successPattern.test(dataState);
+}
+
 async function getAuthenticatedSalon(req: any) {
   const salonId = getSalonIdFromUser(req);
   if (!salonId) {
@@ -104,6 +114,15 @@ router.post('/create-plugin', authenticateToken, async (req: any, res: any) => {
       return res.status(401).json({ message: 'Unauthorized.' });
     }
 
+    if (salon.chakraPluginId) {
+      return res.status(200).json({
+        success: true,
+        pluginId: salon.chakraPluginId,
+        salonId: salon.id,
+        pluginCreated: false,
+      });
+    }
+
     const pluginId = await createPluginForSalon({
       id: salon.id,
       name: salon.name,
@@ -114,11 +133,37 @@ router.post('/create-plugin', authenticateToken, async (req: any, res: any) => {
       success: true,
       pluginId,
       salonId: salon.id,
+      pluginCreated: true,
     });
   } catch (error: any) {
     console.error('Create plugin failed:', error?.response?.data || error);
     return res.status(500).json({
       message: 'Create plugin failed.',
+      error: error?.response?.data || error?.message || 'Unknown error',
+    });
+  }
+});
+
+// Return current plugin state for UI
+router.get('/status', authenticateToken, async (req: any, res: any) => {
+  try {
+    const salon = await getAuthenticatedSalon(req);
+    if (!salon) {
+      return res.status(401).json({ message: 'Unauthorized.' });
+    }
+
+    return res.status(200).json({
+      salonId: salon.id,
+      salonName: salon.name,
+      slug: salon.slug,
+      pluginId: salon.chakraPluginId,
+      hasPlugin: Boolean(salon.chakraPluginId),
+      sdkUrl: CHAKRA_SDK_URL,
+    });
+  } catch (error: any) {
+    console.error('Chakra status failed:', error?.response?.data || error);
+    return res.status(500).json({
+      message: 'Chakra status failed.',
       error: error?.response?.data || error?.message || 'Unknown error',
     });
   }
@@ -146,6 +191,52 @@ router.get('/connect-token', authenticateToken, async (req: any, res: any) => {
     console.error('Token generation failed:', error?.response?.data || error);
     return res.status(500).json({
       message: 'Token generation failed.',
+      error: error?.response?.data || error?.message || 'Unknown error',
+    });
+  }
+});
+
+// Capture popup/sdk response and echo normalized connection state
+router.post('/connect-event', authenticateToken, async (req: any, res: any) => {
+  try {
+    const salon = await getAuthenticatedSalon(req);
+    if (!salon) {
+      return res.status(401).json({ message: 'Unauthorized.' });
+    }
+
+    const event = req.body?.event;
+    const data = req.body?.data;
+    const pluginIdFromClient =
+      typeof req.body?.pluginId === 'string' && req.body.pluginId.trim() ? req.body.pluginId.trim() : null;
+    const pluginId = pluginIdFromClient || salon.chakraPluginId || null;
+
+    if (!pluginId) {
+      return res.status(400).json({ message: 'Plugin id is missing.' });
+    }
+    if (salon.chakraPluginId && pluginId !== salon.chakraPluginId) {
+      return res.status(403).json({ message: 'Plugin does not match salon scope.' });
+    }
+
+    const connected = isConnectSuccessEvent(event, data);
+
+    console.log('Chakra connect event', {
+      salonId: salon.id,
+      pluginId,
+      event,
+      data,
+      connected,
+    });
+
+    return res.status(200).json({
+      ok: true,
+      pluginId,
+      connected,
+      event: typeof event === 'string' ? event : null,
+    });
+  } catch (error: any) {
+    console.error('Connect event capture failed:', error?.response?.data || error);
+    return res.status(500).json({
+      message: 'Connect event capture failed.',
       error: error?.response?.data || error?.message || 'Unknown error',
     });
   }
