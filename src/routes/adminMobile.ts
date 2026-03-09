@@ -46,6 +46,33 @@ function normalizeInstagramUrl(value: unknown): string | null {
   return `https://instagram.com/${username}`;
 }
 
+type DiscountKind = 'PERCENT' | 'FIXED';
+
+function asDiscountKind(value: unknown): DiscountKind | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const normalized = value.trim().toUpperCase();
+  if (normalized === 'PERCENT' || normalized === 'FIXED') {
+    return normalized;
+  }
+  return null;
+}
+
+function getAppointmentDayKey(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function toRiskLevel(score: number): 'LOW' | 'MEDIUM' | 'HIGH' {
+  if (score >= 70) {
+    return 'HIGH';
+  }
+  if (score >= 35) {
+    return 'MEDIUM';
+  }
+  return 'LOW';
+}
+
 function buildGeneratedWebsiteCopy(input: { salonName?: string; city?: string | null }) {
   const salonName = (input.salonName || '').trim() || 'Salonunuz';
   const city = (input.city || '').trim() || 'şehrinizde';
@@ -261,37 +288,216 @@ router.get('/customers/:id', authenticateToken, async (req: any, res: any) => {
   }
 
   try {
+    const [customer, appointments, riskProfile, latestDiscount] = await prisma.$transaction([
+      prisma.customer.findFirst({
+        where: { id: customerId, salonId },
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+          gender: true,
+          birthDate: true,
+          acceptMarketing: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      }),
+      prisma.appointment.findMany({
+        where: { salonId, customerId },
+        include: {
+          service: { select: { id: true, name: true, duration: true, price: true } },
+          staff: { select: { id: true, name: true } },
+        },
+        orderBy: [{ startTime: 'desc' }, { id: 'desc' }],
+        take: 200,
+      }),
+      prisma.customerRiskProfile.findUnique({
+        where: { customerId_salonId: { customerId, salonId } },
+        select: {
+          riskScore: true,
+          noShowCount: true,
+          noShows: true,
+          totalBookings: true,
+          lastCalculatedAt: true,
+        },
+      }),
+      prisma.customerBehaviorLog.findFirst({
+        where: { salonId, customerId, action: 'CUSTOMER_DISCOUNT_SET' },
+        orderBy: [{ occurredAt: 'desc' }, { createdAt: 'desc' }],
+        select: { metadata: true, occurredAt: true, createdAt: true },
+      }),
+    ]);
+
+    if (!customer) {
+      return res.status(404).json({ message: 'Customer not found.' });
+    }
+
+    const nonCancelled = appointments.filter((item) => item.status !== 'CANCELLED');
+    const uniqueDayCount = new Set(nonCancelled.map((item) => getAppointmentDayKey(item.startTime))).size;
+    const completedAppointments = appointments.filter((item) => item.status === 'COMPLETED');
+    const totalRevenue = completedAppointments.reduce((sum, item) => sum + (item.service?.price || 0), 0);
+
+    const favoriteStaffCounter = new Map<number, { id: number; name: string; count: number }>();
+    for (const appointment of nonCancelled) {
+      const existing = favoriteStaffCounter.get(appointment.staffId);
+      if (existing) {
+        existing.count += 1;
+      } else {
+        favoriteStaffCounter.set(appointment.staffId, {
+          id: appointment.staff.id,
+          name: appointment.staff.name,
+          count: 1,
+        });
+      }
+    }
+    const favoriteStaff =
+      Array.from(favoriteStaffCounter.values()).sort((a, b) => b.count - a.count || a.id - b.id)[0] || null;
+
+    const noShowCountFromData = appointments.filter((item) => item.status === 'NO_SHOW').length;
+    const totalBookingsFromData = nonCancelled.length;
+    const noShowRatio = totalBookingsFromData > 0 ? noShowCountFromData / totalBookingsFromData : 0;
+    const riskScoreRaw =
+      typeof riskProfile?.riskScore === 'number' ? riskProfile.riskScore : Math.min(100, noShowRatio * 100);
+    const riskScore = Number(Math.max(0, Math.min(100, riskScoreRaw)).toFixed(1));
+
+    let discount: any = null;
+    if (latestDiscount?.metadata && typeof latestDiscount.metadata === 'object' && !Array.isArray(latestDiscount.metadata)) {
+      const raw = latestDiscount.metadata as Record<string, any>;
+      const kind = asDiscountKind(raw.kind);
+      const value = typeof raw.value === 'number' ? raw.value : Number(raw.value);
+      if (kind && Number.isFinite(value) && value > 0) {
+        discount = {
+          kind,
+          value,
+          note: typeof raw.note === 'string' ? raw.note : null,
+          notifyCustomer: Boolean(raw.notifyCustomer),
+          messageTemplate: typeof raw.messageTemplate === 'string' ? raw.messageTemplate : null,
+          lastNotificationStatus:
+            typeof raw.lastNotificationStatus === 'string' ? raw.lastNotificationStatus : null,
+          updatedAt: (latestDiscount.occurredAt || latestDiscount.createdAt || new Date()).toISOString(),
+        };
+      }
+    }
+
+    return res.status(200).json({
+      customer,
+      summary: {
+        totalAppointmentDays: uniqueDayCount,
+        totalRevenue,
+        favoriteStaff,
+        noShowRiskScore: riskScore,
+        noShowRiskLevel: toRiskLevel(riskScore),
+        noShowCount: typeof riskProfile?.noShows === 'number' ? riskProfile.noShows : noShowCountFromData,
+        totalBookings:
+          typeof riskProfile?.totalBookings === 'number' ? riskProfile.totalBookings : totalBookingsFromData,
+      },
+      discount,
+      appointments: appointments.slice(0, 30),
+    });
+  } catch (error) {
+    console.error('Admin customer detail error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.put('/customers/:id/discount', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const customerId = Number(req.params.id);
+  if (!Number.isInteger(customerId) || customerId <= 0) {
+    return res.status(400).json({ message: 'Invalid customer id.' });
+  }
+
+  const kind = asDiscountKind(req.body?.kind);
+  const value = typeof req.body?.value === 'number' ? req.body.value : Number(req.body?.value);
+  const note = typeof req.body?.note === 'string' ? req.body.note.trim() : '';
+  const notifyCustomer = Boolean(req.body?.notifyCustomer);
+  const messageTemplate = typeof req.body?.messageTemplate === 'string' ? req.body.messageTemplate.trim() : '';
+
+  if (!kind) {
+    return res.status(400).json({ message: 'kind must be PERCENT or FIXED.' });
+  }
+  if (!Number.isFinite(value) || value <= 0) {
+    return res.status(400).json({ message: 'value must be a positive number.' });
+  }
+  if (kind === 'PERCENT' && value > 100) {
+    return res.status(400).json({ message: 'PERCENT discount cannot exceed 100.' });
+  }
+
+  try {
     const customer = await prisma.customer.findFirst({
       where: { id: customerId, salonId },
-      select: {
-        id: true,
-        name: true,
-        phone: true,
-        gender: true,
-        birthDate: true,
-        acceptMarketing: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+      select: { id: true, name: true, phone: true },
     });
 
     if (!customer) {
       return res.status(404).json({ message: 'Customer not found.' });
     }
 
-    const appointments = await prisma.appointment.findMany({
-      where: { salonId, customerId },
-      include: {
-        service: { select: { id: true, name: true, duration: true, price: true } },
-        staff: { select: { id: true, name: true } },
+    const now = new Date();
+    const normalizedMessageTemplate =
+      messageTemplate ||
+      (kind === 'PERCENT'
+        ? `${value}% indirim hakkınız tanımlandı.`
+        : `${value} TL indirim hakkınız tanımlandı.`);
+    const lastNotificationStatus = notifyCustomer
+      ? customer.phone
+        ? 'queued'
+        : 'skipped_no_phone'
+      : 'not_requested';
+
+    await prisma.customerBehaviorLog.create({
+      data: {
+        salonId,
+        customerId,
+        action: 'CUSTOMER_DISCOUNT_SET',
+        behaviorType: 'DISCOUNT',
+        metadata: {
+          kind,
+          value,
+          note: note || null,
+          notifyCustomer,
+          messageTemplate: normalizedMessageTemplate,
+          lastNotificationStatus,
+          updatedAt: now.toISOString(),
+        },
+        occurredAt: now,
       },
-      orderBy: [{ startTime: 'desc' }, { id: 'desc' }],
-      take: 30,
     });
 
-    return res.status(200).json({ customer, appointments });
+    if (notifyCustomer) {
+      await prisma.customerBehaviorLog.create({
+        data: {
+          salonId,
+          customerId,
+          action: 'CUSTOMER_DISCOUNT_NOTIFICATION',
+          behaviorType: 'NOTIFICATION',
+          metadata: {
+            channel: 'WHATSAPP',
+            status: lastNotificationStatus,
+            messageTemplate: normalizedMessageTemplate,
+          },
+          occurredAt: now,
+        },
+      });
+    }
+
+    return res.status(200).json({
+      discount: {
+        kind,
+        value,
+        note: note || null,
+        notifyCustomer,
+        messageTemplate: normalizedMessageTemplate,
+        lastNotificationStatus,
+        updatedAt: now.toISOString(),
+      },
+    });
   } catch (error) {
-    console.error('Admin customer detail error:', error);
+    console.error('Admin customer discount update error:', error);
     return res.status(500).json({ message: 'Internal server error.' });
   }
 });
