@@ -86,6 +86,26 @@ function buildGeneratedWebsiteCopy(input: { salonName?: string; city?: string | 
   };
 }
 
+const TONE_VALUES = new Set(['friendly', 'professional', 'balanced']);
+const ANSWER_LENGTH_VALUES = new Set(['short', 'medium', 'detailed']);
+const EMOJI_USAGE_VALUES = new Set(['off', 'low', 'normal']);
+const BOOKING_GUIDANCE_VALUES = new Set(['low', 'medium', 'high']);
+const HANDOVER_THRESHOLD_VALUES = new Set(['early', 'balanced', 'late']);
+
+function asStringMap(input: unknown): Record<string, string> {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return {};
+  }
+  const entries = Object.entries(input as Record<string, unknown>);
+  const output: Record<string, string> = {};
+  for (const [key, value] of entries) {
+    if (typeof value === 'string') {
+      output[key] = value.trim();
+    }
+  }
+  return output;
+}
+
 router.get('/appointments', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
   if (!salonId) {
@@ -625,6 +645,101 @@ router.put('/setup', authenticateToken, async (req: any, res: any) => {
     return res.status(200).json({ salon, settings });
   } catch (error) {
     console.error('Admin setup update error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.get('/whatsapp-agent/settings', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  try {
+    const settings = await prisma.salonAiAgentSettings.findUnique({
+      where: { salonId },
+      select: {
+        tone: true,
+        answerLength: true,
+        emojiUsage: true,
+        bookingGuidance: true,
+        handoverThreshold: true,
+        faqAnswers: true,
+      },
+    });
+
+    return res.status(200).json({
+      settings: settings || {
+        tone: 'balanced',
+        answerLength: 'medium',
+        emojiUsage: 'low',
+        bookingGuidance: 'medium',
+        handoverThreshold: 'balanced',
+        faqAnswers: {},
+      },
+    });
+  } catch (error) {
+    console.error('Admin WhatsApp agent settings read error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.put('/whatsapp-agent/settings', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const payload = req.body || {};
+  const tone = typeof payload.tone === 'string' && TONE_VALUES.has(payload.tone) ? payload.tone : 'balanced';
+  const answerLength = typeof payload.answerLength === 'string' && ANSWER_LENGTH_VALUES.has(payload.answerLength)
+    ? payload.answerLength
+    : 'medium';
+  const emojiUsage = typeof payload.emojiUsage === 'string' && EMOJI_USAGE_VALUES.has(payload.emojiUsage)
+    ? payload.emojiUsage
+    : 'low';
+  const bookingGuidance = typeof payload.bookingGuidance === 'string' && BOOKING_GUIDANCE_VALUES.has(payload.bookingGuidance)
+    ? payload.bookingGuidance
+    : 'medium';
+  const handoverThreshold =
+    typeof payload.handoverThreshold === 'string' && HANDOVER_THRESHOLD_VALUES.has(payload.handoverThreshold)
+      ? payload.handoverThreshold
+      : 'balanced';
+  const faqAnswers = asStringMap(payload.faqAnswers);
+
+  try {
+    const settings = await prisma.salonAiAgentSettings.upsert({
+      where: { salonId },
+      update: {
+        tone,
+        answerLength,
+        emojiUsage,
+        bookingGuidance,
+        handoverThreshold,
+        faqAnswers,
+      },
+      create: {
+        salonId,
+        tone,
+        answerLength,
+        emojiUsage,
+        bookingGuidance,
+        handoverThreshold,
+        faqAnswers,
+      },
+      select: {
+        tone: true,
+        answerLength: true,
+        emojiUsage: true,
+        bookingGuidance: true,
+        handoverThreshold: true,
+        faqAnswers: true,
+      },
+    });
+
+    return res.status(200).json({ settings });
+  } catch (error) {
+    console.error('Admin WhatsApp agent settings update error:', error);
     return res.status(500).json({ message: 'Internal server error.' });
   }
 });
