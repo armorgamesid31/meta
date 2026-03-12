@@ -70,6 +70,7 @@ model SalonAiAgentSettings {
   emojiUsage        String    @default("low")
   bookingGuidance   String    @default("medium")
   handoverThreshold String    @default("balanced")
+  aiDisclosure      String    @default("onQuestion")
   faqAnswers        Json?
   createdAt         DateTime? @default(now()) @db.Timestamp(6)
   updatedAt         DateTime? @default(now()) @updatedAt @db.Timestamp(6)

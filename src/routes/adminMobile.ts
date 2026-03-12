@@ -91,6 +91,7 @@ const ANSWER_LENGTH_VALUES = new Set(['short', 'medium', 'detailed']);
 const EMOJI_USAGE_VALUES = new Set(['off', 'low', 'normal']);
 const BOOKING_GUIDANCE_VALUES = new Set(['low', 'medium', 'high']);
 const HANDOVER_THRESHOLD_VALUES = new Set(['early', 'balanced', 'late']);
+const AI_DISCLOSURE_VALUES = new Set(['always', 'onQuestion', 'never']);
 
 function asStringMap(input: unknown): Record<string, string> {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
@@ -664,6 +665,7 @@ router.get('/whatsapp-agent/settings', authenticateToken, async (req: any, res: 
         emojiUsage: true,
         bookingGuidance: true,
         handoverThreshold: true,
+        aiDisclosure: true,
         faqAnswers: true,
       },
     });
@@ -675,6 +677,7 @@ router.get('/whatsapp-agent/settings', authenticateToken, async (req: any, res: 
         emojiUsage: 'low',
         bookingGuidance: 'medium',
         handoverThreshold: 'balanced',
+        aiDisclosure: 'onQuestion',
         faqAnswers: {},
       },
     });
@@ -705,6 +708,10 @@ router.put('/whatsapp-agent/settings', authenticateToken, async (req: any, res: 
     typeof payload.handoverThreshold === 'string' && HANDOVER_THRESHOLD_VALUES.has(payload.handoverThreshold)
       ? payload.handoverThreshold
       : 'balanced';
+  const aiDisclosure =
+    typeof payload.aiDisclosure === 'string' && AI_DISCLOSURE_VALUES.has(payload.aiDisclosure)
+      ? payload.aiDisclosure
+      : 'onQuestion';
   const faqAnswers = asStringMap(payload.faqAnswers);
 
   try {
@@ -716,6 +723,7 @@ router.put('/whatsapp-agent/settings', authenticateToken, async (req: any, res: 
         emojiUsage,
         bookingGuidance,
         handoverThreshold,
+        aiDisclosure,
         faqAnswers,
       },
       create: {
@@ -725,6 +733,7 @@ router.put('/whatsapp-agent/settings', authenticateToken, async (req: any, res: 
         emojiUsage,
         bookingGuidance,
         handoverThreshold,
+        aiDisclosure,
         faqAnswers,
       },
       select: {
@@ -733,6 +742,7 @@ router.put('/whatsapp-agent/settings', authenticateToken, async (req: any, res: 
         emojiUsage: true,
         bookingGuidance: true,
         handoverThreshold: true,
+        aiDisclosure: true,
         faqAnswers: true,
       },
     });
