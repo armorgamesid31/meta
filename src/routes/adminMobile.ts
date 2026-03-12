@@ -86,6 +86,177 @@ function buildGeneratedWebsiteCopy(input: { salonName?: string; city?: string | 
   };
 }
 
+function parseCampaignDateInput(value: unknown): Date | null | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value === null || value === '') {
+    return null;
+  }
+
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return undefined;
+  }
+
+  return parsed;
+}
+
+function toPercentDelta(current: number, previous: number): number {
+  if (previous <= 0) {
+    return current > 0 ? 100 : 0;
+  }
+  return Number((((current - previous) / previous) * 100).toFixed(1));
+}
+
+async function sumCompletedRevenue(params: { salonId: number; from: Date; to: Date }) {
+  const rows = await prisma.appointment.findMany({
+    where: {
+      salonId: params.salonId,
+      status: 'COMPLETED',
+      startTime: {
+        gte: params.from,
+        lte: params.to,
+      },
+    },
+    select: {
+      service: {
+        select: {
+          price: true,
+        },
+      },
+    },
+  });
+
+  return rows.reduce((total, row) => total + (row.service?.price || 0), 0);
+}
+
+async function buildCampaignMetrics(campaign: any) {
+  const now = new Date();
+  const windowStart = campaign.startsAt || campaign.createdAt || new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const rawWindowEnd = campaign.endsAt && campaign.endsAt < now ? campaign.endsAt : now;
+  const windowEnd = rawWindowEnd > windowStart ? rawWindowEnd : now;
+
+  const durationMs = Math.max(windowEnd.getTime() - windowStart.getTime(), 24 * 60 * 60 * 1000);
+  const previousStart = new Date(windowStart.getTime() - durationMs);
+  const previousEnd = windowStart;
+
+  const [appointmentsCurrent, appointmentsPrevious, completedCurrent, completedPrevious, cancelledCurrent, cancelledPrevious, newCustomersCurrent, newCustomersPrevious, revenueCurrent, revenuePrevious] =
+    await Promise.all([
+      prisma.appointment.count({
+        where: {
+          salonId: campaign.salonId,
+          startTime: {
+            gte: windowStart,
+            lte: windowEnd,
+          },
+        },
+      }),
+      prisma.appointment.count({
+        where: {
+          salonId: campaign.salonId,
+          startTime: {
+            gte: previousStart,
+            lte: previousEnd,
+          },
+        },
+      }),
+      prisma.appointment.count({
+        where: {
+          salonId: campaign.salonId,
+          status: 'COMPLETED',
+          startTime: {
+            gte: windowStart,
+            lte: windowEnd,
+          },
+        },
+      }),
+      prisma.appointment.count({
+        where: {
+          salonId: campaign.salonId,
+          status: 'COMPLETED',
+          startTime: {
+            gte: previousStart,
+            lte: previousEnd,
+          },
+        },
+      }),
+      prisma.appointment.count({
+        where: {
+          salonId: campaign.salonId,
+          status: 'CANCELLED',
+          startTime: {
+            gte: windowStart,
+            lte: windowEnd,
+          },
+        },
+      }),
+      prisma.appointment.count({
+        where: {
+          salonId: campaign.salonId,
+          status: 'CANCELLED',
+          startTime: {
+            gte: previousStart,
+            lte: previousEnd,
+          },
+        },
+      }),
+      prisma.customer.count({
+        where: {
+          salonId: campaign.salonId,
+          createdAt: {
+            gte: windowStart,
+            lte: windowEnd,
+          },
+        },
+      }),
+      prisma.customer.count({
+        where: {
+          salonId: campaign.salonId,
+          createdAt: {
+            gte: previousStart,
+            lte: previousEnd,
+          },
+        },
+      }),
+      sumCompletedRevenue({ salonId: campaign.salonId, from: windowStart, to: windowEnd }),
+      sumCompletedRevenue({ salonId: campaign.salonId, from: previousStart, to: previousEnd }),
+    ]);
+
+  return {
+    window: {
+      start: windowStart,
+      end: windowEnd,
+      previousStart,
+      previousEnd,
+    },
+    current: {
+      appointmentCount: appointmentsCurrent,
+      completedCount: completedCurrent,
+      cancelledCount: cancelledCurrent,
+      newCustomerCount: newCustomersCurrent,
+      revenueEstimate: Number(revenueCurrent.toFixed(2)),
+    },
+    previous: {
+      appointmentCount: appointmentsPrevious,
+      completedCount: completedPrevious,
+      cancelledCount: cancelledPrevious,
+      newCustomerCount: newCustomersPrevious,
+      revenueEstimate: Number(revenuePrevious.toFixed(2)),
+    },
+    deltas: {
+      appointmentPercent: toPercentDelta(appointmentsCurrent, appointmentsPrevious),
+      newCustomerPercent: toPercentDelta(newCustomersCurrent, newCustomersPrevious),
+      revenuePercent: toPercentDelta(revenueCurrent, revenuePrevious),
+    },
+  };
+}
+
 const TONE_VALUES = new Set(['friendly', 'professional', 'balanced']);
 const ANSWER_LENGTH_VALUES = new Set(['short', 'medium', 'detailed']);
 const EMOJI_USAGE_VALUES = new Set(['off', 'low', 'normal']);
@@ -1245,6 +1416,12 @@ router.post('/campaigns', authenticateToken, async (req: any, res: any) => {
   }
 
   try {
+    const startsAt = parseCampaignDateInput(req.body?.startsAt);
+    const endsAt = parseCampaignDateInput(req.body?.endsAt);
+    if (startsAt === undefined || endsAt === undefined) {
+      return res.status(400).json({ message: 'Invalid startsAt or endsAt date.' });
+    }
+
     const campaign = await prisma.campaign.create({
       data: {
         salonId,
@@ -1253,14 +1430,161 @@ router.post('/campaigns', authenticateToken, async (req: any, res: any) => {
         description: typeof req.body?.description === 'string' ? req.body.description.trim() : null,
         config: req.body?.config ?? null,
         isActive: req.body?.isActive !== undefined ? Boolean(req.body.isActive) : true,
-        startsAt: req.body?.startsAt ? new Date(req.body.startsAt) : null,
-        endsAt: req.body?.endsAt ? new Date(req.body.endsAt) : null,
+        startsAt,
+        endsAt,
       },
     });
 
     return res.status(201).json({ item: campaign });
   } catch (error) {
     console.error('Admin campaign create error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.get('/campaigns/:id', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const campaignId = Number(req.params.id);
+  if (!Number.isInteger(campaignId) || campaignId <= 0) {
+    return res.status(400).json({ message: 'Invalid campaign id.' });
+  }
+
+  try {
+    const campaign = await prisma.campaign.findFirst({
+      where: {
+        id: campaignId,
+        salonId,
+      },
+    });
+
+    if (!campaign) {
+      return res.status(404).json({ message: 'Campaign not found.' });
+    }
+
+    const metrics = await buildCampaignMetrics(campaign);
+
+    return res.status(200).json({
+      item: campaign,
+      metrics,
+    });
+  } catch (error) {
+    console.error('Admin campaign detail error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.patch('/campaigns/:id', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const campaignId = Number(req.params.id);
+  if (!Number.isInteger(campaignId) || campaignId <= 0) {
+    return res.status(400).json({ message: 'Invalid campaign id.' });
+  }
+
+  const data: any = {};
+  if (typeof req.body?.name === 'string') {
+    const trimmed = req.body.name.trim();
+    if (!trimmed) {
+      return res.status(400).json({ message: 'name cannot be empty.' });
+    }
+    data.name = trimmed;
+  }
+  if (typeof req.body?.type === 'string') {
+    const trimmed = req.body.type.trim();
+    if (!trimmed) {
+      return res.status(400).json({ message: 'type cannot be empty.' });
+    }
+    data.type = trimmed;
+  }
+  if (req.body?.description !== undefined) {
+    data.description =
+      typeof req.body.description === 'string' && req.body.description.trim()
+        ? req.body.description.trim()
+        : null;
+  }
+  if (req.body?.config !== undefined) {
+    data.config = req.body.config ?? null;
+  }
+  if (req.body?.isActive !== undefined) {
+    data.isActive = Boolean(req.body.isActive);
+  }
+  if (req.body?.startsAt !== undefined) {
+    const startsAt = parseCampaignDateInput(req.body.startsAt);
+    if (startsAt === undefined) {
+      return res.status(400).json({ message: 'Invalid startsAt date.' });
+    }
+    data.startsAt = startsAt;
+  }
+  if (req.body?.endsAt !== undefined) {
+    const endsAt = parseCampaignDateInput(req.body.endsAt);
+    if (endsAt === undefined) {
+      return res.status(400).json({ message: 'Invalid endsAt date.' });
+    }
+    data.endsAt = endsAt;
+  }
+
+  try {
+    const existing = await prisma.campaign.findFirst({
+      where: {
+        id: campaignId,
+        salonId,
+      },
+      select: { id: true },
+    });
+    if (!existing) {
+      return res.status(404).json({ message: 'Campaign not found.' });
+    }
+
+    const campaign = await prisma.campaign.update({
+      where: { id: campaignId },
+      data,
+    });
+
+    return res.status(200).json({ item: campaign });
+  } catch (error) {
+    console.error('Admin campaign update error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.delete('/campaigns/:id', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const campaignId = Number(req.params.id);
+  if (!Number.isInteger(campaignId) || campaignId <= 0) {
+    return res.status(400).json({ message: 'Invalid campaign id.' });
+  }
+
+  try {
+    const existing = await prisma.campaign.findFirst({
+      where: {
+        id: campaignId,
+        salonId,
+      },
+      select: { id: true },
+    });
+
+    if (!existing) {
+      return res.status(404).json({ message: 'Campaign not found.' });
+    }
+
+    await prisma.campaign.delete({
+      where: { id: campaignId },
+    });
+
+    return res.status(204).send();
+  } catch (error) {
+    console.error('Admin campaign delete error:', error);
     return res.status(500).json({ message: 'Internal server error.' });
   }
 });
