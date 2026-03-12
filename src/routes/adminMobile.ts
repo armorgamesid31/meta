@@ -356,6 +356,196 @@ router.get('/appointments', authenticateToken, async (req: any, res: any) => {
   }
 });
 
+router.post('/appointments', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const serviceId = Number(req.body?.serviceId);
+  const staffId = Number(req.body?.staffId);
+  const customerIdRaw = req.body?.customerId;
+  const customerId =
+    customerIdRaw === null || customerIdRaw === undefined || customerIdRaw === ''
+      ? null
+      : Number(customerIdRaw);
+  const startTime = parseIsoDate(req.body?.startTime);
+  const explicitCustomerName = typeof req.body?.customerName === 'string' ? req.body.customerName.trim() : '';
+  const explicitCustomerPhone = typeof req.body?.customerPhone === 'string' ? req.body.customerPhone.trim() : '';
+
+  if (!Number.isInteger(serviceId) || serviceId <= 0) {
+    return res.status(400).json({ message: 'serviceId is required.' });
+  }
+  if (!Number.isInteger(staffId) || staffId <= 0) {
+    return res.status(400).json({ message: 'staffId is required.' });
+  }
+  if (!startTime) {
+    return res.status(400).json({ message: 'startTime is required as ISO date.' });
+  }
+  if (customerId !== null && (!Number.isInteger(customerId) || customerId <= 0)) {
+    return res.status(400).json({ message: 'customerId must be a positive integer.' });
+  }
+
+  const gender =
+    typeof req.body?.gender === 'string' && ['male', 'female', 'other'].includes(req.body.gender)
+      ? req.body.gender
+      : 'female';
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      const [service, staff, staffService, existingCustomerById, existingCustomerByPhone] = await Promise.all([
+        tx.service.findFirst({
+          where: { id: serviceId, salonId },
+          select: { id: true, name: true, duration: true, price: true, requiresSpecialist: true },
+        }),
+        tx.staff.findFirst({
+          where: { id: staffId, salonId },
+          select: { id: true, name: true, title: true },
+        }),
+        tx.staffService.findFirst({
+          where: {
+            staffId,
+            serviceId,
+            isactive: true,
+          },
+          select: { duration: true },
+        }),
+        customerId
+          ? tx.customer.findFirst({
+              where: { id: customerId, salonId },
+              select: { id: true, name: true, phone: true, gender: true },
+            })
+          : Promise.resolve(null),
+        !customerId && explicitCustomerPhone
+          ? tx.customer.findFirst({
+              where: { salonId, phone: explicitCustomerPhone },
+              select: { id: true, name: true, phone: true, gender: true },
+            })
+          : Promise.resolve(null),
+      ]);
+
+      if (!service) {
+        return { error: { code: 404, message: 'Service not found.' } };
+      }
+      if (!staff) {
+        return { error: { code: 404, message: 'Staff not found.' } };
+      }
+      if (customerId && !existingCustomerById) {
+        return { error: { code: 404, message: 'Customer not found.' } };
+      }
+
+      const effectiveDuration = Math.max(1, staffService?.duration || service.duration || 30);
+      const endTime = new Date(startTime.getTime() + effectiveDuration * 60 * 1000);
+
+      const overlap = await tx.appointment.findFirst({
+        where: {
+          salonId,
+          staffId,
+          status: {
+            in: ['BOOKED'],
+          },
+          startTime: { lt: endTime },
+          endTime: { gt: startTime },
+        },
+        select: { id: true, startTime: true, endTime: true },
+      });
+
+      if (overlap) {
+        return {
+          error: {
+            code: 409,
+            message: 'Seçilen personel bu saat aralığında müsait değil.',
+            conflict: overlap,
+          },
+        };
+      }
+
+      let customer = existingCustomerById || existingCustomerByPhone || null;
+      if (!customer) {
+        const resolvedPhone = explicitCustomerPhone;
+        if (!resolvedPhone) {
+          return { error: { code: 400, message: 'customerPhone is required when customer is not selected.' } };
+        }
+
+        customer = await tx.customer.create({
+          data: {
+            salonId,
+            name: explicitCustomerName || null,
+            phone: resolvedPhone,
+            gender,
+          },
+          select: { id: true, name: true, phone: true, gender: true },
+        });
+      }
+
+      const customerName = (explicitCustomerName || customer.name || '').trim() || 'Misafir Müşteri';
+      const customerPhone = (explicitCustomerPhone || customer.phone || '').trim();
+      if (!customerPhone) {
+        return { error: { code: 400, message: 'customerPhone is required.' } };
+      }
+
+      const appointment = await tx.appointment.create({
+        data: {
+          salonId,
+          customerId: customer.id,
+          customerName,
+          customerPhone,
+          serviceId: service.id,
+          staffId: staff.id,
+          startTime,
+          endTime,
+          status: 'BOOKED',
+          source: 'ADMIN',
+          notes: typeof req.body?.notes === 'string' ? req.body.notes.trim() : null,
+          gender: (customer.gender || gender) as any,
+        },
+        include: {
+          service: {
+            select: {
+              id: true,
+              name: true,
+              duration: true,
+              price: true,
+              requiresSpecialist: true,
+            },
+          },
+          staff: {
+            select: {
+              id: true,
+              name: true,
+              title: true,
+            },
+          },
+          customer: {
+            select: {
+              id: true,
+              name: true,
+              phone: true,
+            },
+          },
+        },
+      });
+
+      return { appointment };
+    });
+
+    if ('error' in result) {
+      return res.status(result.error.code).json({
+        message: result.error.message,
+        ...(result.error.conflict ? { conflict: result.error.conflict } : {}),
+      });
+    }
+
+    return res.status(201).json({ item: result.appointment });
+  } catch (error: any) {
+    if (error?.code === 'P2002') {
+      return res.status(409).json({ message: 'Aynı telefon numarasıyla kayıtlı müşteri zaten var.' });
+    }
+    console.error('Admin create appointment error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
 router.get('/customers', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
   if (!salonId) {
