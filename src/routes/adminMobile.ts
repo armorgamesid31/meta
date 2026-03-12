@@ -362,54 +362,52 @@ router.post('/appointments', authenticateToken, async (req: any, res: any) => {
     return;
   }
 
-  const serviceId = Number(req.body?.serviceId);
-  const staffId = Number(req.body?.staffId);
+  const startTime = parseIsoDate(req.body?.startTime);
   const customerIdRaw = req.body?.customerId;
   const customerId =
     customerIdRaw === null || customerIdRaw === undefined || customerIdRaw === ''
       ? null
       : Number(customerIdRaw);
-  const startTime = parseIsoDate(req.body?.startTime);
   const explicitCustomerName = typeof req.body?.customerName === 'string' ? req.body.customerName.trim() : '';
   const explicitCustomerPhone = typeof req.body?.customerPhone === 'string' ? req.body.customerPhone.trim() : '';
-
-  if (!Number.isInteger(serviceId) || serviceId <= 0) {
-    return res.status(400).json({ message: 'serviceId is required.' });
-  }
-  if (!Number.isInteger(staffId) || staffId <= 0) {
-    return res.status(400).json({ message: 'staffId is required.' });
-  }
-  if (!startTime) {
-    return res.status(400).json({ message: 'startTime is required as ISO date.' });
-  }
-  if (customerId !== null && (!Number.isInteger(customerId) || customerId <= 0)) {
-    return res.status(400).json({ message: 'customerId must be a positive integer.' });
-  }
-
+  const notes = typeof req.body?.notes === 'string' ? req.body.notes.trim() : null;
   const gender =
     typeof req.body?.gender === 'string' && ['male', 'female', 'other'].includes(req.body.gender)
       ? req.body.gender
       : 'female';
 
+  const normalizedServices = Array.isArray(req.body?.services) && req.body.services.length > 0
+    ? req.body.services
+        .map((item: any) => ({
+          serviceId: Number(item?.serviceId),
+          staffId: item?.staffId === null || item?.staffId === undefined || item?.staffId === '' ? null : Number(item.staffId),
+          duration: item?.duration === null || item?.duration === undefined || item?.duration === '' ? null : Number(item.duration),
+        }))
+        .filter((item: any) => Number.isInteger(item.serviceId) && item.serviceId > 0)
+    : null;
+
+  const fallbackServiceId = Number(req.body?.serviceId);
+  const fallbackStaffId = Number(req.body?.staffId);
+  const servicesToCreate =
+    normalizedServices && normalizedServices.length > 0
+      ? normalizedServices
+      : Number.isInteger(fallbackServiceId) && fallbackServiceId > 0
+      ? [{ serviceId: fallbackServiceId, staffId: Number.isInteger(fallbackStaffId) && fallbackStaffId > 0 ? fallbackStaffId : null, duration: null }]
+      : [];
+
+  if (!startTime) {
+    return res.status(400).json({ message: 'startTime is required as ISO date.' });
+  }
+  if (!servicesToCreate.length) {
+    return res.status(400).json({ message: 'At least one service is required.' });
+  }
+  if (customerId !== null && (!Number.isInteger(customerId) || customerId <= 0)) {
+    return res.status(400).json({ message: 'customerId must be a positive integer.' });
+  }
+
   try {
     const result = await prisma.$transaction(async (tx) => {
-      const [service, staff, staffService, existingCustomerById, existingCustomerByPhone] = await Promise.all([
-        tx.service.findFirst({
-          where: { id: serviceId, salonId },
-          select: { id: true, name: true, duration: true, price: true, requiresSpecialist: true },
-        }),
-        tx.staff.findFirst({
-          where: { id: staffId, salonId },
-          select: { id: true, name: true, title: true },
-        }),
-        tx.staffService.findFirst({
-          where: {
-            staffId,
-            serviceId,
-            isactive: true,
-          },
-          select: { duration: true },
-        }),
+      const [existingCustomerById, existingCustomerByPhone] = await Promise.all([
         customerId
           ? tx.customer.findFirst({
               where: { id: customerId, salonId },
@@ -424,54 +422,20 @@ router.post('/appointments', authenticateToken, async (req: any, res: any) => {
           : Promise.resolve(null),
       ]);
 
-      if (!service) {
-        return { error: { code: 404, message: 'Service not found.' } };
-      }
-      if (!staff) {
-        return { error: { code: 404, message: 'Staff not found.' } };
-      }
       if (customerId && !existingCustomerById) {
         return { error: { code: 404, message: 'Customer not found.' } };
       }
 
-      const effectiveDuration = Math.max(1, staffService?.duration || service.duration || 30);
-      const endTime = new Date(startTime.getTime() + effectiveDuration * 60 * 1000);
-
-      const overlap = await tx.appointment.findFirst({
-        where: {
-          salonId,
-          staffId,
-          status: {
-            in: ['BOOKED'],
-          },
-          startTime: { lt: endTime },
-          endTime: { gt: startTime },
-        },
-        select: { id: true, startTime: true, endTime: true },
-      });
-
-      if (overlap) {
-        return {
-          error: {
-            code: 409,
-            message: 'Seçilen personel bu saat aralığında müsait değil.',
-            conflict: overlap,
-          },
-        };
-      }
-
       let customer = existingCustomerById || existingCustomerByPhone || null;
       if (!customer) {
-        const resolvedPhone = explicitCustomerPhone;
-        if (!resolvedPhone) {
+        if (!explicitCustomerPhone) {
           return { error: { code: 400, message: 'customerPhone is required when customer is not selected.' } };
         }
-
         customer = await tx.customer.create({
           data: {
             salonId,
             name: explicitCustomerName || null,
-            phone: resolvedPhone,
+            phone: explicitCustomerPhone,
             gender,
           },
           select: { id: true, name: true, phone: true, gender: true },
@@ -484,49 +448,150 @@ router.post('/appointments', authenticateToken, async (req: any, res: any) => {
         return { error: { code: 400, message: 'customerPhone is required.' } };
       }
 
-      const appointment = await tx.appointment.create({
-        data: {
-          salonId,
-          customerId: customer.id,
-          customerName,
-          customerPhone,
-          serviceId: service.id,
-          staffId: staff.id,
-          startTime,
-          endTime,
-          status: 'BOOKED',
-          source: 'ADMIN',
-          notes: typeof req.body?.notes === 'string' ? req.body.notes.trim() : null,
-          gender: (customer.gender || gender) as any,
+      const serviceIds: number[] = Array.from(
+        new Set<number>(servicesToCreate.map((item: any) => Number(item.serviceId)).filter((id: number) => Number.isInteger(id) && id > 0)),
+      );
+      const services = await tx.service.findMany({
+        where: { salonId, id: { in: serviceIds } },
+        select: { id: true, name: true, duration: true, requiresSpecialist: true },
+      });
+      const serviceMap = new Map(services.map((service) => [service.id, service]));
+      if (services.length !== serviceIds.length) {
+        return { error: { code: 404, message: 'One or more services were not found.' } };
+      }
+
+      const allStaffServiceRows = await tx.staffService.findMany({
+        where: {
+          serviceId: { in: serviceIds },
+          isactive: true,
+          Staff: { salonId },
         },
-        include: {
-          service: {
-            select: {
-              id: true,
-              name: true,
-              duration: true,
-              price: true,
-              requiresSpecialist: true,
-            },
-          },
-          staff: {
-            select: {
-              id: true,
-              name: true,
-              title: true,
-            },
-          },
-          customer: {
-            select: {
-              id: true,
-              name: true,
-              phone: true,
-            },
-          },
+        select: {
+          staffId: true,
+          serviceId: true,
+          duration: true,
         },
       });
+      const staffServiceMap = new Map<string, { duration: number }>();
+      const availableStaffByService = new Map<number, number[]>();
+      for (const row of allStaffServiceRows) {
+        staffServiceMap.set(`${row.serviceId}:${row.staffId}`, { duration: row.duration });
+        const list = availableStaffByService.get(row.serviceId) || [];
+        if (!list.includes(row.staffId)) {
+          list.push(row.staffId);
+        }
+        availableStaffByService.set(row.serviceId, list);
+      }
 
-      return { appointment };
+      const plannedBlocks: Array<{
+        serviceId: number;
+        staffId: number;
+        startTime: Date;
+        endTime: Date;
+      }> = [];
+
+      let cursor = new Date(startTime);
+      for (const block of servicesToCreate) {
+        const service = serviceMap.get(block.serviceId)!;
+        const candidates = availableStaffByService.get(block.serviceId) || [];
+
+        let selectedStaffId = block.staffId;
+        if (selectedStaffId && !candidates.includes(selectedStaffId)) {
+          return { error: { code: 400, message: `${service.name} için seçilen uzman uygun değil.` } };
+        }
+
+        if (!selectedStaffId) {
+          if (service.requiresSpecialist && candidates.length > 1) {
+            return { error: { code: 400, message: `${service.name} için uzman seçimi zorunlu.` } };
+          }
+          if (candidates.length === 0) {
+            return { error: { code: 400, message: `${service.name} için uygun aktif uzman bulunamadı.` } };
+          }
+          selectedStaffId = candidates[0];
+        }
+
+        const staffService = staffServiceMap.get(`${block.serviceId}:${selectedStaffId}`);
+        const duration = Math.max(1, block.duration || staffService?.duration || service.duration || 30);
+        const slotStart = new Date(cursor);
+        const slotEnd = new Date(slotStart.getTime() + duration * 60 * 1000);
+
+        const overlap = await tx.appointment.findFirst({
+          where: {
+            salonId,
+            staffId: selectedStaffId,
+            status: { in: ['BOOKED'] },
+            startTime: { lt: slotEnd },
+            endTime: { gt: slotStart },
+          },
+          select: { id: true, startTime: true, endTime: true },
+        });
+
+        if (overlap) {
+          return {
+            error: {
+              code: 409,
+              message: `${service.name} için ${slotStart.toISOString()} saatinde uzman müsait değil.`,
+              conflict: overlap,
+            },
+          };
+        }
+
+        plannedBlocks.push({
+          serviceId: block.serviceId,
+          staffId: selectedStaffId,
+          startTime: slotStart,
+          endTime: slotEnd,
+        });
+        cursor = new Date(slotEnd);
+      }
+
+      const createdAppointments = [];
+      for (const block of plannedBlocks) {
+        const appointment = await tx.appointment.create({
+          data: {
+            salonId,
+            customerId: customer.id,
+            customerName,
+            customerPhone,
+            serviceId: block.serviceId,
+            staffId: block.staffId,
+            startTime: block.startTime,
+            endTime: block.endTime,
+            status: 'BOOKED',
+            source: 'ADMIN',
+            notes,
+            gender: (customer.gender || gender) as any,
+          },
+          include: {
+            service: {
+              select: {
+                id: true,
+                name: true,
+                duration: true,
+                price: true,
+                requiresSpecialist: true,
+              },
+            },
+            staff: {
+              select: {
+                id: true,
+                name: true,
+                title: true,
+              },
+            },
+            customer: {
+              select: {
+                id: true,
+                name: true,
+                phone: true,
+              },
+            },
+          },
+        });
+        createdAppointments.push(appointment);
+      }
+
+      return { appointments: createdAppointments };
     });
 
     if ('error' in result) {
@@ -536,7 +601,11 @@ router.post('/appointments', authenticateToken, async (req: any, res: any) => {
       });
     }
 
-    return res.status(201).json({ item: result.appointment });
+    return res.status(201).json({
+      item: result.appointments[0],
+      items: result.appointments,
+      count: result.appointments.length,
+    });
   } catch (error: any) {
     if (error?.code === 'P2002') {
       return res.status(409).json({ message: 'Aynı telefon numarasıyla kayıtlı müşteri zaten var.' });
@@ -1305,6 +1374,58 @@ router.get('/services', authenticateToken, async (req: any, res: any) => {
     return res.status(200).json({ items: services });
   } catch (error) {
     console.error('Admin services list error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.get('/services/:id/staff', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const serviceId = Number(req.params.id);
+  if (!Number.isInteger(serviceId) || serviceId <= 0) {
+    return res.status(400).json({ message: 'Invalid service id.' });
+  }
+
+  try {
+    const staff = await prisma.staffService.findMany({
+      where: {
+        serviceId,
+        isactive: true,
+        Staff: { salonId },
+      },
+      select: {
+        staffId: true,
+        duration: true,
+        price: true,
+        Staff: {
+          select: {
+            id: true,
+            name: true,
+            title: true,
+          },
+        },
+      },
+      orderBy: {
+        Staff: {
+          name: 'asc',
+        },
+      },
+    });
+
+    return res.status(200).json({
+      items: staff.map((row) => ({
+        id: row.Staff.id,
+        name: row.Staff.name,
+        title: row.Staff.title,
+        overrideDuration: row.duration,
+        overridePrice: row.price,
+      })),
+    });
+  } catch (error) {
+    console.error('Admin service staff list error:', error);
     return res.status(500).json({ message: 'Internal server error.' });
   }
 });
