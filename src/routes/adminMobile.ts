@@ -1539,6 +1539,240 @@ router.post('/service-categories/reorder', authenticateToken, async (req: any, r
   }
 });
 
+router.get('/service-groups', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  try {
+    const items = await prisma.serviceGroup.findMany({
+      where: { salonId },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        displayOrder: true,
+        capacity: true,
+        sequentialRequired: true,
+        preparationMinutes: true,
+        _count: {
+          select: {
+            services: true,
+          },
+        },
+      },
+      orderBy: [{ displayOrder: 'asc' }, { id: 'asc' }],
+    });
+
+    return res.status(200).json({
+      items: items.map((item) => ({
+        ...item,
+        serviceCount: item._count.services,
+      })),
+    });
+  } catch (error) {
+    console.error('Admin service groups list error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.post('/service-groups', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+  const description = typeof req.body?.description === 'string' ? req.body.description.trim() || null : null;
+  const displayOrder = req.body?.displayOrder === undefined ? null : Number(req.body.displayOrder);
+  const capacity = req.body?.capacity === undefined ? 1 : Number(req.body.capacity);
+  const sequentialRequired = req.body?.sequentialRequired === undefined ? false : Boolean(req.body.sequentialRequired);
+  const preparationMinutes = req.body?.preparationMinutes === undefined ? 0 : Number(req.body.preparationMinutes);
+
+  if (!name) {
+    return res.status(400).json({ message: 'name is required.' });
+  }
+  if (displayOrder !== null && (!Number.isInteger(displayOrder) || displayOrder < 0)) {
+    return res.status(400).json({ message: 'displayOrder must be >= 0.' });
+  }
+  if (!Number.isInteger(capacity) || capacity <= 0) {
+    return res.status(400).json({ message: 'capacity must be a positive integer.' });
+  }
+  if (!Number.isInteger(preparationMinutes) || preparationMinutes < 0) {
+    return res.status(400).json({ message: 'preparationMinutes must be >= 0.' });
+  }
+
+  try {
+    const item = await prisma.serviceGroup.create({
+      data: {
+        salonId,
+        name,
+        description,
+        displayOrder,
+        capacity,
+        sequentialRequired,
+        preparationMinutes,
+      },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        displayOrder: true,
+        capacity: true,
+        sequentialRequired: true,
+        preparationMinutes: true,
+        _count: {
+          select: {
+            services: true,
+          },
+        },
+      },
+    });
+
+    return res.status(201).json({
+      item: {
+        ...item,
+        serviceCount: item._count.services,
+      },
+    });
+  } catch (error: any) {
+    if (error?.code === 'P2002') {
+      return res.status(409).json({ message: 'Bu grup adı zaten kullanılıyor.' });
+    }
+    console.error('Admin service group create error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.put('/service-groups/:id', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const groupId = Number(req.params.id);
+  if (!Number.isInteger(groupId) || groupId <= 0) {
+    return res.status(400).json({ message: 'Invalid group id.' });
+  }
+
+  const updates: any = {};
+  if (typeof req.body?.name === 'string') {
+    updates.name = req.body.name.trim();
+  }
+  if (req.body?.description !== undefined) {
+    updates.description =
+      typeof req.body.description === 'string' ? req.body.description.trim() || null : null;
+  }
+  if (req.body?.displayOrder !== undefined) {
+    const displayOrder = Number(req.body.displayOrder);
+    if (!Number.isInteger(displayOrder) || displayOrder < 0) {
+      return res.status(400).json({ message: 'displayOrder must be >= 0.' });
+    }
+    updates.displayOrder = displayOrder;
+  }
+  if (req.body?.capacity !== undefined) {
+    const capacity = Number(req.body.capacity);
+    if (!Number.isInteger(capacity) || capacity <= 0) {
+      return res.status(400).json({ message: 'capacity must be a positive integer.' });
+    }
+    updates.capacity = capacity;
+  }
+  if (req.body?.sequentialRequired !== undefined) {
+    updates.sequentialRequired = Boolean(req.body.sequentialRequired);
+  }
+  if (req.body?.preparationMinutes !== undefined) {
+    const minutes = Number(req.body.preparationMinutes);
+    if (!Number.isInteger(minutes) || minutes < 0) {
+      return res.status(400).json({ message: 'preparationMinutes must be >= 0.' });
+    }
+    updates.preparationMinutes = minutes;
+  }
+
+  if (!Object.keys(updates).length) {
+    return res.status(400).json({ message: 'No valid update field provided.' });
+  }
+
+  try {
+    const exists = await prisma.serviceGroup.findFirst({
+      where: { id: groupId, salonId },
+      select: { id: true },
+    });
+    if (!exists) {
+      return res.status(404).json({ message: 'Group not found.' });
+    }
+
+    const item = await prisma.serviceGroup.update({
+      where: { id: groupId },
+      data: updates,
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        displayOrder: true,
+        capacity: true,
+        sequentialRequired: true,
+        preparationMinutes: true,
+        _count: {
+          select: {
+            services: true,
+          },
+        },
+      },
+    });
+
+    return res.status(200).json({
+      item: {
+        ...item,
+        serviceCount: item._count.services,
+      },
+    });
+  } catch (error: any) {
+    if (error?.code === 'P2002') {
+      return res.status(409).json({ message: 'Bu grup adı zaten kullanılıyor.' });
+    }
+    console.error('Admin service group update error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.post('/service-groups/reorder', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const orderedIds = Array.isArray(req.body?.orderedIds) ? req.body.orderedIds.map((value: any) => Number(value)) : [];
+  if (!orderedIds.length || orderedIds.some((id: number) => !Number.isInteger(id) || id <= 0)) {
+    return res.status(400).json({ message: 'orderedIds must be a non-empty number array.' });
+  }
+
+  try {
+    const rows = await prisma.serviceGroup.findMany({
+      where: { salonId, id: { in: orderedIds } },
+      select: { id: true },
+    });
+    if (rows.length !== orderedIds.length) {
+      return res.status(400).json({ message: 'orderedIds contains invalid groups.' });
+    }
+
+    await prisma.$transaction(
+      orderedIds.map((id: number, index: number) =>
+        prisma.serviceGroup.update({
+          where: { id },
+          data: { displayOrder: index },
+          select: { id: true },
+        }),
+      ),
+    );
+
+    return res.status(200).json({ success: true });
+  } catch (error) {
+    console.error('Admin service group reorder error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
 router.get('/services', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
   if (!salonId) {
@@ -1572,6 +1806,15 @@ router.get('/services', authenticateToken, async (req: any, res: any) => {
             },
           },
         },
+        serviceGroup: {
+          select: {
+            id: true,
+            name: true,
+            capacity: true,
+            sequentialRequired: true,
+            preparationMinutes: true,
+          },
+        },
       },
       orderBy: [{ category: 'asc' }, { name: 'asc' }],
     });
@@ -1581,6 +1824,8 @@ router.get('/services', authenticateToken, async (req: any, res: any) => {
         ...item,
         categoryKey: item.ServiceCategory?.categoryRef?.key || item.category || 'OTHER',
         categoryName: item.ServiceCategory?.name || item.ServiceCategory?.categoryRef?.defaultName || item.category || 'Diğer',
+        serviceGroupId: item.serviceGroup?.id || null,
+        serviceGroupName: item.serviceGroup?.name || null,
       })),
     });
   } catch (error) {
@@ -1657,6 +1902,10 @@ router.post('/services', authenticateToken, async (req: any, res: any) => {
     req.body?.categoryId === null || req.body?.categoryId === undefined || req.body?.categoryId === ''
       ? null
       : Number(req.body.categoryId);
+  const serviceGroupId =
+    req.body?.serviceGroupId === null || req.body?.serviceGroupId === undefined || req.body?.serviceGroupId === ''
+      ? null
+      : Number(req.body.serviceGroupId);
   const capacityOverride =
     req.body?.capacityOverride === null || req.body?.capacityOverride === undefined || req.body?.capacityOverride === ''
       ? null
@@ -1676,6 +1925,9 @@ router.post('/services', authenticateToken, async (req: any, res: any) => {
   if (categoryId !== null && (!Number.isInteger(categoryId) || categoryId <= 0)) {
     return res.status(400).json({ message: 'categoryId must be a positive integer.' });
   }
+  if (serviceGroupId !== null && (!Number.isInteger(serviceGroupId) || serviceGroupId <= 0)) {
+    return res.status(400).json({ message: 'serviceGroupId must be a positive integer.' });
+  }
   if (capacityOverride !== null && (!Number.isInteger(capacityOverride) || capacityOverride <= 0)) {
     return res.status(400).json({ message: 'capacityOverride must be a positive integer.' });
   }
@@ -1684,6 +1936,16 @@ router.post('/services', authenticateToken, async (req: any, res: any) => {
   }
 
   try {
+    if (serviceGroupId !== null) {
+      const groupExists = await prisma.serviceGroup.findFirst({
+        where: { id: serviceGroupId, salonId },
+        select: { id: true },
+      });
+      if (!groupExists) {
+        return res.status(400).json({ message: 'serviceGroupId is not valid for this salon.' });
+      }
+    }
+
     const service = await prisma.service.create({
       data: {
         salonId,
@@ -1694,6 +1956,7 @@ router.post('/services', authenticateToken, async (req: any, res: any) => {
         description,
         requiresSpecialist,
         categoryId,
+        serviceGroupId,
         capacityOverride,
         sequentialOverride,
         bufferOverride,
@@ -1707,6 +1970,7 @@ router.post('/services', authenticateToken, async (req: any, res: any) => {
         category: true,
         requiresSpecialist: true,
         categoryId: true,
+        serviceGroupId: true,
         capacityOverride: true,
         sequentialOverride: true,
         bufferOverride: true,
@@ -1772,6 +2036,17 @@ router.put('/services/:id', authenticateToken, async (req: any, res: any) => {
       updates.categoryId = categoryId;
     }
   }
+  if (req.body?.serviceGroupId !== undefined) {
+    if (req.body.serviceGroupId === null || req.body.serviceGroupId === '') {
+      updates.serviceGroupId = null;
+    } else {
+      const serviceGroupId = Number(req.body.serviceGroupId);
+      if (!Number.isInteger(serviceGroupId) || serviceGroupId <= 0) {
+        return res.status(400).json({ message: 'serviceGroupId must be a positive integer.' });
+      }
+      updates.serviceGroupId = serviceGroupId;
+    }
+  }
   if (req.body?.capacityOverride !== undefined) {
     if (req.body.capacityOverride === null || req.body.capacityOverride === '') {
       updates.capacityOverride = null;
@@ -1815,6 +2090,16 @@ router.put('/services/:id', authenticateToken, async (req: any, res: any) => {
       return res.status(404).json({ message: 'Service not found.' });
     }
 
+    if (updates.serviceGroupId !== undefined && updates.serviceGroupId !== null) {
+      const groupExists = await prisma.serviceGroup.findFirst({
+        where: { id: updates.serviceGroupId, salonId },
+        select: { id: true },
+      });
+      if (!groupExists) {
+        return res.status(400).json({ message: 'serviceGroupId is not valid for this salon.' });
+      }
+    }
+
     const service = await prisma.service.update({
       where: { id: serviceId },
       data: updates,
@@ -1827,6 +2112,7 @@ router.put('/services/:id', authenticateToken, async (req: any, res: any) => {
         category: true,
         requiresSpecialist: true,
         categoryId: true,
+        serviceGroupId: true,
         capacityOverride: true,
         sequentialOverride: true,
         bufferOverride: true,

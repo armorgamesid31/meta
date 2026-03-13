@@ -39,8 +39,11 @@ model Salon {
   blacklistEntries BlacklistEntry[]
   settings         SalonSettings?
   testimonials     SalonTestimonial[]
+  messageDispatches AppointmentMessageDispatch[]
+  messageTemplates  SalonMessageTemplate[]
   users            SalonUser[]
   services         Service[]
+  serviceGroups    ServiceGroup[]
   ServiceCategory  ServiceCategory[]
   staff            Staff[]
 
@@ -146,17 +149,37 @@ model Service {
   category           String?
   requiresSpecialist Boolean?         @default(false)
   categoryId         Int?
+  serviceGroupId     Int?
   capacityOverride   Int?
   sequentialOverride Boolean?
   bufferOverride     Int?
   appointments       Appointment[]
   ServiceCategory    ServiceCategory? @relation(fields: [categoryId], references: [id], onUpdate: NoAction)
+  serviceGroup       ServiceGroup?    @relation(fields: [serviceGroupId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   salon              Salon            @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   ServiceGender      ServiceGender[]
   ServiceStats       ServiceStats[]
   StaffService       StaffService[]
 
   @@unique([name, salonId])
+}
+
+model ServiceGroup {
+  id                Int       @id @default(autoincrement())
+  salonId           Int
+  name              String
+  description       String?
+  displayOrder      Int?
+  capacity          Int?      @default(1)
+  sequentialRequired Boolean? @default(false)
+  preparationMinutes Int?     @default(0)
+  createdAt         DateTime? @default(now()) @db.Timestamp(6)
+  updatedAt         DateTime? @default(now()) @updatedAt @db.Timestamp(6)
+  salon             Salon     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  services          Service[]
+
+  @@index([salonId, displayOrder], map: "idx_service_group_salon_display_order")
+  @@unique([salonId, name], map: "uq_service_group_name_per_salon")
 }
 
 model Appointment {
@@ -176,6 +199,7 @@ model Appointment {
   serviceId     Int
   gender        CustomerGender     @default(female)
   customer      Customer?          @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  messageDispatches AppointmentMessageDispatch[]
   salon         Salon              @relation(fields: [salonId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   service       Service            @relation(fields: [serviceId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   staff         Staff              @relation(fields: [staffId], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -423,6 +447,42 @@ model AutomationRule {
   @@index([salonId, isEnabled], map: "idx_automation_rule_salon_enabled")
 }
 
+model AppointmentMessageDispatch {
+  id                Int                          @id @default(autoincrement())
+  salonId           Int
+  appointmentId     Int
+  eventType         AppointmentMessageEventType
+  channel           String                       @default("WHATSAPP")
+  recipientPhone    String
+  templateName      String?
+  providerMessageId String?
+  providerPayload   Json?
+  createdAt         DateTime?                    @default(now()) @db.Timestamp(6)
+  salon             Salon                        @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  appointment       Appointment                  @relation(fields: [appointmentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([salonId, appointmentId, eventType], map: "uq_msg_dispatch_salon_appointment_event")
+  @@index([salonId, createdAt], map: "idx_msg_dispatch_salon_created")
+  @@index([eventType, createdAt], map: "idx_msg_dispatch_event_created")
+}
+
+model SalonMessageTemplate {
+  id              Int                         @id @default(autoincrement())
+  salonId         Int
+  eventType       AppointmentMessageEventType
+  locale          LocaleCode                  @default(tr)
+  sessionText     String?
+  templateName    String?
+  templateContent String?
+  isActive        Boolean                     @default(true)
+  createdAt       DateTime?                   @default(now()) @db.Timestamp(6)
+  updatedAt       DateTime?                   @default(now()) @updatedAt @db.Timestamp(6)
+  salon           Salon                       @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([salonId, eventType, locale], map: "uq_salon_message_template")
+  @@index([salonId, isActive], map: "idx_salon_message_template_salon_active")
+}
+
 model AnalyticsPreset {
   id        Int       @id @default(autoincrement())
   salonId   Int
@@ -519,6 +579,13 @@ enum AppointmentSource {
   CUSTOMER
   ADMIN
   AUTOMATION
+}
+
+enum AppointmentMessageEventType {
+  CONFIRMATION
+  REMINDER
+  CANCELLATION
+  SATISFACTION_SURVEY
 }
 
 enum CustomerGender {
