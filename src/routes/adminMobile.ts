@@ -1367,6 +1367,10 @@ router.get('/services', authenticateToken, async (req: any, res: any) => {
         price: true,
         category: true,
         requiresSpecialist: true,
+        categoryId: true,
+        capacityOverride: true,
+        sequentialOverride: true,
+        bufferOverride: true,
       },
       orderBy: [{ category: 'asc' }, { name: 'asc' }],
     });
@@ -1442,9 +1446,34 @@ router.post('/services', authenticateToken, async (req: any, res: any) => {
   const category = typeof req.body?.category === 'string' && req.body.category.trim() ? req.body.category.trim() : 'OTHER';
   const description = typeof req.body?.description === 'string' ? req.body.description.trim() : null;
   const requiresSpecialist = Boolean(req.body?.requiresSpecialist);
+  const categoryId =
+    req.body?.categoryId === null || req.body?.categoryId === undefined || req.body?.categoryId === ''
+      ? null
+      : Number(req.body.categoryId);
+  const capacityOverride =
+    req.body?.capacityOverride === null || req.body?.capacityOverride === undefined || req.body?.capacityOverride === ''
+      ? null
+      : Number(req.body.capacityOverride);
+  const sequentialOverride =
+    req.body?.sequentialOverride === null || req.body?.sequentialOverride === undefined || req.body?.sequentialOverride === ''
+      ? null
+      : Boolean(req.body.sequentialOverride);
+  const bufferOverride =
+    req.body?.bufferOverride === null || req.body?.bufferOverride === undefined || req.body?.bufferOverride === ''
+      ? null
+      : Number(req.body.bufferOverride);
 
   if (!name || !Number.isFinite(duration) || duration <= 0 || !Number.isFinite(price) || price < 0) {
     return res.status(400).json({ message: 'name, duration and price are required.' });
+  }
+  if (categoryId !== null && (!Number.isInteger(categoryId) || categoryId <= 0)) {
+    return res.status(400).json({ message: 'categoryId must be a positive integer.' });
+  }
+  if (capacityOverride !== null && (!Number.isInteger(capacityOverride) || capacityOverride <= 0)) {
+    return res.status(400).json({ message: 'capacityOverride must be a positive integer.' });
+  }
+  if (bufferOverride !== null && (!Number.isFinite(bufferOverride) || bufferOverride < 0)) {
+    return res.status(400).json({ message: 'bufferOverride must be >= 0.' });
   }
 
   try {
@@ -1457,6 +1486,10 @@ router.post('/services', authenticateToken, async (req: any, res: any) => {
         category,
         description,
         requiresSpecialist,
+        categoryId,
+        capacityOverride,
+        sequentialOverride,
+        bufferOverride,
       },
       select: {
         id: true,
@@ -1466,6 +1499,10 @@ router.post('/services', authenticateToken, async (req: any, res: any) => {
         price: true,
         category: true,
         requiresSpecialist: true,
+        categoryId: true,
+        capacityOverride: true,
+        sequentialOverride: true,
+        bufferOverride: true,
       },
     });
 
@@ -1475,6 +1512,157 @@ router.post('/services', authenticateToken, async (req: any, res: any) => {
       return res.status(409).json({ message: 'Bu isimde hizmet zaten mevcut.' });
     }
     console.error('Admin service create error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.put('/services/:id', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const serviceId = Number(req.params.id);
+  if (!Number.isInteger(serviceId) || serviceId <= 0) {
+    return res.status(400).json({ message: 'Invalid service id.' });
+  }
+
+  const updates: any = {};
+  if (typeof req.body?.name === 'string') {
+    updates.name = req.body.name.trim();
+  }
+  if (typeof req.body?.description === 'string') {
+    updates.description = req.body.description.trim() || null;
+  }
+  if (typeof req.body?.category === 'string') {
+    updates.category = req.body.category.trim() || 'OTHER';
+  }
+  if (req.body?.duration !== undefined) {
+    const duration = Number(req.body.duration);
+    if (!Number.isFinite(duration) || duration <= 0) {
+      return res.status(400).json({ message: 'duration must be a positive number.' });
+    }
+    updates.duration = Math.round(duration);
+  }
+  if (req.body?.price !== undefined) {
+    const price = Number(req.body.price);
+    if (!Number.isFinite(price) || price < 0) {
+      return res.status(400).json({ message: 'price must be a non-negative number.' });
+    }
+    updates.price = price;
+  }
+  if (req.body?.requiresSpecialist !== undefined) {
+    updates.requiresSpecialist = Boolean(req.body.requiresSpecialist);
+  }
+  if (req.body?.categoryId !== undefined) {
+    if (req.body.categoryId === null || req.body.categoryId === '') {
+      updates.categoryId = null;
+    } else {
+      const categoryId = Number(req.body.categoryId);
+      if (!Number.isInteger(categoryId) || categoryId <= 0) {
+        return res.status(400).json({ message: 'categoryId must be a positive integer.' });
+      }
+      updates.categoryId = categoryId;
+    }
+  }
+  if (req.body?.capacityOverride !== undefined) {
+    if (req.body.capacityOverride === null || req.body.capacityOverride === '') {
+      updates.capacityOverride = null;
+    } else {
+      const capacity = Number(req.body.capacityOverride);
+      if (!Number.isInteger(capacity) || capacity <= 0) {
+        return res.status(400).json({ message: 'capacityOverride must be a positive integer.' });
+      }
+      updates.capacityOverride = capacity;
+    }
+  }
+  if (req.body?.sequentialOverride !== undefined) {
+    if (req.body.sequentialOverride === null || req.body.sequentialOverride === '') {
+      updates.sequentialOverride = null;
+    } else {
+      updates.sequentialOverride = Boolean(req.body.sequentialOverride);
+    }
+  }
+  if (req.body?.bufferOverride !== undefined) {
+    if (req.body.bufferOverride === null || req.body.bufferOverride === '') {
+      updates.bufferOverride = null;
+    } else {
+      const buffer = Number(req.body.bufferOverride);
+      if (!Number.isFinite(buffer) || buffer < 0) {
+        return res.status(400).json({ message: 'bufferOverride must be >= 0.' });
+      }
+      updates.bufferOverride = Math.round(buffer);
+    }
+  }
+
+  if (!Object.keys(updates).length) {
+    return res.status(400).json({ message: 'No valid update field provided.' });
+  }
+
+  try {
+    const exists = await prisma.service.findFirst({
+      where: { id: serviceId, salonId },
+      select: { id: true },
+    });
+    if (!exists) {
+      return res.status(404).json({ message: 'Service not found.' });
+    }
+
+    const service = await prisma.service.update({
+      where: { id: serviceId },
+      data: updates,
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        duration: true,
+        price: true,
+        category: true,
+        requiresSpecialist: true,
+        categoryId: true,
+        capacityOverride: true,
+        sequentialOverride: true,
+        bufferOverride: true,
+      },
+    });
+
+    return res.status(200).json({ item: service });
+  } catch (error: any) {
+    if (error?.code === 'P2002') {
+      return res.status(409).json({ message: 'Bu isimde hizmet zaten mevcut.' });
+    }
+    console.error('Admin service update error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.delete('/services/:id', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const serviceId = Number(req.params.id);
+  if (!Number.isInteger(serviceId) || serviceId <= 0) {
+    return res.status(400).json({ message: 'Invalid service id.' });
+  }
+
+  try {
+    const exists = await prisma.service.findFirst({
+      where: { id: serviceId, salonId },
+      select: { id: true },
+    });
+    if (!exists) {
+      return res.status(404).json({ message: 'Service not found.' });
+    }
+
+    await prisma.service.delete({ where: { id: serviceId } });
+    return res.status(204).send();
+  } catch (error: any) {
+    if (error?.code === 'P2003') {
+      return res.status(409).json({ message: 'Bu hizmet randevularda kullanıldığı için silinemez.' });
+    }
+    console.error('Admin service delete error:', error);
     return res.status(500).json({ message: 'Internal server error.' });
   }
 });
