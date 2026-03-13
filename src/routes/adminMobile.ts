@@ -1350,6 +1350,195 @@ router.post('/website/generate', authenticateToken, async (req: any, res: any) =
   }
 });
 
+router.get('/service-categories', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  try {
+    const categories = await prisma.serviceCategory.findMany({
+      where: { salonId },
+      select: {
+        id: true,
+        name: true,
+        displayOrder: true,
+        capacity: true,
+        sequentialRequired: true,
+        bufferMinutes: true,
+        marketingDescription: true,
+        categoryId: true,
+        categoryRef: {
+          select: {
+            key: true,
+            defaultName: true,
+            displayOrder: true,
+          },
+        },
+        _count: {
+          select: {
+            Service: true,
+          },
+        },
+      },
+    });
+
+    const items = categories
+      .map((item) => ({
+        id: item.id,
+        name: item.name,
+        key: item.categoryRef?.key || 'OTHER',
+        defaultName: item.categoryRef?.defaultName || item.name,
+        displayOrder: item.displayOrder,
+        effectiveOrder: item.displayOrder ?? item.categoryRef?.displayOrder ?? 999,
+        capacity: item.capacity,
+        sequentialRequired: item.sequentialRequired,
+        bufferMinutes: item.bufferMinutes,
+        marketingDescription: item.marketingDescription,
+        serviceCount: item._count.Service,
+      }))
+      .sort((a, b) => a.effectiveOrder - b.effectiveOrder || a.id - b.id);
+
+    return res.status(200).json({ items });
+  } catch (error) {
+    console.error('Admin service categories list error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.put('/service-categories/:id', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const categoryId = Number(req.params.id);
+  if (!Number.isInteger(categoryId) || categoryId <= 0) {
+    return res.status(400).json({ message: 'Invalid category id.' });
+  }
+
+  const updates: any = {};
+  if (typeof req.body?.name === 'string') {
+    updates.name = req.body.name.trim();
+  }
+  if (req.body?.displayOrder !== undefined) {
+    const displayOrder = Number(req.body.displayOrder);
+    if (!Number.isInteger(displayOrder) || displayOrder < 0) {
+      return res.status(400).json({ message: 'displayOrder must be >= 0.' });
+    }
+    updates.displayOrder = displayOrder;
+  }
+  if (req.body?.capacity !== undefined) {
+    const capacity = Number(req.body.capacity);
+    if (!Number.isInteger(capacity) || capacity <= 0) {
+      return res.status(400).json({ message: 'capacity must be a positive integer.' });
+    }
+    updates.capacity = capacity;
+  }
+  if (req.body?.sequentialRequired !== undefined) {
+    updates.sequentialRequired = Boolean(req.body.sequentialRequired);
+  }
+  if (req.body?.bufferMinutes !== undefined) {
+    const buffer = Number(req.body.bufferMinutes);
+    if (!Number.isInteger(buffer) || buffer < 0) {
+      return res.status(400).json({ message: 'bufferMinutes must be >= 0.' });
+    }
+    updates.bufferMinutes = buffer;
+  }
+  if (req.body?.marketingDescription !== undefined) {
+    updates.marketingDescription =
+      typeof req.body.marketingDescription === 'string' ? req.body.marketingDescription.trim() || null : null;
+  }
+
+  if (!Object.keys(updates).length) {
+    return res.status(400).json({ message: 'No valid update field provided.' });
+  }
+
+  try {
+    const exists = await prisma.serviceCategory.findFirst({
+      where: { id: categoryId, salonId },
+      select: { id: true },
+    });
+    if (!exists) {
+      return res.status(404).json({ message: 'Category not found.' });
+    }
+
+    const item = await prisma.serviceCategory.update({
+      where: { id: categoryId },
+      data: updates,
+      select: {
+        id: true,
+        name: true,
+        displayOrder: true,
+        capacity: true,
+        sequentialRequired: true,
+        bufferMinutes: true,
+        marketingDescription: true,
+        categoryRef: {
+          select: {
+            key: true,
+            defaultName: true,
+          },
+        },
+      },
+    });
+
+    return res.status(200).json({
+      item: {
+        id: item.id,
+        name: item.name,
+        displayOrder: item.displayOrder,
+        capacity: item.capacity,
+        sequentialRequired: item.sequentialRequired,
+        bufferMinutes: item.bufferMinutes,
+        marketingDescription: item.marketingDescription,
+        key: item.categoryRef?.key || 'OTHER',
+        defaultName: item.categoryRef?.defaultName || item.name,
+      },
+    });
+  } catch (error) {
+    console.error('Admin service category update error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.post('/service-categories/reorder', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const orderedIds = Array.isArray(req.body?.orderedIds) ? req.body.orderedIds.map((value: any) => Number(value)) : [];
+  if (!orderedIds.length || orderedIds.some((id: number) => !Number.isInteger(id) || id <= 0)) {
+    return res.status(400).json({ message: 'orderedIds must be a non-empty number array.' });
+  }
+
+  try {
+    const rows = await prisma.serviceCategory.findMany({
+      where: { salonId, id: { in: orderedIds } },
+      select: { id: true },
+    });
+    if (rows.length !== orderedIds.length) {
+      return res.status(400).json({ message: 'orderedIds contains invalid categories.' });
+    }
+
+    await prisma.$transaction(
+      orderedIds.map((id: number, index: number) =>
+        prisma.serviceCategory.update({
+          where: { id },
+          data: { displayOrder: index },
+          select: { id: true },
+        }),
+      ),
+    );
+
+    return res.status(200).json({ success: true });
+  } catch (error) {
+    console.error('Admin service category reorder error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
 router.get('/services', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
   if (!salonId) {
@@ -1371,11 +1560,29 @@ router.get('/services', authenticateToken, async (req: any, res: any) => {
         capacityOverride: true,
         sequentialOverride: true,
         bufferOverride: true,
+        ServiceCategory: {
+          select: {
+            id: true,
+            name: true,
+            categoryRef: {
+              select: {
+                key: true,
+                defaultName: true,
+              },
+            },
+          },
+        },
       },
       orderBy: [{ category: 'asc' }, { name: 'asc' }],
     });
 
-    return res.status(200).json({ items: services });
+    return res.status(200).json({
+      items: services.map((item) => ({
+        ...item,
+        categoryKey: item.ServiceCategory?.categoryRef?.key || item.category || 'OTHER',
+        categoryName: item.ServiceCategory?.name || item.ServiceCategory?.categoryRef?.defaultName || item.category || 'Diğer',
+      })),
+    });
   } catch (error) {
     console.error('Admin services list error:', error);
     return res.status(500).json({ message: 'Internal server error.' });
