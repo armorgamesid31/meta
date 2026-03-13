@@ -142,6 +142,7 @@ model Service {
   id                 Int              @id @default(autoincrement())
   name               String
   description        String?
+  isActive           Boolean?         @default(true)
   price              Float
   duration           Int
   createdAt          DateTime?        @default(now()) @db.Timestamp(6)
@@ -170,6 +171,7 @@ model ServiceGroup {
   salonId           Int
   name              String
   description       String?
+  isActive          Boolean?  @default(true)
   displayOrder      Int?
   capacity          Int?      @default(1)
   sequentialRequired Boolean? @default(false)
@@ -332,6 +334,7 @@ model ServiceCategory {
   name                 String
   salonId              Int
   categoryId           Int?
+  isActive             Boolean?          @default(true)
   marketingDescription String?
   icon                 String?
   coverImageUrl        String?

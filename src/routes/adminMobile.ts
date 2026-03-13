@@ -1483,6 +1483,7 @@ router.get('/service-categories', authenticateToken, async (req: any, res: any) 
       select: {
         id: true,
         name: true,
+        isActive: true,
         displayOrder: true,
         capacity: true,
         sequentialRequired: true,
@@ -1510,6 +1511,7 @@ router.get('/service-categories', authenticateToken, async (req: any, res: any) 
         name: item.name,
         key: item.categoryRef?.key || 'OTHER',
         defaultName: item.categoryRef?.defaultName || item.name,
+        isActive: item.isActive ?? true,
         displayOrder: item.displayOrder,
         effectiveOrder: item.displayOrder ?? item.categoryRef?.displayOrder ?? 999,
         capacity: item.capacity,
@@ -1556,6 +1558,9 @@ router.put('/service-categories/:id', authenticateToken, async (req: any, res: a
     }
     updates.capacity = capacity;
   }
+  if (req.body?.isActive !== undefined) {
+    updates.isActive = Boolean(req.body.isActive);
+  }
   if (req.body?.sequentialRequired !== undefined) {
     updates.sequentialRequired = Boolean(req.body.sequentialRequired);
   }
@@ -1590,6 +1595,7 @@ router.put('/service-categories/:id', authenticateToken, async (req: any, res: a
       select: {
         id: true,
         name: true,
+        isActive: true,
         displayOrder: true,
         capacity: true,
         sequentialRequired: true,
@@ -1673,6 +1679,7 @@ router.get('/service-groups', authenticateToken, async (req: any, res: any) => {
         id: true,
         name: true,
         description: true,
+        isActive: true,
         displayOrder: true,
         capacity: true,
         sequentialRequired: true,
@@ -1707,6 +1714,7 @@ router.post('/service-groups', authenticateToken, async (req: any, res: any) => 
   const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
   const description = typeof req.body?.description === 'string' ? req.body.description.trim() || null : null;
   const displayOrder = req.body?.displayOrder === undefined ? null : Number(req.body.displayOrder);
+  const isActive = req.body?.isActive === undefined ? true : Boolean(req.body?.isActive);
   const capacity = req.body?.capacity === undefined ? 1 : Number(req.body.capacity);
   const sequentialRequired = req.body?.sequentialRequired === undefined ? false : Boolean(req.body.sequentialRequired);
   const preparationMinutes = req.body?.preparationMinutes === undefined ? 0 : Number(req.body.preparationMinutes);
@@ -1730,6 +1738,7 @@ router.post('/service-groups', authenticateToken, async (req: any, res: any) => 
         salonId,
         name,
         description,
+        isActive,
         displayOrder,
         capacity,
         sequentialRequired,
@@ -1739,6 +1748,7 @@ router.post('/service-groups', authenticateToken, async (req: any, res: any) => 
         id: true,
         name: true,
         description: true,
+        isActive: true,
         displayOrder: true,
         capacity: true,
         sequentialRequired: true,
@@ -1792,6 +1802,9 @@ router.put('/service-groups/:id', authenticateToken, async (req: any, res: any) 
     }
     updates.displayOrder = displayOrder;
   }
+  if (req.body?.isActive !== undefined) {
+    updates.isActive = Boolean(req.body.isActive);
+  }
   if (req.body?.capacity !== undefined) {
     const capacity = Number(req.body.capacity);
     if (!Number.isInteger(capacity) || capacity <= 0) {
@@ -1830,6 +1843,7 @@ router.put('/service-groups/:id', authenticateToken, async (req: any, res: any) 
         id: true,
         name: true,
         description: true,
+        isActive: true,
         displayOrder: true,
         capacity: true,
         sequentialRequired: true,
@@ -1907,6 +1921,7 @@ router.get('/services', authenticateToken, async (req: any, res: any) => {
         id: true,
         name: true,
         description: true,
+        isActive: true,
         duration: true,
         price: true,
         category: true,
@@ -2019,6 +2034,7 @@ router.post('/services', authenticateToken, async (req: any, res: any) => {
   const category = typeof req.body?.category === 'string' && req.body.category.trim() ? req.body.category.trim() : 'OTHER';
   const description = typeof req.body?.description === 'string' ? req.body.description.trim() : null;
   const requiresSpecialist = Boolean(req.body?.requiresSpecialist);
+  const isActive = req.body?.isActive === undefined ? true : Boolean(req.body?.isActive);
   const categoryId =
     req.body?.categoryId === null || req.body?.categoryId === undefined || req.body?.categoryId === ''
       ? null
@@ -2075,6 +2091,7 @@ router.post('/services', authenticateToken, async (req: any, res: any) => {
         price,
         category,
         description,
+        isActive,
         requiresSpecialist,
         categoryId,
         serviceGroupId,
@@ -2086,6 +2103,7 @@ router.post('/services', authenticateToken, async (req: any, res: any) => {
         id: true,
         name: true,
         description: true,
+        isActive: true,
         duration: true,
         price: true,
         category: true,
@@ -2145,6 +2163,9 @@ router.put('/services/:id', authenticateToken, async (req: any, res: any) => {
   }
   if (req.body?.requiresSpecialist !== undefined) {
     updates.requiresSpecialist = Boolean(req.body.requiresSpecialist);
+  }
+  if (req.body?.isActive !== undefined) {
+    updates.isActive = Boolean(req.body.isActive);
   }
   if (req.body?.categoryId !== undefined) {
     if (req.body.categoryId === null || req.body.categoryId === '') {
@@ -2228,6 +2249,7 @@ router.put('/services/:id', authenticateToken, async (req: any, res: any) => {
         id: true,
         name: true,
         description: true,
+        isActive: true,
         duration: true,
         price: true,
         category: true,
