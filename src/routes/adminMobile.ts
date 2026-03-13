@@ -278,6 +278,106 @@ function asStringMap(input: unknown): Record<string, string> {
   return output;
 }
 
+function normalizeThemeColor(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (/^#[0-9a-fA-F]{6}$/.test(trimmed)) {
+    return trimmed.toUpperCase();
+  }
+  return null;
+}
+
+function parseStaffServiceAssignments(input: unknown) {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+
+  const rows: Array<{ serviceId: number; customPrice: number | null; customDuration: number | null }> = [];
+  const seen = new Set<number>();
+
+  for (const raw of input) {
+    if (!raw || typeof raw !== 'object') {
+      continue;
+    }
+    const source = raw as Record<string, unknown>;
+    const serviceId = Number(source.serviceId);
+    if (!Number.isInteger(serviceId) || serviceId <= 0 || seen.has(serviceId)) {
+      continue;
+    }
+
+    let customPrice: number | null = null;
+    if (source.customPrice !== null && source.customPrice !== undefined && source.customPrice !== '') {
+      const parsed = Number(source.customPrice);
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        continue;
+      }
+      customPrice = parsed;
+    }
+
+    let customDuration: number | null = null;
+    if (source.customDuration !== null && source.customDuration !== undefined && source.customDuration !== '') {
+      const parsed = Number(source.customDuration);
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        continue;
+      }
+      customDuration = Math.round(parsed);
+    }
+
+    rows.push({ serviceId, customPrice, customDuration });
+    seen.add(serviceId);
+  }
+
+  return rows;
+}
+
+function mapStaffForMobile(staff: any) {
+  const serviceById = new Map<number, any>();
+
+  for (const row of staff?.StaffService || []) {
+    if (!row?.isactive || !row?.Service) {
+      continue;
+    }
+
+    const existing = serviceById.get(row.serviceId);
+    if (!existing || (existing.gender !== 'female' && row.gender === 'female')) {
+      const service = row.Service;
+      serviceById.set(row.serviceId, {
+        serviceId: service.id,
+        name: service.name,
+        categoryKey: service.ServiceCategory?.categoryRef?.key || service.category || 'OTHER',
+        categoryName:
+          service.ServiceCategory?.name || service.ServiceCategory?.categoryRef?.defaultName || service.category || 'Diğer',
+        defaultPrice: service.price,
+        defaultDuration: service.duration,
+        customPrice: row.price !== service.price ? row.price : null,
+        customDuration: row.duration !== service.duration ? row.duration : null,
+        effectivePrice: row.price,
+        effectiveDuration: row.duration,
+        gender: row.gender,
+      });
+    }
+  }
+
+  const services = Array.from(serviceById.values()).sort((a, b) => a.name.localeCompare(b.name, 'tr'));
+
+  return {
+    id: staff.id,
+    name: staff.name,
+    title: staff.title,
+    bio: staff.bio,
+    phone: staff.phone,
+    profileImageUrl: staff.profileImageUrl,
+    themeColor: staff.themeColor || '#B76E79',
+    services,
+    serviceCount: services.length,
+  };
+}
+
 router.get('/appointments', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
   if (!salonId) {
@@ -2175,12 +2275,47 @@ router.get('/staff', authenticateToken, async (req: any, res: any) => {
         title: true,
         bio: true,
         phone: true,
+        themeColor: true,
         profileImageUrl: true,
+        StaffService: {
+          where: {
+            Service: { salonId },
+          },
+          select: {
+            id: true,
+            serviceId: true,
+            price: true,
+            duration: true,
+            isactive: true,
+            gender: true,
+            Service: {
+              select: {
+                id: true,
+                name: true,
+                category: true,
+                price: true,
+                duration: true,
+                ServiceCategory: {
+                  select: {
+                    id: true,
+                    name: true,
+                    categoryRef: {
+                      select: {
+                        key: true,
+                        defaultName: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
       },
       orderBy: { name: 'asc' },
     });
 
-    return res.status(200).json({ items: staff });
+    return res.status(200).json({ items: staff.map(mapStaffForMobile) });
   } catch (error) {
     console.error('Admin staff list error:', error);
     return res.status(500).json({ message: 'Internal server error.' });
@@ -2197,30 +2332,320 @@ router.post('/staff', authenticateToken, async (req: any, res: any) => {
   if (!name) {
     return res.status(400).json({ message: 'name is required.' });
   }
+  const themeColor =
+    req.body?.themeColor === null || req.body?.themeColor === undefined || req.body?.themeColor === ''
+      ? null
+      : normalizeThemeColor(req.body.themeColor);
+
+  if (req.body?.themeColor !== undefined && req.body?.themeColor !== null && req.body?.themeColor !== '' && !themeColor) {
+    return res.status(400).json({ message: 'themeColor must be in #RRGGBB format.' });
+  }
+
+  const assignments = parseStaffServiceAssignments(req.body?.serviceAssignments);
 
   try {
-    const staff = await prisma.staff.create({
-      data: {
-        salonId,
-        name,
-        title: typeof req.body?.title === 'string' ? req.body.title.trim() : null,
-        bio: typeof req.body?.bio === 'string' ? req.body.bio.trim() : null,
-        phone: typeof req.body?.phone === 'string' ? req.body.phone.trim() : null,
-        profileImageUrl: typeof req.body?.profileImageUrl === 'string' ? req.body.profileImageUrl.trim() : null,
-      },
+    const createdStaffId = await prisma.$transaction(async (tx) => {
+      const staff = await tx.staff.create({
+        data: {
+          salonId,
+          name,
+          title: typeof req.body?.title === 'string' ? req.body.title.trim() : null,
+          bio: typeof req.body?.bio === 'string' ? req.body.bio.trim() : null,
+          phone: typeof req.body?.phone === 'string' ? req.body.phone.trim() : null,
+          themeColor,
+          profileImageUrl: typeof req.body?.profileImageUrl === 'string' ? req.body.profileImageUrl.trim() : null,
+        },
+        select: { id: true },
+      });
+
+      if (assignments.length > 0) {
+        const serviceIds = assignments.map((item) => item.serviceId);
+        const services = await tx.service.findMany({
+          where: {
+            salonId,
+            id: { in: serviceIds },
+          },
+          select: { id: true, price: true, duration: true },
+        });
+
+        if (services.length !== serviceIds.length) {
+          throw new Error('INVALID_SERVICE_ASSIGNMENT');
+        }
+
+        const serviceMap = new Map(services.map((service) => [service.id, service]));
+        await tx.staffService.createMany({
+          data: assignments.map((item) => {
+            const service = serviceMap.get(item.serviceId)!;
+            return {
+              staffId: staff.id,
+              serviceId: item.serviceId,
+              price: item.customPrice ?? service.price,
+              duration: item.customDuration ?? service.duration,
+              isactive: true,
+              gender: 'female',
+            };
+          }),
+        });
+      }
+
+      return staff.id;
+    });
+
+    const staff = await prisma.staff.findFirst({
+      where: { id: createdStaffId, salonId },
       select: {
         id: true,
         name: true,
         title: true,
         bio: true,
         phone: true,
+        themeColor: true,
         profileImageUrl: true,
+        StaffService: {
+          where: {
+            Service: { salonId },
+          },
+          select: {
+            id: true,
+            serviceId: true,
+            price: true,
+            duration: true,
+            isactive: true,
+            gender: true,
+            Service: {
+              select: {
+                id: true,
+                name: true,
+                category: true,
+                price: true,
+                duration: true,
+                ServiceCategory: {
+                  select: {
+                    id: true,
+                    name: true,
+                    categoryRef: {
+                      select: {
+                        key: true,
+                        defaultName: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
       },
     });
 
-    return res.status(201).json({ item: staff });
+    return res.status(201).json({ item: mapStaffForMobile(staff) });
   } catch (error) {
+    if ((error as Error)?.message === 'INVALID_SERVICE_ASSIGNMENT') {
+      return res.status(400).json({ message: 'serviceAssignments içinde geçersiz hizmet var.' });
+    }
     console.error('Admin staff create error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.put('/staff/:id', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const staffId = Number(req.params.id);
+  if (!Number.isInteger(staffId) || staffId <= 0) {
+    return res.status(400).json({ message: 'Invalid staff id.' });
+  }
+
+  const updates: any = {};
+  if (typeof req.body?.name === 'string') {
+    const name = req.body.name.trim();
+    if (!name) {
+      return res.status(400).json({ message: 'name cannot be empty.' });
+    }
+    updates.name = name;
+  }
+  if (req.body?.title !== undefined) {
+    updates.title = typeof req.body.title === 'string' ? req.body.title.trim() || null : null;
+  }
+  if (req.body?.bio !== undefined) {
+    updates.bio = typeof req.body.bio === 'string' ? req.body.bio.trim() || null : null;
+  }
+  if (req.body?.phone !== undefined) {
+    updates.phone = typeof req.body.phone === 'string' ? req.body.phone.trim() || null : null;
+  }
+  if (req.body?.profileImageUrl !== undefined) {
+    updates.profileImageUrl = typeof req.body.profileImageUrl === 'string' ? req.body.profileImageUrl.trim() || null : null;
+  }
+  if (req.body?.themeColor !== undefined) {
+    if (req.body.themeColor === null || req.body.themeColor === '') {
+      updates.themeColor = null;
+    } else {
+      const themeColor = normalizeThemeColor(req.body.themeColor);
+      if (!themeColor) {
+        return res.status(400).json({ message: 'themeColor must be in #RRGGBB format.' });
+      }
+      updates.themeColor = themeColor;
+    }
+  }
+
+  const hasAssignments = req.body?.serviceAssignments !== undefined;
+  const assignments = hasAssignments ? parseStaffServiceAssignments(req.body?.serviceAssignments) : [];
+
+  if (!Object.keys(updates).length && !hasAssignments) {
+    return res.status(400).json({ message: 'No valid update field provided.' });
+  }
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      const existing = await tx.staff.findFirst({
+        where: { id: staffId, salonId },
+        select: { id: true },
+      });
+      if (!existing) {
+        throw new Error('STAFF_NOT_FOUND');
+      }
+
+      if (Object.keys(updates).length > 0) {
+        await tx.staff.update({
+          where: { id: staffId },
+          data: updates,
+        });
+      }
+
+      if (hasAssignments) {
+        const serviceIds = assignments.map((item) => item.serviceId);
+        if (serviceIds.length > 0) {
+          const services = await tx.service.findMany({
+            where: {
+              salonId,
+              id: { in: serviceIds },
+            },
+            select: { id: true, price: true, duration: true },
+          });
+          if (services.length !== serviceIds.length) {
+            throw new Error('INVALID_SERVICE_ASSIGNMENT');
+          }
+
+          const serviceMap = new Map(services.map((service) => [service.id, service]));
+          await tx.staffService.deleteMany({
+            where: { staffId },
+          });
+
+          await tx.staffService.createMany({
+            data: assignments.map((item) => {
+              const service = serviceMap.get(item.serviceId)!;
+              return {
+                staffId,
+                serviceId: item.serviceId,
+                price: item.customPrice ?? service.price,
+                duration: item.customDuration ?? service.duration,
+                isactive: true,
+                gender: 'female',
+              };
+            }),
+          });
+        } else {
+          await tx.staffService.deleteMany({
+            where: { staffId },
+          });
+        }
+      }
+    });
+
+    const staff = await prisma.staff.findFirst({
+      where: { id: staffId, salonId },
+      select: {
+        id: true,
+        name: true,
+        title: true,
+        bio: true,
+        phone: true,
+        themeColor: true,
+        profileImageUrl: true,
+        StaffService: {
+          where: {
+            Service: { salonId },
+          },
+          select: {
+            id: true,
+            serviceId: true,
+            price: true,
+            duration: true,
+            isactive: true,
+            gender: true,
+            Service: {
+              select: {
+                id: true,
+                name: true,
+                category: true,
+                price: true,
+                duration: true,
+                ServiceCategory: {
+                  select: {
+                    id: true,
+                    name: true,
+                    categoryRef: {
+                      select: {
+                        key: true,
+                        defaultName: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    return res.status(200).json({ item: mapStaffForMobile(staff) });
+  } catch (error) {
+    if ((error as Error)?.message === 'STAFF_NOT_FOUND') {
+      return res.status(404).json({ message: 'Staff not found.' });
+    }
+    if ((error as Error)?.message === 'INVALID_SERVICE_ASSIGNMENT') {
+      return res.status(400).json({ message: 'serviceAssignments içinde geçersiz hizmet var.' });
+    }
+    console.error('Admin staff update error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.delete('/staff/:id', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const staffId = Number(req.params.id);
+  if (!Number.isInteger(staffId) || staffId <= 0) {
+    return res.status(400).json({ message: 'Invalid staff id.' });
+  }
+
+  try {
+    const existing = await prisma.staff.findFirst({
+      where: { id: staffId, salonId },
+      select: { id: true },
+    });
+
+    if (!existing) {
+      return res.status(404).json({ message: 'Staff not found.' });
+    }
+
+    await prisma.staff.delete({
+      where: { id: staffId },
+    });
+
+    return res.status(204).send();
+  } catch (error: any) {
+    if (error?.code === 'P2003') {
+      return res.status(409).json({ message: 'Bu çalışan randevularda kullanıldığı için silinemez.' });
+    }
+    console.error('Admin staff delete error:', error);
     return res.status(500).json({ message: 'Internal server error.' });
   }
 });

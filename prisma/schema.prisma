@@ -113,6 +113,7 @@ model Staff {
   name              String
   title             String?
   bio               String?
+  themeColor        String?
   profileImageUrl   String?
   phone             String?
   createdAt         DateTime?         @default(now()) @db.Timestamp(6)
