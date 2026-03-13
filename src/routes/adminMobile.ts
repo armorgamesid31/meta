@@ -278,6 +278,27 @@ function asStringMap(input: unknown): Record<string, string> {
   return output;
 }
 
+const STAFF_COLOR_PALETTE = [
+  '#B76E79',
+  '#6C7BA1',
+  '#8C6F56',
+  '#5B8A72',
+  '#7B6D8D',
+  '#A86D5D',
+  '#5E7F91',
+  '#9A7A5C',
+] as const;
+
+function paletteColorBySeed(seed: number): string {
+  const index = Math.abs(seed) % STAFF_COLOR_PALETTE.length;
+  return STAFF_COLOR_PALETTE[index];
+}
+
+function randomStaffColor(): string {
+  const seed = Date.now() + Math.floor(Math.random() * 1000);
+  return paletteColorBySeed(seed);
+}
+
 function normalizeThemeColor(value: unknown): string | null {
   if (typeof value !== 'string') {
     return null;
@@ -372,7 +393,7 @@ function mapStaffForMobile(staff: any) {
     bio: staff.bio,
     phone: staff.phone,
     profileImageUrl: staff.profileImageUrl,
-    themeColor: staff.themeColor || '#B76E79',
+    themeColor: normalizeThemeColor(staff.themeColor) || paletteColorBySeed(staff.id),
     services,
     serviceCount: services.length,
   };
@@ -2352,7 +2373,7 @@ router.post('/staff', authenticateToken, async (req: any, res: any) => {
           title: typeof req.body?.title === 'string' ? req.body.title.trim() : null,
           bio: typeof req.body?.bio === 'string' ? req.body.bio.trim() : null,
           phone: typeof req.body?.phone === 'string' ? req.body.phone.trim() : null,
-          themeColor,
+          themeColor: themeColor || randomStaffColor(),
           profileImageUrl: typeof req.body?.profileImageUrl === 'string' ? req.body.profileImageUrl.trim() : null,
         },
         select: { id: true },
