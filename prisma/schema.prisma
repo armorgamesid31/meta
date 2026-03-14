@@ -195,6 +195,9 @@ model Appointment {
   status        AppointmentStatus? @default(BOOKED)
   source        AppointmentSource? @default(CUSTOMER)
   notes         String?
+  customerRating Int?
+  customerReview String?
+  customerReviewedAt DateTime?     @db.Timestamp(6)
   createdAt     DateTime?          @default(now()) @db.Timestamp(6)
   updatedAt     DateTime?          @default(now()) @updatedAt @db.Timestamp(6)
   salonId       Int

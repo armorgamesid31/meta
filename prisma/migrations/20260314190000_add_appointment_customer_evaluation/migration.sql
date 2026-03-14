@@ -1,0 +1,4 @@
+ALTER TABLE "Appointment"
+  ADD COLUMN IF NOT EXISTS "customerRating" INTEGER,
+  ADD COLUMN IF NOT EXISTS "customerReview" TEXT,
+  ADD COLUMN IF NOT EXISTS "customerReviewedAt" TIMESTAMP(6);

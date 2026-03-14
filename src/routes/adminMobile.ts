@@ -744,6 +744,7 @@ router.get('/customers', authenticateToken, async (req: any, res: any) => {
 
   const cursorRaw = typeof req.query.cursor === 'string' ? Number(req.query.cursor) : null;
   const limit = asPositiveInt(req.query.limit, 20, 1, 100);
+  const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
 
   if (cursorRaw !== null && (!Number.isInteger(cursorRaw) || cursorRaw <= 0)) {
     return res.status(400).json({ message: 'cursor must be a positive integer.' });
@@ -754,6 +755,13 @@ router.get('/customers', authenticateToken, async (req: any, res: any) => {
 
     if (cursorRaw) {
       where.id = { lt: cursorRaw };
+    }
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { phone: { contains: search } },
+        { instagram: { contains: search, mode: 'insensitive' } },
+      ];
     }
 
     const rows = await prisma.customer.findMany({
@@ -982,6 +990,20 @@ router.get('/customers/:id', authenticateToken, async (req: any, res: any) => {
       },
       discount,
       appointments: appointments.slice(0, 30),
+      appointmentsWithFeedback: appointments
+        .filter((item) => item.customerRating !== null || item.customerReview !== null)
+        .slice(0, 30)
+        .map((item) => ({
+          id: item.id,
+          startTime: item.startTime,
+          endTime: item.endTime,
+          status: item.status,
+          service: item.service,
+          staff: item.staff,
+          customerRating: item.customerRating,
+          customerReview: item.customerReview,
+          customerReviewedAt: item.customerReviewedAt,
+        })),
     });
   } catch (error) {
     console.error('Admin customer detail error:', error);
@@ -3300,10 +3322,22 @@ router.get('/blacklist', authenticateToken, async (req: any, res: any) => {
   if (!salonId) {
     return;
   }
+  const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
 
   try {
     const items = await prisma.blacklistEntry.findMany({
-      where: { salonId },
+      where: {
+        salonId,
+        ...(search
+          ? {
+              OR: [
+                { fullName: { contains: search, mode: 'insensitive' } },
+                { phone: { contains: search } },
+                { reason: { contains: search, mode: 'insensitive' } },
+              ],
+            }
+          : {}),
+      },
       orderBy: [{ isActive: 'desc' }, { createdAt: 'desc' }],
     });
 
