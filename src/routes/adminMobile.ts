@@ -764,6 +764,7 @@ router.get('/customers', authenticateToken, async (req: any, res: any) => {
         id: true,
         name: true,
         phone: true,
+        instagram: true,
         gender: true,
         birthDate: true,
         acceptMarketing: true,
@@ -786,6 +787,7 @@ router.get('/customers', authenticateToken, async (req: any, res: any) => {
         id: row.id,
         name: row.name,
         phone: row.phone,
+        instagram: row.instagram,
         gender: row.gender,
         birthDate: row.birthDate,
         acceptMarketing: row.acceptMarketing,
@@ -810,11 +812,22 @@ router.post('/customers', authenticateToken, async (req: any, res: any) => {
 
   const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
   const phone = typeof req.body?.phone === 'string' ? req.body.phone.trim() : '';
+  const instagram = typeof req.body?.instagram === 'string' ? req.body.instagram.trim() : '';
   const gender = typeof req.body?.gender === 'string' ? req.body.gender : null;
   const acceptMarketing = Boolean(req.body?.acceptMarketing);
+  const birthDateInput = req.body?.birthDate;
 
   if (!phone) {
     return res.status(400).json({ message: 'phone is required.' });
+  }
+
+  let birthDate: Date | null = null;
+  if (birthDateInput !== null && birthDateInput !== undefined && birthDateInput !== '') {
+    const parsed = new Date(String(birthDateInput));
+    if (Number.isNaN(parsed.getTime())) {
+      return res.status(400).json({ message: 'birthDate is invalid.' });
+    }
+    birthDate = parsed;
   }
 
   try {
@@ -823,13 +836,16 @@ router.post('/customers', authenticateToken, async (req: any, res: any) => {
         salonId,
         name: name || null,
         phone,
+        instagram: instagram || null,
         gender: gender && ['male', 'female', 'other'].includes(gender) ? (gender as any) : null,
+        birthDate,
         acceptMarketing,
       },
       select: {
         id: true,
         name: true,
         phone: true,
+        instagram: true,
         gender: true,
         birthDate: true,
         acceptMarketing: true,
@@ -867,6 +883,7 @@ router.get('/customers/:id', authenticateToken, async (req: any, res: any) => {
           id: true,
           name: true,
           phone: true,
+          instagram: true,
           gender: true,
           birthDate: true,
           acceptMarketing: true,
