@@ -116,6 +116,8 @@ function toPercentDelta(current: number, previous: number): number {
 
 const ANALYTICS_TIMEZONE = 'Europe/Istanbul';
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_WORKING_DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'] as const;
+type WorkingDayKey = (typeof DEFAULT_WORKING_DAYS)[number] | 'SUN';
 
 function toTimezoneDateKey(date: Date, timeZone = ANALYTICS_TIMEZONE): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -152,6 +154,46 @@ function toTurkishDateLabel(date: Date, timeZone = ANALYTICS_TIMEZONE): string {
 
 function parseDateKeyToUtcStart(dateKey: string): Date {
   return new Date(`${dateKey}T00:00:00.000Z`);
+}
+
+function weekdayKeyFromDate(date: Date, timeZone = ANALYTICS_TIMEZONE): WorkingDayKey {
+  const short = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    weekday: 'short',
+  }).format(date);
+
+  const map: Record<string, WorkingDayKey> = {
+    Mon: 'MON',
+    Tue: 'TUE',
+    Wed: 'WED',
+    Thu: 'THU',
+    Fri: 'FRI',
+    Sat: 'SAT',
+    Sun: 'SUN',
+  };
+  return map[short] || 'MON';
+}
+
+function normalizeWorkingDays(raw: unknown): Set<WorkingDayKey> {
+  if (!Array.isArray(raw)) {
+    return new Set(DEFAULT_WORKING_DAYS);
+  }
+
+  const allowed = new Set<WorkingDayKey>(['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']);
+  const normalized = raw
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim().toUpperCase())
+    .filter((item): item is WorkingDayKey => allowed.has(item as WorkingDayKey));
+
+  if (!normalized.length) {
+    return new Set(DEFAULT_WORKING_DAYS);
+  }
+
+  return new Set(normalized);
+}
+
+function isWorkingDay(date: Date, workingDays: Set<WorkingDayKey>, timeZone = ANALYTICS_TIMEZONE): boolean {
+  return workingDays.has(weekdayKeyFromDate(date, timeZone));
 }
 
 function weekdayIndexMondayFirst(date: Date, timeZone = ANALYTICS_TIMEZONE): number {
@@ -3266,7 +3308,7 @@ router.get('/analytics/overview', authenticateToken, async (req: any, res: any) 
   }
 
   try {
-    const [appointments, totalCustomers, newCustomers] = await Promise.all([
+    const [appointmentsRaw, totalCustomers, newCustomerRows, settings] = await Promise.all([
       prisma.appointment.findMany({
         where: {
           salonId,
@@ -3295,8 +3337,24 @@ router.get('/analytics/overview', authenticateToken, async (req: any, res: any) 
         },
       }),
       prisma.customer.count({ where: { salonId } }),
-      prisma.customer.count({ where: { salonId, createdAt: { gte: from, lte: to } } }),
+      prisma.customer.findMany({
+        where: { salonId, createdAt: { gte: from, lte: to } },
+        select: { createdAt: true },
+      }),
+      prisma.salonSettings.findUnique({
+        where: { salonId },
+        select: { workingDays: true },
+      }),
     ]);
+
+    const workingDays = normalizeWorkingDays(settings?.workingDays);
+    const appointments = appointmentsRaw.filter((appointment) => isWorkingDay(appointment.startTime, workingDays));
+    const newCustomers = newCustomerRows.reduce((count, row) => {
+      if (row.createdAt && isWorkingDay(row.createdAt, workingDays)) {
+        return count + 1;
+      }
+      return count;
+    }, 0);
 
     let revenue = 0;
     let completed = 0;
@@ -3384,6 +3442,9 @@ router.get('/analytics/overview', authenticateToken, async (req: any, res: any) 
     for (let i = 0; i < trendDayCount; i += 1) {
       const day = new Date(trendStart);
       day.setUTCDate(trendStart.getUTCDate() + i);
+      if (!isWorkingDay(day, workingDays)) {
+        continue;
+      }
       const dateKey = toTimezoneDateKey(day);
       trendRevenueMap.set(dateKey, {
         date: dateKey,
@@ -3396,6 +3457,9 @@ router.get('/analytics/overview', authenticateToken, async (req: any, res: any) 
 
     for (const item of appointments) {
       if (item.status !== 'COMPLETED') {
+        continue;
+      }
+      if (!isWorkingDay(item.startTime, workingDays)) {
         continue;
       }
       const dateKey = toTimezoneDateKey(item.startTime);
