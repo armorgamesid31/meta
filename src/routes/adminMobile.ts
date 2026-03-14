@@ -150,6 +150,10 @@ function toTurkishDateLabel(date: Date, timeZone = ANALYTICS_TIMEZONE): string {
   return `${day}.${month}`;
 }
 
+function parseDateKeyToUtcStart(dateKey: string): Date {
+  return new Date(`${dateKey}T00:00:00.000Z`);
+}
+
 function weekdayIndexMondayFirst(date: Date, timeZone = ANALYTICS_TIMEZONE): number {
   const short = new Intl.DateTimeFormat('en-US', {
     timeZone,
@@ -169,17 +173,13 @@ function weekdayIndexMondayFirst(date: Date, timeZone = ANALYTICS_TIMEZONE): num
 }
 
 function startOfCurrentWeekMonday(date: Date): Date {
-  const index = weekdayIndexMondayFirst(date);
-  const start = new Date(date);
-  start.setUTCDate(start.getUTCDate() - index);
+  const todayKey = toTimezoneDateKey(date);
+  const todayAtUtcStart = parseDateKeyToUtcStart(todayKey);
+  const index = weekdayIndexMondayFirst(todayAtUtcStart);
+  const start = new Date(todayAtUtcStart);
+  start.setUTCDate(todayAtUtcStart.getUTCDate() - index);
   start.setUTCHours(0, 0, 0, 0);
   return start;
-}
-
-function startOfUtcDay(date: Date): Date {
-  const value = new Date(date);
-  value.setUTCHours(0, 0, 0, 0);
-  return value;
 }
 
 async function sumCompletedRevenue(params: { salonId: number; from: Date; to: Date }) {
@@ -3369,8 +3369,10 @@ router.get('/analytics/overview', authenticateToken, async (req: any, res: any) 
         ),
       }));
 
-    const trendStart = startOfUtcDay(from);
-    const trendEnd = startOfUtcDay(to);
+    const trendStartKey = toTimezoneDateKey(from);
+    const trendEndKey = toTimezoneDateKey(to);
+    const trendStart = parseDateKeyToUtcStart(trendStartKey);
+    const trendEnd = parseDateKeyToUtcStart(trendEndKey);
     const trendDayCount = Math.max(1, Math.floor((trendEnd.getTime() - trendStart.getTime()) / ONE_DAY_MS) + 1);
     const useWeekdayLabel = trendDayCount <= 7;
 
