@@ -73,6 +73,17 @@ function toRiskLevel(score: number): 'LOW' | 'MEDIUM' | 'HIGH' {
   return 'LOW';
 }
 
+function asCustomerGender(value: unknown): 'male' | 'female' | 'other' | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'male' || normalized === 'female' || normalized === 'other') {
+    return normalized;
+  }
+  return null;
+}
+
 function buildGeneratedWebsiteCopy(input: { salonName?: string; city?: string | null }) {
   const salonName = (input.salonName || '').trim() || 'Salonunuz';
   const city = (input.city || '').trim() || 'şehrinizde';
@@ -1117,6 +1128,279 @@ router.get('/customers/:id', authenticateToken, async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Admin customer detail error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.put('/customers/:id', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const customerId = Number(req.params.id);
+  if (!Number.isInteger(customerId) || customerId <= 0) {
+    return res.status(400).json({ message: 'Invalid customer id.' });
+  }
+
+  const nameInput = req.body?.name;
+  const phoneInput = req.body?.phone;
+  const instagramInput = req.body?.instagram;
+  const birthDateInput = req.body?.birthDate;
+  const acceptMarketingInput = req.body?.acceptMarketing;
+  const genderInput = req.body?.gender;
+
+  if (nameInput !== undefined && nameInput !== null && typeof nameInput !== 'string') {
+    return res.status(400).json({ message: 'name must be a string or null.' });
+  }
+  if (phoneInput !== undefined && typeof phoneInput !== 'string') {
+    return res.status(400).json({ message: 'phone must be a string.' });
+  }
+  if (instagramInput !== undefined && instagramInput !== null && typeof instagramInput !== 'string') {
+    return res.status(400).json({ message: 'instagram must be a string or null.' });
+  }
+  if (acceptMarketingInput !== undefined && typeof acceptMarketingInput !== 'boolean') {
+    return res.status(400).json({ message: 'acceptMarketing must be a boolean.' });
+  }
+
+  let parsedBirthDate: Date | null | undefined = undefined;
+  if (birthDateInput !== undefined) {
+    if (birthDateInput === null || birthDateInput === '') {
+      parsedBirthDate = null;
+    } else if (typeof birthDateInput === 'string') {
+      const parsed = new Date(birthDateInput);
+      if (Number.isNaN(parsed.getTime())) {
+        return res.status(400).json({ message: 'birthDate is invalid.' });
+      }
+      parsedBirthDate = parsed;
+    } else {
+      return res.status(400).json({ message: 'birthDate must be a string, empty string, or null.' });
+    }
+  }
+
+  let parsedGender: 'male' | 'female' | 'other' | null | undefined = undefined;
+  if (genderInput !== undefined) {
+    if (genderInput === null || genderInput === '') {
+      parsedGender = null;
+    } else {
+      parsedGender = asCustomerGender(genderInput);
+      if (!parsedGender) {
+        return res.status(400).json({ message: 'gender must be male, female, other, or null.' });
+      }
+    }
+  }
+
+  const normalizedPhone = typeof phoneInput === 'string' ? phoneInput.trim() : undefined;
+  if (phoneInput !== undefined && !normalizedPhone) {
+    return res.status(400).json({ message: 'phone cannot be empty.' });
+  }
+
+  let normalizedInstagram: string | null | undefined = undefined;
+  if (instagramInput !== undefined) {
+    if (instagramInput === null) {
+      normalizedInstagram = null;
+    } else {
+      const trimmed = instagramInput.trim().replace(/^@/, '');
+      normalizedInstagram = trimmed || null;
+    }
+  }
+
+  const updateData: any = {};
+  if (nameInput !== undefined) {
+    if (nameInput === null) {
+      updateData.name = null;
+    } else {
+      const trimmed = nameInput.trim();
+      updateData.name = trimmed || null;
+    }
+  }
+  if (normalizedPhone !== undefined) {
+    updateData.phone = normalizedPhone;
+  }
+  if (normalizedInstagram !== undefined) {
+    updateData.instagram = normalizedInstagram;
+  }
+  if (parsedBirthDate !== undefined) {
+    updateData.birthDate = parsedBirthDate;
+  }
+  if (acceptMarketingInput !== undefined) {
+    updateData.acceptMarketing = acceptMarketingInput;
+  }
+  if (parsedGender !== undefined) {
+    updateData.gender = parsedGender;
+  }
+
+  if (!Object.keys(updateData).length) {
+    return res.status(400).json({ message: 'No valid fields provided for update.' });
+  }
+
+  try {
+    const existing = await prisma.customer.findFirst({
+      where: { id: customerId, salonId },
+      select: { id: true, phone: true },
+    });
+
+    if (!existing) {
+      return res.status(404).json({ message: 'Customer not found.' });
+    }
+
+    if (updateData.phone && updateData.phone !== existing.phone) {
+      const conflict = await prisma.customer.findFirst({
+        where: {
+          salonId,
+          phone: updateData.phone,
+          id: { not: customerId },
+        },
+        select: { id: true },
+      });
+      if (conflict) {
+        return res.status(409).json({ message: 'Bu telefon salon için zaten kayıtlı.' });
+      }
+    }
+
+    const customer = await prisma.customer.update({
+      where: { id: customerId },
+      data: updateData,
+      select: {
+        id: true,
+        name: true,
+        phone: true,
+        instagram: true,
+        gender: true,
+        birthDate: true,
+        acceptMarketing: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    return res.status(200).json({ customer });
+  } catch (error: any) {
+    if (error?.code === 'P2002') {
+      return res.status(409).json({ message: 'Bu telefon salon için zaten kayıtlı.' });
+    }
+    console.error('Admin customer update error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.patch('/customers/:id/no-show-risk', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const customerId = Number(req.params.id);
+  if (!Number.isInteger(customerId) || customerId <= 0) {
+    return res.status(400).json({ message: 'Invalid customer id.' });
+  }
+
+  const deltaRaw = typeof req.body?.delta === 'number' ? req.body.delta : Number(req.body?.delta);
+  if (!Number.isFinite(deltaRaw) || (deltaRaw !== 1 && deltaRaw !== -1)) {
+    return res.status(400).json({ message: 'delta must be +1 or -1.' });
+  }
+
+  try {
+    const now = new Date();
+    const result = await prisma.$transaction(async (tx) => {
+      const [customer, profile, noShowCountFromData, totalBookingsFromData] = await Promise.all([
+        tx.customer.findFirst({
+          where: { id: customerId, salonId },
+          select: { id: true },
+        }),
+        tx.customerRiskProfile.findUnique({
+          where: { customerId_salonId: { customerId, salonId } },
+          select: {
+            riskScore: true,
+            riskLevel: true,
+            noShowCount: true,
+            noShows: true,
+            totalBookings: true,
+          },
+        }),
+        tx.appointment.count({
+          where: { salonId, customerId, status: 'NO_SHOW' },
+        }),
+        tx.appointment.count({
+          where: { salonId, customerId, status: { not: 'CANCELLED' } },
+        }),
+      ]);
+
+      if (!customer) {
+        return null;
+      }
+
+      const inferredScore = totalBookingsFromData > 0 ? (noShowCountFromData / totalBookingsFromData) * 100 : 0;
+      const currentScore = Number.isFinite(profile?.riskScore as number) ? Number(profile?.riskScore || 0) : inferredScore;
+      const nextScore = Number(Math.max(0, Math.min(100, currentScore + deltaRaw)).toFixed(1));
+      const nextLevel = toRiskLevel(nextScore);
+      const noShowCount =
+        typeof profile?.noShows === 'number'
+          ? profile.noShows
+          : typeof profile?.noShowCount === 'number'
+          ? profile.noShowCount
+          : noShowCountFromData;
+      const totalBookings = typeof profile?.totalBookings === 'number' ? profile.totalBookings : totalBookingsFromData;
+
+      const updated = await tx.customerRiskProfile.upsert({
+        where: { customerId_salonId: { customerId, salonId } },
+        create: {
+          customerId,
+          salonId,
+          riskScore: nextScore,
+          riskLevel: nextLevel,
+          noShowCount,
+          noShows: noShowCount,
+          totalBookings,
+          lastCalculatedAt: now,
+        },
+        update: {
+          riskScore: nextScore,
+          riskLevel: nextLevel,
+          noShowCount,
+          noShows: noShowCount,
+          totalBookings,
+          lastCalculatedAt: now,
+        },
+        select: {
+          riskScore: true,
+          riskLevel: true,
+          noShows: true,
+          totalBookings: true,
+        },
+      });
+
+      await tx.customerBehaviorLog.create({
+        data: {
+          salonId,
+          customerId,
+          action: 'CUSTOMER_RISK_SCORE_ADJUSTED',
+          behaviorType: 'RISK',
+          metadata: {
+            delta: deltaRaw,
+            previousScore: currentScore,
+            nextScore: updated.riskScore,
+            source: 'mobile_manual_adjustment',
+          },
+          occurredAt: now,
+        },
+      });
+
+      return {
+        noShowRiskScore: Number(updated.riskScore || 0),
+        noShowRiskLevel: (updated.riskLevel as 'LOW' | 'MEDIUM' | 'HIGH') || nextLevel,
+        noShowCount: typeof updated.noShows === 'number' ? updated.noShows : noShowCount,
+        totalBookings: typeof updated.totalBookings === 'number' ? updated.totalBookings : totalBookings,
+      };
+    });
+
+    if (!result) {
+      return res.status(404).json({ message: 'Customer not found.' });
+    }
+
+    return res.status(200).json({ summary: result });
+  } catch (error) {
+    console.error('Admin customer no-show risk update error:', error);
     return res.status(500).json({ message: 'Internal server error.' });
   }
 });
