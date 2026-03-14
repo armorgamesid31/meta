@@ -114,6 +114,30 @@ function toPercentDelta(current: number, previous: number): number {
   return Number((((current - previous) / previous) * 100).toFixed(1));
 }
 
+const ANALYTICS_TIMEZONE = 'Europe/Istanbul';
+
+function toTimezoneDateKey(date: Date, timeZone = ANALYTICS_TIMEZONE): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+
+  const year = parts.find((part) => part.type === 'year')?.value || '0000';
+  const month = parts.find((part) => part.type === 'month')?.value || '01';
+  const day = parts.find((part) => part.type === 'day')?.value || '01';
+  return `${year}-${month}-${day}`;
+}
+
+function toTurkishWeekdayLabel(date: Date, timeZone = ANALYTICS_TIMEZONE): string {
+  const raw = new Intl.DateTimeFormat('tr-TR', {
+    timeZone,
+    weekday: 'short',
+  }).format(date);
+  return raw.replace('.', '');
+}
+
 async function sumCompletedRevenue(params: { salonId: number; from: Date; to: Date }) {
   const rows = await prisma.appointment.findMany({
     where: {
@@ -3194,7 +3218,11 @@ router.get('/analytics/overview', authenticateToken, async (req: any, res: any) 
   }
 
   try {
-    const [appointments, totalCustomers, newCustomers] = await Promise.all([
+    const weekStart = new Date();
+    weekStart.setHours(0, 0, 0, 0);
+    weekStart.setDate(weekStart.getDate() - 6);
+
+    const [appointments, totalCustomers, newCustomers, weeklyCompletedAppointments] = await Promise.all([
       prisma.appointment.findMany({
         where: {
           salonId,
@@ -3223,6 +3251,21 @@ router.get('/analytics/overview', authenticateToken, async (req: any, res: any) 
       }),
       prisma.customer.count({ where: { salonId } }),
       prisma.customer.count({ where: { salonId, createdAt: { gte: from, lte: to } } }),
+      prisma.appointment.findMany({
+        where: {
+          salonId,
+          status: 'COMPLETED',
+          startTime: { gte: weekStart, lte: now },
+        },
+        select: {
+          startTime: true,
+          service: {
+            select: {
+              price: true,
+            },
+          },
+        },
+      }),
     ]);
 
     let revenue = 0;
@@ -3258,27 +3301,29 @@ router.get('/analytics/overview', authenticateToken, async (req: any, res: any) 
       }
       serviceStats.set(apt.service.id, existing);
 
-      const staffExisting = staffStats.get(apt.staffId) || {
-        id: apt.staff.id,
-        name: apt.staff.name,
-        appointments: 0,
-        revenue: 0,
-        ratingSum: 0,
-        ratingCount: 0,
-      };
-      staffExisting.appointments += 1;
-      if (apt.status === 'COMPLETED') {
-        staffExisting.revenue += apt.service.price;
+      if (apt.staff) {
+        const staffExisting = staffStats.get(apt.staffId) || {
+          id: apt.staff.id,
+          name: apt.staff.name,
+          appointments: 0,
+          revenue: 0,
+          ratingSum: 0,
+          ratingCount: 0,
+        };
+        staffExisting.appointments += 1;
+        if (apt.status === 'COMPLETED') {
+          staffExisting.revenue += apt.service.price;
+        }
+        if (typeof apt.customerRating === 'number' && apt.customerRating > 0) {
+          staffExisting.ratingSum += apt.customerRating;
+          staffExisting.ratingCount += 1;
+        }
+        staffStats.set(apt.staffId, staffExisting);
       }
-      if (typeof apt.customerRating === 'number' && apt.customerRating > 0) {
-        staffExisting.ratingSum += apt.customerRating;
-        staffExisting.ratingCount += 1;
-      }
-      staffStats.set(apt.staffId, staffExisting);
     }
 
     const topServices = Array.from(serviceStats.values())
-      .sort((a, b) => b.appointments - a.appointments)
+      .sort((a, b) => b.revenue - a.revenue || b.appointments - a.appointments)
       .slice(0, 6);
 
     const staffPerformance = Array.from(staffStats.values())
@@ -3294,6 +3339,36 @@ router.get('/analytics/overview', authenticateToken, async (req: any, res: any) 
         ),
       }));
 
+    const weeklyRevenueMap = new Map<
+      string,
+      { date: string; label: string; revenue: number; appointments: number; sortKey: number }
+    >();
+
+    for (let i = 0; i < 7; i += 1) {
+      const day = new Date(weekStart);
+      day.setDate(weekStart.getDate() + i);
+      const dateKey = toTimezoneDateKey(day);
+      weeklyRevenueMap.set(dateKey, {
+        date: dateKey,
+        label: toTurkishWeekdayLabel(day),
+        revenue: 0,
+        appointments: 0,
+        sortKey: day.getTime(),
+      });
+    }
+
+    for (const item of weeklyCompletedAppointments) {
+      const dateKey = toTimezoneDateKey(item.startTime);
+      const existing = weeklyRevenueMap.get(dateKey);
+      if (!existing) continue;
+      existing.revenue += item.service?.price || 0;
+      existing.appointments += 1;
+    }
+
+    const weeklyRevenue = Array.from(weeklyRevenueMap.values())
+      .sort((a, b) => a.sortKey - b.sortKey)
+      .map(({ sortKey, ...rest }) => rest);
+
     return res.status(200).json({
       from: from.toISOString(),
       to: to.toISOString(),
@@ -3308,6 +3383,7 @@ router.get('/analytics/overview', authenticateToken, async (req: any, res: any) 
       },
       topServices,
       staffPerformance,
+      weeklyRevenue,
     });
   } catch (error) {
     console.error('Admin analytics overview error:', error);
