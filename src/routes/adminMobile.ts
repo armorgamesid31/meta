@@ -115,6 +115,7 @@ function toPercentDelta(current: number, previous: number): number {
 }
 
 const ANALYTICS_TIMEZONE = 'Europe/Istanbul';
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 function toTimezoneDateKey(date: Date, timeZone = ANALYTICS_TIMEZONE): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -136,6 +137,49 @@ function toTurkishWeekdayLabel(date: Date, timeZone = ANALYTICS_TIMEZONE): strin
     weekday: 'short',
   }).format(date);
   return raw.replace('.', '');
+}
+
+function toTurkishDateLabel(date: Date, timeZone = ANALYTICS_TIMEZONE): string {
+  const parts = new Intl.DateTimeFormat('tr-TR', {
+    timeZone,
+    day: '2-digit',
+    month: '2-digit',
+  }).formatToParts(date);
+  const day = parts.find((part) => part.type === 'day')?.value || '01';
+  const month = parts.find((part) => part.type === 'month')?.value || '01';
+  return `${day}.${month}`;
+}
+
+function weekdayIndexMondayFirst(date: Date, timeZone = ANALYTICS_TIMEZONE): number {
+  const short = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    weekday: 'short',
+  }).format(date);
+
+  const map: Record<string, number> = {
+    Mon: 0,
+    Tue: 1,
+    Wed: 2,
+    Thu: 3,
+    Fri: 4,
+    Sat: 5,
+    Sun: 6,
+  };
+  return map[short] ?? 0;
+}
+
+function startOfCurrentWeekMonday(date: Date): Date {
+  const index = weekdayIndexMondayFirst(date);
+  const start = new Date(date);
+  start.setUTCDate(start.getUTCDate() - index);
+  start.setUTCHours(0, 0, 0, 0);
+  return start;
+}
+
+function startOfUtcDay(date: Date): Date {
+  const value = new Date(date);
+  value.setUTCHours(0, 0, 0, 0);
+  return value;
 }
 
 async function sumCompletedRevenue(params: { salonId: number; from: Date; to: Date }) {
@@ -3207,8 +3251,7 @@ router.get('/analytics/overview', authenticateToken, async (req: any, res: any) 
   }
 
   const now = new Date();
-  const defaultFrom = new Date(now);
-  defaultFrom.setDate(defaultFrom.getDate() - 30);
+  const defaultFrom = startOfCurrentWeekMonday(now);
 
   const from = parseIsoDate(req.query.from) || defaultFrom;
   const to = parseIsoDate(req.query.to) || now;
@@ -3217,12 +3260,13 @@ router.get('/analytics/overview', authenticateToken, async (req: any, res: any) 
     return res.status(400).json({ message: 'from must be earlier than to.' });
   }
 
-  try {
-    const weekStart = new Date();
-    weekStart.setHours(0, 0, 0, 0);
-    weekStart.setDate(weekStart.getDate() - 6);
+  const rawDaySpan = Math.ceil((to.getTime() - from.getTime()) / ONE_DAY_MS) + 1;
+  if (rawDaySpan > 180) {
+    return res.status(400).json({ message: 'Date range is too large. Maximum 180 days.' });
+  }
 
-    const [appointments, totalCustomers, newCustomers, weeklyCompletedAppointments] = await Promise.all([
+  try {
+    const [appointments, totalCustomers, newCustomers] = await Promise.all([
       prisma.appointment.findMany({
         where: {
           salonId,
@@ -3231,6 +3275,7 @@ router.get('/analytics/overview', authenticateToken, async (req: any, res: any) 
         select: {
           id: true,
           status: true,
+          startTime: true,
           serviceId: true,
           staffId: true,
           customerRating: true,
@@ -3251,21 +3296,6 @@ router.get('/analytics/overview', authenticateToken, async (req: any, res: any) 
       }),
       prisma.customer.count({ where: { salonId } }),
       prisma.customer.count({ where: { salonId, createdAt: { gte: from, lte: to } } }),
-      prisma.appointment.findMany({
-        where: {
-          salonId,
-          status: 'COMPLETED',
-          startTime: { gte: weekStart, lte: now },
-        },
-        select: {
-          startTime: true,
-          service: {
-            select: {
-              price: true,
-            },
-          },
-        },
-      }),
     ]);
 
     let revenue = 0;
@@ -3339,33 +3369,41 @@ router.get('/analytics/overview', authenticateToken, async (req: any, res: any) 
         ),
       }));
 
-    const weeklyRevenueMap = new Map<
+    const trendStart = startOfUtcDay(from);
+    const trendEnd = startOfUtcDay(to);
+    const trendDayCount = Math.max(1, Math.floor((trendEnd.getTime() - trendStart.getTime()) / ONE_DAY_MS) + 1);
+    const useWeekdayLabel = trendDayCount <= 7;
+
+    const trendRevenueMap = new Map<
       string,
       { date: string; label: string; revenue: number; appointments: number; sortKey: number }
     >();
 
-    for (let i = 0; i < 7; i += 1) {
-      const day = new Date(weekStart);
-      day.setDate(weekStart.getDate() + i);
+    for (let i = 0; i < trendDayCount; i += 1) {
+      const day = new Date(trendStart);
+      day.setUTCDate(trendStart.getUTCDate() + i);
       const dateKey = toTimezoneDateKey(day);
-      weeklyRevenueMap.set(dateKey, {
+      trendRevenueMap.set(dateKey, {
         date: dateKey,
-        label: toTurkishWeekdayLabel(day),
+        label: useWeekdayLabel ? toTurkishWeekdayLabel(day) : toTurkishDateLabel(day),
         revenue: 0,
         appointments: 0,
         sortKey: day.getTime(),
       });
     }
 
-    for (const item of weeklyCompletedAppointments) {
+    for (const item of appointments) {
+      if (item.status !== 'COMPLETED') {
+        continue;
+      }
       const dateKey = toTimezoneDateKey(item.startTime);
-      const existing = weeklyRevenueMap.get(dateKey);
+      const existing = trendRevenueMap.get(dateKey);
       if (!existing) continue;
       existing.revenue += item.service?.price || 0;
       existing.appointments += 1;
     }
 
-    const weeklyRevenue = Array.from(weeklyRevenueMap.values())
+    const trendRevenue = Array.from(trendRevenueMap.values())
       .sort((a, b) => a.sortKey - b.sortKey)
       .map(({ sortKey, ...rest }) => rest);
 
@@ -3383,7 +3421,8 @@ router.get('/analytics/overview', authenticateToken, async (req: any, res: any) 
       },
       topServices,
       staffPerformance,
-      weeklyRevenue,
+      trendRevenue,
+      weeklyRevenue: trendRevenue,
     });
   } catch (error) {
     console.error('Admin analytics overview error:', error);
