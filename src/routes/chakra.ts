@@ -106,6 +106,87 @@ async function createConnectToken(pluginId: string) {
   return connectToken;
 }
 
+function extractWhatsappPhoneNumberId(payload: any): string | null {
+  const enabledNumbers = payload?.serverConfig?.enabledWhatsappPhoneNumbers;
+  if (Array.isArray(enabledNumbers)) {
+    const first = enabledNumbers.find((value) => typeof value === 'string' && value.trim().length > 0);
+    if (first) {
+      return first.trim();
+    }
+  }
+
+  const directPhoneId = payload?.phoneNumberId;
+  if (typeof directPhoneId === 'string' && directPhoneId.trim().length > 0) {
+    return directPhoneId.trim();
+  }
+
+  return null;
+}
+
+function normalizeFaqAnswers(value: unknown): Record<string, any> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+  return value as Record<string, any>;
+}
+
+async function upsertSalonAiAgentFaqAnswers(salonId: number, patch: Record<string, any>) {
+  const existing = await prisma.salonAiAgentSettings.findUnique({
+    where: { salonId },
+    select: { id: true, faqAnswers: true },
+  });
+
+  if (!existing) {
+    await prisma.salonAiAgentSettings.create({
+      data: {
+        salonId,
+        faqAnswers: patch,
+      },
+    });
+    return;
+  }
+
+  const current = normalizeFaqAnswers(existing.faqAnswers);
+  const next: Record<string, any> = { ...current };
+
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) {
+      continue;
+    }
+    next[key] = value;
+  }
+
+  await prisma.salonAiAgentSettings.update({
+    where: { salonId },
+    data: { faqAnswers: next },
+  });
+}
+
+async function setPluginActiveState(pluginId: string, isActive: boolean) {
+  if (!CHAKRA_API_TOKEN) {
+    throw new Error('CHAKRA_API_TOKEN missing.');
+  }
+
+  const response = await axios.put(
+    `${CHAKRA_API_BASE}/plugin/${pluginId}`,
+    { pluginId, isActive },
+    {
+      headers: {
+        Authorization: `Bearer ${CHAKRA_API_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      timeout: 20000,
+    },
+  );
+
+  const pluginData = response?.data?._data;
+  if (!pluginData || typeof pluginData !== 'object') {
+    throw new Error('Invalid plugin state response from Chakra.');
+  }
+
+  return pluginData as Record<string, any>;
+}
+
 // Explicit plugin creation route
 router.post('/create-plugin', authenticateToken, async (req: any, res: any) => {
   try {
@@ -218,6 +299,26 @@ router.post('/connect-event', authenticateToken, async (req: any, res: any) => {
     }
 
     const connected = isConnectSuccessEvent(event, data);
+    let pluginState: Record<string, any> | null = null;
+    let whatsappPhoneNumberId: string | null = null;
+
+    if (!salon.chakraPluginId) {
+      await prisma.salon.update({
+        where: { id: salon.id },
+        data: { chakraPluginId: pluginId },
+      });
+    }
+
+    if (connected) {
+      pluginState = await setPluginActiveState(pluginId, true);
+      whatsappPhoneNumberId = extractWhatsappPhoneNumberId(pluginState) || extractWhatsappPhoneNumberId(data);
+
+      await upsertSalonAiAgentFaqAnswers(salon.id, {
+        whatsappPluginActive: true,
+        whatsappPhoneNumberId,
+        whatsappConnectedAt: new Date().toISOString(),
+      });
+    }
 
     console.log('Chakra connect event', {
       salonId: salon.id,
@@ -225,18 +326,76 @@ router.post('/connect-event', authenticateToken, async (req: any, res: any) => {
       event,
       data,
       connected,
+      whatsappPhoneNumberId,
     });
 
     return res.status(200).json({
       ok: true,
       pluginId,
       connected,
+      isActive: connected ? true : null,
+      whatsappPhoneNumberId,
+      pluginState,
       event: typeof event === 'string' ? event : null,
     });
   } catch (error: any) {
     console.error('Connect event capture failed:', error?.response?.data || error);
     return res.status(500).json({
       message: 'Connect event capture failed.',
+      error: error?.response?.data || error?.message || 'Unknown error',
+    });
+  }
+});
+
+// Toggle plugin active/passive state explicitly from panel
+router.put('/plugin-active', authenticateToken, async (req: any, res: any) => {
+  try {
+    const salon = await getAuthenticatedSalon(req);
+    if (!salon) {
+      return res.status(401).json({ message: 'Unauthorized.' });
+    }
+
+    const bodyPluginId = typeof req.body?.pluginId === 'string' ? req.body.pluginId.trim() : '';
+    const pluginId = bodyPluginId || salon.chakraPluginId || '';
+    const isActive = req.body?.isActive;
+
+    if (!pluginId) {
+      return res.status(400).json({ message: 'Plugin id is missing.' });
+    }
+    if (typeof isActive !== 'boolean') {
+      return res.status(400).json({ message: 'isActive must be boolean.' });
+    }
+    if (salon.chakraPluginId && pluginId !== salon.chakraPluginId) {
+      return res.status(403).json({ message: 'Plugin does not match salon scope.' });
+    }
+
+    if (!salon.chakraPluginId) {
+      await prisma.salon.update({
+        where: { id: salon.id },
+        data: { chakraPluginId: pluginId },
+      });
+    }
+
+    const pluginState = await setPluginActiveState(pluginId, isActive);
+    const whatsappPhoneNumberId = isActive ? extractWhatsappPhoneNumberId(pluginState) : null;
+
+    await upsertSalonAiAgentFaqAnswers(salon.id, {
+      whatsappPluginActive: isActive,
+      whatsappPhoneNumberId,
+      whatsappConnectedAt: isActive ? new Date().toISOString() : null,
+    });
+
+    return res.status(200).json({
+      ok: true,
+      pluginId,
+      isActive: Boolean(pluginState?.isActive),
+      whatsappPhoneNumberId,
+      pluginState,
+    });
+  } catch (error: any) {
+    console.error('Plugin active toggle failed:', error?.response?.data || error);
+    return res.status(500).json({
+      message: 'Plugin active toggle failed.',
       error: error?.response?.data || error?.message || 'Unknown error',
     });
   }
