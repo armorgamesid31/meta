@@ -111,6 +111,27 @@ async function createConnectToken(pluginId: string) {
   return connectToken;
 }
 
+async function fetchPluginState(pluginId: string) {
+  if (!CHAKRA_API_TOKEN) {
+    throw new Error('CHAKRA_API_TOKEN missing.');
+  }
+
+  const response = await axios.get(`${CHAKRA_API_BASE}/plugin/${pluginId}`, {
+    headers: {
+      Authorization: `Bearer ${CHAKRA_API_TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+    timeout: 20000,
+  });
+
+  const pluginData = response?.data?._data;
+  if (!pluginData || typeof pluginData !== 'object') {
+    throw new Error('Invalid plugin state response from Chakra.');
+  }
+
+  return pluginData as Record<string, any>;
+}
+
 function extractWhatsappPhoneNumberId(payload: any): string | null {
   const enabledNumbers = payload?.serverConfig?.enabledWhatsappPhoneNumbers;
   if (Array.isArray(enabledNumbers)) {
@@ -239,11 +260,37 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
     }
 
     const faqAnswers = normalizeFaqAnswers(salon.aiAgentSettings?.faqAnswers);
-    const pluginActive = Boolean(faqAnswers.whatsappPluginActive);
-    const whatsappPhoneNumberId =
+    let pluginActive = Boolean(faqAnswers.whatsappPluginActive);
+    let whatsappPhoneNumberId =
       typeof faqAnswers.whatsappPhoneNumberId === 'string' && faqAnswers.whatsappPhoneNumberId.trim().length > 0
         ? faqAnswers.whatsappPhoneNumberId.trim()
         : null;
+
+    if (salon.chakraPluginId && CHAKRA_API_TOKEN) {
+      try {
+        const livePluginState = await fetchPluginState(salon.chakraPluginId);
+        const liveActive = Boolean(livePluginState.isActive);
+        const liveWhatsappPhoneNumberId = extractWhatsappPhoneNumberId(livePluginState);
+
+        const shouldSyncAnswers =
+          liveActive !== pluginActive ||
+          (liveWhatsappPhoneNumberId || null) !== (whatsappPhoneNumberId || null);
+
+        pluginActive = liveActive;
+        whatsappPhoneNumberId = liveWhatsappPhoneNumberId || whatsappPhoneNumberId;
+
+        if (shouldSyncAnswers) {
+          await upsertSalonAiAgentFaqAnswers(salon.id, {
+            whatsappPluginActive: pluginActive,
+            whatsappPhoneNumberId,
+            whatsappConnectedAt: pluginActive ? new Date().toISOString() : null,
+          });
+        }
+      } catch (liveStatusError: any) {
+        console.warn('Chakra live status fetch failed:', liveStatusError?.response?.data || liveStatusError?.message || liveStatusError);
+      }
+    }
+
     const connected = Boolean(salon.chakraPluginId) && pluginActive;
 
     return res.status(200).json({
