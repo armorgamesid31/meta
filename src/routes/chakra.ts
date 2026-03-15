@@ -278,12 +278,16 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
       typeof faqAnswers.whatsappPhoneNumberId === 'string' && faqAnswers.whatsappPhoneNumberId.trim().length > 0
         ? faqAnswers.whatsappPhoneNumberId.trim()
         : null;
+    let liveHasAuth = false;
+    let liveHasEnabledPhone = false;
 
     if (salon.chakraPluginId && CHAKRA_API_TOKEN) {
       try {
         const livePluginState = await fetchPluginState(salon.chakraPluginId);
         const liveActive = Boolean(livePluginState.isActive);
         const liveWhatsappPhoneNumberId = extractWhatsappPhoneNumberId(livePluginState);
+        liveHasAuth = Boolean(livePluginState?.auth && typeof livePluginState.auth === 'object');
+        liveHasEnabledPhone = Boolean(liveWhatsappPhoneNumberId);
 
         const shouldSyncAnswers =
           liveActive !== pluginActive ||
@@ -320,7 +324,26 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
       }
     }
 
-    const connected = Boolean(salon.chakraPluginId) && pluginActive;
+    const hasConnectionSignal =
+      Boolean(whatsappPhoneNumberId) || liveHasAuth || liveHasEnabledPhone;
+
+    if (salon.chakraPluginId && CHAKRA_API_TOKEN && !pluginActive && hasConnectionSignal) {
+      try {
+        const activatedState = await setPluginActiveState(salon.chakraPluginId, true);
+        pluginActive = Boolean(activatedState?.isActive);
+        whatsappPhoneNumberId = extractWhatsappPhoneNumberId(activatedState) || whatsappPhoneNumberId;
+
+        await upsertSalonAiAgentFaqAnswers(salon.id, {
+          whatsappPluginActive: pluginActive,
+          whatsappPhoneNumberId,
+          whatsappConnectedAt: new Date().toISOString(),
+        });
+      } catch (activationError: any) {
+        console.warn('Chakra plugin auto-activation failed:', activationError?.response?.data || activationError?.message || activationError);
+      }
+    }
+
+    const connected = Boolean(salon.chakraPluginId) && (pluginActive || hasConnectionSignal);
 
     return res.status(200).json({
       salonId: salon.id,
