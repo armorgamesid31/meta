@@ -10,6 +10,19 @@ const CHAKRA_API_TOKEN = process.env.CHAKRA_API_TOKEN;
 
 const CHAKRA_SDK_URL = 'https://embed.chakrahq.com/whatsapp-partner-connect/v1_0_1/sdk.js';
 
+function isPluginNotFoundError(error: any): boolean {
+  const errors = error?.response?.data?._errors;
+  if (Array.isArray(errors) && errors.some((item) => typeof item === 'string' && /plugin/i.test(item) && /not found/i.test(item))) {
+    return true;
+  }
+
+  const message =
+    (typeof error?.response?.data?.message === 'string' ? error.response.data.message : '') ||
+    (typeof error?.message === 'string' ? error.message : '');
+
+  return /plugin/i.test(message) && /not found/i.test(message);
+}
+
 function getSalonIdFromUser(req: any): number | null {
   return req?.user?.salonId && Number.isInteger(req.user.salonId) ? req.user.salonId : null;
 }
@@ -254,7 +267,7 @@ router.post('/create-plugin', authenticateToken, async (req: any, res: any) => {
 // Return current plugin state for UI
 router.get('/status', authenticateToken, async (req: any, res: any) => {
   try {
-    const salon = await getAuthenticatedSalon(req);
+    let salon = await getAuthenticatedSalon(req);
     if (!salon) {
       return res.status(401).json({ message: 'Unauthorized.' });
     }
@@ -287,7 +300,23 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
           });
         }
       } catch (liveStatusError: any) {
-        console.warn('Chakra live status fetch failed:', liveStatusError?.response?.data || liveStatusError?.message || liveStatusError);
+        if (isPluginNotFoundError(liveStatusError)) {
+          await prisma.salon.update({
+            where: { id: salon.id },
+            data: { chakraPluginId: null },
+          });
+          await upsertSalonAiAgentFaqAnswers(salon.id, {
+            whatsappPluginActive: false,
+            whatsappPhoneNumberId: null,
+            whatsappConnectedAt: null,
+          });
+
+          salon = (await getAuthenticatedSalon(req)) as NonNullable<Awaited<ReturnType<typeof getAuthenticatedSalon>>>;
+          pluginActive = false;
+          whatsappPhoneNumberId = null;
+        } else {
+          console.warn('Chakra live status fetch failed:', liveStatusError?.response?.data || liveStatusError?.message || liveStatusError);
+        }
       }
     }
 
@@ -316,19 +345,48 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
 // Connect token route (uses saved pluginId)
 router.get('/connect-token', authenticateToken, async (req: any, res: any) => {
   try {
-    const salon = await getAuthenticatedSalon(req);
+    let salon = await getAuthenticatedSalon(req);
     if (!salon) {
       return res.status(401).json({ message: 'Unauthorized.' });
     }
 
-    if (!salon.chakraPluginId) {
-      return res.status(400).json({ message: 'Salon does not have a pluginId yet. Create one first.' });
+    let pluginId = salon.chakraPluginId;
+
+    if (!pluginId) {
+      pluginId = await createPluginForSalon({
+        id: salon.id,
+        name: salon.name,
+        slug: salon.slug,
+      });
+      salon = (await getAuthenticatedSalon(req)) as NonNullable<Awaited<ReturnType<typeof getAuthenticatedSalon>>>;
     }
 
-    const connectToken = await createConnectToken(salon.chakraPluginId);
+    let connectToken: string;
+    try {
+      connectToken = await createConnectToken(pluginId);
+    } catch (tokenError: any) {
+      if (!isPluginNotFoundError(tokenError)) {
+        throw tokenError;
+      }
+
+      await prisma.salon.update({
+        where: { id: salon.id },
+        data: { chakraPluginId: null },
+      });
+
+      const recreatedPluginId = await createPluginForSalon({
+        id: salon.id,
+        name: salon.name,
+        slug: salon.slug,
+      });
+
+      pluginId = recreatedPluginId;
+      connectToken = await createConnectToken(pluginId);
+    }
+
     return res.status(200).json({
       connectToken,
-      pluginId: salon.chakraPluginId,
+      pluginId,
       sdkUrl: CHAKRA_SDK_URL,
     });
   } catch (error: any) {
