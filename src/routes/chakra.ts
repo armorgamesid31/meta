@@ -557,20 +557,37 @@ router.put('/plugin-active', authenticateToken, async (req: any, res: any) => {
     }
 
     const pluginState = await setPluginActiveState(pluginId, isActive);
-    const whatsappPhoneNumberId = isActive ? extractWhatsappPhoneNumberId(pluginState) : null;
+
+    // Chakra tarafında state değişimi bazen gecikmeli yansıyabildiği için
+    // canlı plugin state'i okuyup doğruluyoruz.
+    let verifiedState = pluginState;
+    try {
+      verifiedState = await fetchPluginState(pluginId);
+      if (Boolean(verifiedState?.isActive) !== isActive) {
+        // Bir kez daha dene (eventual consistency)
+        await setPluginActiveState(pluginId, isActive);
+        verifiedState = await fetchPluginState(pluginId);
+      }
+    } catch (verifyError: any) {
+      console.warn('Plugin active verify failed:', verifyError?.response?.data || verifyError?.message || verifyError);
+    }
+
+    const finalIsActive = Boolean(verifiedState?.isActive);
+    const whatsappPhoneNumberId = finalIsActive ? extractWhatsappPhoneNumberId(verifiedState) : null;
 
     await upsertSalonAiAgentFaqAnswers(salon.id, {
-      whatsappPluginActive: isActive,
+      whatsappPluginActive: finalIsActive,
       whatsappPhoneNumberId,
-      whatsappConnectedAt: isActive ? new Date().toISOString() : null,
+      whatsappConnectedAt: finalIsActive ? new Date().toISOString() : null,
     });
 
     return res.status(200).json({
       ok: true,
       pluginId,
-      isActive: Boolean(pluginState?.isActive),
+      requestedIsActive: isActive,
+      isActive: finalIsActive,
       whatsappPhoneNumberId,
-      pluginState,
+      pluginState: verifiedState,
     });
   } catch (error: any) {
     console.error('Plugin active toggle failed:', error?.response?.data || error);
