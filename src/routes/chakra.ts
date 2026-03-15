@@ -38,9 +38,21 @@ function isConnectSuccessEvent(event: unknown, data: unknown): boolean {
   const dataObj = data && typeof data === 'object' && !Array.isArray(data) ? (data as Record<string, any>) : null;
   const dataStatus = typeof dataObj?.status === 'string' ? dataObj.status.toLowerCase() : '';
   const dataState = typeof dataObj?.state === 'string' ? dataObj.state.toLowerCase() : '';
+  const hasAuth = Boolean(dataObj?.auth && typeof dataObj.auth === 'object');
+  const hasEnabledNumbers =
+    Array.isArray(dataObj?.serverConfig?.enabledWhatsappPhoneNumbers) &&
+    dataObj.serverConfig.enabledWhatsappPhoneNumbers.some(
+      (value: unknown) => typeof value === 'string' && value.trim().length > 0,
+    );
 
   const successPattern = /(connected|linked|success|complete|completed)/i;
-  return successPattern.test(eventText) || successPattern.test(dataStatus) || successPattern.test(dataState);
+  return (
+    successPattern.test(eventText) ||
+    successPattern.test(dataStatus) ||
+    successPattern.test(dataState) ||
+    hasAuth ||
+    hasEnabledNumbers
+  );
 }
 
 async function getAuthenticatedSalon(req: any) {
@@ -345,6 +357,10 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
 
     const connected = Boolean(salon.chakraPluginId) && (pluginActive || hasConnectionSignal);
 
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+
     return res.status(200).json({
       salonId: salon.id,
       salonName: salon.name,
@@ -442,7 +458,7 @@ router.post('/connect-event', authenticateToken, async (req: any, res: any) => {
       return res.status(403).json({ message: 'Plugin does not match salon scope.' });
     }
 
-    const connected = isConnectSuccessEvent(event, data);
+    let connected = isConnectSuccessEvent(event, data);
     let pluginState: Record<string, any> | null = null;
     let whatsappPhoneNumberId: string | null = null;
 
@@ -462,6 +478,26 @@ router.post('/connect-event', authenticateToken, async (req: any, res: any) => {
         whatsappPhoneNumberId,
         whatsappConnectedAt: new Date().toISOString(),
       });
+    } else if (CHAKRA_API_TOKEN) {
+      // Popup event adı beklediğimiz formatta gelmese bile canlı plugin durumundan doğrulayalım.
+      try {
+        const livePluginState = await fetchPluginState(pluginId);
+        const liveHasAuth = Boolean(livePluginState?.auth && typeof livePluginState.auth === 'object');
+        const livePhoneId = extractWhatsappPhoneNumberId(livePluginState);
+        if (liveHasAuth || livePhoneId) {
+          pluginState = await setPluginActiveState(pluginId, true);
+          whatsappPhoneNumberId = extractWhatsappPhoneNumberId(pluginState) || livePhoneId || null;
+          connected = true;
+
+          await upsertSalonAiAgentFaqAnswers(salon.id, {
+            whatsappPluginActive: true,
+            whatsappPhoneNumberId,
+            whatsappConnectedAt: new Date().toISOString(),
+          });
+        }
+      } catch (liveCheckError: any) {
+        console.warn('Connect-event live check failed:', liveCheckError?.response?.data || liveCheckError?.message || liveCheckError);
+      }
     }
 
     console.log('Chakra connect event', {
