@@ -43,6 +43,11 @@ async function getAuthenticatedSalon(req: any) {
       name: true,
       slug: true,
       chakraPluginId: true,
+      aiAgentSettings: {
+        select: {
+          faqAnswers: true,
+        },
+      },
     },
   });
 }
@@ -233,12 +238,23 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
       return res.status(401).json({ message: 'Unauthorized.' });
     }
 
+    const faqAnswers = normalizeFaqAnswers(salon.aiAgentSettings?.faqAnswers);
+    const pluginActive = Boolean(faqAnswers.whatsappPluginActive);
+    const whatsappPhoneNumberId =
+      typeof faqAnswers.whatsappPhoneNumberId === 'string' && faqAnswers.whatsappPhoneNumberId.trim().length > 0
+        ? faqAnswers.whatsappPhoneNumberId.trim()
+        : null;
+    const connected = Boolean(salon.chakraPluginId) && pluginActive;
+
     return res.status(200).json({
       salonId: salon.id,
       salonName: salon.name,
       slug: salon.slug,
       pluginId: salon.chakraPluginId,
       hasPlugin: Boolean(salon.chakraPluginId),
+      connected,
+      isActive: pluginActive,
+      whatsappPhoneNumberId,
       sdkUrl: CHAKRA_SDK_URL,
     });
   } catch (error: any) {
