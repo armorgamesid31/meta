@@ -13,6 +13,7 @@ model Salon {
   address          String?
   logoUrl          String?
   chakraPluginId   String?
+  chakraPhoneNumberId String?
   city             String?
   citySlug         String?
   district         String?

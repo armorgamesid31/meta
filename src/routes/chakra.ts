@@ -75,6 +75,7 @@ async function getAuthenticatedSalon(req: any) {
       name: true,
       slug: true,
       chakraPluginId: true,
+      chakraPhoneNumberId: true,
       aiAgentSettings: {
         select: {
           faqAnswers: true,
@@ -112,7 +113,7 @@ async function createPluginForSalon(salon: { id: number; name: string; slug: str
 
   await prisma.salon.update({
     where: { id: salon.id },
-    data: { chakraPluginId: pluginId },
+    data: { chakraPluginId: pluginId, chakraPhoneNumberId: null },
   });
 
   await ensurePluginWebhookConfigured(pluginId);
@@ -306,6 +307,31 @@ async function upsertSalonAiAgentFaqAnswers(salonId: number, patch: Record<strin
   });
 }
 
+async function updateSalonChakraState(
+  salonId: number,
+  patch: {
+    chakraPluginId?: string | null;
+    chakraPhoneNumberId?: string | null;
+  },
+) {
+  const data: Record<string, any> = {};
+
+  if (patch.chakraPluginId !== undefined) {
+    data.chakraPluginId = patch.chakraPluginId;
+  }
+
+  if (patch.chakraPhoneNumberId !== undefined) {
+    data.chakraPhoneNumberId = patch.chakraPhoneNumberId;
+  }
+
+  if (Object.keys(data).length === 0) return;
+
+  await prisma.salon.update({
+    where: { id: salonId },
+    data,
+  });
+}
+
 async function setPluginActiveState(pluginId: string, isActive: boolean) {
   if (!CHAKRA_API_TOKEN) {
     throw new Error('CHAKRA_API_TOKEN missing.');
@@ -380,9 +406,11 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
     const faqAnswers = normalizeFaqAnswers(salon.aiAgentSettings?.faqAnswers);
     let pluginActive = Boolean(faqAnswers.whatsappPluginActive);
     let whatsappPhoneNumberId =
-      typeof faqAnswers.whatsappPhoneNumberId === 'string' && faqAnswers.whatsappPhoneNumberId.trim().length > 0
-        ? faqAnswers.whatsappPhoneNumberId.trim()
-        : null;
+      typeof salon.chakraPhoneNumberId === 'string' && salon.chakraPhoneNumberId.trim().length > 0
+        ? salon.chakraPhoneNumberId.trim()
+        : typeof faqAnswers.whatsappPhoneNumberId === 'string' && faqAnswers.whatsappPhoneNumberId.trim().length > 0
+          ? faqAnswers.whatsappPhoneNumberId.trim()
+          : null;
     let liveHasAuth = false;
     let liveHasEnabledPhone = false;
 
@@ -402,6 +430,9 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
         whatsappPhoneNumberId = liveWhatsappPhoneNumberId || whatsappPhoneNumberId;
 
         if (shouldSyncAnswers) {
+          await updateSalonChakraState(salon.id, {
+            chakraPhoneNumberId: liveWhatsappPhoneNumberId || whatsappPhoneNumberId || null,
+          });
           await upsertSalonAiAgentFaqAnswers(salon.id, {
             whatsappPluginActive: pluginActive,
             whatsappPhoneNumberId,
@@ -410,9 +441,9 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
         }
       } catch (liveStatusError: any) {
         if (isPluginNotFoundError(liveStatusError)) {
-          await prisma.salon.update({
-            where: { id: salon.id },
-            data: { chakraPluginId: null },
+          await updateSalonChakraState(salon.id, {
+            chakraPluginId: null,
+            chakraPhoneNumberId: null,
           });
           await upsertSalonAiAgentFaqAnswers(salon.id, {
             whatsappPluginActive: false,
@@ -489,9 +520,9 @@ router.get('/connect-token', authenticateToken, async (req: any, res: any) => {
         throw tokenError;
       }
 
-      await prisma.salon.update({
-        where: { id: salon.id },
-        data: { chakraPluginId: null },
+      await updateSalonChakraState(salon.id, {
+        chakraPluginId: null,
+        chakraPhoneNumberId: null,
       });
 
       const recreatedPluginId = await createPluginForSalon({
@@ -545,9 +576,8 @@ router.post('/connect-event', authenticateToken, async (req: any, res: any) => {
     let whatsappPhoneNumberId: string | null = null;
 
     if (!salon.chakraPluginId) {
-      await prisma.salon.update({
-        where: { id: salon.id },
-        data: { chakraPluginId: pluginId },
+      await updateSalonChakraState(salon.id, {
+        chakraPluginId: pluginId,
       });
     }
 
@@ -556,6 +586,10 @@ router.post('/connect-event', authenticateToken, async (req: any, res: any) => {
       whatsappPhoneNumberId = extractWhatsappPhoneNumberId(pluginState) || extractWhatsappPhoneNumberId(data);
       pluginState = await ensurePluginWebhookConfigured(pluginId, whatsappPhoneNumberId);
       whatsappPhoneNumberId = extractWhatsappPhoneNumberId(pluginState) || whatsappPhoneNumberId;
+
+      await updateSalonChakraState(salon.id, {
+        chakraPhoneNumberId: whatsappPhoneNumberId,
+      });
 
       await upsertSalonAiAgentFaqAnswers(salon.id, {
         whatsappPluginActive: true,
@@ -574,6 +608,10 @@ router.post('/connect-event', authenticateToken, async (req: any, res: any) => {
           pluginState = await ensurePluginWebhookConfigured(pluginId, whatsappPhoneNumberId);
           whatsappPhoneNumberId = extractWhatsappPhoneNumberId(pluginState) || whatsappPhoneNumberId;
           connected = true;
+
+          await updateSalonChakraState(salon.id, {
+            chakraPhoneNumberId: whatsappPhoneNumberId,
+          });
 
           await upsertSalonAiAgentFaqAnswers(salon.id, {
             whatsappPluginActive: true,
@@ -636,9 +674,8 @@ router.put('/plugin-active', authenticateToken, async (req: any, res: any) => {
     }
 
     if (!salon.chakraPluginId) {
-      await prisma.salon.update({
-        where: { id: salon.id },
-        data: { chakraPluginId: pluginId },
+      await updateSalonChakraState(salon.id, {
+        chakraPluginId: pluginId,
       });
     }
 
@@ -659,11 +696,14 @@ router.put('/plugin-active', authenticateToken, async (req: any, res: any) => {
     }
 
     const finalIsActive = Boolean(verifiedState?.isActive);
-    const whatsappPhoneNumberId = finalIsActive ? extractWhatsappPhoneNumberId(verifiedState) : null;
+    const whatsappPhoneNumberId = extractWhatsappPhoneNumberId(verifiedState);
     const webhookSyncedState = await ensurePluginWebhookConfigured(pluginId, whatsappPhoneNumberId);
-    const syncedWhatsappPhoneNumberId = finalIsActive
-      ? extractWhatsappPhoneNumberId(webhookSyncedState) || whatsappPhoneNumberId
-      : null;
+    const syncedWhatsappPhoneNumberId =
+      extractWhatsappPhoneNumberId(webhookSyncedState) || whatsappPhoneNumberId || salon.chakraPhoneNumberId || null;
+
+    await updateSalonChakraState(salon.id, {
+      chakraPhoneNumberId: syncedWhatsappPhoneNumberId,
+    });
 
     await upsertSalonAiAgentFaqAnswers(salon.id, {
       whatsappPluginActive: finalIsActive,
