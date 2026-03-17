@@ -4,6 +4,7 @@ import { prisma } from '../prisma.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { UserRole } from '@prisma/client';
 import { createAuthTokens, revokeRefreshToken, rotateRefreshToken } from '../services/mobileAuth.js';
+import { ensureSalonServiceCategories } from '../services/salonCategorySetup.js';
 
 const router = Router();
 
@@ -48,6 +49,12 @@ router.post('/register-salon', async (req: any, res: any) => {
         users: true,
       },
     });
+
+    try {
+      await ensureSalonServiceCategories(salon.id);
+    } catch (categoryError) {
+      console.error('Salon category bootstrap warning:', categoryError);
+    }
 
     const ownerUser = salon.users.find(user => user.role === UserRole.OWNER);
 
@@ -143,6 +150,7 @@ router.post('/refresh', async (req: any, res: any) => {
         salonId: rotated.user.salonId,
       },
     });
+
   } catch (error) {
     console.error('Refresh token error:', error);
     return res.status(500).json({ message: 'Internal server error.' });

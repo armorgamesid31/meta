@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { authenticateToken } from '../middleware/auth.js';
+import { ensureSalonServiceCategories } from '../services/salonCategorySetup.js';
 
 const router = Router();
 
@@ -1982,6 +1983,8 @@ router.get('/service-categories', authenticateToken, async (req: any, res: any) 
   }
 
   try {
+    await ensureSalonServiceCategories(salonId);
+
     const categories = await prisma.serviceCategory.findMany({
       where: { salonId },
       select: {
