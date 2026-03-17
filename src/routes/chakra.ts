@@ -339,22 +339,8 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
     const hasConnectionSignal =
       Boolean(whatsappPhoneNumberId) || liveHasAuth || liveHasEnabledPhone;
 
-    if (salon.chakraPluginId && CHAKRA_API_TOKEN && !pluginActive && hasConnectionSignal) {
-      try {
-        const activatedState = await setPluginActiveState(salon.chakraPluginId, true);
-        pluginActive = Boolean(activatedState?.isActive);
-        whatsappPhoneNumberId = extractWhatsappPhoneNumberId(activatedState) || whatsappPhoneNumberId;
-
-        await upsertSalonAiAgentFaqAnswers(salon.id, {
-          whatsappPluginActive: pluginActive,
-          whatsappPhoneNumberId,
-          whatsappConnectedAt: new Date().toISOString(),
-        });
-      } catch (activationError: any) {
-        console.warn('Chakra plugin auto-activation failed:', activationError?.response?.data || activationError?.message || activationError);
-      }
-    }
-
+    // ÖNEMLİ: status endpoint'i plugin active state'ini mutate etmez.
+    // Böylece paneldeki aktif/pasif toggle kullanıcının verdiği değeri korur.
     const connected = Boolean(salon.chakraPluginId) && (pluginActive || hasConnectionSignal);
 
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
