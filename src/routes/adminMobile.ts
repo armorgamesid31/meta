@@ -399,6 +399,27 @@ function asStringMap(input: unknown): Record<string, string> {
   return output;
 }
 
+function parseOptionalBoolean(input: unknown): boolean | undefined {
+  if (typeof input === 'boolean') {
+    return input;
+  }
+  if (typeof input === 'string') {
+    const normalized = input.trim().toLowerCase();
+    if (normalized === 'true' || normalized === '1') {
+      return true;
+    }
+    if (normalized === 'false' || normalized === '0') {
+      return false;
+    }
+  }
+  return undefined;
+}
+
+function readBooleanFlag(map: Record<string, string>, key: string, fallback: boolean): boolean {
+  const parsed = parseOptionalBoolean(map[key]);
+  return parsed === undefined ? fallback : parsed;
+}
+
 const STAFF_COLOR_PALETTE = [
   '#B76E79',
   '#6C7BA1',
@@ -1654,15 +1675,29 @@ router.get('/whatsapp-agent/settings', authenticateToken, async (req: any, res: 
       },
     });
 
+    const faqAnswers = asStringMap(settings?.faqAnswers);
+    const isEnabled = readBooleanFlag(faqAnswers, 'aiAgentEnabled', false);
+
+    if (!settings) {
+      return res.status(200).json({
+        settings: {
+          tone: 'balanced',
+          answerLength: 'medium',
+          emojiUsage: 'low',
+          bookingGuidance: 'medium',
+          handoverThreshold: 'balanced',
+          aiDisclosure: 'onQuestion',
+          faqAnswers: {},
+          isEnabled: false,
+        },
+      });
+    }
+
     return res.status(200).json({
-      settings: settings || {
-        tone: 'balanced',
-        answerLength: 'medium',
-        emojiUsage: 'low',
-        bookingGuidance: 'medium',
-        handoverThreshold: 'balanced',
-        aiDisclosure: 'onQuestion',
-        faqAnswers: {},
+      settings: {
+        ...settings,
+        faqAnswers,
+        isEnabled,
       },
     });
   } catch (error) {
@@ -1677,28 +1712,58 @@ router.put('/whatsapp-agent/settings', authenticateToken, async (req: any, res: 
     return;
   }
 
-  const payload = req.body || {};
-  const tone = typeof payload.tone === 'string' && TONE_VALUES.has(payload.tone) ? payload.tone : 'balanced';
-  const answerLength = typeof payload.answerLength === 'string' && ANSWER_LENGTH_VALUES.has(payload.answerLength)
-    ? payload.answerLength
-    : 'medium';
-  const emojiUsage = typeof payload.emojiUsage === 'string' && EMOJI_USAGE_VALUES.has(payload.emojiUsage)
-    ? payload.emojiUsage
-    : 'low';
-  const bookingGuidance = typeof payload.bookingGuidance === 'string' && BOOKING_GUIDANCE_VALUES.has(payload.bookingGuidance)
-    ? payload.bookingGuidance
-    : 'medium';
-  const handoverThreshold =
-    typeof payload.handoverThreshold === 'string' && HANDOVER_THRESHOLD_VALUES.has(payload.handoverThreshold)
-      ? payload.handoverThreshold
-      : 'balanced';
-  const aiDisclosure =
-    typeof payload.aiDisclosure === 'string' && AI_DISCLOSURE_VALUES.has(payload.aiDisclosure)
-      ? payload.aiDisclosure
-      : 'onQuestion';
-  const faqAnswers = asStringMap(payload.faqAnswers);
-
   try {
+    const payload = req.body || {};
+    const existing = await prisma.salonAiAgentSettings.findUnique({
+      where: { salonId },
+      select: {
+        tone: true,
+        answerLength: true,
+        emojiUsage: true,
+        bookingGuidance: true,
+        handoverThreshold: true,
+        aiDisclosure: true,
+        faqAnswers: true,
+      },
+    });
+
+    const currentFaqAnswers = asStringMap(existing?.faqAnswers);
+    const providedFaqAnswers = payload.faqAnswers === undefined ? undefined : asStringMap(payload.faqAnswers);
+    const faqAnswers = {
+      ...currentFaqAnswers,
+      ...(providedFaqAnswers || {}),
+    };
+
+    const currentIsEnabled = readBooleanFlag(currentFaqAnswers, 'aiAgentEnabled', false);
+    const payloadIsEnabled = parseOptionalBoolean(payload.isEnabled);
+    const isEnabled = payloadIsEnabled === undefined ? currentIsEnabled : payloadIsEnabled;
+    faqAnswers.aiAgentEnabled = isEnabled ? '1' : '0';
+
+    const tone =
+      typeof payload.tone === 'string' && TONE_VALUES.has(payload.tone)
+        ? payload.tone
+        : existing?.tone || 'balanced';
+    const answerLength =
+      typeof payload.answerLength === 'string' && ANSWER_LENGTH_VALUES.has(payload.answerLength)
+        ? payload.answerLength
+        : existing?.answerLength || 'medium';
+    const emojiUsage =
+      typeof payload.emojiUsage === 'string' && EMOJI_USAGE_VALUES.has(payload.emojiUsage)
+        ? payload.emojiUsage
+        : existing?.emojiUsage || 'low';
+    const bookingGuidance =
+      typeof payload.bookingGuidance === 'string' && BOOKING_GUIDANCE_VALUES.has(payload.bookingGuidance)
+        ? payload.bookingGuidance
+        : existing?.bookingGuidance || 'medium';
+    const handoverThreshold =
+      typeof payload.handoverThreshold === 'string' && HANDOVER_THRESHOLD_VALUES.has(payload.handoverThreshold)
+        ? payload.handoverThreshold
+        : existing?.handoverThreshold || 'balanced';
+    const aiDisclosure =
+      typeof payload.aiDisclosure === 'string' && AI_DISCLOSURE_VALUES.has(payload.aiDisclosure)
+        ? payload.aiDisclosure
+        : existing?.aiDisclosure || 'onQuestion';
+
     const settings = await prisma.salonAiAgentSettings.upsert({
       where: { salonId },
       update: {
@@ -1731,7 +1796,13 @@ router.put('/whatsapp-agent/settings', authenticateToken, async (req: any, res: 
       },
     });
 
-    return res.status(200).json({ settings });
+    return res.status(200).json({
+      settings: {
+        ...settings,
+        faqAnswers: asStringMap(settings.faqAnswers),
+        isEnabled,
+      },
+    });
   } catch (error) {
     console.error('Admin WhatsApp agent settings update error:', error);
     return res.status(500).json({ message: 'Internal server error.' });
