@@ -9,6 +9,13 @@ const CHAKRA_API_BASE = 'https://api.chakrahq.com';
 const CHAKRA_API_TOKEN = process.env.CHAKRA_API_TOKEN;
 
 const CHAKRA_SDK_URL = 'https://embed.chakrahq.com/whatsapp-partner-connect/v1_0_1/sdk.js';
+const DEFAULT_CHAKRA_PASSTHROUGH_WEBHOOK_URL = 'https://n8n.berkai.shop/webhook/kedy';
+const CHAKRA_PASSTHROUGH_WEBHOOK_URL = (
+  process.env.CHAKRA_PASSTHROUGH_WEBHOOK_URL ||
+  process.env.CHAKRA_WEBHOOK_URL ||
+  process.env.N8N_CHAKRA_WEBHOOK_URL ||
+  DEFAULT_CHAKRA_PASSTHROUGH_WEBHOOK_URL
+).trim();
 
 function isPluginNotFoundError(error: any): boolean {
   const errors = error?.response?.data?._errors;
@@ -108,6 +115,8 @@ async function createPluginForSalon(salon: { id: number; name: string; slug: str
     data: { chakraPluginId: pluginId },
   });
 
+  await ensurePluginWebhookConfigured(pluginId);
+
   return pluginId;
 }
 
@@ -155,6 +164,90 @@ async function fetchPluginState(pluginId: string) {
   }
 
   return pluginData as Record<string, any>;
+}
+
+function normalizeEnabledWhatsappPhoneNumbers(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+}
+
+async function updatePluginServerConfig(pluginId: string, serverConfig: Record<string, any>) {
+  if (!CHAKRA_API_TOKEN) {
+    throw new Error('CHAKRA_API_TOKEN missing.');
+  }
+
+  const response = await axios.put(
+    `${CHAKRA_API_BASE}/plugin/${pluginId}`,
+    {
+      pluginId,
+      serverConfig,
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${CHAKRA_API_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      timeout: 20000,
+    },
+  );
+
+  const pluginData = response?.data?._data;
+  if (!pluginData || typeof pluginData !== 'object') {
+    throw new Error('Invalid plugin serverConfig response from Chakra.');
+  }
+
+  return pluginData as Record<string, any>;
+}
+
+function sameStringArray(a: string[], b: string[]) {
+  if (a.length !== b.length) {
+    return false;
+  }
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] !== b[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+async function ensurePluginWebhookConfigured(pluginId: string, preferredPhoneNumberId?: string | null) {
+  const webhookUrl = CHAKRA_PASSTHROUGH_WEBHOOK_URL;
+  if (!webhookUrl) {
+    return fetchPluginState(pluginId);
+  }
+
+  const currentPlugin = await fetchPluginState(pluginId);
+  const currentServerConfig =
+    currentPlugin?.serverConfig && typeof currentPlugin.serverConfig === 'object' && !Array.isArray(currentPlugin.serverConfig)
+      ? (currentPlugin.serverConfig as Record<string, any>)
+      : {};
+
+  const currentEnabled = normalizeEnabledWhatsappPhoneNumbers(currentServerConfig.enabledWhatsappPhoneNumbers);
+  const desiredEnabled = preferredPhoneNumberId ? [preferredPhoneNumberId] : currentEnabled;
+
+  const nextServerConfig: Record<string, any> = {
+    ...currentServerConfig,
+    passThroughWebhookUrl: webhookUrl,
+  };
+  if (desiredEnabled.length > 0) {
+    nextServerConfig.enabledWhatsappPhoneNumbers = desiredEnabled;
+  }
+
+  const webhookAlreadySet = currentServerConfig.passThroughWebhookUrl === webhookUrl;
+  const enabledAlreadySet = desiredEnabled.length === 0 || sameStringArray(currentEnabled, desiredEnabled);
+
+  if (webhookAlreadySet && enabledAlreadySet) {
+    return currentPlugin;
+  }
+
+  return updatePluginServerConfig(pluginId, nextServerConfig);
 }
 
 function extractWhatsappPhoneNumberId(payload: any): string | null {
@@ -386,6 +479,8 @@ router.get('/connect-token', authenticateToken, async (req: any, res: any) => {
       salon = (await getAuthenticatedSalon(req)) as NonNullable<Awaited<ReturnType<typeof getAuthenticatedSalon>>>;
     }
 
+    await ensurePluginWebhookConfigured(pluginId);
+
     let connectToken: string;
     try {
       connectToken = await createConnectToken(pluginId);
@@ -406,6 +501,7 @@ router.get('/connect-token', authenticateToken, async (req: any, res: any) => {
       });
 
       pluginId = recreatedPluginId;
+      await ensurePluginWebhookConfigured(pluginId);
       connectToken = await createConnectToken(pluginId);
     }
 
@@ -458,6 +554,8 @@ router.post('/connect-event', authenticateToken, async (req: any, res: any) => {
     if (connected) {
       pluginState = await setPluginActiveState(pluginId, true);
       whatsappPhoneNumberId = extractWhatsappPhoneNumberId(pluginState) || extractWhatsappPhoneNumberId(data);
+      pluginState = await ensurePluginWebhookConfigured(pluginId, whatsappPhoneNumberId);
+      whatsappPhoneNumberId = extractWhatsappPhoneNumberId(pluginState) || whatsappPhoneNumberId;
 
       await upsertSalonAiAgentFaqAnswers(salon.id, {
         whatsappPluginActive: true,
@@ -473,6 +571,8 @@ router.post('/connect-event', authenticateToken, async (req: any, res: any) => {
         if (liveHasAuth || livePhoneId) {
           pluginState = await setPluginActiveState(pluginId, true);
           whatsappPhoneNumberId = extractWhatsappPhoneNumberId(pluginState) || livePhoneId || null;
+          pluginState = await ensurePluginWebhookConfigured(pluginId, whatsappPhoneNumberId);
+          whatsappPhoneNumberId = extractWhatsappPhoneNumberId(pluginState) || whatsappPhoneNumberId;
           connected = true;
 
           await upsertSalonAiAgentFaqAnswers(salon.id, {
@@ -560,10 +660,14 @@ router.put('/plugin-active', authenticateToken, async (req: any, res: any) => {
 
     const finalIsActive = Boolean(verifiedState?.isActive);
     const whatsappPhoneNumberId = finalIsActive ? extractWhatsappPhoneNumberId(verifiedState) : null;
+    const webhookSyncedState = await ensurePluginWebhookConfigured(pluginId, whatsappPhoneNumberId);
+    const syncedWhatsappPhoneNumberId = finalIsActive
+      ? extractWhatsappPhoneNumberId(webhookSyncedState) || whatsappPhoneNumberId
+      : null;
 
     await upsertSalonAiAgentFaqAnswers(salon.id, {
       whatsappPluginActive: finalIsActive,
-      whatsappPhoneNumberId,
+      whatsappPhoneNumberId: syncedWhatsappPhoneNumberId,
       whatsappConnectedAt: finalIsActive ? new Date().toISOString() : null,
     });
 
@@ -572,8 +676,8 @@ router.put('/plugin-active', authenticateToken, async (req: any, res: any) => {
       pluginId,
       requestedIsActive: isActive,
       isActive: finalIsActive,
-      whatsappPhoneNumberId,
-      pluginState: verifiedState,
+      whatsappPhoneNumberId: syncedWhatsappPhoneNumberId,
+      pluginState: webhookSyncedState,
     });
   } catch (error: any) {
     console.error('Plugin active toggle failed:', error?.response?.data || error);
@@ -603,6 +707,8 @@ router.post('/setup-connect', authenticateToken, async (req: any, res: any) => {
       });
       pluginCreated = true;
     }
+
+    await ensurePluginWebhookConfigured(pluginId);
 
     const connectToken = await createConnectToken(pluginId);
 
