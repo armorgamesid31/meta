@@ -8,62 +8,64 @@ datasource db {
 }
 
 model Salon {
-  id               Int                @id @default(autoincrement())
-  name             String
-  address          String?
-  logoUrl          String?
-  chakraPluginId   String?
+  id                  Int                          @id @default(autoincrement())
+  name                String
+  address             String?
+  logoUrl             String?
+  chakraPluginId      String?
   chakraPhoneNumberId String?
-  city             String?
-  citySlug         String?
-  district         String?
-  districtSlug     String?
-  countryCode      String?
-  tagline          String?
-  about            String?
-  heroImageUrl     String?
-  instagramUrl     String?
-  whatsappPhone    String?
-  bookingMode      BookingMode?       @default(INTERNAL)
-  createdAt        DateTime?          @default(now()) @db.Timestamp(6)
-  updatedAt        DateTime?          @default(now()) @updatedAt @db.Timestamp(6)
-  slug             String?            @unique(map: "salon_slug_unique")
-  appointments     Appointment[]
-  customers        Customer[]
-  galleryImages    SalonGalleryImage[]
-  authSessions     MobileAuthSession[]
-  inventoryItems   InventoryItem[]
-  campaigns        Campaign[]
-  automationRules  AutomationRule[]
-  analyticsPresets AnalyticsPreset[]
-  aiAgentSettings SalonAiAgentSettings?
-  blacklistEntries BlacklistEntry[]
-  settings         SalonSettings?
-  testimonials     SalonTestimonial[]
-  messageDispatches AppointmentMessageDispatch[]
-  messageTemplates  SalonMessageTemplate[]
-  users            SalonUser[]
-  services         Service[]
-  serviceGroups    ServiceGroup[]
-  ServiceCategory  ServiceCategory[]
-  staff            Staff[]
+  city                String?
+  citySlug            String?
+  district            String?
+  districtSlug        String?
+  countryCode         String?
+  tagline             String?
+  about               String?
+  heroImageUrl        String?
+  instagramUrl        String?
+  whatsappPhone       String?
+  bookingMode         BookingMode?                 @default(INTERNAL)
+  createdAt           DateTime?                    @default(now()) @db.Timestamp(6)
+  updatedAt           DateTime?                    @default(now()) @updatedAt @db.Timestamp(6)
+  slug                String?                      @unique(map: "salon_slug_unique")
+  appointments        Appointment[]
+  customers           Customer[]
+  galleryImages       SalonGalleryImage[]
+  authSessions        MobileAuthSession[]
+  inventoryItems      InventoryItem[]
+  campaigns           Campaign[]
+  automationRules     AutomationRule[]
+  analyticsPresets    AnalyticsPreset[]
+  aiAgentSettings     SalonAiAgentSettings?
+  blacklistEntries    BlacklistEntry[]
+  settings            SalonSettings?
+  testimonials        SalonTestimonial[]
+  messageDispatches   AppointmentMessageDispatch[]
+  messageTemplates    SalonMessageTemplate[]
+  channelBindings     SalonChannelBinding[]
+  inboundMessages     InboundMessageQueue[]
+  users               SalonUser[]
+  services            Service[]
+  serviceGroups       ServiceGroup[]
+  ServiceCategory     ServiceCategory[]
+  staff               Staff[]
 
   @@index([citySlug, districtSlug], map: "idx_salon_city_district_slug")
 }
 
 model SalonSettings {
-  id            Int       @id @default(autoincrement())
-  workStartHour Int       @default(9)
-  workEndHour   Int       @default(18)
-  slotInterval  Int       @default(30)
-  workingDays   Json?
-  timezone      String    @default("Europe/Istanbul")
+  id                  Int        @id @default(autoincrement())
+  workStartHour       Int        @default(9)
+  workEndHour         Int        @default(18)
+  slotInterval        Int        @default(30)
+  workingDays         Json?
+  timezone            String     @default("Europe/Istanbul")
   contentSourceLocale LocaleCode @default(tr)
-  categoryOrder Json?     // List of category keys for custom ordering
-  createdAt     DateTime? @default(now()) @db.Timestamp(6)
-  updatedAt     DateTime? @default(now()) @updatedAt @db.Timestamp(6)
-  salonId       Int       @unique
-  salon         Salon     @relation(fields: [salonId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  categoryOrder       Json? // List of category keys for custom ordering
+  createdAt           DateTime?  @default(now()) @db.Timestamp(6)
+  updatedAt           DateTime?  @default(now()) @updatedAt @db.Timestamp(6)
+  salonId             Int        @unique
+  salon               Salon      @relation(fields: [salonId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 }
 
 model SalonAiAgentSettings {
@@ -82,15 +84,15 @@ model SalonAiAgentSettings {
 }
 
 model SalonUser {
-  id           Int       @id @default(autoincrement())
+  id           Int                 @id @default(autoincrement())
   email        String
   passwordHash String
   role         String
-  createdAt    DateTime? @default(now()) @db.Timestamp(6)
-  updatedAt    DateTime? @default(now()) @updatedAt @db.Timestamp(6)
+  createdAt    DateTime?           @default(now()) @db.Timestamp(6)
+  updatedAt    DateTime?           @default(now()) @updatedAt @db.Timestamp(6)
   salonId      Int
   authSessions MobileAuthSession[]
-  salon        Salon     @relation(fields: [salonId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  salon        Salon               @relation(fields: [salonId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 }
 
 model MobileAuthSession {
@@ -110,20 +112,20 @@ model MobileAuthSession {
 }
 
 model Staff {
-  id                Int               @id @default(autoincrement())
+  id                Int                 @id @default(autoincrement())
   name              String
   title             String?
   bio               String?
   themeColor        String?
   profileImageUrl   String?
   phone             String?
-  createdAt         DateTime?         @default(now()) @db.Timestamp(6)
-  updatedAt         DateTime?         @default(now()) @updatedAt @db.Timestamp(6)
+  createdAt         DateTime?           @default(now()) @db.Timestamp(6)
+  updatedAt         DateTime?           @default(now()) @updatedAt @db.Timestamp(6)
   salonId           Int
   userId            Int?
   appointments      Appointment[]
   leaves            Leave[]
-  salon             Salon             @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  salon             Salon               @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   StaffService      StaffService[]
   StaffWorkingHours StaffWorkingHours[]
   testimonials      SalonTestimonial[]
@@ -168,48 +170,48 @@ model Service {
 }
 
 model ServiceGroup {
-  id                Int       @id @default(autoincrement())
-  salonId           Int
-  name              String
-  description       String?
-  isActive          Boolean?  @default(true)
-  displayOrder      Int?
-  capacity          Int?      @default(1)
-  sequentialRequired Boolean? @default(false)
-  preparationMinutes Int?     @default(0)
-  createdAt         DateTime? @default(now()) @db.Timestamp(6)
-  updatedAt         DateTime? @default(now()) @updatedAt @db.Timestamp(6)
-  salon             Salon     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  services          Service[]
+  id                 Int       @id @default(autoincrement())
+  salonId            Int
+  name               String
+  description        String?
+  isActive           Boolean?  @default(true)
+  displayOrder       Int?
+  capacity           Int?      @default(1)
+  sequentialRequired Boolean?  @default(false)
+  preparationMinutes Int?      @default(0)
+  createdAt          DateTime? @default(now()) @db.Timestamp(6)
+  updatedAt          DateTime? @default(now()) @updatedAt @db.Timestamp(6)
+  salon              Salon     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  services           Service[]
 
-  @@index([salonId, displayOrder], map: "idx_service_group_salon_display_order")
   @@unique([salonId, name], map: "uq_service_group_name_per_salon")
+  @@index([salonId, displayOrder], map: "idx_service_group_salon_display_order")
 }
 
 model Appointment {
-  id            Int                @id @default(autoincrement())
-  customerName  String
-  customerPhone String
-  customerId    Int?
-  startTime     DateTime           @db.Timestamp(6)
-  endTime       DateTime           @db.Timestamp(6)
-  status        AppointmentStatus? @default(BOOKED)
-  source        AppointmentSource? @default(CUSTOMER)
-  notes         String?
-  customerRating Int?
-  customerReview String?
-  customerReviewedAt DateTime?     @db.Timestamp(6)
-  createdAt     DateTime?          @default(now()) @db.Timestamp(6)
-  updatedAt     DateTime?          @default(now()) @updatedAt @db.Timestamp(6)
-  salonId       Int
-  staffId       Int
-  serviceId     Int
-  gender        CustomerGender     @default(female)
-  customer      Customer?          @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  messageDispatches AppointmentMessageDispatch[]
-  salon         Salon              @relation(fields: [salonId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  service       Service            @relation(fields: [serviceId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  staff         Staff              @relation(fields: [staffId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  id                 Int                          @id @default(autoincrement())
+  customerName       String
+  customerPhone      String
+  customerId         Int?
+  startTime          DateTime                     @db.Timestamp(6)
+  endTime            DateTime                     @db.Timestamp(6)
+  status             AppointmentStatus?           @default(BOOKED)
+  source             AppointmentSource?           @default(CUSTOMER)
+  notes              String?
+  customerRating     Int?
+  customerReview     String?
+  customerReviewedAt DateTime?                    @db.Timestamp(6)
+  createdAt          DateTime?                    @default(now()) @db.Timestamp(6)
+  updatedAt          DateTime?                    @default(now()) @updatedAt @db.Timestamp(6)
+  salonId            Int
+  staffId            Int
+  serviceId          Int
+  gender             CustomerGender               @default(female)
+  customer           Customer?                    @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  messageDispatches  AppointmentMessageDispatch[]
+  salon              Salon                        @relation(fields: [salonId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  service            Service                      @relation(fields: [serviceId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  staff              Staff                        @relation(fields: [staffId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([salonId, startTime], map: "idx_appointment_salon_start")
   @@index([salonId, status, startTime], map: "idx_appointment_salon_status_start")
@@ -250,8 +252,8 @@ model Customer {
   appointments    Appointment[]
   salon           Salon           @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  @@index([salonId, createdAt], map: "idx_customer_salon_created")
   @@unique([phone, salonId])
+  @@index([salonId, createdAt], map: "idx_customer_salon_created")
 }
 
 model CustomerBehaviorLog {
@@ -338,23 +340,23 @@ model StaffWorkingHours {
 }
 
 model ServiceCategory {
-  id                   Int               @id @default(autoincrement())
+  id                   Int                @id @default(autoincrement())
   name                 String
   salonId              Int
   categoryId           Int?
-  isActive             Boolean?          @default(true)
+  isActive             Boolean?           @default(true)
   marketingDescription String?
   icon                 String?
   coverImageUrl        String?
   displayOrder         Int?
-  capacity             Int?              @default(1)
-  sequentialRequired   Boolean?          @default(false)
-  bufferMinutes        Int?              @default(0)
-  createdAt            DateTime?         @default(now()) @db.Timestamp(6)
-  updatedAt            DateTime?         @default(now()) @db.Timestamp(6)
-  categoryRef          Category?         @relation(fields: [categoryId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  capacity             Int?               @default(1)
+  sequentialRequired   Boolean?           @default(false)
+  bufferMinutes        Int?               @default(0)
+  createdAt            DateTime?          @default(now()) @db.Timestamp(6)
+  updatedAt            DateTime?          @default(now()) @db.Timestamp(6)
+  categoryRef          Category?          @relation(fields: [categoryId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   Service              Service[]
-  Salon                Salon             @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  Salon                Salon              @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   testimonials         SalonTestimonial[]
 
   @@index([salonId, displayOrder], map: "idx_servicecategory_salon_display_order")
@@ -375,18 +377,18 @@ model SalonGalleryImage {
 }
 
 model SalonTestimonial {
-  id           Int                   @id @default(autoincrement())
-  salonId      Int
-  expertId     Int?
-  categoryId   Int?
-  templateType TestimonialTemplateType?
+  id            Int                      @id @default(autoincrement())
+  salonId       Int
+  expertId      Int?
+  categoryId    Int?
+  templateType  TestimonialTemplateType?
   generatedText String
-  isGenerated  Boolean?              @default(true)
-  createdAt    DateTime?             @default(now()) @db.Timestamp(6)
-  updatedAt    DateTime?             @default(now()) @updatedAt @db.Timestamp(6)
-  salon        Salon                 @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  expert       Staff?                @relation(fields: [expertId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  category     ServiceCategory?      @relation(fields: [categoryId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  isGenerated   Boolean?                 @default(true)
+  createdAt     DateTime?                @default(now()) @db.Timestamp(6)
+  updatedAt     DateTime?                @default(now()) @updatedAt @db.Timestamp(6)
+  salon         Salon                    @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  expert        Staff?                   @relation(fields: [expertId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  category      ServiceCategory?         @relation(fields: [categoryId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([salonId], map: "idx_testimonial_salon")
   @@index([expertId], map: "idx_testimonial_expert")
@@ -413,15 +415,15 @@ model InventoryItem {
 }
 
 model InventoryMovement {
-  id              Int            @id @default(autoincrement())
+  id              Int           @id @default(autoincrement())
   salonId         Int
   inventoryItemId Int
   type            String
   quantity        Int
   reason          String?
   createdByUserId Int?
-  createdAt       DateTime?      @default(now()) @db.Timestamp(6)
-  inventoryItem   InventoryItem  @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  createdAt       DateTime?     @default(now()) @db.Timestamp(6)
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([salonId, inventoryItemId, createdAt], map: "idx_inventory_movement_salon_item_created")
 }
@@ -460,18 +462,18 @@ model AutomationRule {
 }
 
 model AppointmentMessageDispatch {
-  id                Int                          @id @default(autoincrement())
+  id                Int                         @id @default(autoincrement())
   salonId           Int
   appointmentId     Int
   eventType         AppointmentMessageEventType
-  channel           String                       @default("WHATSAPP")
+  channel           String                      @default("WHATSAPP")
   recipientPhone    String
   templateName      String?
   providerMessageId String?
   providerPayload   Json?
-  createdAt         DateTime?                    @default(now()) @db.Timestamp(6)
-  salon             Salon                        @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  appointment       Appointment                  @relation(fields: [appointmentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  createdAt         DateTime?                   @default(now()) @db.Timestamp(6)
+  salon             Salon                       @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  appointment       Appointment                 @relation(fields: [appointmentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([salonId, appointmentId, eventType], map: "uq_msg_dispatch_salon_appointment_event")
   @@index([salonId, createdAt], map: "idx_msg_dispatch_salon_created")
@@ -552,6 +554,45 @@ model Translation {
 
   @@unique([entityType, entityId, key, locale, version], map: "uq_translation_entity_key_locale_version")
   @@index([entityType, entityId, key, locale, status], map: "idx_translation_lookup")
+}
+
+model SalonChannelBinding {
+  id                Int         @id @default(autoincrement())
+  salonId           Int
+  channel           ChannelType
+  externalAccountId String
+  isActive          Boolean     @default(true)
+  createdAt         DateTime?   @default(now()) @db.Timestamp(6)
+  updatedAt         DateTime?   @default(now()) @updatedAt @db.Timestamp(6)
+  salon             Salon       @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([channel, externalAccountId], map: "uq_salon_channel_external_account")
+  @@index([salonId, channel, isActive], map: "idx_salon_channel_binding_salon_channel_active")
+}
+
+model InboundMessageQueue {
+  id                Int                  @id @default(autoincrement())
+  salonId           Int
+  channel           ChannelType
+  conversationKey   String
+  providerMessageId String
+  externalAccountId String
+  customerName      String?
+  messageType       String
+  text              String?
+  eventTimestamp    DateTime             @db.Timestamp(6)
+  rawPayload        Json
+  status            InboundMessageStatus @default(PENDING)
+  batchId           String?
+  processedAt       DateTime?            @db.Timestamp(6)
+  createdAt         DateTime?            @default(now()) @db.Timestamp(6)
+  updatedAt         DateTime?            @default(now()) @updatedAt @db.Timestamp(6)
+  salon             Salon                @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([channel, providerMessageId], map: "uq_inbound_channel_provider_message")
+  @@index([salonId, channel, conversationKey, status, createdAt], map: "idx_inbound_salon_conv_status_created")
+  @@index([salonId, channel, conversationKey, status, eventTimestamp], map: "idx_inbound_aggregate_window")
+  @@index([status, createdAt], map: "idx_inbound_status_created")
 }
 
 model ServiceGender {
@@ -648,4 +689,16 @@ enum TranslationStatus {
   DRAFT
   REVIEWED
   APPROVED
+}
+
+enum ChannelType {
+  WHATSAPP
+  INSTAGRAM
+}
+
+enum InboundMessageStatus {
+  PENDING
+  PROCESSING
+  DONE
+  FAILED
 }
