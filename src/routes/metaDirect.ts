@@ -18,6 +18,7 @@ const META_INSTAGRAM_CONFIG_ID = (process.env.META_INSTAGRAM_CONFIG_ID || '').tr
 type MetaChannel = 'INSTAGRAM' | 'WHATSAPP';
 type MetaStatus = 'NOT_CONNECTED' | 'CONNECTING' | 'CONNECTED' | 'FAILED';
 type MetaChannelKey = 'instagram' | 'whatsapp';
+type ConnectMode = 'OAUTH' | 'EMBEDDED_SIGNUP';
 
 interface MetaChannelState {
   status: MetaStatus;
@@ -44,6 +45,13 @@ interface StatePayload {
   ch: MetaChannel;
   ts: number;
   nonce: string;
+}
+
+interface PrefillConnection {
+  externalAccountId?: string | null;
+  externalBusinessId?: string | null;
+  externalDisplayName?: string | null;
+  bindingIds?: string[];
 }
 
 const defaultScopes: Record<MetaChannel, string[]> = {
@@ -438,6 +446,70 @@ async function runProbe(channel: MetaChannel, accessToken: string) {
   return channel === 'INSTAGRAM' ? probeInstagram(accessToken) : probeWhatsApp(accessToken);
 }
 
+async function finalizeConnection(args: {
+  salonId: number;
+  channel: MetaChannel;
+  token: { accessToken: string; tokenType: string | null; expiresIn: number | null };
+  prefill?: PrefillConnection;
+}) {
+  const { salonId, channel, token, prefill } = args;
+  const key = toMetaKey(channel);
+
+  let probe: Awaited<ReturnType<typeof runProbe>> | null = null;
+  let probeError: string | null = null;
+
+  const bindingIds = sanitizeIds(prefill?.bindingIds || []);
+  if (bindingIds.length > 0) {
+    await setBindings(salonId, channel, bindingIds);
+  }
+
+  if (bindingIds.length === 0) {
+    try {
+      probe = await runProbe(channel, token.accessToken);
+      await setBindings(salonId, channel, probe.bindingIds);
+    } catch (error) {
+      // Token can still be valid; probe can be retried later with broader business setup.
+      probeError = getAxiosErrorMessage(error);
+    }
+  }
+
+  const loaded = await loadStoreForSalon(salonId);
+  loaded.store[key] = {
+    ...loaded.store[key],
+    status: 'CONNECTED',
+    message: probe
+      ? 'Connected and verified with a live API call.'
+      : bindingIds.length > 0
+        ? 'Connected via Embedded Signup. Binding captured.'
+        : 'Connected. Token saved. Run Probe to finalize account binding.',
+    externalAccountId:
+      probe?.externalAccountId ||
+      prefill?.externalAccountId ||
+      loaded.store[key].externalAccountId,
+    externalBusinessId:
+      probe?.externalBusinessId ||
+      prefill?.externalBusinessId ||
+      loaded.store[key].externalBusinessId,
+    externalDisplayName:
+      probe?.externalDisplayName ||
+      prefill?.externalDisplayName ||
+      loaded.store[key].externalDisplayName,
+    accessToken: token.accessToken,
+    tokenType: token.tokenType,
+    expiresIn: token.expiresIn,
+    lastConnectedAt: new Date().toISOString(),
+    lastProbeAt: probe ? new Date().toISOString() : loaded.store[key].lastProbeAt,
+    lastProbeOk: probe ? true : loaded.store[key].lastProbeOk,
+    lastError: probe ? null : probeError,
+  };
+  await saveStoreForSalon(salonId, loaded.faqAnswers, loaded.store);
+
+  return {
+    probe,
+    probeError,
+  };
+}
+
 function renderCallbackHtml(payload: { success: boolean; channel: MetaChannel | 'UNKNOWN'; message: string }) {
   const serialized = JSON.stringify({
     type: 'meta-direct-callback',
@@ -562,6 +634,13 @@ router.post('/connect-url', authenticateToken, async (req: any, res: any) => {
     const state = encodeState(statePayload);
     const scopes = getScopes(channel);
     const authorizeUrl = buildAuthorizeUrl(channel, redirectUri, state, scopes);
+    const connectMode: ConnectMode =
+      channel === 'WHATSAPP' && META_WHATSAPP_CONFIG_ID
+        ? 'EMBEDDED_SIGNUP'
+        : 'OAUTH';
+    const configId = channel === 'WHATSAPP'
+      ? (META_WHATSAPP_CONFIG_ID || null)
+      : (META_INSTAGRAM_CONFIG_ID || null);
 
     const loaded = await loadStoreForSalon(salonId);
     const key = toMetaKey(channel);
@@ -575,8 +654,11 @@ router.post('/connect-url', authenticateToken, async (req: any, res: any) => {
 
     return res.status(200).json({
       channel,
+      connectMode,
       authorizeUrl,
       redirectUri,
+      appId: META_APP_ID,
+      configId,
       scopes,
       state,
     });
@@ -638,37 +720,11 @@ router.get('/callback', async (req: any, res: any) => {
   try {
     const redirectUri = getRedirectUri(req);
     const token = await exchangeCodeForToken(code, redirectUri);
-    let probe: Awaited<ReturnType<typeof runProbe>> | null = null;
-    let probeError: string | null = null;
-
-    try {
-      probe = await runProbe(channel, token.accessToken);
-      await setBindings(statePayload.sid, channel, probe.bindingIds);
-    } catch (error) {
-      // Keep connection successful when token exchange works.
-      // With minimal scopes, initial binding probe may need a later retry.
-      probeError = getAxiosErrorMessage(error);
-    }
-
-    const loaded = await loadStoreForSalon(statePayload.sid);
-    loaded.store[key] = {
-      ...loaded.store[key],
-      status: 'CONNECTED',
-      message: probe
-        ? 'Connected and verified with a live API call.'
-        : 'Connected. Token saved. Run Probe to finalize account binding.',
-      externalAccountId: probe?.externalAccountId || loaded.store[key].externalAccountId,
-      externalBusinessId: probe?.externalBusinessId || loaded.store[key].externalBusinessId,
-      externalDisplayName: probe?.externalDisplayName || loaded.store[key].externalDisplayName,
-      accessToken: token.accessToken,
-      tokenType: token.tokenType,
-      expiresIn: token.expiresIn,
-      lastConnectedAt: new Date().toISOString(),
-      lastProbeAt: probe ? new Date().toISOString() : loaded.store[key].lastProbeAt,
-      lastProbeOk: probe ? true : loaded.store[key].lastProbeOk,
-      lastError: probe ? null : probeError,
-    };
-    await saveStoreForSalon(statePayload.sid, loaded.faqAnswers, loaded.store);
+    const { probe } = await finalizeConnection({
+      salonId: statePayload.sid,
+      channel,
+      token,
+    });
 
     return res.status(200).send(renderCallbackHtml({
       success: true,
@@ -679,6 +735,84 @@ router.get('/callback', async (req: any, res: any) => {
     }));
   } catch (error) {
     return fail(getAxiosErrorMessage(error));
+  }
+});
+
+router.post('/exchange-code', authenticateToken, async (req: any, res: any) => {
+  try {
+    const salonId = req?.user?.salonId;
+    if (!Number.isInteger(salonId) || salonId <= 0) {
+      return res.status(401).json({ message: 'Unauthorized.' });
+    }
+
+    const channel = toMetaChannel(req.body?.channel);
+    if (!channel) {
+      return res.status(400).json({ message: 'channel must be INSTAGRAM or WHATSAPP.' });
+    }
+
+    const code = typeof req.body?.code === 'string' ? req.body.code.trim() : '';
+    if (!code) {
+      return res.status(400).json({ message: 'code is required.' });
+    }
+
+    const redirectUri = getRedirectUri(req);
+    const token = await exchangeCodeForToken(code, redirectUri);
+
+    const prefill: PrefillConnection = {
+      externalAccountId:
+        typeof req.body?.phoneNumberId === 'string' && req.body.phoneNumberId.trim()
+          ? req.body.phoneNumberId.trim()
+          : typeof req.body?.externalAccountId === 'string' && req.body.externalAccountId.trim()
+            ? req.body.externalAccountId.trim()
+            : null,
+      externalBusinessId:
+        typeof req.body?.wabaId === 'string' && req.body.wabaId.trim()
+          ? req.body.wabaId.trim()
+          : typeof req.body?.businessId === 'string' && req.body.businessId.trim()
+            ? req.body.businessId.trim()
+            : typeof req.body?.externalBusinessId === 'string' && req.body.externalBusinessId.trim()
+              ? req.body.externalBusinessId.trim()
+              : null,
+      externalDisplayName:
+        typeof req.body?.displayPhoneNumber === 'string' && req.body.displayPhoneNumber.trim()
+          ? req.body.displayPhoneNumber.trim()
+          : typeof req.body?.externalDisplayName === 'string' && req.body.externalDisplayName.trim()
+            ? req.body.externalDisplayName.trim()
+            : null,
+      bindingIds: sanitizeIds([
+        req.body?.phoneNumberId,
+        req.body?.wabaId,
+        req.body?.businessId,
+        req.body?.externalAccountId,
+        req.body?.externalBusinessId,
+      ]),
+    };
+
+    const { probe, probeError } = await finalizeConnection({
+      salonId,
+      channel,
+      token,
+      prefill,
+    });
+
+    return res.status(200).json({
+      ok: true,
+      channel,
+      connected: true,
+      bindingReady: Boolean(probe || (prefill.bindingIds || []).length > 0),
+      message: probe
+        ? 'Connected and probe succeeded.'
+        : (prefill.bindingIds || []).length > 0
+          ? 'Connected via Embedded Signup and binding captured.'
+          : 'Connected. Token saved. Run Probe to finalize binding.',
+      probeError,
+    });
+  } catch (error) {
+    console.error('Meta Direct exchange-code failed:', error);
+    return res.status(400).json({
+      ok: false,
+      message: getAxiosErrorMessage(error),
+    });
   }
 });
 
