@@ -314,22 +314,65 @@ async function updateSalonChakraState(
     chakraPhoneNumberId?: string | null;
   },
 ) {
+  const normalizeExternalId = (value?: string | null): string | null => {
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  };
+
+  const syncWhatsappChannelBinding = async (nextWhatsappPhoneNumberId: string | null) => {
+    // Deactivate existing WhatsApp bindings for this salon first.
+    await prisma.salonChannelBinding.updateMany({
+      where: { salonId, channel: 'WHATSAPP' },
+      data: { isActive: false },
+    });
+
+    if (!nextWhatsappPhoneNumberId) return;
+
+    await prisma.salonChannelBinding.upsert({
+      where: {
+        channel_externalAccountId: {
+          channel: 'WHATSAPP',
+          externalAccountId: nextWhatsappPhoneNumberId,
+        },
+      },
+      update: {
+        salonId,
+        isActive: true,
+      },
+      create: {
+        salonId,
+        channel: 'WHATSAPP',
+        externalAccountId: nextWhatsappPhoneNumberId,
+        isActive: true,
+      },
+    });
+  };
+
   const data: Record<string, any> = {};
+  let shouldSyncWhatsappBinding = false;
+  let nextWhatsappPhoneNumberId: string | null = null;
 
   if (patch.chakraPluginId !== undefined) {
     data.chakraPluginId = patch.chakraPluginId;
   }
 
   if (patch.chakraPhoneNumberId !== undefined) {
-    data.chakraPhoneNumberId = patch.chakraPhoneNumberId;
+    nextWhatsappPhoneNumberId = normalizeExternalId(patch.chakraPhoneNumberId);
+    data.chakraPhoneNumberId = nextWhatsappPhoneNumberId;
+    shouldSyncWhatsappBinding = true;
   }
 
-  if (Object.keys(data).length === 0) return;
+  if (Object.keys(data).length > 0) {
+    await prisma.salon.update({
+      where: { id: salonId },
+      data,
+    });
+  }
 
-  await prisma.salon.update({
-    where: { id: salonId },
-    data,
-  });
+  if (shouldSyncWhatsappBinding) {
+    await syncWhatsappChannelBinding(nextWhatsappPhoneNumberId);
+  }
 }
 
 async function setPluginActiveState(pluginId: string, isActive: boolean) {
