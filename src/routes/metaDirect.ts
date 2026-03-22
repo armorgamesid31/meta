@@ -12,6 +12,8 @@ const META_APP_ID = (process.env.META_APP_ID || '').trim();
 const META_APP_SECRET = (process.env.META_APP_SECRET || '').trim();
 const META_REDIRECT_URI = (process.env.META_REDIRECT_URI || '').trim();
 const META_STATE_SECRET = (process.env.META_STATE_SECRET || process.env.JWT_SECRET || '').trim();
+const META_WHATSAPP_CONFIG_ID = (process.env.META_WHATSAPP_CONFIG_ID || '').trim();
+const META_INSTAGRAM_CONFIG_ID = (process.env.META_INSTAGRAM_CONFIG_ID || '').trim();
 
 type MetaChannel = 'INSTAGRAM' | 'WHATSAPP';
 type MetaStatus = 'NOT_CONNECTED' | 'CONNECTING' | 'CONNECTED' | 'FAILED';
@@ -46,14 +48,9 @@ interface StatePayload {
 
 const defaultScopes: Record<MetaChannel, string[]> = {
   INSTAGRAM: [
-    'pages_show_list',
-    'pages_read_engagement',
-    'pages_manage_metadata',
-    'instagram_basic',
     'instagram_manage_messages',
   ],
   WHATSAPP: [
-    'business_management',
     'whatsapp_business_management',
     'whatsapp_business_messaging',
   ],
@@ -208,6 +205,29 @@ function getScopes(channel: MetaChannel): string[] {
     .filter(Boolean);
 
   return parsed.length > 0 ? parsed : defaultScopes[channel];
+}
+
+function buildAuthorizeUrl(
+  channel: MetaChannel,
+  redirectUri: string,
+  state: string,
+  scopes: string[],
+): string {
+  const params = new URLSearchParams({
+    client_id: META_APP_ID,
+    redirect_uri: redirectUri,
+    state,
+    response_type: 'code',
+    scope: scopes.join(','),
+  });
+
+  // Optional: Login for Business config-based flow (Embedded Signup compatible).
+  const configId = channel === 'WHATSAPP' ? META_WHATSAPP_CONFIG_ID : META_INSTAGRAM_CONFIG_ID;
+  if (configId) {
+    params.set('config_id', configId);
+  }
+
+  return `https://www.facebook.com/${META_GRAPH_VERSION}/dialog/oauth?${params.toString()}`;
 }
 
 function getRedirectUri(req: any): string {
@@ -492,12 +512,14 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
     return res.status(200).json({
       instagram: {
         ...store.instagram,
-        connected: store.instagram.status === 'CONNECTED' && igBindings.length > 0,
+        connected: store.instagram.status === 'CONNECTED',
+        bindingReady: igBindings.length > 0,
         activeBindingIds: sanitizeIds(igBindings),
       },
       whatsapp: {
         ...store.whatsapp,
-        connected: store.whatsapp.status === 'CONNECTED' && waBindings.length > 0,
+        connected: store.whatsapp.status === 'CONNECTED',
+        bindingReady: waBindings.length > 0,
         activeBindingIds: sanitizeIds(waBindings),
       },
       connectorNote: 'Chakra flow remains active in production; Meta Direct is in beta prep.',
@@ -539,14 +561,7 @@ router.post('/connect-url', authenticateToken, async (req: any, res: any) => {
 
     const state = encodeState(statePayload);
     const scopes = getScopes(channel);
-
-    const authorizeUrl =
-      `https://www.facebook.com/${META_GRAPH_VERSION}/dialog/oauth` +
-      `?client_id=${encodeURIComponent(META_APP_ID)}` +
-      `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-      `&state=${encodeURIComponent(state)}` +
-      `&response_type=code` +
-      `&scope=${encodeURIComponent(scopes.join(','))}`;
+    const authorizeUrl = buildAuthorizeUrl(channel, redirectUri, state, scopes);
 
     const loaded = await loadStoreForSalon(salonId);
     const key = toMetaKey(channel);
@@ -623,32 +638,44 @@ router.get('/callback', async (req: any, res: any) => {
   try {
     const redirectUri = getRedirectUri(req);
     const token = await exchangeCodeForToken(code, redirectUri);
-    const probe = await runProbe(channel, token.accessToken);
+    let probe: Awaited<ReturnType<typeof runProbe>> | null = null;
+    let probeError: string | null = null;
 
-    await setBindings(statePayload.sid, channel, probe.bindingIds);
+    try {
+      probe = await runProbe(channel, token.accessToken);
+      await setBindings(statePayload.sid, channel, probe.bindingIds);
+    } catch (error) {
+      // Keep connection successful when token exchange works.
+      // With minimal scopes, initial binding probe may need a later retry.
+      probeError = getAxiosErrorMessage(error);
+    }
 
     const loaded = await loadStoreForSalon(statePayload.sid);
     loaded.store[key] = {
       ...loaded.store[key],
       status: 'CONNECTED',
-      message: 'Connected and verified with a live API call.',
-      externalAccountId: probe.externalAccountId,
-      externalBusinessId: probe.externalBusinessId,
-      externalDisplayName: probe.externalDisplayName,
+      message: probe
+        ? 'Connected and verified with a live API call.'
+        : 'Connected. Token saved. Run Probe to finalize account binding.',
+      externalAccountId: probe?.externalAccountId || loaded.store[key].externalAccountId,
+      externalBusinessId: probe?.externalBusinessId || loaded.store[key].externalBusinessId,
+      externalDisplayName: probe?.externalDisplayName || loaded.store[key].externalDisplayName,
       accessToken: token.accessToken,
       tokenType: token.tokenType,
       expiresIn: token.expiresIn,
       lastConnectedAt: new Date().toISOString(),
-      lastProbeAt: new Date().toISOString(),
-      lastProbeOk: true,
-      lastError: null,
+      lastProbeAt: probe ? new Date().toISOString() : loaded.store[key].lastProbeAt,
+      lastProbeOk: probe ? true : loaded.store[key].lastProbeOk,
+      lastError: probe ? null : probeError,
     };
     await saveStoreForSalon(statePayload.sid, loaded.faqAnswers, loaded.store);
 
     return res.status(200).send(renderCallbackHtml({
       success: true,
       channel,
-      message: `${channel} connected successfully and initial API call completed.`,
+      message: probe
+        ? `${channel} connected successfully and initial API call completed.`
+        : `${channel} connected successfully. Run Probe in app to finalize binding.`,
     }));
   } catch (error) {
     return fail(getAxiosErrorMessage(error));
