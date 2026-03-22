@@ -18,6 +18,7 @@ import mobileRoutes from './routes/mobile.js';
 import customerRoutes from './routes/customers.js';
 import bookingContextRoutes from './routes/bookingContext.js';
 import chakraRoutes from './routes/chakra.js';
+import metaDirectRoutes from './routes/metaDirect.js';
 import { multiTenantMiddleware } from './middleware/multiTenant.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -146,6 +147,7 @@ app.use('/api/bookings', bookingRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/booking', bookingContextRoutes);
 app.use('/api/app/chakra', chakraRoutes);
+app.use('/api/app/meta-direct', metaDirectRoutes);
 app.use('/availability', availabilityRoutes);
 app.use('/appointments', bookingRoutes);
 
