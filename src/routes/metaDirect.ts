@@ -56,7 +56,11 @@ interface PrefillConnection {
 
 const defaultScopes: Record<MetaChannel, string[]> = {
   INSTAGRAM: [
+    'instagram_basic',
     'instagram_manage_messages',
+    'pages_manage_metadata',
+    'pages_read_engagement',
+    'pages_show_list',
   ],
   WHATSAPP: [
     'whatsapp_business_management',
