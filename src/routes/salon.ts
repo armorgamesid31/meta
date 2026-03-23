@@ -3,6 +3,8 @@ import { prisma } from '../prisma.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { logCustomerBehavior, calculateCancellationSeverity, BehaviorType } from '../utils/behaviorTracking.js';
 import { CATEGORIES, CATEGORY_ORDER } from '../constants/categories.js';
+import { normalizeLocale } from '../constants/locales.js';
+import { resolveServiceTranslations } from '../services/serviceTranslations.js';
 
 const router = Router();
 
@@ -154,8 +156,15 @@ router.get('/services', authenticateToken, async (req: any, res: any) => {
   }
 
   const salonId = req.user.salonId;
+  const locale = normalizeLocale(typeof req.query.locale === 'string' ? req.query.locale : 'tr');
 
   try {
+    const settings = await prisma.salonSettings.findUnique({
+      where: { salonId },
+      select: { contentSourceLocale: true },
+    });
+    const sourceLocale = settings?.contentSourceLocale || 'tr';
+
     const services = await prisma.service.findMany({
       where: {
         salonId: salonId
@@ -163,6 +172,7 @@ router.get('/services', authenticateToken, async (req: any, res: any) => {
       select: {
         id: true,
         name: true,
+        description: true,
         duration: true,
         price: true,
         category: true,
@@ -171,7 +181,24 @@ router.get('/services', authenticateToken, async (req: any, res: any) => {
       orderBy: { name: 'asc' }
     });
 
-    res.json({ services });
+    const translationMap = await resolveServiceTranslations({
+      serviceIds: services.map((service) => service.id),
+      locale,
+      sourceLocale,
+    });
+
+    res.json({
+      locale,
+      sourceLocale,
+      services: services.map((service) => {
+        const translated = translationMap.get(service.id);
+        return {
+          ...service,
+          name: translated?.name || service.name,
+          description: translated?.description || service.description || null,
+        };
+      }),
+    });
   } catch (error) {
     console.error('Error fetching services:', error);
     res.status(500).json({ message: 'Internal server error' });
@@ -182,6 +209,7 @@ router.get('/services', authenticateToken, async (req: any, res: any) => {
 router.get('/services/public', async (req: any, res: any) => {
   const salonId = req.salon?.id;
   const { gender } = req.query;
+  const locale = normalizeLocale(typeof req.query.locale === 'string' ? req.query.locale : 'tr');
 
   if (!salonId) {
     return res.status(400).json({ message: 'Tenant context required' });
@@ -191,8 +219,10 @@ router.get('/services/public', async (req: any, res: any) => {
     // 1. Fetch salon settings for category order
     const settings = await prisma.salonSettings.findUnique({
       where: { salonId },
-      select: { categoryOrder: true }
+      select: { categoryOrder: true, contentSourceLocale: true }
     });
+
+    const sourceLocale = settings?.contentSourceLocale || 'tr';
 
     // 2. Fetch services with optional gender filter
     const rawServices = await prisma.service.findMany({
@@ -208,11 +238,18 @@ router.get('/services/public', async (req: any, res: any) => {
       select: {
         id: true,
         name: true,
+        description: true,
         duration: true,
         price: true,
         category: true,
         requiresSpecialist: true
       }
+    });
+
+    const translationMap = await resolveServiceTranslations({
+      serviceIds: rawServices.map((service) => service.id),
+      locale,
+      sourceLocale,
     });
 
     // 3. Group services by category
@@ -234,13 +271,16 @@ router.get('/services/public', async (req: any, res: any) => {
       if (!groupedMap[finalKey]) {
         groupedMap[finalKey] = [];
       }
+
+      const translated = translationMap.get(service.id);
       
       groupedMap[finalKey].push({
         id: service.id,
-        name: service.name,
+        name: translated?.name || service.name,
+        description: translated?.description || service.description || null,
         duration: service.duration,
         price: service.price,
-        requiresSpecialist: service.requiresSpecialist || false
+        requiresSpecialist: service.requiresSpecialist || false,
       });
     });
 
@@ -268,7 +308,11 @@ router.get('/services/public', async (req: any, res: any) => {
         }
     });
 
-    res.json({ categories: response });
+    res.json({
+      locale,
+      sourceLocale,
+      categories: response,
+    });
   } catch (error) {
     console.error('Error fetching grouped services:', error);
     res.status(500).json({ message: 'Internal server error' });

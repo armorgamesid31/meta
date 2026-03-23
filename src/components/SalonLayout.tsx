@@ -72,6 +72,7 @@ const SalonLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     { name: 'Hizmetler', href: '/salon/services', current: location.pathname === '/salon/services' },
     { name: 'Personel', href: '/salon/staff', current: location.pathname === '/salon/staff' },
     { name: 'Randevular', href: '/salon/appointments', current: location.pathname === '/salon/appointments' },
+    { name: 'İçerik', href: '/salon/content', current: location.pathname === '/salon/content' },
   ];
 
   return (

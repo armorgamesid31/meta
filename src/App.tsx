@@ -14,6 +14,7 @@ import SalonSettings from './pages/salon/SalonSettings.js';
 import SalonServices from './pages/salon/SalonServices.js';
 import SalonStaff from './pages/salon/SalonStaff.js';
 import SalonAppointments from './pages/salon/SalonAppointments.js';
+import SalonContent from './pages/salon/SalonContent.js';
 import { BookingPage } from './booking/BookingPage.js';
 
 function App() {
@@ -69,6 +70,11 @@ function App() {
         <Route path="/salon/appointments" element={
           <OnboardingGuard>
             <SalonAppointments />
+          </OnboardingGuard>
+        } />
+        <Route path="/salon/content" element={
+          <OnboardingGuard>
+            <SalonContent />
           </OnboardingGuard>
         } />
 

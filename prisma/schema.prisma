@@ -48,6 +48,7 @@ model Salon {
   services            Service[]
   serviceGroups       ServiceGroup[]
   ServiceCategory     ServiceCategory[]
+  contentItems        ContentItem[]
   staff               Staff[]
 
   @@index([citySlug, districtSlug], map: "idx_salon_city_district_slug")
@@ -84,15 +85,16 @@ model SalonAiAgentSettings {
 }
 
 model SalonUser {
-  id           Int                 @id @default(autoincrement())
-  email        String
-  passwordHash String
-  role         String
-  createdAt    DateTime?           @default(now()) @db.Timestamp(6)
-  updatedAt    DateTime?           @default(now()) @updatedAt @db.Timestamp(6)
-  salonId      Int
-  authSessions MobileAuthSession[]
-  salon        Salon               @relation(fields: [salonId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  id                     Int                  @id @default(autoincrement())
+  email                  String
+  passwordHash           String
+  role                   String
+  createdAt              DateTime?            @default(now()) @db.Timestamp(6)
+  updatedAt              DateTime?            @default(now()) @updatedAt @db.Timestamp(6)
+  salonId                Int
+  authSessions           MobileAuthSession[]
+  publishedContentValues ContentLocaleValue[]
+  salon                  Salon                @relation(fields: [salonId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 }
 
 model MobileAuthSession {
@@ -142,27 +144,28 @@ model Leave {
 }
 
 model Service {
-  id                 Int              @id @default(autoincrement())
+  id                 Int                  @id @default(autoincrement())
   name               String
   description        String?
-  isActive           Boolean?         @default(true)
+  isActive           Boolean?             @default(true)
   price              Float
   duration           Int
-  createdAt          DateTime?        @default(now()) @db.Timestamp(6)
-  updatedAt          DateTime?        @default(now()) @updatedAt @db.Timestamp(6)
+  createdAt          DateTime?            @default(now()) @db.Timestamp(6)
+  updatedAt          DateTime?            @default(now()) @updatedAt @db.Timestamp(6)
   salonId            Int
   category           String?
-  requiresSpecialist Boolean?         @default(false)
+  requiresSpecialist Boolean?             @default(false)
   categoryId         Int?
   serviceGroupId     Int?
   capacityOverride   Int?
   sequentialOverride Boolean?
   bufferOverride     Int?
   appointments       Appointment[]
-  ServiceCategory    ServiceCategory? @relation(fields: [categoryId], references: [id], onUpdate: NoAction)
-  serviceGroup       ServiceGroup?    @relation(fields: [serviceGroupId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  salon              Salon            @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  ServiceCategory    ServiceCategory?     @relation(fields: [categoryId], references: [id], onUpdate: NoAction)
+  serviceGroup       ServiceGroup?        @relation(fields: [serviceGroupId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  salon              Salon                @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   ServiceGender      ServiceGender[]
+  translations       ServiceTranslation[]
   ServiceStats       ServiceStats[]
   StaffService       StaffService[]
 
@@ -170,19 +173,20 @@ model Service {
 }
 
 model ServiceGroup {
-  id                 Int       @id @default(autoincrement())
+  id                 Int                       @id @default(autoincrement())
   salonId            Int
   name               String
   description        String?
-  isActive           Boolean?  @default(true)
+  isActive           Boolean?                  @default(true)
   displayOrder       Int?
-  capacity           Int?      @default(1)
-  sequentialRequired Boolean?  @default(false)
-  preparationMinutes Int?      @default(0)
-  createdAt          DateTime? @default(now()) @db.Timestamp(6)
-  updatedAt          DateTime? @default(now()) @updatedAt @db.Timestamp(6)
-  salon              Salon     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  capacity           Int?                      @default(1)
+  sequentialRequired Boolean?                  @default(false)
+  preparationMinutes Int?                      @default(0)
+  createdAt          DateTime?                 @default(now()) @db.Timestamp(6)
+  updatedAt          DateTime?                 @default(now()) @updatedAt @db.Timestamp(6)
+  salon              Salon                     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   services           Service[]
+  translations       ServiceGroupTranslation[]
 
   @@unique([salonId, name], map: "uq_service_group_name_per_salon")
   @@index([salonId, displayOrder], map: "idx_service_group_salon_display_order")
@@ -556,6 +560,76 @@ model Translation {
   @@index([entityType, entityId, key, locale, status], map: "idx_translation_lookup")
 }
 
+model ContentItem {
+  id           Int                  @id @default(autoincrement())
+  surface      ContentSurface
+  page         String
+  section      String
+  key          String
+  salonId      Int?
+  metadata     Json?
+  createdAt    DateTime?            @default(now()) @db.Timestamp(6)
+  updatedAt    DateTime?            @default(now()) @updatedAt @db.Timestamp(6)
+  localeValues ContentLocaleValue[]
+  salon        Salon?               @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([surface, page, salonId], map: "idx_content_item_surface_page_salon")
+  @@index([surface, page, section], map: "idx_content_item_surface_page_section")
+}
+
+model ContentLocaleValue {
+  id             Int                @id @default(autoincrement())
+  itemId         Int
+  locale         LocaleCode
+  draftValue     String
+  publishedValue String?
+  status         ContentValueStatus @default(DRAFT)
+  version        Int                @default(1)
+  publishedAt    DateTime?          @db.Timestamp(6)
+  publishedBy    Int?
+  createdAt      DateTime?          @default(now()) @db.Timestamp(6)
+  updatedAt      DateTime?          @default(now()) @updatedAt @db.Timestamp(6)
+  item           ContentItem        @relation(fields: [itemId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  publisher      SalonUser?         @relation(fields: [publishedBy], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@unique([itemId, locale], map: "uq_content_locale_value_item_locale")
+  @@index([locale, status, version], map: "idx_content_locale_value_locale_status_version")
+}
+
+model ServiceTranslation {
+  id           Int               @id @default(autoincrement())
+  serviceId    Int
+  locale       LocaleCode
+  sourceLocale LocaleCode        @default(tr)
+  name         String
+  description  String?
+  status       TranslationStatus @default(DRAFT)
+  version      Int               @default(1)
+  createdAt    DateTime?         @default(now()) @db.Timestamp(6)
+  updatedAt    DateTime?         @default(now()) @updatedAt @db.Timestamp(6)
+  service      Service           @relation(fields: [serviceId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([serviceId, locale, version], map: "uq_service_translation_service_locale_version")
+  @@index([serviceId, locale, status], map: "idx_service_translation_lookup")
+}
+
+model ServiceGroupTranslation {
+  id             Int               @id @default(autoincrement())
+  serviceGroupId Int
+  locale         LocaleCode
+  sourceLocale   LocaleCode        @default(tr)
+  name           String
+  description    String?
+  status         TranslationStatus @default(DRAFT)
+  version        Int               @default(1)
+  createdAt      DateTime?         @default(now()) @db.Timestamp(6)
+  updatedAt      DateTime?         @default(now()) @updatedAt @db.Timestamp(6)
+  serviceGroup   ServiceGroup      @relation(fields: [serviceGroupId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([serviceGroupId, locale, version], map: "uq_service_group_translation_group_locale_version")
+  @@index([serviceGroupId, locale, status], map: "idx_service_group_translation_lookup")
+}
+
 model SalonChannelBinding {
   id                Int         @id @default(autoincrement())
   salonId           Int
@@ -689,6 +763,21 @@ enum TranslationStatus {
   DRAFT
   REVIEWED
   APPROVED
+}
+
+enum ContentSurface {
+  marketing_site
+  salon_website
+  booking_page
+  mobile_app
+  campaigns
+  legal
+  message_templates
+}
+
+enum ContentValueStatus {
+  DRAFT
+  PUBLISHED
 }
 
 enum ChannelType {

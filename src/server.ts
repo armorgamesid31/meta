@@ -14,11 +14,14 @@ import bookingRoutes from './routes/bookings.js';
 import availabilityRoutes from './routes/availability.js';
 import authRoutes from './routes/auth.js';
 import adminMobileRoutes from './routes/adminMobile.js';
+import adminContentRoutes from './routes/adminContent.js';
 import mobileRoutes from './routes/mobile.js';
 import customerRoutes from './routes/customers.js';
 import bookingContextRoutes from './routes/bookingContext.js';
 import chakraRoutes from './routes/chakra.js';
 import metaDirectRoutes from './routes/metaDirect.js';
+import contentRoutes from './routes/content.js';
+import internalServiceTranslationsRoutes from './routes/internalServiceTranslations.js';
 import { multiTenantMiddleware } from './middleware/multiTenant.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -102,7 +105,16 @@ const corsOptions: cors.CorsOptions = {
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'x-salon-id', 'x-tenant-slug'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-Requested-With',
+    'Accept',
+    'Origin',
+    'x-salon-id',
+    'x-tenant-slug',
+    'x-internal-api-key',
+  ],
 };
 
 app.use(cors(corsOptions));
@@ -137,7 +149,10 @@ app.use(multiTenantMiddleware);
 
 app.use('/auth', authRoutes);
 app.use('/api/mobile', mobileRoutes);
+app.use('/api/admin/content', adminContentRoutes);
 app.use('/api/admin', adminMobileRoutes);
+app.use('/api/content', contentRoutes);
+app.use('/api/internal/service-translations', internalServiceTranslationsRoutes);
 app.use('/api/salon', salonRoutes);
 app.use('/api/salons', salonsRoutes);
 app.use('/api/categories', categoriesRoutes);
