@@ -10,6 +10,8 @@ const router = Router();
 const META_GRAPH_VERSION = (process.env.META_GRAPH_VERSION || 'v23.0').trim();
 const META_APP_ID = (process.env.META_APP_ID || '').trim();
 const META_APP_SECRET = (process.env.META_APP_SECRET || '').trim();
+const META_INSTAGRAM_APP_ID = (process.env.META_INSTAGRAM_APP_ID || '').trim();
+const META_INSTAGRAM_APP_SECRET = (process.env.META_INSTAGRAM_APP_SECRET || '').trim();
 const META_REDIRECT_URI = (process.env.META_REDIRECT_URI || '').trim();
 const META_STATE_SECRET = (process.env.META_STATE_SECRET || process.env.JWT_SECRET || '').trim();
 const META_WHATSAPP_CONFIG_ID = (process.env.META_WHATSAPP_CONFIG_ID || '').trim();
@@ -216,14 +218,29 @@ function getScopes(channel: MetaChannel): string[] {
   return parsed.length > 0 ? parsed : defaultScopes[channel];
 }
 
+function getClientId(channel: MetaChannel): string {
+  if (channel === 'INSTAGRAM') {
+    return META_INSTAGRAM_APP_ID || META_APP_ID;
+  }
+  return META_APP_ID;
+}
+
+function getClientSecret(channel: MetaChannel): string {
+  if (channel === 'INSTAGRAM') {
+    return META_INSTAGRAM_APP_SECRET || META_APP_SECRET;
+  }
+  return META_APP_SECRET;
+}
+
 function buildAuthorizeUrl(
   channel: MetaChannel,
   redirectUri: string,
   state: string,
   scopes: string[],
 ): string {
+  const clientId = getClientId(channel);
   const params = new URLSearchParams({
-    client_id: META_APP_ID,
+    client_id: clientId,
     redirect_uri: redirectUri,
     state,
     response_type: 'code',
@@ -331,15 +348,19 @@ async function setBindings(salonId: number, channel: MetaChannel, ids: string[])
 }
 
 async function exchangeInstagramToken(code: string, redirectUri: string) {
-  if (!META_APP_ID || !META_APP_SECRET) {
-    throw new Error('META_APP_ID and META_APP_SECRET must be configured.');
+  const instagramAppId = getClientId('INSTAGRAM');
+  const instagramAppSecret = getClientSecret('INSTAGRAM');
+  if (!instagramAppId || !instagramAppSecret) {
+    throw new Error(
+      'META_INSTAGRAM_APP_ID (or META_APP_ID) and META_INSTAGRAM_APP_SECRET (or META_APP_SECRET) must be configured.',
+    );
   }
 
   const shortLivedResponse = await axios.post(
     'https://api.instagram.com/oauth/access_token',
     new URLSearchParams({
-      client_id: META_APP_ID,
-      client_secret: META_APP_SECRET,
+      client_id: instagramAppId,
+      client_secret: instagramAppSecret,
       grant_type: 'authorization_code',
       redirect_uri: redirectUri,
       code,
@@ -352,7 +373,11 @@ async function exchangeInstagramToken(code: string, redirectUri: string) {
     },
   );
 
-  const shortLivedToken = shortLivedResponse.data?.access_token;
+  const shortTokenPayload = Array.isArray(shortLivedResponse.data?.data)
+    ? shortLivedResponse.data.data[0] || {}
+    : shortLivedResponse.data || {};
+
+  const shortLivedToken = shortTokenPayload?.access_token;
   if (!shortLivedToken || typeof shortLivedToken !== 'string') {
     throw new Error('Instagram did not return short-lived access token.');
   }
@@ -360,7 +385,7 @@ async function exchangeInstagramToken(code: string, redirectUri: string) {
   const longLivedResponse = await axios.get('https://graph.instagram.com/access_token', {
     params: {
       grant_type: 'ig_exchange_token',
-      client_secret: META_APP_SECRET,
+      client_secret: instagramAppSecret,
       access_token: shortLivedToken,
     },
     timeout: 20000,
@@ -385,14 +410,16 @@ async function exchangeCodeForToken(code: string, redirectUri: string, channel: 
     return exchangeInstagramToken(code, redirectUri);
   }
 
-  if (!META_APP_ID || !META_APP_SECRET) {
+  const appId = getClientId(channel);
+  const appSecret = getClientSecret(channel);
+  if (!appId || !appSecret) {
     throw new Error('META_APP_ID and META_APP_SECRET must be configured.');
   }
 
   const response = await axios.get(`https://graph.facebook.com/${META_GRAPH_VERSION}/oauth/access_token`, {
     params: {
-      client_id: META_APP_ID,
-      client_secret: META_APP_SECRET,
+      client_id: appId,
+      client_secret: appSecret,
       redirect_uri: redirectUri,
       code,
     },
@@ -673,8 +700,9 @@ router.post('/connect-url', authenticateToken, async (req: any, res: any) => {
       return res.status(400).json({ message: 'channel must be INSTAGRAM or WHATSAPP.' });
     }
 
-    if (!META_APP_ID) {
-      return res.status(500).json({ message: 'META_APP_ID is missing.' });
+    const appId = getClientId(channel);
+    if (!appId) {
+      return res.status(500).json({ message: channel === 'INSTAGRAM' ? 'META_INSTAGRAM_APP_ID (or META_APP_ID) is missing.' : 'META_APP_ID is missing.' });
     }
 
     if (!META_STATE_SECRET) {
@@ -715,7 +743,7 @@ router.post('/connect-url', authenticateToken, async (req: any, res: any) => {
       connectMode,
       authorizeUrl,
       redirectUri,
-      appId: META_APP_ID,
+      appId,
       configId,
       scopes,
       state,
