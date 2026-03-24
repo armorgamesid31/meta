@@ -3909,6 +3909,376 @@ router.post('/analytics/presets', authenticateToken, async (req: any, res: any) 
   }
 });
 
+function asInboundChannel(value: unknown): 'INSTAGRAM' | 'WHATSAPP' | null {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toUpperCase();
+  if (normalized === 'INSTAGRAM' || normalized === 'WHATSAPP') {
+    return normalized;
+  }
+  return null;
+}
+
+router.get('/conversations', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const limit = asPositiveInt(req.query.limit, 40, 1, 100);
+  const channelFilter = asInboundChannel(req.query.channel);
+  const scanLimit = Math.max(limit * 60, 300);
+
+  try {
+    const rows = await prisma.inboundMessageQueue.findMany({
+      where: {
+        salonId,
+        channel: channelFilter || undefined,
+      },
+      orderBy: {
+        eventTimestamp: 'desc',
+      },
+      take: scanLimit,
+      select: {
+        conversationKey: true,
+        channel: true,
+        customerName: true,
+        messageType: true,
+        text: true,
+        status: true,
+        eventTimestamp: true,
+      },
+    });
+
+    const byConversation = new Map<
+      string,
+      {
+        channel: 'INSTAGRAM' | 'WHATSAPP';
+        conversationKey: string;
+        customerName: string | null;
+        lastMessageType: string;
+        lastMessageText: string | null;
+        lastEventTimestamp: Date;
+        unreadCount: number;
+        messageCount: number;
+        hasHandoverRequest: boolean;
+      }
+    >();
+
+    for (const row of rows) {
+      const key = `${row.channel}:${row.conversationKey}`;
+      const existing = byConversation.get(key);
+      const unread = row.status !== 'DONE' ? 1 : 0;
+      const isHandover = row.messageType === 'handover_request';
+
+      if (!existing) {
+        byConversation.set(key, {
+          channel: row.channel as 'INSTAGRAM' | 'WHATSAPP',
+          conversationKey: row.conversationKey,
+          customerName: row.customerName || null,
+          lastMessageType: row.messageType,
+          lastMessageText: row.text || null,
+          lastEventTimestamp: row.eventTimestamp,
+          unreadCount: unread,
+          messageCount: 1,
+          hasHandoverRequest: isHandover,
+        });
+        continue;
+      }
+
+      existing.unreadCount += unread;
+      existing.messageCount += 1;
+      if (!existing.hasHandoverRequest && isHandover) {
+        existing.hasHandoverRequest = true;
+      }
+      if (!existing.customerName && row.customerName) {
+        existing.customerName = row.customerName;
+      }
+    }
+
+    const items = Array.from(byConversation.values())
+      .sort((a, b) => b.lastEventTimestamp.getTime() - a.lastEventTimestamp.getTime())
+      .slice(0, limit)
+      .map((item) => ({
+        ...item,
+        lastEventTimestamp: item.lastEventTimestamp.toISOString(),
+      }));
+
+    return res.status(200).json({
+      items,
+      hasMore: byConversation.size > limit,
+    });
+  } catch (error) {
+    console.error('Admin conversations error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.get('/conversations/:channel/:conversationKey/messages', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const channel = asInboundChannel(req.params.channel);
+  if (!channel) {
+    return res.status(400).json({ message: 'channel must be INSTAGRAM or WHATSAPP.' });
+  }
+
+  const conversationKey = typeof req.params.conversationKey === 'string' ? req.params.conversationKey.trim() : '';
+  if (!conversationKey) {
+    return res.status(400).json({ message: 'conversationKey is required.' });
+  }
+
+  const limit = asPositiveInt(req.query.limit, 80, 1, 200);
+
+  try {
+    const rows = await prisma.inboundMessageQueue.findMany({
+      where: {
+        salonId,
+        channel,
+        conversationKey,
+      },
+      orderBy: {
+        eventTimestamp: 'asc',
+      },
+      take: limit,
+      select: {
+        id: true,
+        providerMessageId: true,
+        customerName: true,
+        messageType: true,
+        text: true,
+        status: true,
+        eventTimestamp: true,
+        rawPayload: true,
+      },
+    });
+
+    const items = rows.map((row) => {
+      const raw = asObject(row.rawPayload);
+      const direction =
+        row.messageType === 'text_outbound'
+          ? 'outbound'
+          : row.messageType === 'handover_request'
+            ? 'system'
+            : 'inbound';
+
+      return {
+        id: row.id,
+        providerMessageId: row.providerMessageId,
+        customerName: row.customerName,
+        messageType: row.messageType,
+        text: row.text,
+        status: row.status,
+        direction,
+        eventTimestamp: row.eventTimestamp.toISOString(),
+        raw,
+      };
+    });
+
+    return res.status(200).json({ items });
+  } catch (error) {
+    console.error('Admin conversation messages error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.post('/conversations/:channel/:conversationKey/reply', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const channel = asInboundChannel(req.params.channel);
+  if (!channel) {
+    return res.status(400).json({ message: 'channel must be INSTAGRAM or WHATSAPP.' });
+  }
+
+  if (channel !== 'INSTAGRAM') {
+    return res.status(400).json({ message: 'Manual reply is currently enabled only for Instagram.' });
+  }
+
+  const conversationKey = typeof req.params.conversationKey === 'string' ? req.params.conversationKey.trim() : '';
+  if (!conversationKey) {
+    return res.status(400).json({ message: 'conversationKey is required.' });
+  }
+
+  const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
+  if (!text) {
+    return res.status(400).json({ message: 'text is required.' });
+  }
+
+  try {
+    const latestInbound = await prisma.inboundMessageQueue.findFirst({
+      where: {
+        salonId,
+        channel: 'INSTAGRAM',
+        conversationKey,
+      },
+      orderBy: {
+        eventTimestamp: 'desc',
+      },
+      select: {
+        externalAccountId: true,
+        customerName: true,
+      },
+    });
+
+    if (!latestInbound) {
+      return res.status(404).json({ message: 'Conversation not found.' });
+    }
+
+    const settings = await prisma.salonAiAgentSettings.findUnique({
+      where: { salonId },
+      select: { faqAnswers: true },
+    });
+
+    const faqAnswers = asObject(settings?.faqAnswers);
+    const metaDirect = asObject(faqAnswers.metaDirect);
+    const instagram = asObject(metaDirect.instagram);
+    const accessToken = typeof instagram.accessToken === 'string' ? instagram.accessToken.trim() : '';
+    const senderInstagramId =
+      (typeof instagram.externalAccountId === 'string' ? instagram.externalAccountId.trim() : '') ||
+      latestInbound.externalAccountId;
+
+    if (!accessToken || !senderInstagramId) {
+      return res.status(400).json({ message: 'Instagram is not connected yet.' });
+    }
+
+    const url = `https://graph.facebook.com/${META_GRAPH_VERSION}/${senderInstagramId}/messages`;
+    const graphResponse = await axios.post(
+      url,
+      {
+        recipient: { id: conversationKey },
+        message: { text },
+      },
+      {
+        params: { access_token: accessToken },
+        timeout: 20000,
+      },
+    );
+
+    const graphMessageId =
+      (typeof graphResponse.data?.message_id === 'string' && graphResponse.data.message_id.trim()) ||
+      `ig_out_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+
+    const saved = await prisma.inboundMessageQueue.create({
+      data: {
+        salonId,
+        channel: 'INSTAGRAM',
+        conversationKey,
+        providerMessageId: graphMessageId,
+        externalAccountId: senderInstagramId,
+        customerName: latestInbound.customerName || null,
+        messageType: 'text_outbound',
+        text,
+        eventTimestamp: new Date(),
+        rawPayload: {
+          direction: 'outbound',
+          graphResponse: graphResponse.data || null,
+        } as any,
+        status: 'DONE',
+        processedAt: new Date(),
+      },
+    });
+
+    return res.status(200).json({
+      item: {
+        id: saved.id,
+        providerMessageId: saved.providerMessageId,
+        messageType: saved.messageType,
+        text: saved.text,
+        status: saved.status,
+        direction: 'outbound',
+        eventTimestamp: saved.eventTimestamp.toISOString(),
+      },
+    });
+  } catch (error: any) {
+    const fbMessage =
+      error?.response?.data?.error?.message ||
+      error?.response?.data?.message ||
+      error?.message ||
+      'Failed to send message.';
+    console.error('Admin conversations reply error:', error?.response?.data || error);
+    return res.status(502).json({ message: String(fbMessage) });
+  }
+});
+
+router.post('/conversations/:channel/:conversationKey/handover', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const channel = asInboundChannel(req.params.channel);
+  if (!channel) {
+    return res.status(400).json({ message: 'channel must be INSTAGRAM or WHATSAPP.' });
+  }
+
+  const conversationKey = typeof req.params.conversationKey === 'string' ? req.params.conversationKey.trim() : '';
+  if (!conversationKey) {
+    return res.status(400).json({ message: 'conversationKey is required.' });
+  }
+
+  const note = typeof req.body?.note === 'string' ? req.body.note.trim() : '';
+
+  try {
+    const latestInbound = await prisma.inboundMessageQueue.findFirst({
+      where: {
+        salonId,
+        channel,
+        conversationKey,
+      },
+      orderBy: {
+        eventTimestamp: 'desc',
+      },
+      select: {
+        externalAccountId: true,
+        customerName: true,
+      },
+    });
+
+    if (!latestInbound) {
+      return res.status(404).json({ message: 'Conversation not found.' });
+    }
+
+    const saved = await prisma.inboundMessageQueue.create({
+      data: {
+        salonId,
+        channel,
+        conversationKey,
+        providerMessageId: `handover_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+        externalAccountId: latestInbound.externalAccountId,
+        customerName: latestInbound.customerName || null,
+        messageType: 'handover_request',
+        text: note || 'Human handover requested.',
+        eventTimestamp: new Date(),
+        rawPayload: {
+          direction: 'system',
+          handoverRequested: true,
+        } as any,
+        status: 'DONE',
+        processedAt: new Date(),
+      },
+    });
+
+    return res.status(200).json({
+      item: {
+        id: saved.id,
+        providerMessageId: saved.providerMessageId,
+        messageType: saved.messageType,
+        text: saved.text,
+        status: saved.status,
+        direction: 'system',
+        eventTimestamp: saved.eventTimestamp.toISOString(),
+      },
+    });
+  } catch (error) {
+    console.error('Admin conversations handover error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
 router.get('/instagram-inbox/conversations', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
   if (!salonId) {
