@@ -130,6 +130,7 @@ function toPercentDelta(current: number, previous: number): number {
 const ANALYTICS_TIMEZONE = 'Europe/Istanbul';
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const META_GRAPH_VERSION = (process.env.META_GRAPH_VERSION || 'v23.0').trim();
+const DEFAULT_HUMAN_ACTIVE_MINUTES = Number(process.env.CONVERSATION_HUMAN_ACTIVE_MINUTES || 240);
 const DEFAULT_WORKING_DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'] as const;
 type WorkingDayKey = (typeof DEFAULT_WORKING_DAYS)[number] | 'SUN';
 
@@ -138,6 +139,78 @@ function asObject(value: unknown): Record<string, any> {
     return {};
   }
   return value as Record<string, any>;
+}
+
+async function markConversationHumanActive(input: {
+  salonId: number;
+  channel: 'INSTAGRAM' | 'WHATSAPP';
+  conversationKey: string;
+  profileName?: string | null;
+}) {
+  const now = new Date();
+  const until = new Date(now.getTime() + DEFAULT_HUMAN_ACTIVE_MINUTES * 60 * 1000);
+  return prisma.conversationState.upsert({
+    where: {
+      salonId_channel_conversationKey: {
+        salonId: input.salonId,
+        channel: input.channel,
+        conversationKey: input.conversationKey,
+      },
+    },
+    update: {
+      mode: 'HUMAN_ACTIVE',
+      manualAlways: false,
+      humanPendingSince: null,
+      lastHumanMessageAt: now,
+      humanActiveUntil: until,
+      ...(input.profileName ? { profileName: input.profileName } : {}),
+    },
+    create: {
+      salonId: input.salonId,
+      channel: input.channel,
+      conversationKey: input.conversationKey,
+      mode: 'HUMAN_ACTIVE',
+      manualAlways: false,
+      humanPendingSince: null,
+      lastHumanMessageAt: now,
+      humanActiveUntil: until,
+      profileName: input.profileName || null,
+    },
+  });
+}
+
+async function markConversationHumanPending(input: {
+  salonId: number;
+  channel: 'INSTAGRAM' | 'WHATSAPP';
+  conversationKey: string;
+  note?: string | null;
+  profileName?: string | null;
+}) {
+  const now = new Date();
+  return prisma.conversationState.upsert({
+    where: {
+      salonId_channel_conversationKey: {
+        salonId: input.salonId,
+        channel: input.channel,
+        conversationKey: input.conversationKey,
+      },
+    },
+    update: {
+      mode: 'HUMAN_PENDING',
+      humanPendingSince: now,
+      ...(input.note ? { notes: input.note } : {}),
+      ...(input.profileName ? { profileName: input.profileName } : {}),
+    },
+    create: {
+      salonId: input.salonId,
+      channel: input.channel,
+      conversationKey: input.conversationKey,
+      mode: 'HUMAN_PENDING',
+      humanPendingSince: now,
+      notes: input.note || null,
+      profileName: input.profileName || null,
+    },
+  });
 }
 
 function toTimezoneDateKey(date: Date, timeZone = ANALYTICS_TIMEZONE): string {
@@ -4182,6 +4255,40 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
       },
     });
 
+    await prisma.outboundMessageTrace.upsert({
+      where: {
+        channel_providerMessageId: {
+          channel: 'INSTAGRAM',
+          providerMessageId: graphMessageId,
+        },
+      },
+      update: {
+        salonId,
+        conversationKey,
+        source: 'HUMAN_APP',
+        externalAccountId: senderInstagramId,
+        text,
+        sentAt: new Date(),
+      },
+      create: {
+        salonId,
+        channel: 'INSTAGRAM',
+        conversationKey,
+        providerMessageId: graphMessageId,
+        source: 'HUMAN_APP',
+        externalAccountId: senderInstagramId,
+        text,
+        sentAt: new Date(),
+      },
+    });
+
+    await markConversationHumanActive({
+      salonId,
+      channel: 'INSTAGRAM',
+      conversationKey,
+      profileName: latestInbound.customerName || null,
+    });
+
     return res.status(200).json({
       item: {
         id: saved.id,
@@ -4260,6 +4367,14 @@ router.post('/conversations/:channel/:conversationKey/handover', authenticateTok
         status: 'DONE',
         processedAt: new Date(),
       },
+    });
+
+    await markConversationHumanPending({
+      salonId,
+      channel,
+      conversationKey,
+      note: note || 'Human handover requested.',
+      profileName: latestInbound.customerName || null,
     });
 
     return res.status(200).json({
@@ -4526,6 +4641,40 @@ router.post('/instagram-inbox/conversations/:conversationKey/reply', authenticat
       },
     });
 
+    await prisma.outboundMessageTrace.upsert({
+      where: {
+        channel_providerMessageId: {
+          channel: 'INSTAGRAM',
+          providerMessageId: graphMessageId,
+        },
+      },
+      update: {
+        salonId,
+        conversationKey,
+        source: 'HUMAN_APP',
+        externalAccountId: senderInstagramId,
+        text,
+        sentAt: new Date(),
+      },
+      create: {
+        salonId,
+        channel: 'INSTAGRAM',
+        conversationKey,
+        providerMessageId: graphMessageId,
+        source: 'HUMAN_APP',
+        externalAccountId: senderInstagramId,
+        text,
+        sentAt: new Date(),
+      },
+    });
+
+    await markConversationHumanActive({
+      salonId,
+      channel: 'INSTAGRAM',
+      conversationKey,
+      profileName: latestInbound.customerName || null,
+    });
+
     return res.status(200).json({
       item: {
         id: saved.id,
@@ -4599,6 +4748,14 @@ router.post('/instagram-inbox/conversations/:conversationKey/handover', authenti
         status: 'DONE',
         processedAt: new Date(),
       },
+    });
+
+    await markConversationHumanPending({
+      salonId,
+      channel: 'INSTAGRAM',
+      conversationKey,
+      note: note || 'Human handover requested.',
+      profileName: latestInbound.customerName || null,
     });
 
     return res.status(200).json({

@@ -44,6 +44,8 @@ model Salon {
   messageTemplates    SalonMessageTemplate[]
   channelBindings     SalonChannelBinding[]
   inboundMessages     InboundMessageQueue[]
+  conversationStates  ConversationState[]
+  outboundMessages    OutboundMessageTrace[]
   users               SalonUser[]
   services            Service[]
   serviceGroups       ServiceGroup[]
@@ -669,6 +671,51 @@ model InboundMessageQueue {
   @@index([status, createdAt], map: "idx_inbound_status_created")
 }
 
+model ConversationState {
+  id                           Int                        @id @default(autoincrement())
+  salonId                      Int
+  channel                      ChannelType
+  conversationKey              String
+  canonicalUserId              String?
+  customerId                   Int?
+  mode                         ConversationAutomationMode @default(AUTO)
+  humanPendingSince            DateTime?                  @db.Timestamp(6)
+  humanActiveUntil             DateTime?                  @db.Timestamp(6)
+  lastHumanMessageAt           DateTime?                  @db.Timestamp(6)
+  lastCustomerMessageAt        DateTime?                  @db.Timestamp(6)
+  manualAlways                 Boolean                    @default(false)
+  profileName                  String?
+  notes                        String?
+  createdAt                    DateTime?                  @default(now()) @db.Timestamp(6)
+  updatedAt                    DateTime?                  @default(now()) @updatedAt @db.Timestamp(6)
+  salon                        Salon                      @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([salonId, channel, conversationKey], map: "uq_conversation_state_salon_channel_key")
+  @@index([salonId, mode, updatedAt], map: "idx_conversation_state_salon_mode_updated")
+  @@index([canonicalUserId], map: "idx_conversation_state_canonical")
+}
+
+model OutboundMessageTrace {
+  id                Int                   @id @default(autoincrement())
+  salonId           Int
+  channel           ChannelType
+  conversationKey   String
+  providerMessageId String
+  externalAccountId String?
+  canonicalUserId   String?
+  customerId        Int?
+  source            OutboundMessageSource
+  text              String?
+  sentAt            DateTime              @db.Timestamp(6)
+  createdAt         DateTime?             @default(now()) @db.Timestamp(6)
+  updatedAt         DateTime?             @default(now()) @updatedAt @db.Timestamp(6)
+  salon             Salon                 @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([channel, providerMessageId], map: "uq_outbound_trace_channel_provider_message")
+  @@index([salonId, channel, conversationKey, sentAt], map: "idx_outbound_trace_salon_conv_sent")
+  @@index([source, sentAt], map: "idx_outbound_trace_source_sent")
+}
+
 model ServiceGender {
   serviceId Int
   gender    CustomerGender
@@ -790,4 +837,17 @@ enum InboundMessageStatus {
   PROCESSING
   DONE
   FAILED
+}
+
+enum ConversationAutomationMode {
+  AUTO
+  HUMAN_PENDING
+  HUMAN_ACTIVE
+  MANUAL_ALWAYS
+  AUTO_RESUME_PENDING
+}
+
+enum OutboundMessageSource {
+  AI_AGENT
+  HUMAN_APP
 }

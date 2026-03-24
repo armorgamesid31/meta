@@ -1,4 +1,10 @@
-import { ChannelType, InboundMessageStatus, Prisma } from '@prisma/client';
+import {
+  ChannelType,
+  ConversationAutomationMode,
+  InboundMessageStatus,
+  OutboundMessageSource,
+  Prisma,
+} from '@prisma/client';
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
 
@@ -60,6 +66,14 @@ async function resolveSalonId(channel: ChannelType, externalAccountId: string | 
   return binding?.salonId || null;
 }
 
+function isOutboundEcho(row: any): boolean {
+  if (row?.isEcho === true) return true;
+  const direction = typeof row?.direction === 'string' ? row.direction.trim().toLowerCase() : '';
+  return direction === 'outbound' || direction === 'echo';
+}
+
+const HUMAN_ACTIVE_MINUTES = Number(process.env.CONVERSATION_HUMAN_ACTIVE_MINUTES || 240);
+
 router.post('/ingest', async (req: any, res: any) => {
   if (!isInternalAuthorized(req)) {
     return res.status(401).json({ message: 'Unauthorized' });
@@ -82,7 +96,11 @@ router.post('/ingest', async (req: any, res: any) => {
     const customerName = typeof row.customerName === 'string' ? row.customerName.trim() : null;
     const messageType = typeof row.messageType === 'string' && row.messageType.trim() ? row.messageType.trim() : 'unknown';
     const text = typeof row.text === 'string' && row.text.trim() ? row.text.trim() : null;
+    const canonicalUserId = typeof row.canonicalUserId === 'string' && row.canonicalUserId.trim() ? row.canonicalUserId.trim() : null;
+    const customerId = Number.isInteger(Number(row.customerId)) ? Number(row.customerId) : null;
+    const profileName = typeof row.profileName === 'string' && row.profileName.trim() ? row.profileName.trim() : customerName;
     const rawPayload = (row.raw ?? row.body ?? row) as Prisma.InputJsonValue;
+    const isEcho = isOutboundEcho(row);
 
     if (!channel || !providerMessageId || !conversationKey) {
       results.push({ index: i, ok: false, result: 'invalid_payload' });
@@ -96,6 +114,37 @@ router.post('/ingest', async (req: any, res: any) => {
     }
 
     try {
+      const outboundTrace = isEcho
+        ? await prisma.outboundMessageTrace.findUnique({
+            where: {
+              channel_providerMessageId: {
+                channel,
+                providerMessageId,
+              },
+            },
+            select: {
+              source: true,
+              canonicalUserId: true,
+              customerId: true,
+              text: true,
+            },
+          })
+        : null;
+
+      const echoSource: 'ai_echo' | 'human_app_echo' | 'human_external_echo' | null = !isEcho
+        ? null
+        : outboundTrace?.source === OutboundMessageSource.AI_AGENT
+          ? 'ai_echo'
+          : outboundTrace?.source === OutboundMessageSource.HUMAN_APP
+            ? 'human_app_echo'
+            : 'human_external_echo';
+
+      const inboundStatus = isEcho ? InboundMessageStatus.DONE : InboundMessageStatus.PENDING;
+      const eventDate = toEventDate(row);
+      const finalText = text || outboundTrace?.text || null;
+      const finalCanonicalUserId = canonicalUserId || outboundTrace?.canonicalUserId || null;
+      const finalCustomerId = customerId || outboundTrace?.customerId || null;
+
       const item = await prisma.inboundMessageQueue.upsert({
         where: {
           channel_providerMessageId: {
@@ -108,11 +157,12 @@ router.post('/ingest', async (req: any, res: any) => {
           conversationKey,
           externalAccountId: externalAccountId || externalBusinessId || '',
           customerName,
-          messageType,
-          text,
-          eventTimestamp: toEventDate(row),
+          messageType: isEcho ? `echo_${messageType}` : messageType,
+          text: finalText,
+          eventTimestamp: eventDate,
           rawPayload,
-          status: InboundMessageStatus.PENDING,
+          status: inboundStatus,
+          processedAt: isEcho ? new Date() : null,
           updatedAt: new Date(),
         },
         create: {
@@ -122,16 +172,88 @@ router.post('/ingest', async (req: any, res: any) => {
           providerMessageId,
           externalAccountId: externalAccountId || externalBusinessId || '',
           customerName,
-          messageType,
-          text,
-          eventTimestamp: toEventDate(row),
+          messageType: isEcho ? `echo_${messageType}` : messageType,
+          text: finalText,
+          eventTimestamp: eventDate,
           rawPayload,
-          status: InboundMessageStatus.PENDING,
+          status: inboundStatus,
+          processedAt: isEcho ? new Date() : null,
         },
         select: { id: true },
       });
 
-      results.push({ index: i, ok: true, result: 'upserted', id: item.id });
+      const existingState = await prisma.conversationState.findUnique({
+        where: {
+          salonId_channel_conversationKey: {
+            salonId,
+            channel,
+            conversationKey,
+          },
+        },
+        select: {
+          id: true,
+          mode: true,
+          manualAlways: true,
+        },
+      });
+
+      const baseStateUpdate: any = {
+        ...(finalCanonicalUserId ? { canonicalUserId: finalCanonicalUserId } : {}),
+        ...(finalCustomerId ? { customerId: finalCustomerId } : {}),
+        ...(profileName ? { profileName } : {}),
+      };
+
+      if (!isEcho) {
+        baseStateUpdate.lastCustomerMessageAt = eventDate;
+      }
+
+      if (isEcho && (echoSource === 'human_app_echo' || echoSource === 'human_external_echo')) {
+        if (!existingState?.manualAlways) {
+          baseStateUpdate.mode = ConversationAutomationMode.HUMAN_ACTIVE;
+          baseStateUpdate.manualAlways = false;
+          baseStateUpdate.humanPendingSince = null;
+          baseStateUpdate.lastHumanMessageAt = eventDate;
+          baseStateUpdate.humanActiveUntil = new Date(eventDate.getTime() + HUMAN_ACTIVE_MINUTES * 60 * 1000);
+          baseStateUpdate.notes = echoSource;
+        }
+      }
+
+      await prisma.conversationState.upsert({
+        where: {
+          salonId_channel_conversationKey: {
+            salonId,
+            channel,
+            conversationKey,
+          },
+        },
+        update: baseStateUpdate,
+        create: {
+          salonId,
+          channel,
+          conversationKey,
+          canonicalUserId: finalCanonicalUserId || null,
+          customerId: finalCustomerId || null,
+          profileName: profileName || null,
+          mode:
+            isEcho && echoSource !== 'ai_echo'
+              ? ConversationAutomationMode.HUMAN_ACTIVE
+              : ConversationAutomationMode.AUTO,
+          lastCustomerMessageAt: isEcho ? null : eventDate,
+          lastHumanMessageAt: isEcho && echoSource !== 'ai_echo' ? eventDate : null,
+          humanActiveUntil:
+            isEcho && echoSource !== 'ai_echo'
+              ? new Date(eventDate.getTime() + HUMAN_ACTIVE_MINUTES * 60 * 1000)
+              : null,
+          notes: isEcho ? echoSource : null,
+        },
+      });
+
+      results.push({
+        index: i,
+        ok: true,
+        result: isEcho ? (echoSource || 'echo') : 'upserted',
+        id: item.id,
+      });
     } catch (error) {
       console.error('Internal inbox ingest upsert error:', error);
       results.push({ index: i, ok: false, result: 'db_error' });

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
-import { randomBytes } from 'crypto';
+import { ensureMagicLink } from '../services/magicLinkService.js';
 
 const router = Router();
 
@@ -51,43 +51,23 @@ router.post('/create', async (req: any, res: any) => {
       }
     }
 
-    // Generate secure token
-    const token = randomBytes(32).toString('hex');
-
-    // Set expiration based on type
-    const expiresAt = new Date();
-    switch (type) {
-      case 'BOOKING':
-        expiresAt.setHours(expiresAt.getHours() + 24); // 24 hours for booking
-        break;
-      case 'CANCEL':
-        expiresAt.setHours(expiresAt.getHours() + 2); // 2 hours for cancel
-        break;
-      case 'RESCHEDULE':
-        expiresAt.setHours(expiresAt.getHours() + 2); // 2 hours for reschedule
-        break;
-    }
-
-    // Create magic link
-    const magicLink = await prisma.magicLink.create({
-      data: {
-        token,
-        phone,
-        type: type as any,
-        context,
-        expiresAt
-      }
+    const ensured = await ensureMagicLink({
+      salonId,
+      type: type as any,
+      phone,
+      customerKey: phone,
+      context: {
+        ...(context && typeof context === 'object' ? context : {}),
+        salonId,
+      } as any,
     });
 
-    // Generate magic link URL
-    const baseUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-    const magicUrl = `${baseUrl}/m/${token}`;
-
     res.status(201).json({
-      magicUrl,
-      token,
-      expiresAt: magicLink.expiresAt,
-      type: magicLink.type
+      magicUrl: ensured.magicUrl,
+      token: ensured.token,
+      expiresAt: ensured.expiresAt,
+      type,
+      action: ensured.action,
     });
 
   } catch (error) {
