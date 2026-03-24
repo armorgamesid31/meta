@@ -4,7 +4,7 @@ import { prisma } from '../prisma.js';
 
 const router = Router();
 
-const DEFAULT_HUMAN_ACTIVE_MINUTES = Number(process.env.CONVERSATION_HUMAN_ACTIVE_MINUTES || 240);
+const DEFAULT_HUMAN_ACTIVE_MINUTES = Number(process.env.CONVERSATION_HUMAN_ACTIVE_MINUTES || 360);
 
 function isInternalAuthorized(req: any): boolean {
   const configured = process.env.INTERNAL_API_KEY;
@@ -37,7 +37,7 @@ function asMode(value: unknown): ConversationAutomationMode | null {
 
 function computeAiPolicy(mode: ConversationAutomationMode) {
   if (mode === 'AUTO') return { aiAllowed: true, responsePolicy: 'normal' };
-  if (mode === 'HUMAN_PENDING') return { aiAllowed: true, responsePolicy: 'pending_bridge_only' };
+  if (mode === 'HUMAN_PENDING') return { aiAllowed: false, responsePolicy: 'pending_wait_with_cancel' };
   if (mode === 'AUTO_RESUME_PENDING') return { aiAllowed: true, responsePolicy: 'resume_then_normal' };
   if (mode === 'MANUAL_ALWAYS') return { aiAllowed: false, responsePolicy: 'manual_notify_only' };
   return { aiAllowed: false, responsePolicy: 'human_active_suppress' };
@@ -82,21 +82,29 @@ router.post('/evaluate', async (req: any, res: any) => {
     },
   });
 
-  // Timeout auto-release for HUMAN_ACTIVE unless MANUAL_ALWAYS.
-  if (
-    state.mode === ConversationAutomationMode.HUMAN_ACTIVE &&
-    !state.manualAlways &&
-    state.humanActiveUntil &&
-    state.humanActiveUntil.getTime() <= now.getTime()
-  ) {
-    state = await prisma.conversationState.update({
-      where: { id: state.id },
-      data: {
-        mode: ConversationAutomationMode.AUTO,
-        humanActiveUntil: null,
-        notes: 'auto_resumed_by_timeout',
-      },
-    });
+  // Timeout auto-release for HUMAN_ACTIVE / HUMAN_PENDING unless MANUAL_ALWAYS.
+  if (!state.manualAlways) {
+    const humanActiveExpired =
+      state.mode === ConversationAutomationMode.HUMAN_ACTIVE &&
+      state.humanActiveUntil &&
+      state.humanActiveUntil.getTime() <= now.getTime();
+
+    const humanPendingExpired =
+      state.mode === ConversationAutomationMode.HUMAN_PENDING &&
+      state.humanPendingSince &&
+      now.getTime() - state.humanPendingSince.getTime() >= DEFAULT_HUMAN_ACTIVE_MINUTES * 60 * 1000;
+
+    if (humanActiveExpired || humanPendingExpired) {
+      state = await prisma.conversationState.update({
+        where: { id: state.id },
+        data: {
+          mode: ConversationAutomationMode.AUTO,
+          humanPendingSince: null,
+          humanActiveUntil: null,
+          notes: humanPendingExpired ? 'auto_resumed_pending_timeout' : 'auto_resumed_active_timeout',
+        },
+      });
+    }
   }
 
   const { aiAllowed, responsePolicy } = computeAiPolicy(state.mode);
@@ -171,6 +179,39 @@ router.post('/set', async (req: any, res: any) => {
       channel,
       conversationKey,
       ...data,
+    },
+  });
+
+  return res.status(200).json({ ok: true, state });
+});
+
+router.post('/cancel-pending', async (req: any, res: any) => {
+  if (!isInternalAuthorized(req)) return res.status(401).json({ message: 'Unauthorized' });
+  const body = req.body || {};
+  const salonId = Number(body.salonId);
+  const channel = asChannel(body.channel);
+  const conversationKey = typeof body.conversationKey === 'string' ? body.conversationKey.trim() : '';
+
+  if (!Number.isInteger(salonId) || salonId <= 0 || !channel || !conversationKey) {
+    return res.status(400).json({ message: 'salonId, channel, conversationKey are required' });
+  }
+
+  const state = await prisma.conversationState.upsert({
+    where: {
+      salonId_channel_conversationKey: { salonId, channel, conversationKey },
+    },
+    update: {
+      mode: ConversationAutomationMode.AUTO,
+      humanPendingSince: null,
+      notes: 'pending_cancelled_by_customer',
+    },
+    create: {
+      salonId,
+      channel,
+      conversationKey,
+      mode: ConversationAutomationMode.AUTO,
+      humanPendingSince: null,
+      notes: 'pending_cancelled_by_customer',
     },
   });
 

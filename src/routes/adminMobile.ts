@@ -130,7 +130,7 @@ function toPercentDelta(current: number, previous: number): number {
 const ANALYTICS_TIMEZONE = 'Europe/Istanbul';
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const META_GRAPH_VERSION = (process.env.META_GRAPH_VERSION || 'v23.0').trim();
-const DEFAULT_HUMAN_ACTIVE_MINUTES = Number(process.env.CONVERSATION_HUMAN_ACTIVE_MINUTES || 240);
+const DEFAULT_HUMAN_ACTIVE_MINUTES = Number(process.env.CONVERSATION_HUMAN_ACTIVE_MINUTES || 360);
 const DEFAULT_WORKING_DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'] as const;
 type WorkingDayKey = (typeof DEFAULT_WORKING_DAYS)[number] | 'SUN';
 
