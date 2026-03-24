@@ -27,6 +27,7 @@ import internalMagicLinkRoutes from './routes/internalMagicLink.js';
 import internalConversationStateRoutes from './routes/internalConversationState.js';
 import internalOutboundRoutes from './routes/internalOutbound.js';
 import internalAgentOutboundRoutes from './routes/internalAgentOutbound.js';
+import channelWebhooksRoutes from './routes/channelWebhooks.js';
 import { multiTenantMiddleware } from './middleware/multiTenant.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -154,6 +155,7 @@ app.use('/api/internal/magic-link', internalMagicLinkRoutes);
 app.use('/api/internal/conversation-state', internalConversationStateRoutes);
 app.use('/api/internal/outbound', internalOutboundRoutes);
 app.use('/api/internal/agent-outbound', internalAgentOutboundRoutes);
+app.use('/api/webhooks', channelWebhooksRoutes);
 
 // Apply tenant middleware to ALL other API routes
 app.use(multiTenantMiddleware);

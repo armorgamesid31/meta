@@ -9,7 +9,7 @@ const CHAKRA_API_BASE = 'https://api.chakrahq.com';
 const CHAKRA_API_TOKEN = process.env.CHAKRA_API_TOKEN;
 
 const CHAKRA_SDK_URL = 'https://embed.chakrahq.com/whatsapp-partner-connect/v1_0_1/sdk.js';
-const DEFAULT_CHAKRA_PASSTHROUGH_WEBHOOK_URL = 'https://n8n.berkai.shop/webhook/kedy';
+const DEFAULT_CHAKRA_PASSTHROUGH_WEBHOOK_URL = 'https://app.berkai.shop/api/webhooks/whatsapp';
 const CHAKRA_PASSTHROUGH_WEBHOOK_URL = (
   process.env.CHAKRA_PASSTHROUGH_WEBHOOK_URL ||
   process.env.CHAKRA_WEBHOOK_URL ||
