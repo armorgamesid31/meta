@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import axios from 'axios';
 import { prisma } from '../prisma.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { ensureSalonServiceCategories } from '../services/salonCategorySetup.js';
@@ -128,8 +129,16 @@ function toPercentDelta(current: number, previous: number): number {
 
 const ANALYTICS_TIMEZONE = 'Europe/Istanbul';
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+const META_GRAPH_VERSION = (process.env.META_GRAPH_VERSION || 'v23.0').trim();
 const DEFAULT_WORKING_DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'] as const;
 type WorkingDayKey = (typeof DEFAULT_WORKING_DAYS)[number] | 'SUN';
+
+function asObject(value: unknown): Record<string, any> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+  return value as Record<string, any>;
+}
 
 function toTimezoneDateKey(date: Date, timeZone = ANALYTICS_TIMEZONE): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -3896,6 +3905,345 @@ router.post('/analytics/presets', authenticateToken, async (req: any, res: any) 
     return res.status(201).json({ item });
   } catch (error) {
     console.error('Admin analytics preset create error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.get('/instagram-inbox/conversations', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const limit = asPositiveInt(req.query.limit, 20, 1, 100);
+  const scanLimit = Math.max(limit * 40, 200);
+
+  try {
+    const rows = await prisma.inboundMessageQueue.findMany({
+      where: {
+        salonId,
+        channel: 'INSTAGRAM',
+      },
+      orderBy: {
+        eventTimestamp: 'desc',
+      },
+      take: scanLimit,
+      select: {
+        id: true,
+        conversationKey: true,
+        customerName: true,
+        messageType: true,
+        text: true,
+        status: true,
+        eventTimestamp: true,
+      },
+    });
+
+    const byConversation = new Map<
+      string,
+      {
+        conversationKey: string;
+        customerName: string | null;
+        lastMessageType: string;
+        lastMessageText: string | null;
+        lastEventTimestamp: Date;
+        unreadCount: number;
+        messageCount: number;
+        hasHandoverRequest: boolean;
+      }
+    >();
+
+    for (const row of rows) {
+      const key = row.conversationKey;
+      const existing = byConversation.get(key);
+      const unread = row.status !== 'DONE' ? 1 : 0;
+      const isHandover = row.messageType === 'handover_request';
+
+      if (!existing) {
+        byConversation.set(key, {
+          conversationKey: key,
+          customerName: row.customerName || null,
+          lastMessageType: row.messageType,
+          lastMessageText: row.text || null,
+          lastEventTimestamp: row.eventTimestamp,
+          unreadCount: unread,
+          messageCount: 1,
+          hasHandoverRequest: isHandover,
+        });
+        continue;
+      }
+
+      existing.unreadCount += unread;
+      existing.messageCount += 1;
+      if (!existing.hasHandoverRequest && isHandover) {
+        existing.hasHandoverRequest = true;
+      }
+      if (!existing.customerName && row.customerName) {
+        existing.customerName = row.customerName;
+      }
+    }
+
+    const items = Array.from(byConversation.values())
+      .sort((a, b) => b.lastEventTimestamp.getTime() - a.lastEventTimestamp.getTime())
+      .slice(0, limit)
+      .map((item) => ({
+        ...item,
+        lastEventTimestamp: item.lastEventTimestamp.toISOString(),
+      }));
+
+    return res.status(200).json({
+      items,
+      hasMore: byConversation.size > limit,
+    });
+  } catch (error) {
+    console.error('Admin instagram inbox conversations error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.get('/instagram-inbox/conversations/:conversationKey/messages', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const conversationKey = typeof req.params.conversationKey === 'string' ? req.params.conversationKey.trim() : '';
+  if (!conversationKey) {
+    return res.status(400).json({ message: 'conversationKey is required.' });
+  }
+
+  const limit = asPositiveInt(req.query.limit, 80, 1, 200);
+
+  try {
+    const rows = await prisma.inboundMessageQueue.findMany({
+      where: {
+        salonId,
+        channel: 'INSTAGRAM',
+        conversationKey,
+      },
+      orderBy: {
+        eventTimestamp: 'asc',
+      },
+      take: limit,
+      select: {
+        id: true,
+        providerMessageId: true,
+        customerName: true,
+        messageType: true,
+        text: true,
+        status: true,
+        eventTimestamp: true,
+        rawPayload: true,
+      },
+    });
+
+    const items = rows.map((row) => {
+      const raw = asObject(row.rawPayload);
+      const direction =
+        row.messageType === 'text_outbound'
+          ? 'outbound'
+          : row.messageType === 'handover_request'
+            ? 'system'
+            : 'inbound';
+
+      return {
+        id: row.id,
+        providerMessageId: row.providerMessageId,
+        customerName: row.customerName,
+        messageType: row.messageType,
+        text: row.text,
+        status: row.status,
+        direction,
+        eventTimestamp: row.eventTimestamp.toISOString(),
+        raw,
+      };
+    });
+
+    return res.status(200).json({ items });
+  } catch (error) {
+    console.error('Admin instagram inbox messages error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.post('/instagram-inbox/conversations/:conversationKey/reply', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const conversationKey = typeof req.params.conversationKey === 'string' ? req.params.conversationKey.trim() : '';
+  if (!conversationKey) {
+    return res.status(400).json({ message: 'conversationKey is required.' });
+  }
+
+  const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
+  if (!text) {
+    return res.status(400).json({ message: 'text is required.' });
+  }
+
+  try {
+    const latestInbound = await prisma.inboundMessageQueue.findFirst({
+      where: {
+        salonId,
+        channel: 'INSTAGRAM',
+        conversationKey,
+      },
+      orderBy: {
+        eventTimestamp: 'desc',
+      },
+      select: {
+        externalAccountId: true,
+        customerName: true,
+      },
+    });
+
+    if (!latestInbound) {
+      return res.status(404).json({ message: 'Conversation not found.' });
+    }
+
+    const settings = await prisma.salonAiAgentSettings.findUnique({
+      where: { salonId },
+      select: { faqAnswers: true },
+    });
+
+    const faqAnswers = asObject(settings?.faqAnswers);
+    const metaDirect = asObject(faqAnswers.metaDirect);
+    const instagram = asObject(metaDirect.instagram);
+    const accessToken = typeof instagram.accessToken === 'string' ? instagram.accessToken.trim() : '';
+    const senderInstagramId =
+      (typeof instagram.externalAccountId === 'string' ? instagram.externalAccountId.trim() : '') ||
+      latestInbound.externalAccountId;
+
+    if (!accessToken || !senderInstagramId) {
+      return res.status(400).json({ message: 'Instagram is not connected yet.' });
+    }
+
+    const url = `https://graph.facebook.com/${META_GRAPH_VERSION}/${senderInstagramId}/messages`;
+    const graphResponse = await axios.post(
+      url,
+      {
+        recipient: { id: conversationKey },
+        message: { text },
+      },
+      {
+        params: { access_token: accessToken },
+        timeout: 20000,
+      },
+    );
+
+    const graphMessageId =
+      (typeof graphResponse.data?.message_id === 'string' && graphResponse.data.message_id.trim()) ||
+      `ig_out_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+
+    const saved = await prisma.inboundMessageQueue.create({
+      data: {
+        salonId,
+        channel: 'INSTAGRAM',
+        conversationKey,
+        providerMessageId: graphMessageId,
+        externalAccountId: senderInstagramId,
+        customerName: latestInbound.customerName || null,
+        messageType: 'text_outbound',
+        text,
+        eventTimestamp: new Date(),
+        rawPayload: {
+          direction: 'outbound',
+          graphResponse: graphResponse.data || null,
+        } as any,
+        status: 'DONE',
+        processedAt: new Date(),
+      },
+    });
+
+    return res.status(200).json({
+      item: {
+        id: saved.id,
+        providerMessageId: saved.providerMessageId,
+        messageType: saved.messageType,
+        text: saved.text,
+        status: saved.status,
+        direction: 'outbound',
+        eventTimestamp: saved.eventTimestamp.toISOString(),
+      },
+    });
+  } catch (error: any) {
+    const fbMessage =
+      error?.response?.data?.error?.message ||
+      error?.response?.data?.message ||
+      error?.message ||
+      'Failed to send message.';
+    console.error('Admin instagram inbox reply error:', error?.response?.data || error);
+    return res.status(502).json({ message: String(fbMessage) });
+  }
+});
+
+router.post('/instagram-inbox/conversations/:conversationKey/handover', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const conversationKey = typeof req.params.conversationKey === 'string' ? req.params.conversationKey.trim() : '';
+  if (!conversationKey) {
+    return res.status(400).json({ message: 'conversationKey is required.' });
+  }
+
+  const note = typeof req.body?.note === 'string' ? req.body.note.trim() : '';
+
+  try {
+    const latestInbound = await prisma.inboundMessageQueue.findFirst({
+      where: {
+        salonId,
+        channel: 'INSTAGRAM',
+        conversationKey,
+      },
+      orderBy: {
+        eventTimestamp: 'desc',
+      },
+      select: {
+        externalAccountId: true,
+        customerName: true,
+      },
+    });
+
+    if (!latestInbound) {
+      return res.status(404).json({ message: 'Conversation not found.' });
+    }
+
+    const saved = await prisma.inboundMessageQueue.create({
+      data: {
+        salonId,
+        channel: 'INSTAGRAM',
+        conversationKey,
+        providerMessageId: `handover_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+        externalAccountId: latestInbound.externalAccountId,
+        customerName: latestInbound.customerName || null,
+        messageType: 'handover_request',
+        text: note || 'Human handover requested.',
+        eventTimestamp: new Date(),
+        rawPayload: {
+          direction: 'system',
+          handoverRequested: true,
+        } as any,
+        status: 'DONE',
+        processedAt: new Date(),
+      },
+    });
+
+    return res.status(200).json({
+      item: {
+        id: saved.id,
+        providerMessageId: saved.providerMessageId,
+        messageType: saved.messageType,
+        text: saved.text,
+        status: saved.status,
+        direction: 'system',
+        eventTimestamp: saved.eventTimestamp.toISOString(),
+      },
+    });
+  } catch (error) {
+    console.error('Admin instagram inbox handover error:', error);
     return res.status(500).json({ message: 'Internal server error.' });
   }
 });
