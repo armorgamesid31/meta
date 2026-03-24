@@ -4145,7 +4145,7 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
       return res.status(400).json({ message: 'Instagram is not connected yet.' });
     }
 
-    const url = `https://graph.facebook.com/${META_GRAPH_VERSION}/${senderInstagramId}/messages`;
+    const url = `https://graph.instagram.com/${META_GRAPH_VERSION}/${senderInstagramId}/messages`;
     const graphResponse = await axios.post(
       url,
       {
@@ -4489,7 +4489,7 @@ router.post('/instagram-inbox/conversations/:conversationKey/reply', authenticat
       return res.status(400).json({ message: 'Instagram is not connected yet.' });
     }
 
-    const url = `https://graph.facebook.com/${META_GRAPH_VERSION}/${senderInstagramId}/messages`;
+    const url = `https://graph.instagram.com/${META_GRAPH_VERSION}/${senderInstagramId}/messages`;
     const graphResponse = await axios.post(
       url,
       {

@@ -56,11 +56,8 @@ interface PrefillConnection {
 
 const defaultScopes: Record<MetaChannel, string[]> = {
   INSTAGRAM: [
-    'instagram_basic',
-    'instagram_manage_messages',
-    'pages_manage_metadata',
-    'pages_read_engagement',
-    'pages_show_list',
+    'instagram_business_basic',
+    'instagram_business_manage_messages',
   ],
   WHATSAPP: [
     'whatsapp_business_management',
@@ -233,10 +230,16 @@ function buildAuthorizeUrl(
     scope: scopes.join(','),
   });
 
-  // Optional: Login for Business config-based flow (Embedded Signup compatible).
-  const configId = channel === 'WHATSAPP' ? META_WHATSAPP_CONFIG_ID : META_INSTAGRAM_CONFIG_ID;
-  if (configId) {
-    params.set('config_id', configId);
+  if (channel === 'INSTAGRAM') {
+    if (META_INSTAGRAM_CONFIG_ID) {
+      params.set('config_id', META_INSTAGRAM_CONFIG_ID);
+    }
+    return `https://www.instagram.com/oauth/authorize?${params.toString()}`;
+  }
+
+  // Optional: Login for Business config-based flow (Embedded Signup compatible) for WhatsApp.
+  if (META_WHATSAPP_CONFIG_ID) {
+    params.set('config_id', META_WHATSAPP_CONFIG_ID);
   }
 
   return `https://www.facebook.com/${META_GRAPH_VERSION}/dialog/oauth?${params.toString()}`;
@@ -327,7 +330,61 @@ async function setBindings(salonId: number, channel: MetaChannel, ids: string[])
   }
 }
 
-async function exchangeCodeForToken(code: string, redirectUri: string) {
+async function exchangeInstagramToken(code: string, redirectUri: string) {
+  if (!META_APP_ID || !META_APP_SECRET) {
+    throw new Error('META_APP_ID and META_APP_SECRET must be configured.');
+  }
+
+  const shortLivedResponse = await axios.post(
+    'https://api.instagram.com/oauth/access_token',
+    new URLSearchParams({
+      client_id: META_APP_ID,
+      client_secret: META_APP_SECRET,
+      grant_type: 'authorization_code',
+      redirect_uri: redirectUri,
+      code,
+    }).toString(),
+    {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      timeout: 20000,
+    },
+  );
+
+  const shortLivedToken = shortLivedResponse.data?.access_token;
+  if (!shortLivedToken || typeof shortLivedToken !== 'string') {
+    throw new Error('Instagram did not return short-lived access token.');
+  }
+
+  const longLivedResponse = await axios.get('https://graph.instagram.com/access_token', {
+    params: {
+      grant_type: 'ig_exchange_token',
+      client_secret: META_APP_SECRET,
+      access_token: shortLivedToken,
+    },
+    timeout: 20000,
+  });
+
+  const longLivedToken = longLivedResponse.data?.access_token;
+  if (!longLivedToken || typeof longLivedToken !== 'string') {
+    throw new Error('Instagram did not return long-lived access token.');
+  }
+
+  return {
+    accessToken: longLivedToken,
+    tokenType: 'bearer',
+    expiresIn: Number.isFinite(Number(longLivedResponse.data?.expires_in))
+      ? Number(longLivedResponse.data.expires_in)
+      : null,
+  };
+}
+
+async function exchangeCodeForToken(code: string, redirectUri: string, channel: MetaChannel) {
+  if (channel === 'INSTAGRAM') {
+    return exchangeInstagramToken(code, redirectUri);
+  }
+
   if (!META_APP_ID || !META_APP_SECRET) {
     throw new Error('META_APP_ID and META_APP_SECRET must be configured.');
   }
@@ -373,32 +430,29 @@ function getAxiosErrorMessage(error: unknown): string {
 }
 
 async function probeInstagram(accessToken: string) {
-  const response = await axios.get(`https://graph.facebook.com/${META_GRAPH_VERSION}/me/accounts`, {
+  const response = await axios.get('https://graph.instagram.com/me', {
     params: {
       access_token: accessToken,
-      fields: 'id,name,connected_instagram_account{id,username}',
-      limit: 50,
+      fields: 'id,username',
     },
     timeout: 20000,
   });
 
-  const pages = Array.isArray(response.data?.data) ? response.data.data : [];
-  const page = pages.find((item: any) => item?.connected_instagram_account?.id);
-  if (!page) {
-    throw new Error('No connected Instagram Professional Account found in Meta Pages.');
+  const igId = typeof response.data?.id === 'string' ? response.data.id.trim() : '';
+  if (!igId) {
+    throw new Error('Instagram professional account not found.');
   }
 
-  const igId = String(page.connected_instagram_account.id);
-  const pageId = typeof page.id === 'string' ? page.id : null;
-  const username = typeof page.connected_instagram_account.username === 'string'
-    ? page.connected_instagram_account.username
-    : null;
+  const username =
+    typeof response.data?.username === 'string' && response.data.username.trim()
+      ? response.data.username.trim()
+      : null;
 
   return {
     externalAccountId: igId,
-    externalBusinessId: pageId,
-    externalDisplayName: username || pageId || igId,
-    bindingIds: sanitizeIds([igId, pageId]),
+    externalBusinessId: null,
+    externalDisplayName: username || igId,
+    bindingIds: sanitizeIds([igId]),
   };
 }
 
@@ -723,7 +777,7 @@ router.get('/callback', async (req: any, res: any) => {
 
   try {
     const redirectUri = getRedirectUri(req);
-    const token = await exchangeCodeForToken(code, redirectUri);
+    const token = await exchangeCodeForToken(code, redirectUri, channel);
     const { probe } = await finalizeConnection({
       salonId: statePayload.sid,
       channel,
@@ -760,7 +814,7 @@ router.post('/exchange-code', authenticateToken, async (req: any, res: any) => {
     }
 
     const redirectUri = getRedirectUri(req);
-    const token = await exchangeCodeForToken(code, redirectUri);
+    const token = await exchangeCodeForToken(code, redirectUri, channel);
 
     const prefill: PrefillConnection = {
       externalAccountId:
