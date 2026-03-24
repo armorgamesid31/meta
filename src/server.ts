@@ -22,6 +22,7 @@ import chakraRoutes from './routes/chakra.js';
 import metaDirectRoutes from './routes/metaDirect.js';
 import contentRoutes from './routes/content.js';
 import internalServiceTranslationsRoutes from './routes/internalServiceTranslations.js';
+import internalInboxIngestRoutes from './routes/internalInboxIngest.js';
 import { multiTenantMiddleware } from './middleware/multiTenant.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -143,6 +144,8 @@ app.post("/api/internal/chakra/webhook", (req, res) => {
   // Always return 200 OK to prevent webhook retry loops during debugging
   res.status(200).send("OK");
 });
+
+app.use('/api/internal/inbox', internalInboxIngestRoutes);
 
 // Apply tenant middleware to ALL other API routes
 app.use(multiTenantMiddleware);
