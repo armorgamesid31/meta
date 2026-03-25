@@ -2,6 +2,7 @@ import { ChannelType, InboundMessageStatus, OutboundMessageSource } from '@prism
 import axios from 'axios';
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
+import { ensureMagicLink } from '../services/magicLinkService.js';
 
 const router = Router();
 
@@ -47,6 +48,50 @@ function extractRawConversationKey(channel: ChannelType, value: string): string 
   return trimmed;
 }
 
+type ActionKind = 'none' | 'cancel' | 'booking';
+
+function pickMagicLinkUrl(body: any): string | null {
+  const candidates = [
+    body?.magicLinkUrl,
+    body?.magicUrl,
+    body?.bookingUrl,
+    body?.magicLink?.url,
+    body?.magicLink?.magicUrl,
+  ];
+  for (const value of candidates) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+function asBoolean(value: unknown): boolean {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value === 1;
+  if (typeof value === 'string') {
+    const v = value.trim().toLowerCase();
+    return v === 'true' || v === '1' || v === 'yes' || v === 'y';
+  }
+  return false;
+}
+
+async function resolveConversationStateMode(params: {
+  salonId: number;
+  channel: ChannelType;
+  conversationKey: string;
+}) {
+  const candidates = normalizeConversationCandidates(params.channel, params.conversationKey);
+  const state = await prisma.conversationState.findFirst({
+    where: {
+      salonId: params.salonId,
+      channel: params.channel,
+      conversationKey: { in: candidates },
+    },
+    orderBy: { updatedAt: 'desc' },
+    select: { mode: true },
+  });
+  return state?.mode || null;
+}
+
 async function resolveLatestInboundMeta(
   salonId: number,
   channel: ChannelType,
@@ -72,6 +117,8 @@ async function sendInstagramMessage(params: {
   salonId: number;
   conversationKey: string;
   text: string;
+  actionKind: ActionKind;
+  magicLinkUrl?: string | null;
   externalAccountId?: string | null;
 }) {
   const settings = await prisma.salonAiAgentSettings.findUnique({
@@ -94,12 +141,53 @@ async function sendInstagramMessage(params: {
   const rawRecipientId = extractRawConversationKey('INSTAGRAM', params.conversationKey);
   const url = `https://graph.instagram.com/${META_GRAPH_VERSION}/${senderInstagramId}/messages`;
 
-  const response = await axios.post(
-    url,
-    {
+  const bookingUrl = params.magicLinkUrl && params.magicLinkUrl.trim() ? params.magicLinkUrl.trim() : null;
+  let payload: Record<string, any>;
+
+  if (params.actionKind === 'booking' && bookingUrl) {
+    payload = {
+      recipient: { id: rawRecipientId },
+      message: {
+        attachment: {
+          type: 'template',
+          payload: {
+            template_type: 'button',
+            text: params.text,
+            buttons: [
+              {
+                type: 'web_url',
+                title: 'Randevu',
+                url: bookingUrl,
+              },
+            ],
+          },
+        },
+      },
+    };
+  } else if (params.actionKind === 'cancel') {
+    payload = {
+      recipient: { id: rawRecipientId },
+      message: {
+        text: params.text,
+        quick_replies: [
+          {
+            content_type: 'text',
+            title: 'İptal Et',
+            payload: 'HUMAN_CANCEL',
+          },
+        ],
+      },
+    };
+  } else {
+    payload = {
       recipient: { id: rawRecipientId },
       message: { text: params.text },
-    },
+    };
+  }
+
+  const response = await axios.post(
+    url,
+    payload,
     {
       params: { access_token: accessToken },
       timeout: 20000,
@@ -121,6 +209,8 @@ async function sendWhatsappViaChakra(params: {
   salonId: number;
   conversationKey: string;
   text: string;
+  actionKind: ActionKind;
+  magicLinkUrl?: string | null;
   externalAccountId?: string | null;
 }) {
   if (!CHAKRA_WHATSAPP_SEND_URL) {
@@ -141,13 +231,58 @@ async function sendWhatsappViaChakra(params: {
   }
 
   const to = extractRawConversationKey('WHATSAPP', params.conversationKey);
-  const payload = {
+  const bookingUrl = params.magicLinkUrl && params.magicLinkUrl.trim() ? params.magicLinkUrl.trim() : null;
+
+  const payload: Record<string, any> = {
     pluginId: salon.chakraPluginId,
     phoneNumberId: salon.chakraPhoneNumberId || params.externalAccountId || null,
     to,
-    text: params.text,
-    type: 'text',
   };
+
+  // WhatsApp interactive button for human pending cancel.
+  // Booking uses text + link and optional quick action reply label for consistent UX.
+  if (params.actionKind === 'cancel') {
+    payload.type = 'interactive';
+    payload.interactive = {
+      type: 'button',
+      body: {
+        text: params.text,
+      },
+      action: {
+        buttons: [
+          {
+            type: 'reply',
+            reply: {
+              id: 'HUMAN_CANCEL',
+              title: 'İptal Et',
+            },
+          },
+        ],
+      },
+    };
+  } else if (params.actionKind === 'booking' && bookingUrl) {
+    payload.type = 'interactive';
+    payload.interactive = {
+      type: 'button',
+      body: {
+        text: `${params.text}\n\n${bookingUrl}`,
+      },
+      action: {
+        buttons: [
+          {
+            type: 'reply',
+            reply: {
+              id: 'BOOKING_INTENT',
+              title: 'Randevu',
+            },
+          },
+        ],
+      },
+    };
+  } else {
+    payload.type = 'text';
+    payload.text = params.text;
+  }
 
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (CHAKRA_API_TOKEN) {
@@ -192,20 +327,66 @@ router.post('/send', async (req: any, res: any) => {
 
   const canonicalUserId = typeof body.canonicalUserId === 'string' ? body.canonicalUserId.trim() : null;
   const customerId = Number.isInteger(Number(body.customerId)) ? Number(body.customerId) : null;
+  const forceCancelButton = body?.forceCancelButton === true;
+  const bookingIntent = asBoolean(body?.bookingIntent) || asBoolean(body?.intentBooking) || asBoolean(body?.toolBookingIntent);
+
+  let magicLinkUrl = pickMagicLinkUrl(body);
+  let magicLinkAction: 'created' | 'renewed' | null = null;
 
   try {
+    if (!magicLinkUrl && bookingIntent) {
+      const rawConversationId = extractRawConversationKey(channel, resolvedConversationKey);
+      const phoneFromBody = typeof body.phone === 'string' ? body.phone.trim() : '';
+      const customerKeyFromBody = typeof body.customerKey === 'string' ? body.customerKey.trim() : '';
+      const fallbackCustomerKey = canonicalUserId || `${channel}:${rawConversationId}`;
+
+      const ensured = await ensureMagicLink({
+        salonId,
+        type: 'BOOKING',
+        phone: phoneFromBody || (channel === 'WHATSAPP' ? rawConversationId : null),
+        customerKey: customerKeyFromBody || fallbackCustomerKey,
+        context: {
+          salonId,
+          channel,
+          conversationKey: resolvedConversationKey,
+          canonicalUserId: canonicalUserId || null,
+          customerId: customerId || null,
+        },
+      });
+
+      magicLinkUrl = ensured.magicUrl;
+      magicLinkAction = ensured.action;
+    }
+
+    const mode = await resolveConversationStateMode({
+      salonId,
+      channel,
+      conversationKey: resolvedConversationKey,
+    });
+
+    let actionKind: ActionKind = 'none';
+    if (magicLinkUrl) {
+      actionKind = 'booking';
+    } else if (forceCancelButton || mode === 'HUMAN_PENDING') {
+      actionKind = 'cancel';
+    }
+
     const sent =
       channel === 'INSTAGRAM'
         ? await sendInstagramMessage({
             salonId,
             conversationKey: resolvedConversationKey,
             text,
+            actionKind,
+            magicLinkUrl,
             externalAccountId: externalAccountIdFromInbound,
           })
         : await sendWhatsappViaChakra({
             salonId,
             conversationKey: resolvedConversationKey,
             text,
+            actionKind,
+            magicLinkUrl,
             externalAccountId: externalAccountIdFromInbound,
           });
 
@@ -219,12 +400,16 @@ router.post('/send', async (req: any, res: any) => {
         providerMessageId: sent.providerMessageId,
         externalAccountId: sent.externalAccountId || externalAccountIdFromInbound || '',
         customerName,
-        messageType: 'text_outbound_ai',
+        messageType: actionKind === 'none' ? 'text_outbound_ai' : `interactive_${actionKind}_outbound_ai`,
         text,
         eventTimestamp: now,
         rawPayload: {
           direction: 'outbound',
           source: 'AI_AGENT',
+          bookingIntent,
+          actionKind,
+          magicLinkUrl: magicLinkUrl || null,
+          magicLinkAction,
           providerResponse: sent.rawResponse,
         } as any,
         status: InboundMessageStatus.DONE,
@@ -271,6 +456,9 @@ router.post('/send', async (req: any, res: any) => {
     return res.status(200).json({
       ok: true,
       channel,
+      bookingIntent,
+      actionKind,
+      magicLinkUrl: magicLinkUrl || null,
       providerMessageId: savedMessage.providerMessageId,
       messageId: savedMessage.id,
       eventTimestamp: savedMessage.eventTimestamp.toISOString(),

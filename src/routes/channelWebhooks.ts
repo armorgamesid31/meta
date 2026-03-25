@@ -67,6 +67,15 @@ function parseMetaMessageType(channel: ChannelType, msg: any, media: Array<{ typ
   return msg?.type || 'unknown';
 }
 
+function isHumanCancelSignal(row: any): boolean {
+  const payload = typeof row?.actionPayload === 'string' ? row.actionPayload.trim().toUpperCase() : '';
+  const text = typeof row?.text === 'string' ? row.text.trim().toUpperCase() : '';
+  if (payload === 'HUMAN_CANCEL') return true;
+  if (text === 'HUMAN_CANCEL') return true;
+  if (text === 'İPTAL ET' || text === 'IPTAL ET') return true;
+  return false;
+}
+
 async function resolveSalonId(channel: ChannelType, externalAccountId: string | null, externalBusinessId: string | null) {
   const candidates = [externalAccountId, externalBusinessId].filter(
     (value): value is string => typeof value === 'string' && value.trim().length > 0,
@@ -136,6 +145,7 @@ async function evaluateConversationState(input: {
   canonicalUserId: string | null;
   customerId: number | null;
   profileName: string | null;
+  forceAutoByCancel: boolean;
   isEcho: boolean;
   providerMessageId: string;
   eventDate: Date;
@@ -178,6 +188,18 @@ async function evaluateConversationState(input: {
       lastCustomerMessageAt: input.isEcho ? null : now,
     },
   });
+
+  if (input.forceAutoByCancel && !input.isEcho && !state.manualAlways) {
+    return prisma.conversationState.update({
+      where: { id: state.id },
+      data: {
+        mode: ConversationAutomationMode.AUTO,
+        humanPendingSince: null,
+        humanActiveUntil: null,
+        notes: 'human_cancelled_by_customer',
+      },
+    });
+  }
 
   if (input.isEcho && outboundTrace?.source !== OutboundMessageSource.AI_AGENT && !state.manualAlways) {
     const until = new Date(now.getTime() + HUMAN_ACTIVE_MINUTES * 60 * 1000);
@@ -226,7 +248,7 @@ async function evaluateConversationState(input: {
 
 function computeStatePolicy(mode: ConversationAutomationMode) {
   if (mode === 'AUTO') return { aiAllowed: true, responsePolicy: 'normal' };
-  if (mode === 'HUMAN_PENDING') return { aiAllowed: false, responsePolicy: 'pending_wait_with_cancel' };
+  if (mode === 'HUMAN_PENDING') return { aiAllowed: true, responsePolicy: 'pending_wait_with_cancel' };
   if (mode === 'AUTO_RESUME_PENDING') return { aiAllowed: true, responsePolicy: 'resume_then_normal' };
   if (mode === 'MANUAL_ALWAYS') return { aiAllowed: false, responsePolicy: 'manual_notify_only' };
   return { aiAllowed: false, responsePolicy: 'human_active_suppress' };
@@ -307,7 +329,14 @@ function normalizeWebhookPayload(body: any) {
             providerMessageId: msg?.id ?? `wa_${Date.now()}`,
             messageType,
             routeMessageType: String(messageType || 'unknown').trim().toLowerCase(),
-            text: msg?.text?.body || msg?.image?.caption || msg?.video?.caption || msg?.document?.caption || null,
+            text:
+              msg?.text?.body ||
+              msg?.image?.caption ||
+              msg?.video?.caption ||
+              msg?.document?.caption ||
+              msg?.interactive?.button_reply?.title ||
+              msg?.interactive?.list_reply?.title ||
+              null,
             timestamp: Number(msg?.timestamp || Date.now()),
             eventTimestamp: toIsoFromTs(msg?.timestamp),
             senderId: from || null,
@@ -324,6 +353,8 @@ function normalizeWebhookPayload(body: any) {
             primaryMediaType: primaryMedia?.type || null,
             hasMedia: mediaUrls.length > 0,
             fetchMediaUrl: primaryMediaId ? `https://api.chakrahq.com/v1/whatsapp/v19.0/media/${primaryMediaId}/show` : null,
+            actionPayload: msg?.interactive?.button_reply?.id || msg?.interactive?.list_reply?.id || null,
+            actionTitle: msg?.interactive?.button_reply?.title || msg?.interactive?.list_reply?.title || null,
             direction: 'inbound',
             isEcho: false,
             raw: root,
@@ -337,7 +368,8 @@ function normalizeWebhookPayload(body: any) {
     for (const entry of root.entry ?? []) {
       for (const ev of entry.messaging ?? []) {
         const m = ev?.message;
-        if (!m) continue;
+        const postback = ev?.postback;
+        if (!m && !postback) continue;
 
         const isEcho = m?.is_echo === true;
         const attachments = m?.attachments ?? [];
@@ -347,7 +379,7 @@ function normalizeWebhookPayload(body: any) {
           url: a?.payload?.url || null,
         }));
 
-        const messageType = parseMetaMessageType('INSTAGRAM', m, media);
+        const messageType = postback ? 'postback' : parseMetaMessageType('INSTAGRAM', m, media);
         const channelUserId = ev?.sender?.id || null;
         const mediaUrls = media.map((mm: any) => mm?.url).filter(Boolean);
         const primaryMedia = media[0] || null;
@@ -357,7 +389,7 @@ function normalizeWebhookPayload(body: any) {
           providerMessageId: m?.mid || `ig_${ev?.timestamp || Date.now()}_${ev?.sender?.id || 'unknown'}`,
           messageType,
           routeMessageType: String(messageType || 'unknown').trim().toLowerCase(),
-          text: m?.text || null,
+          text: m?.text || postback?.title || postback?.payload || null,
           timestamp: Number(ev?.timestamp || Date.now()),
           eventTimestamp: toIsoFromTs(ev?.timestamp),
           senderId: ev?.sender?.id || null,
@@ -374,6 +406,8 @@ function normalizeWebhookPayload(body: any) {
           primaryMediaType: primaryMedia?.type || null,
           hasMedia: mediaUrls.length > 0,
           fetchMediaUrl: mediaUrls[0] || null,
+          actionPayload: m?.quick_reply?.payload || postback?.payload || null,
+          actionTitle: postback?.title || null,
           direction: isEcho ? 'outbound' : 'inbound',
           isEcho,
           raw: root,
@@ -427,6 +461,7 @@ async function processIncomingBatch(items: any[]) {
         : null;
 
     const eventDate = toEventDate(row);
+    const forceAutoByCancel = isHumanCancelSignal(row);
 
     await prisma.inboundMessageQueue.upsert({
       where: {
@@ -470,6 +505,7 @@ async function processIncomingBatch(items: any[]) {
       canonicalUserId,
       customerId: customer?.id || null,
       profileName,
+      forceAutoByCancel,
       isEcho: Boolean(row.isEcho),
       providerMessageId,
       eventDate,
@@ -495,6 +531,7 @@ async function processIncomingBatch(items: any[]) {
         aiAllowed: statePolicy.aiAllowed,
         responsePolicy: statePolicy.responsePolicy,
       },
+      userAction: forceAutoByCancel ? 'HUMAN_CANCEL' : row.actionPayload || null,
       // Backward compatibility for old flows
       conversationKey,
       customer_status: customerStatus,
