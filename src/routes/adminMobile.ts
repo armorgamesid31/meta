@@ -544,7 +544,7 @@ function parseStaffServiceAssignments(input: unknown) {
     return [];
   }
 
-  const rows: Array<{ serviceId: number; customPrice: number | null; customDuration: number | null }> = [];
+  const rows: Array<{ serviceId: number; customPrice: number | null; customDuration: number | null; gender: string }> = [];
   const seen = new Set<number>();
 
   for (const raw of input) {
@@ -575,7 +575,10 @@ function parseStaffServiceAssignments(input: unknown) {
       customDuration = Math.round(parsed);
     }
 
-    rows.push({ serviceId, customPrice, customDuration });
+    const rawGender = typeof source.gender === 'string' ? source.gender.toLowerCase().trim() : '';
+    const gender = rawGender === 'male' || rawGender === 'female' || rawGender === 'other' ? rawGender : 'female';
+
+    rows.push({ serviceId, customPrice, customDuration, gender });
     seen.add(serviceId);
   }
 
@@ -3358,7 +3361,7 @@ router.post('/staff', authenticateToken, async (req: any, res: any) => {
               price: item.customPrice ?? service.price,
               duration: item.customDuration ?? service.duration,
               isactive: true,
-              gender: 'female',
+              gender: item.gender,
             };
           }),
         });
@@ -3519,7 +3522,7 @@ router.put('/staff/:id', authenticateToken, async (req: any, res: any) => {
                 price: item.customPrice ?? service.price,
                 duration: item.customDuration ?? service.duration,
                 isactive: true,
-                gender: 'female',
+                gender: item.gender,
               };
             }),
           });
