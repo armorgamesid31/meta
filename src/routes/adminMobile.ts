@@ -2312,7 +2312,7 @@ router.get('/service-regions', authenticateToken, async (req: any, res: any) => 
           },
         },
       },
-      orderBy: [{ displayOrder: 'asc' }, { name: 'asc' }, { id: 'asc' }],
+      orderBy: [{ name: 'asc' }, { id: 'asc' }],
     });
 
     return res.status(200).json({
@@ -2529,43 +2529,6 @@ router.put('/service-regions/:id', authenticateToken, async (req: any, res: any)
       return res.status(409).json({ message: 'Bu bölge adı zaten kullanılıyor.' });
     }
     console.error('Admin service region update error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
-  }
-});
-
-router.post('/service-regions/reorder', authenticateToken, async (req: any, res: any) => {
-  const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
-  const orderedIds = Array.isArray(req.body?.orderedIds) ? req.body.orderedIds.map((value: any) => Number(value)) : [];
-  if (!orderedIds.length || orderedIds.some((id: number) => !Number.isInteger(id) || id <= 0)) {
-    return res.status(400).json({ message: 'orderedIds must be a non-empty number array.' });
-  }
-
-  try {
-    const rows = await prisma.serviceRegion.findMany({
-      where: { salonId, id: { in: orderedIds } },
-      select: { id: true },
-    });
-    if (rows.length !== orderedIds.length) {
-      return res.status(400).json({ message: 'orderedIds contains invalid regions.' });
-    }
-
-    await prisma.$transaction(
-      orderedIds.map((id: number, index: number) =>
-        prisma.serviceRegion.update({
-          where: { id },
-          data: { displayOrder: index },
-          select: { id: true },
-        }),
-      ),
-    );
-
-    return res.status(200).json({ success: true });
-  } catch (error) {
-    console.error('Admin service region reorder error:', error);
     return res.status(500).json({ message: 'Internal server error.' });
   }
 });
