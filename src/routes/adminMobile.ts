@@ -585,6 +585,24 @@ function parseStaffServiceAssignments(input: unknown) {
   return rows;
 }
 
+function parseServiceGenders(input: unknown) {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+
+  const genders: Array<'female' | 'male' | 'other'> = [];
+  for (const raw of input) {
+    const value = typeof raw === 'string' ? raw.toLowerCase().trim() : '';
+    if (value === 'female' || value === 'male' || value === 'other') {
+      if (!genders.includes(value)) {
+        genders.push(value);
+      }
+    }
+  }
+
+  return genders;
+}
+
 function mapStaffForMobile(staff: any) {
   const serviceById = new Map<number, any>();
 
@@ -2794,6 +2812,21 @@ router.post('/service-groups/reorder', authenticateToken, async (req: any, res: 
   }
 });
 
+function mapServiceForAdmin(item: any) {
+  return {
+    ...item,
+    genders: (item?.ServiceGender || []).map((row: any) => row.gender),
+    categoryKey: item?.ServiceCategory?.categoryRef?.key || item?.category || 'OTHER',
+    categoryName:
+      item?.ServiceCategory?.name || item?.ServiceCategory?.categoryRef?.defaultName || item?.category || 'Diğer',
+    regionId: item?.regionId ?? null,
+    regionName: item?.ServiceRegion?.name || null,
+    regionCategoryId: item?.ServiceRegion?.categoryId || null,
+    serviceGroupId: item?.serviceGroup?.id || null,
+    serviceGroupName: item?.serviceGroup?.name || null,
+  };
+}
+
 router.get('/services', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
   if (!salonId) {
@@ -2836,6 +2869,11 @@ router.get('/services', authenticateToken, async (req: any, res: any) => {
             categoryId: true,
           },
         },
+        ServiceGender: {
+          select: {
+            gender: true,
+          },
+        },
         serviceGroup: {
           select: {
             id: true,
@@ -2850,16 +2888,7 @@ router.get('/services', authenticateToken, async (req: any, res: any) => {
     });
 
     return res.status(200).json({
-      items: services.map((item) => ({
-        ...item,
-        categoryKey: item.ServiceCategory?.categoryRef?.key || item.category || 'OTHER',
-        categoryName: item.ServiceCategory?.name || item.ServiceCategory?.categoryRef?.defaultName || item.category || 'Diğer',
-        regionId: item.regionId,
-        regionName: item.ServiceRegion?.name || null,
-        regionCategoryId: item.ServiceRegion?.categoryId || null,
-        serviceGroupId: item.serviceGroup?.id || null,
-        serviceGroupName: item.serviceGroup?.name || null,
-      })),
+      items: services.map(mapServiceForAdmin),
     });
   } catch (error) {
     console.error('Admin services list error:', error);
@@ -2940,6 +2969,7 @@ router.post('/services', authenticateToken, async (req: any, res: any) => {
     req.body?.regionId === null || req.body?.regionId === undefined || req.body?.regionId === ''
       ? null
       : Number(req.body.regionId);
+  const genders = parseServiceGenders(req.body?.genders);
   const serviceGroupId =
     req.body?.serviceGroupId === null || req.body?.serviceGroupId === undefined || req.body?.serviceGroupId === ''
       ? null
@@ -2996,23 +3026,38 @@ router.post('/services', authenticateToken, async (req: any, res: any) => {
       }
     }
 
-    const service = await prisma.service.create({
-      data: {
-        salonId,
-        name,
-        duration: Math.round(duration),
-        price,
-        category,
-        description,
-        isActive,
-        requiresSpecialist,
-        categoryId,
-        regionId,
-        serviceGroupId,
-        capacityOverride,
-        sequentialOverride,
-        bufferOverride,
-      },
+    const serviceId = await prisma.$transaction(async (tx) => {
+      const created = await tx.service.create({
+        data: {
+          salonId,
+          name,
+          duration: Math.round(duration),
+          price,
+          category,
+          description,
+          isActive,
+          requiresSpecialist,
+          categoryId,
+          regionId,
+          serviceGroupId,
+          capacityOverride,
+          sequentialOverride,
+          bufferOverride,
+        },
+        select: { id: true },
+      });
+
+      if (genders.length > 0) {
+        await tx.serviceGender.createMany({
+          data: genders.map((gender) => ({ serviceId: created.id, gender })),
+        });
+      }
+
+      return created.id;
+    });
+
+    const service = await prisma.service.findFirst({
+      where: { id: serviceId, salonId },
       select: {
         id: true,
         name: true,
@@ -3028,10 +3073,43 @@ router.post('/services', authenticateToken, async (req: any, res: any) => {
         capacityOverride: true,
         sequentialOverride: true,
         bufferOverride: true,
+        ServiceCategory: {
+          select: {
+            id: true,
+            name: true,
+            categoryRef: {
+              select: {
+                key: true,
+                defaultName: true,
+              },
+            },
+          },
+        },
+        ServiceRegion: {
+          select: {
+            id: true,
+            name: true,
+            categoryId: true,
+          },
+        },
+        ServiceGender: {
+          select: {
+            gender: true,
+          },
+        },
+        serviceGroup: {
+          select: {
+            id: true,
+            name: true,
+            capacity: true,
+            sequentialRequired: true,
+            preparationMinutes: true,
+          },
+        },
       },
     });
 
-    return res.status(201).json({ item: service });
+    return res.status(201).json({ item: mapServiceForAdmin(service) });
   } catch (error: any) {
     if (error?.code === 'P2002') {
       return res.status(409).json({ message: 'Bu isimde hizmet zaten mevcut.' });
@@ -3145,7 +3223,10 @@ router.put('/services/:id', authenticateToken, async (req: any, res: any) => {
     }
   }
 
-  if (!Object.keys(updates).length) {
+  const hasGenderUpdate = req.body?.genders !== undefined;
+  const genders = hasGenderUpdate ? parseServiceGenders(req.body?.genders) : [];
+
+  if (!Object.keys(updates).length && !hasGenderUpdate) {
     return res.status(400).json({ message: 'No valid update field provided.' });
   }
 
@@ -3177,9 +3258,26 @@ router.put('/services/:id', authenticateToken, async (req: any, res: any) => {
       }
     }
 
-    const service = await prisma.service.update({
-      where: { id: serviceId },
-      data: updates,
+    await prisma.$transaction(async (tx) => {
+      if (Object.keys(updates).length > 0) {
+        await tx.service.update({
+          where: { id: serviceId },
+          data: updates,
+        });
+      }
+
+      if (hasGenderUpdate) {
+        await tx.serviceGender.deleteMany({ where: { serviceId } });
+        if (genders.length > 0) {
+          await tx.serviceGender.createMany({
+            data: genders.map((gender) => ({ serviceId, gender })),
+          });
+        }
+      }
+    });
+
+    const service = await prisma.service.findFirst({
+      where: { id: serviceId, salonId },
       select: {
         id: true,
         name: true,
@@ -3195,10 +3293,43 @@ router.put('/services/:id', authenticateToken, async (req: any, res: any) => {
         capacityOverride: true,
         sequentialOverride: true,
         bufferOverride: true,
+        ServiceCategory: {
+          select: {
+            id: true,
+            name: true,
+            categoryRef: {
+              select: {
+                key: true,
+                defaultName: true,
+              },
+            },
+          },
+        },
+        ServiceRegion: {
+          select: {
+            id: true,
+            name: true,
+            categoryId: true,
+          },
+        },
+        ServiceGender: {
+          select: {
+            gender: true,
+          },
+        },
+        serviceGroup: {
+          select: {
+            id: true,
+            name: true,
+            capacity: true,
+            sequentialRequired: true,
+            preparationMinutes: true,
+          },
+        },
       },
     });
 
-    return res.status(200).json({ item: service });
+    return res.status(200).json({ item: mapServiceForAdmin(service) });
   } catch (error: any) {
     if (error?.code === 'P2002') {
       return res.status(409).json({ message: 'Bu isimde hizmet zaten mevcut.' });
