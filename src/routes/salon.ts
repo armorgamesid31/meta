@@ -176,7 +176,15 @@ router.get('/services', authenticateToken, async (req: any, res: any) => {
         duration: true,
         price: true,
         category: true,
-        requiresSpecialist: true
+        requiresSpecialist: true,
+        regionId: true,
+        ServiceRegion: {
+          select: {
+            id: true,
+            name: true,
+            categoryId: true,
+          },
+        },
       },
       orderBy: { name: 'asc' }
     });
@@ -196,6 +204,9 @@ router.get('/services', authenticateToken, async (req: any, res: any) => {
           ...service,
           name: translated?.name || service.name,
           description: translated?.description || service.description || null,
+          regionId: service.regionId,
+          regionName: service.ServiceRegion?.name || null,
+          regionCategoryId: service.ServiceRegion?.categoryId || null,
         };
       }),
     });
@@ -242,7 +253,15 @@ router.get('/services/public', async (req: any, res: any) => {
         duration: true,
         price: true,
         category: true,
-        requiresSpecialist: true
+        requiresSpecialist: true,
+        regionId: true,
+        ServiceRegion: {
+          select: {
+            id: true,
+            name: true,
+            categoryId: true,
+          },
+        },
       }
     });
 
@@ -281,6 +300,9 @@ router.get('/services/public', async (req: any, res: any) => {
         duration: service.duration,
         price: service.price,
         requiresSpecialist: service.requiresSpecialist || false,
+        regionId: service.regionId,
+        regionName: service.ServiceRegion?.name || null,
+        regionCategoryId: service.ServiceRegion?.categoryId || null,
       });
     });
 
@@ -365,13 +387,28 @@ router.post('/services', authenticateToken, async (req: any, res: any) => {
     return res.status(401).json({ message: 'Unauthorized' });
   }
 
-  const { name, duration, price, category, requiresSpecialist } = req.body;
+  const { name, duration, price, category, requiresSpecialist, regionId } = req.body;
 
   if (!name || !duration || price === undefined) {
     return res.status(400).json({ message: 'Name, duration, and price are required' });
   }
 
   try {
+    let parsedRegionId: number | null = null;
+    if (regionId !== undefined && regionId !== null && regionId !== '') {
+      parsedRegionId = Number(regionId);
+      if (!Number.isInteger(parsedRegionId) || parsedRegionId <= 0) {
+        return res.status(400).json({ message: 'regionId must be a positive integer.' });
+      }
+      const regionExists = await prisma.serviceRegion.findFirst({
+        where: { id: parsedRegionId, salonId: req.user.salonId },
+        select: { id: true },
+      });
+      if (!regionExists) {
+        return res.status(400).json({ message: 'regionId is not valid for this salon.' });
+      }
+    }
+
     const service = await prisma.service.create({
       data: {
         name,
@@ -380,6 +417,7 @@ router.post('/services', authenticateToken, async (req: any, res: any) => {
         category: category || 'OTHER',
         requiresSpecialist: !!requiresSpecialist,
         salonId: req.user.salonId,
+        regionId: parsedRegionId,
       },
     });
 

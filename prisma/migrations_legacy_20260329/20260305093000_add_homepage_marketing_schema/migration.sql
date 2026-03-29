@@ -4,6 +4,18 @@ CREATE TYPE "BookingMode" AS ENUM ('INTERNAL', 'WHATSAPP');
 -- CreateEnum
 CREATE TYPE "TestimonialTemplateType" AS ENUM ('CATEGORY_EXPERT', 'EXPERT_ONLY', 'CATEGORY_ONLY', 'GENERIC');
 
+-- Ensure ServiceCategory table exists (baseline safety)
+CREATE TABLE IF NOT EXISTS "ServiceCategory" (
+    "id" SERIAL NOT NULL,
+    "name" TEXT NOT NULL,
+    "salonId" INTEGER NOT NULL,
+    "categoryId" INTEGER,
+    "createdAt" TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "ServiceCategory_pkey" PRIMARY KEY ("id")
+);
+
 -- AlterTable
 ALTER TABLE "Salon"
 ADD COLUMN "tagline" TEXT,

@@ -2255,6 +2255,297 @@ router.post('/service-categories/reorder', authenticateToken, async (req: any, r
   }
 });
 
+router.get('/service-regions', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  try {
+    const regions = await prisma.serviceRegion.findMany({
+      where: { salonId },
+      select: {
+        id: true,
+        name: true,
+        isActive: true,
+        displayOrder: true,
+        categoryId: true,
+        ServiceCategory: {
+          select: {
+            id: true,
+            name: true,
+            categoryRef: {
+              select: {
+                key: true,
+                defaultName: true,
+              },
+            },
+          },
+        },
+        _count: {
+          select: {
+            Service: true,
+          },
+        },
+      },
+      orderBy: [{ displayOrder: 'asc' }, { name: 'asc' }, { id: 'asc' }],
+    });
+
+    return res.status(200).json({
+      items: regions.map((item) => ({
+        id: item.id,
+        name: item.name,
+        isActive: item.isActive ?? true,
+        displayOrder: item.displayOrder,
+        categoryId: item.categoryId,
+        categoryKey: item.ServiceCategory?.categoryRef?.key || null,
+        categoryName: item.ServiceCategory?.name || item.ServiceCategory?.categoryRef?.defaultName || null,
+        serviceCount: item._count.Service,
+      })),
+    });
+  } catch (error) {
+    console.error('Admin service regions list error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.post('/service-regions', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+  const displayOrder = req.body?.displayOrder === undefined ? null : Number(req.body.displayOrder);
+  const isActive = req.body?.isActive === undefined ? true : Boolean(req.body?.isActive);
+  const categoryId =
+    req.body?.categoryId === null || req.body?.categoryId === undefined || req.body?.categoryId === ''
+      ? null
+      : Number(req.body.categoryId);
+
+  if (!name) {
+    return res.status(400).json({ message: 'name is required.' });
+  }
+  if (displayOrder !== null && (!Number.isInteger(displayOrder) || displayOrder < 0)) {
+    return res.status(400).json({ message: 'displayOrder must be >= 0.' });
+  }
+  if (categoryId !== null && (!Number.isInteger(categoryId) || categoryId <= 0)) {
+    return res.status(400).json({ message: 'categoryId must be a positive integer.' });
+  }
+
+  try {
+    if (categoryId !== null) {
+      const categoryExists = await prisma.serviceCategory.findFirst({
+        where: { id: categoryId, salonId },
+        select: { id: true },
+      });
+      if (!categoryExists) {
+        return res.status(400).json({ message: 'categoryId is not valid for this salon.' });
+      }
+    }
+
+    const item = await prisma.serviceRegion.create({
+      data: {
+        salonId,
+        name,
+        isActive,
+        displayOrder,
+        categoryId,
+      },
+      select: {
+        id: true,
+        name: true,
+        isActive: true,
+        displayOrder: true,
+        categoryId: true,
+        ServiceCategory: {
+          select: {
+            id: true,
+            name: true,
+            categoryRef: {
+              select: {
+                key: true,
+                defaultName: true,
+              },
+            },
+          },
+        },
+        _count: {
+          select: {
+            Service: true,
+          },
+        },
+      },
+    });
+
+    return res.status(201).json({
+      item: {
+        id: item.id,
+        name: item.name,
+        isActive: item.isActive ?? true,
+        displayOrder: item.displayOrder,
+        categoryId: item.categoryId,
+        categoryKey: item.ServiceCategory?.categoryRef?.key || null,
+        categoryName: item.ServiceCategory?.name || item.ServiceCategory?.categoryRef?.defaultName || null,
+        serviceCount: item._count.Service,
+      },
+    });
+  } catch (error: any) {
+    if (error?.code === 'P2002') {
+      return res.status(409).json({ message: 'Bu bölge adı zaten kullanılıyor.' });
+    }
+    console.error('Admin service region create error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.put('/service-regions/:id', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const regionId = Number(req.params.id);
+  if (!Number.isInteger(regionId) || regionId <= 0) {
+    return res.status(400).json({ message: 'Invalid region id.' });
+  }
+
+  const updates: any = {};
+  if (typeof req.body?.name === 'string') {
+    updates.name = req.body.name.trim();
+  }
+  if (req.body?.displayOrder !== undefined) {
+    const displayOrder = Number(req.body.displayOrder);
+    if (!Number.isInteger(displayOrder) || displayOrder < 0) {
+      return res.status(400).json({ message: 'displayOrder must be >= 0.' });
+    }
+    updates.displayOrder = displayOrder;
+  }
+  if (req.body?.isActive !== undefined) {
+    updates.isActive = Boolean(req.body.isActive);
+  }
+  if (req.body?.categoryId !== undefined) {
+    if (req.body.categoryId === null || req.body.categoryId === '') {
+      updates.categoryId = null;
+    } else {
+      const categoryId = Number(req.body.categoryId);
+      if (!Number.isInteger(categoryId) || categoryId <= 0) {
+        return res.status(400).json({ message: 'categoryId must be a positive integer.' });
+      }
+      updates.categoryId = categoryId;
+    }
+  }
+
+  if (!Object.keys(updates).length) {
+    return res.status(400).json({ message: 'No valid update field provided.' });
+  }
+
+  try {
+    const exists = await prisma.serviceRegion.findFirst({
+      where: { id: regionId, salonId },
+      select: { id: true },
+    });
+    if (!exists) {
+      return res.status(404).json({ message: 'Region not found.' });
+    }
+
+    if (updates.categoryId !== undefined && updates.categoryId !== null) {
+      const categoryExists = await prisma.serviceCategory.findFirst({
+        where: { id: updates.categoryId, salonId },
+        select: { id: true },
+      });
+      if (!categoryExists) {
+        return res.status(400).json({ message: 'categoryId is not valid for this salon.' });
+      }
+    }
+
+    const item = await prisma.serviceRegion.update({
+      where: { id: regionId },
+      data: updates,
+      select: {
+        id: true,
+        name: true,
+        isActive: true,
+        displayOrder: true,
+        categoryId: true,
+        ServiceCategory: {
+          select: {
+            id: true,
+            name: true,
+            categoryRef: {
+              select: {
+                key: true,
+                defaultName: true,
+              },
+            },
+          },
+        },
+        _count: {
+          select: {
+            Service: true,
+          },
+        },
+      },
+    });
+
+    return res.status(200).json({
+      item: {
+        id: item.id,
+        name: item.name,
+        isActive: item.isActive ?? true,
+        displayOrder: item.displayOrder,
+        categoryId: item.categoryId,
+        categoryKey: item.ServiceCategory?.categoryRef?.key || null,
+        categoryName: item.ServiceCategory?.name || item.ServiceCategory?.categoryRef?.defaultName || null,
+        serviceCount: item._count.Service,
+      },
+    });
+  } catch (error: any) {
+    if (error?.code === 'P2002') {
+      return res.status(409).json({ message: 'Bu bölge adı zaten kullanılıyor.' });
+    }
+    console.error('Admin service region update error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.post('/service-regions/reorder', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const orderedIds = Array.isArray(req.body?.orderedIds) ? req.body.orderedIds.map((value: any) => Number(value)) : [];
+  if (!orderedIds.length || orderedIds.some((id: number) => !Number.isInteger(id) || id <= 0)) {
+    return res.status(400).json({ message: 'orderedIds must be a non-empty number array.' });
+  }
+
+  try {
+    const rows = await prisma.serviceRegion.findMany({
+      where: { salonId, id: { in: orderedIds } },
+      select: { id: true },
+    });
+    if (rows.length !== orderedIds.length) {
+      return res.status(400).json({ message: 'orderedIds contains invalid regions.' });
+    }
+
+    await prisma.$transaction(
+      orderedIds.map((id: number, index: number) =>
+        prisma.serviceRegion.update({
+          where: { id },
+          data: { displayOrder: index },
+          select: { id: true },
+        }),
+      ),
+    );
+
+    return res.status(200).json({ success: true });
+  } catch (error) {
+    console.error('Admin service region reorder error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
 router.get('/service-groups', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
   if (!salonId) {
@@ -2516,6 +2807,7 @@ router.get('/services', authenticateToken, async (req: any, res: any) => {
         category: true,
         requiresSpecialist: true,
         categoryId: true,
+        regionId: true,
         capacityOverride: true,
         sequentialOverride: true,
         bufferOverride: true,
@@ -2529,6 +2821,13 @@ router.get('/services', authenticateToken, async (req: any, res: any) => {
                 defaultName: true,
               },
             },
+          },
+        },
+        ServiceRegion: {
+          select: {
+            id: true,
+            name: true,
+            categoryId: true,
           },
         },
         serviceGroup: {
@@ -2549,6 +2848,9 @@ router.get('/services', authenticateToken, async (req: any, res: any) => {
         ...item,
         categoryKey: item.ServiceCategory?.categoryRef?.key || item.category || 'OTHER',
         categoryName: item.ServiceCategory?.name || item.ServiceCategory?.categoryRef?.defaultName || item.category || 'Diğer',
+        regionId: item.regionId,
+        regionName: item.ServiceRegion?.name || null,
+        regionCategoryId: item.ServiceRegion?.categoryId || null,
         serviceGroupId: item.serviceGroup?.id || null,
         serviceGroupName: item.serviceGroup?.name || null,
       })),
@@ -2628,6 +2930,10 @@ router.post('/services', authenticateToken, async (req: any, res: any) => {
     req.body?.categoryId === null || req.body?.categoryId === undefined || req.body?.categoryId === ''
       ? null
       : Number(req.body.categoryId);
+  const regionId =
+    req.body?.regionId === null || req.body?.regionId === undefined || req.body?.regionId === ''
+      ? null
+      : Number(req.body.regionId);
   const serviceGroupId =
     req.body?.serviceGroupId === null || req.body?.serviceGroupId === undefined || req.body?.serviceGroupId === ''
       ? null
@@ -2651,6 +2957,9 @@ router.post('/services', authenticateToken, async (req: any, res: any) => {
   if (categoryId !== null && (!Number.isInteger(categoryId) || categoryId <= 0)) {
     return res.status(400).json({ message: 'categoryId must be a positive integer.' });
   }
+  if (regionId !== null && (!Number.isInteger(regionId) || regionId <= 0)) {
+    return res.status(400).json({ message: 'regionId must be a positive integer.' });
+  }
   if (serviceGroupId !== null && (!Number.isInteger(serviceGroupId) || serviceGroupId <= 0)) {
     return res.status(400).json({ message: 'serviceGroupId must be a positive integer.' });
   }
@@ -2671,6 +2980,15 @@ router.post('/services', authenticateToken, async (req: any, res: any) => {
         return res.status(400).json({ message: 'serviceGroupId is not valid for this salon.' });
       }
     }
+    if (regionId !== null) {
+      const regionExists = await prisma.serviceRegion.findFirst({
+        where: { id: regionId, salonId },
+        select: { id: true },
+      });
+      if (!regionExists) {
+        return res.status(400).json({ message: 'regionId is not valid for this salon.' });
+      }
+    }
 
     const service = await prisma.service.create({
       data: {
@@ -2683,6 +3001,7 @@ router.post('/services', authenticateToken, async (req: any, res: any) => {
         isActive,
         requiresSpecialist,
         categoryId,
+        regionId,
         serviceGroupId,
         capacityOverride,
         sequentialOverride,
@@ -2698,6 +3017,7 @@ router.post('/services', authenticateToken, async (req: any, res: any) => {
         category: true,
         requiresSpecialist: true,
         categoryId: true,
+        regionId: true,
         serviceGroupId: true,
         capacityOverride: true,
         sequentialOverride: true,
@@ -2767,6 +3087,17 @@ router.put('/services/:id', authenticateToken, async (req: any, res: any) => {
       updates.categoryId = categoryId;
     }
   }
+  if (req.body?.regionId !== undefined) {
+    if (req.body.regionId === null || req.body.regionId === '') {
+      updates.regionId = null;
+    } else {
+      const regionId = Number(req.body.regionId);
+      if (!Number.isInteger(regionId) || regionId <= 0) {
+        return res.status(400).json({ message: 'regionId must be a positive integer.' });
+      }
+      updates.regionId = regionId;
+    }
+  }
   if (req.body?.serviceGroupId !== undefined) {
     if (req.body.serviceGroupId === null || req.body.serviceGroupId === '') {
       updates.serviceGroupId = null;
@@ -2830,6 +3161,15 @@ router.put('/services/:id', authenticateToken, async (req: any, res: any) => {
         return res.status(400).json({ message: 'serviceGroupId is not valid for this salon.' });
       }
     }
+    if (updates.regionId !== undefined && updates.regionId !== null) {
+      const regionExists = await prisma.serviceRegion.findFirst({
+        where: { id: updates.regionId, salonId },
+        select: { id: true },
+      });
+      if (!regionExists) {
+        return res.status(400).json({ message: 'regionId is not valid for this salon.' });
+      }
+    }
 
     const service = await prisma.service.update({
       where: { id: serviceId },
@@ -2844,6 +3184,7 @@ router.put('/services/:id', authenticateToken, async (req: any, res: any) => {
         category: true,
         requiresSpecialist: true,
         categoryId: true,
+        regionId: true,
         serviceGroupId: true,
         capacityOverride: true,
         sequentialOverride: true,
