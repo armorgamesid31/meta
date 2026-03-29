@@ -3,6 +3,7 @@ import axios from 'axios';
 import { prisma } from '../prisma.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { ensureSalonServiceCategories } from '../services/salonCategorySetup.js';
+import { ensureSalonServiceRegions } from '../services/salonRegionSetup.js';
 
 const router = Router();
 
@@ -2262,6 +2263,8 @@ router.get('/service-regions', authenticateToken, async (req: any, res: any) => 
   }
 
   try {
+    await ensureSalonServiceRegions(salonId);
+
     const regions = await prisma.serviceRegion.findMany({
       where: { salonId },
       select: {
