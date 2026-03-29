@@ -483,6 +483,24 @@ function asStringMap(input: unknown): Record<string, string> {
   return output;
 }
 
+function normalizeCommonQuestions(input: unknown) {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+
+  const output: Array<{ question: string; answer: string }> = [];
+  for (const item of input) {
+    if (!item || typeof item !== 'object') continue;
+    const source = item as Record<string, unknown>;
+    const question = typeof source.question === 'string' ? source.question.trim() : typeof source.q === 'string' ? source.q.trim() : '';
+    const answer = typeof source.answer === 'string' ? source.answer.trim() : typeof source.a === 'string' ? source.a.trim() : '';
+    if (!question && !answer) continue;
+    output.push({ question, answer });
+  }
+
+  return output.slice(0, 50);
+}
+
 function parseOptionalBoolean(input: unknown): boolean | undefined {
   if (typeof input === 'boolean') {
     return input;
@@ -1663,6 +1681,7 @@ router.get('/setup', authenticateToken, async (req: any, res: any) => {
           workEndHour: true,
           slotInterval: true,
           workingDays: true,
+          commonQuestions: true,
         },
       }),
       prisma.service.count({ where: { salonId } }),
@@ -1682,7 +1701,12 @@ router.get('/setup', authenticateToken, async (req: any, res: any) => {
 
     return res.status(200).json({
       salon,
-      settings,
+      settings: settings
+        ? {
+            ...settings,
+            commonQuestions: normalizeCommonQuestions(settings.commonQuestions),
+          }
+        : settings,
       checklist: {
         workingHours: hasWorkingHours,
         address: hasAddress,
@@ -1726,15 +1750,18 @@ router.put('/setup', authenticateToken, async (req: any, res: any) => {
       },
     });
 
-    const hasSettingsUpdate =
-      payload.workStartHour !== undefined ||
-      payload.workEndHour !== undefined ||
-      payload.slotInterval !== undefined ||
-      payload.workingDays !== undefined;
+  const hasSettingsUpdate =
+    payload.workStartHour !== undefined ||
+    payload.workEndHour !== undefined ||
+    payload.slotInterval !== undefined ||
+    payload.workingDays !== undefined ||
+    payload.commonQuestions !== undefined;
 
     let settings: any = null;
 
     if (hasSettingsUpdate) {
+      const commonQuestions =
+        payload.commonQuestions !== undefined ? normalizeCommonQuestions(payload.commonQuestions) : undefined;
       settings = await prisma.salonSettings.upsert({
         where: { salonId },
         update: {
@@ -1742,6 +1769,7 @@ router.put('/setup', authenticateToken, async (req: any, res: any) => {
           ...(payload.workEndHour !== undefined ? { workEndHour: Number(payload.workEndHour) } : {}),
           ...(payload.slotInterval !== undefined ? { slotInterval: Number(payload.slotInterval) } : {}),
           ...(payload.workingDays !== undefined ? { workingDays: payload.workingDays } : {}),
+          ...(commonQuestions !== undefined ? { commonQuestions } : {}),
         },
         create: {
           salonId,
@@ -1749,11 +1777,20 @@ router.put('/setup', authenticateToken, async (req: any, res: any) => {
           ...(payload.workEndHour !== undefined ? { workEndHour: Number(payload.workEndHour) } : {}),
           ...(payload.slotInterval !== undefined ? { slotInterval: Number(payload.slotInterval) } : {}),
           ...(payload.workingDays !== undefined ? { workingDays: payload.workingDays } : {}),
+          ...(commonQuestions !== undefined ? { commonQuestions } : {}),
         },
       });
     }
 
-    return res.status(200).json({ salon, settings });
+    return res.status(200).json({
+      salon,
+      settings: settings
+        ? {
+            ...settings,
+            commonQuestions: normalizeCommonQuestions(settings.commonQuestions),
+          }
+        : settings,
+    });
   } catch (error) {
     console.error('Admin setup update error:', error);
     return res.status(500).json({ message: 'Internal server error.' });
