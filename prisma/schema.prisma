@@ -359,6 +359,7 @@ model ServiceCategory {
   categoryId           Int?
   isActive             Boolean?           @default(true)
   marketingDescription String?
+  commonQuestions      Json?
   icon                 String?
   coverImageUrl        String?
   displayOrder         Int?

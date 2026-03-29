@@ -2137,6 +2137,7 @@ router.get('/service-categories', authenticateToken, async (req: any, res: any) 
         sequentialRequired: true,
         bufferMinutes: true,
         marketingDescription: true,
+        commonQuestions: true,
         categoryId: true,
         categoryRef: {
           select: {
@@ -2166,6 +2167,7 @@ router.get('/service-categories', authenticateToken, async (req: any, res: any) 
         sequentialRequired: item.sequentialRequired,
         bufferMinutes: item.bufferMinutes,
         marketingDescription: item.marketingDescription,
+        commonQuestions: normalizeCommonQuestions(item.commonQuestions),
         serviceCount: item._count.Service,
       }))
       .sort((a, b) => a.effectiveOrder - b.effectiveOrder || a.id - b.id);
@@ -2223,6 +2225,9 @@ router.put('/service-categories/:id', authenticateToken, async (req: any, res: a
     updates.marketingDescription =
       typeof req.body.marketingDescription === 'string' ? req.body.marketingDescription.trim() || null : null;
   }
+  if (req.body?.commonQuestions !== undefined) {
+    updates.commonQuestions = normalizeCommonQuestions(req.body.commonQuestions);
+  }
 
   if (!Object.keys(updates).length) {
     return res.status(400).json({ message: 'No valid update field provided.' });
@@ -2249,6 +2254,7 @@ router.put('/service-categories/:id', authenticateToken, async (req: any, res: a
         sequentialRequired: true,
         bufferMinutes: true,
         marketingDescription: true,
+        commonQuestions: true,
         categoryRef: {
           select: {
             key: true,
@@ -2267,6 +2273,7 @@ router.put('/service-categories/:id', authenticateToken, async (req: any, res: a
         sequentialRequired: item.sequentialRequired,
         bufferMinutes: item.bufferMinutes,
         marketingDescription: item.marketingDescription,
+        commonQuestions: normalizeCommonQuestions(item.commonQuestions),
         key: item.categoryRef?.key || 'OTHER',
         defaultName: item.categoryRef?.defaultName || item.name,
       },
