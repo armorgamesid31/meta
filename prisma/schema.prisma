@@ -313,6 +313,9 @@ model ServiceStats {
   maxPrice     Float
   minDuration  Int
   maxDuration  Int
+  description  String?
+  regionId     Int?
+  regionName   String?
   calculatedAt DateTime?      @default(now()) @db.Timestamp(6)
   salonId      Int
   gender       CustomerGender @default(female)
