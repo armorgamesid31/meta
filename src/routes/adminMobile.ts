@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import axios from 'axios';
+import type { CustomerGender } from '@prisma/client';
 import { prisma } from '../prisma.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { ensureSalonServiceCategories } from '../services/salonCategorySetup.js';
@@ -562,7 +563,12 @@ function parseStaffServiceAssignments(input: unknown) {
     return [];
   }
 
-  const rows: Array<{ serviceId: number; customPrice: number | null; customDuration: number | null; gender: string }> = [];
+  const rows: Array<{
+    serviceId: number;
+    customPrice: number | null;
+    customDuration: number | null;
+    gender: CustomerGender;
+  }> = [];
   const seen = new Set<number>();
 
   for (const raw of input) {
@@ -593,8 +599,7 @@ function parseStaffServiceAssignments(input: unknown) {
       customDuration = Math.round(parsed);
     }
 
-    const rawGender = typeof source.gender === 'string' ? source.gender.toLowerCase().trim() : '';
-    const gender = rawGender === 'male' || rawGender === 'female' || rawGender === 'other' ? rawGender : 'female';
+    const gender = asCustomerGender(source.gender) ?? 'female';
 
     rows.push({ serviceId, customPrice, customDuration, gender });
     seen.add(serviceId);
