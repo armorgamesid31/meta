@@ -608,7 +608,8 @@ router.post('/appointments-by-token', async (req: any, res: any) => {
         data: {
           phone,
           name: customerName,
-          salonId: salonId
+          salonId: salonId,
+          registrationStatus: 'PENDING'
         }
       });
     }

@@ -300,7 +300,8 @@ router.post("/:token/confirm", async (req: any, res: any) => {
             salonId: session.salonId,
             name: customerInfo.name,
             phone: customerInfo.phone,
-            email: customerInfo.email
+            email: customerInfo.email,
+            registrationStatus: 'PENDING'
           }
         });
       } else {

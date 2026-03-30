@@ -28,8 +28,34 @@ router.post('/ensure', async (req: any, res: any) => {
 
   const body = req.body || {};
   const salonId = Number(body.salonId);
-  const customerKey = typeof body.customerKey === 'string' ? body.customerKey.trim() : '';
-  const phone = typeof body.phone === 'string' ? body.phone.trim() : '';
+  const rawCustomerKey = typeof body.customerKey === 'string' ? body.customerKey.trim() : '';
+  let customerKey = rawCustomerKey;
+  let phone = typeof body.phone === 'string' ? body.phone.trim() : '';
+  const context = typeof body.context === 'object' && body.context !== null ? body.context : null;
+
+  if (rawCustomerKey && rawCustomerKey.startsWith('customer:')) {
+    const parsed = Number(rawCustomerKey.slice('customer:'.length));
+    if (Number.isInteger(parsed) && parsed > 0) {
+      const existing = await prisma.customer.findFirst({
+        where: { id: parsed, salonId },
+        select: { phone: true, instagram: true },
+      });
+      if (existing?.phone) {
+        phone = existing.phone.trim();
+      } else if (existing?.instagram) {
+        customerKey = existing.instagram.trim();
+      }
+    }
+  }
+
+  if (!phone && !customerKey && context && typeof (context as any).conversationKey === 'string') {
+    const conversationKey = String((context as any).conversationKey || '').trim();
+    if (conversationKey.startsWith('INSTAGRAM:')) {
+      customerKey = conversationKey;
+    } else if (conversationKey.startsWith('WHATSAPP:')) {
+      phone = conversationKey.slice('WHATSAPP:'.length);
+    }
+  }
 
   if (!Number.isInteger(salonId) || salonId <= 0) {
     return res.status(400).json({ ok: false, success: false, message: 'salonId is required' });
@@ -53,7 +79,7 @@ router.post('/ensure', async (req: any, res: any) => {
       type: asMagicType(body.type),
       phone: phone || null,
       customerKey: customerKey || null,
-      context: typeof body.context === 'object' && body.context !== null ? body.context : null,
+      context,
     });
 
     return res.status(200).json({

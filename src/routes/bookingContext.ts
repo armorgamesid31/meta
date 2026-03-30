@@ -22,10 +22,26 @@ router.get('/context', async (req: any, res: any) => {
     return res.status(410).json({ message: 'Magic link has expired' });
   }
 
-  const context = magicLink.context as { salonId?: number; language?: string; lang?: string } | null;
+  const context = magicLink.context as { salonId?: number; language?: string; lang?: string; customerKey?: string } | null;
   if (!context || typeof context.salonId !== 'number') {
     return res.status(400).json({ message: 'Magic link context must contain salonId' });
   }
+
+  const rawIdentity = magicLink.phone.trim();
+  const isIdentity = rawIdentity.startsWith('id:');
+  const identityValue = isIdentity ? rawIdentity.slice(3) : rawIdentity;
+  const normalizeInstagramKey = (value: string | null | undefined) => {
+    const trimmed = typeof value === 'string' ? value.trim() : '';
+    if (!trimmed) return null;
+    if (trimmed.startsWith('customer:')) return null;
+    if (trimmed.startsWith('INSTAGRAM:')) return trimmed.slice('INSTAGRAM:'.length);
+    return trimmed;
+  };
+  const originChannel = isIdentity ? 'INSTAGRAM' : 'WHATSAPP';
+  const originPhone = isIdentity ? null : identityValue;
+  const originInstagramId = isIdentity
+    ? normalizeInstagramKey(identityValue)
+    : normalizeInstagramKey(context?.customerKey);
 
   const salonId = context.salonId;
   const salon = await prisma.salon.findUnique({
@@ -37,15 +53,27 @@ router.get('/context', async (req: any, res: any) => {
     return res.status(404).json({ message: 'Salon not found' });
   }
 
-  const phone = magicLink.phone.trim();
-  const customer = await prisma.customer.findFirst({
-    where: {
-      phone,
-      salonId
-    }
-  });
+  const phone = isIdentity ? '' : rawIdentity;
+  const customerKey = typeof context.customerKey === 'string' ? context.customerKey.trim() : '';
 
-  const isKnownCustomer = !!customer;
+  let customer = null as any;
+  if (phone) {
+    customer = await prisma.customer.findFirst({
+      where: {
+        phone,
+        salonId
+      }
+    });
+  } else if (customerKey) {
+    customer = await prisma.customer.findFirst({
+      where: {
+        instagram: customerKey,
+        salonId
+      }
+    });
+  }
+
+  const isKnownCustomer = !!customer && customer.registrationStatus === 'VERIFIED';
 
   let appointments: { id: number; startTime: Date; endTime: Date; status: string }[] = [];
   if (customer) {
@@ -71,13 +99,17 @@ router.get('/context', async (req: any, res: any) => {
     ? (customer.gender as 'male' | 'female' | 'other')
     : null;
   const customerLanguage = context?.language || context?.lang || null;
+  const resolvedPhone = phone || customer?.phone || '';
 
   res.status(200).json({
     customerId: customer?.id ?? null,
     customerName: customer?.name ?? null,
-    customerPhone: phone,
+    customerPhone: resolvedPhone,
     customerGender,
     customerLanguage,
+    originChannel,
+    originPhone,
+    originInstagramId,
     salonId,
     salonName: salon.name,
     isKnownCustomer,
