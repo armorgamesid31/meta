@@ -28,7 +28,8 @@ router.post('/create', async (req: any, res: any) => {
   try {
     // Verify salon exists
     const salon = await prisma.salon.findUnique({
-      where: { id: salonId }
+      where: { id: salonId },
+      select: { id: true, slug: true }
     });
 
     if (!salon) {
@@ -60,6 +61,7 @@ router.post('/create', async (req: any, res: any) => {
         ...(context && typeof context === 'object' ? context : {}),
         salonId,
       } as any,
+      salonSlug: salon?.slug || null,
     });
 
     res.status(201).json({

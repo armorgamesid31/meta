@@ -3,13 +3,13 @@ import axios from 'axios';
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { ensureMagicLink } from '../services/magicLinkService.js';
+import { buildBookingUrl } from '../utils/bookingUrl.js';
 
 const router = Router();
 
 const META_GRAPH_VERSION = (process.env.META_GRAPH_VERSION || 'v23.0').trim();
 const CHAKRA_WHATSAPP_SEND_URL = (process.env.CHAKRA_WHATSAPP_SEND_URL || '').trim();
 const CHAKRA_API_TOKEN = (process.env.CHAKRA_API_TOKEN || '').trim();
-const BOOKING_BASE_URL = (process.env.BOOKING_BASE_URL || process.env.FRONTEND_URL || '').trim();
 
 function isInternalAuthorized(req: any): boolean {
   const configured = process.env.INTERNAL_API_KEY;
@@ -30,10 +30,6 @@ function asObject(value: unknown): Record<string, any> {
   return value as Record<string, any>;
 }
 
-function buildMagicUrl(token: string): string {
-  const base = BOOKING_BASE_URL || 'http://localhost:5173';
-  return `${base.replace(/\/+$/, '')}/m/${token}`;
-}
 
 function extractContextString(context: unknown, key: string): string | null {
   if (!context || typeof context !== 'object' || Array.isArray(context)) return null;
@@ -425,6 +421,11 @@ router.post('/send', async (req: any, res: any) => {
   const customerId = Number.isInteger(Number(body.customerId)) ? Number(body.customerId) : null;
   const forceCancelButton = body?.forceCancelButton === true;
   const bookingIntent = asBoolean(body?.bookingIntent) || asBoolean(body?.intentBooking) || asBoolean(body?.toolBookingIntent);
+  const salonMeta = await prisma.salon.findUnique({
+    where: { id: salonId },
+    select: { slug: true },
+  });
+  const salonSlug = typeof salonMeta?.slug === 'string' && salonMeta.slug.trim() ? salonMeta.slug.trim() : null;
 
   let magicLinkUrl = pickMagicLinkUrl(body);
   let magicLinkAction: 'created' | 'renewed' | 'pending' | null = null;
@@ -438,7 +439,11 @@ router.post('/send', async (req: any, res: any) => {
         conversationKey: resolvedConversationKey,
       });
       if (pending) {
-        magicLinkUrl = buildMagicUrl(pending.token);
+        magicLinkUrl = buildBookingUrl({
+          token: pending.token,
+          salonId,
+          salonSlug,
+        });
         magicLinkAction = 'pending';
         magicLinkToMark = { id: pending.id, context: pending.context };
       }
@@ -462,6 +467,7 @@ router.post('/send', async (req: any, res: any) => {
           canonicalUserId: canonicalUserId || null,
           customerId: customerId || null,
         },
+        salonSlug,
       });
 
       magicLinkUrl = ensured.magicUrl;

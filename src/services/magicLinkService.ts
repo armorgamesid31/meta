@@ -1,6 +1,7 @@
 import { MagicLink, MagicLinkType, Prisma } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { prisma } from '../prisma.js';
+import { buildBookingUrl } from '../utils/bookingUrl.js';
 
 const TOKEN_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
 const MAGIC_LINK_TTL_MINUTES = 60;
@@ -40,9 +41,9 @@ function extractSalonId(context: Prisma.JsonValue | null): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
-function buildMagicUrl(token: string): string {
-  const baseUrl = process.env.BOOKING_BASE_URL || process.env.FRONTEND_URL || 'http://localhost:5173';
-  return `${baseUrl.replace(/\/+$/, '')}/m/${token}`;
+function normalizeSlug(value: unknown): string | null {
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  return null;
 }
 
 async function createUniqueToken(): Promise<string> {
@@ -66,6 +67,7 @@ export async function ensureMagicLink(params: {
   phone?: string | null;
   customerKey?: string | null;
   context?: Prisma.InputJsonValue | null;
+  salonSlug?: string | null;
 }) {
   const type = params.type || 'BOOKING';
   const subject = normalizeIdentity(params.phone, params.customerKey);
@@ -121,11 +123,22 @@ export async function ensureMagicLink(params: {
     action = 'created';
   }
 
+  const contextSlug =
+    params.context && typeof params.context === 'object' && !Array.isArray(params.context)
+      ? normalizeSlug((params.context as any).salonSlug)
+      : null;
+
+  const magicUrl = buildBookingUrl({
+    token: record.token,
+    salonId: params.salonId,
+    salonSlug: normalizeSlug(params.salonSlug) || contextSlug,
+  });
+
   return {
     ok: true as const,
     action,
     token: record.token,
-    magicUrl: buildMagicUrl(record.token),
+    magicUrl,
     expiresAt: record.expiresAt,
   };
 }

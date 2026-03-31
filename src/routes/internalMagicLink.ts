@@ -69,7 +69,7 @@ router.post('/ensure', async (req: any, res: any) => {
 
   const salon = await prisma.salon.findUnique({
     where: { id: salonId },
-    select: { id: true },
+    select: { id: true, slug: true },
   });
   if (!salon) {
     return respond(false);
@@ -82,6 +82,7 @@ router.post('/ensure', async (req: any, res: any) => {
       phone: phone || null,
       customerKey: customerKey || null,
       context,
+      salonSlug: salon?.slug || null,
     });
 
     return respond(true);
