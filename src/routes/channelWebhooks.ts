@@ -472,6 +472,16 @@ function normalizeWebhookPayload(body: any) {
         const externalAccountId = isEcho ? senderId : recipientId;
         const mediaUrls = media.map((mm: any) => mm?.url).filter(Boolean);
         const primaryMedia = media[0] || null;
+        const eventRaw = {
+          object: root.object,
+          entry: [
+            {
+              id: entry?.id || null,
+              time: entry?.time || ev?.timestamp || Date.now(),
+              messaging: [ev],
+            },
+          ],
+        };
 
         out.push({
           channel: 'INSTAGRAM',
@@ -499,7 +509,7 @@ function normalizeWebhookPayload(body: any) {
           actionTitle: postback?.title || null,
           direction: isEcho ? 'outbound' : 'inbound',
           isEcho,
-          raw: root,
+          raw: eventRaw,
         });
       }
     }
