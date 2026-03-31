@@ -22,8 +22,10 @@ function asMagicType(value: unknown): MagicLinkType {
 }
 
 router.post('/ensure', async (req: any, res: any) => {
+  const respond = (ok: boolean) => res.status(200).json(ok);
+
   if (!isInternalAuthorized(req)) {
-    return res.status(401).json({ ok: false, success: false, message: 'Unauthorized' });
+    return respond(false);
   }
 
   const body = req.body || {};
@@ -58,11 +60,11 @@ router.post('/ensure', async (req: any, res: any) => {
   }
 
   if (!Number.isInteger(salonId) || salonId <= 0) {
-    return res.status(400).json({ ok: false, success: false, message: 'salonId is required' });
+    return respond(false);
   }
 
   if (!customerKey && !phone) {
-    return res.status(400).json({ ok: false, success: false, message: 'customerKey or phone is required' });
+    return respond(false);
   }
 
   const salon = await prisma.salon.findUnique({
@@ -70,11 +72,11 @@ router.post('/ensure', async (req: any, res: any) => {
     select: { id: true },
   });
   if (!salon) {
-    return res.status(404).json({ ok: false, success: false, message: 'Salon not found' });
+    return respond(false);
   }
 
   try {
-    const ensured = await ensureMagicLink({
+    await ensureMagicLink({
       salonId,
       type: asMagicType(body.type),
       phone: phone || null,
@@ -82,21 +84,10 @@ router.post('/ensure', async (req: any, res: any) => {
       context,
     });
 
-    return res.status(200).json({
-      ok: true,
-      success: true,
-      action: ensured.action,
-      magicUrl: ensured.magicUrl,
-      token: ensured.token,
-      expiresAt: ensured.expiresAt,
-    });
+    return respond(true);
   } catch (error) {
     console.error('Internal magic-link ensure error:', error);
-    return res.status(200).json({
-      ok: false,
-      success: false,
-      action: 'failed',
-    });
+    return respond(false);
   }
 });
 

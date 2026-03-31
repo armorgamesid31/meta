@@ -9,6 +9,7 @@ const router = Router();
 const META_GRAPH_VERSION = (process.env.META_GRAPH_VERSION || 'v23.0').trim();
 const CHAKRA_WHATSAPP_SEND_URL = (process.env.CHAKRA_WHATSAPP_SEND_URL || '').trim();
 const CHAKRA_API_TOKEN = (process.env.CHAKRA_API_TOKEN || '').trim();
+const BOOKING_BASE_URL = (process.env.BOOKING_BASE_URL || process.env.FRONTEND_URL || '').trim();
 
 function isInternalAuthorized(req: any): boolean {
   const configured = process.env.INTERNAL_API_KEY;
@@ -27,6 +28,40 @@ function asChannel(value: unknown): ChannelType | null {
 function asObject(value: unknown): Record<string, any> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   return value as Record<string, any>;
+}
+
+function buildMagicUrl(token: string): string {
+  const base = BOOKING_BASE_URL || 'http://localhost:5173';
+  return `${base.replace(/\/+$/, '')}/m/${token}`;
+}
+
+function extractContextString(context: unknown, key: string): string | null {
+  if (!context || typeof context !== 'object' || Array.isArray(context)) return null;
+  const value = (context as any)[key];
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  return null;
+}
+
+function extractContextNumber(context: unknown, key: string): number | null {
+  if (!context || typeof context !== 'object' || Array.isArray(context)) return null;
+  const value = (context as any)[key];
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function getMagicLinkSubject(channel: ChannelType, conversationKey: string): string | null {
+  const raw = extractRawConversationKey(channel, conversationKey);
+  if (!raw) return null;
+  return channel === 'WHATSAPP' ? raw : `id:${raw}`;
+}
+
+function wasMagicLinkSent(context: unknown): boolean {
+  const sentAt = extractContextString(context, 'sentAt');
+  return Boolean(sentAt);
 }
 
 function normalizeConversationCandidates(channel: ChannelType, value: string): string[] {
@@ -72,6 +107,67 @@ function asBoolean(value: unknown): boolean {
     return v === 'true' || v === '1' || v === 'yes' || v === 'y';
   }
   return false;
+}
+
+async function findPendingMagicLink(params: {
+  salonId: number;
+  channel: ChannelType;
+  conversationKey: string;
+}) {
+  const subject = getMagicLinkSubject(params.channel, params.conversationKey);
+  if (!subject) return null;
+
+  const candidates = await prisma.magicLink.findMany({
+    where: {
+      phone: subject,
+      type: 'BOOKING',
+      usedAt: null,
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 10,
+  });
+
+  const conversationCandidates = normalizeConversationCandidates(params.channel, params.conversationKey);
+
+  for (const link of candidates) {
+    if (link.expiresAt && link.expiresAt.getTime() < Date.now()) continue;
+
+    const context = asObject(link.context);
+    const contextSalonId = extractContextNumber(context, 'salonId');
+    if (contextSalonId && contextSalonId !== params.salonId) continue;
+
+    const contextConversationKey = extractContextString(context, 'conversationKey');
+    if (!contextConversationKey) continue;
+    if (!conversationCandidates.includes(contextConversationKey)) continue;
+
+    if (wasMagicLinkSent(context)) continue;
+
+    return link;
+  }
+
+  return null;
+}
+
+async function markMagicLinkSent(params: {
+  magicLinkId: number;
+  context: unknown;
+  channel: ChannelType;
+  conversationKey: string;
+  providerMessageId?: string | null;
+}) {
+  const context = asObject(params.context);
+  if (wasMagicLinkSent(context)) return;
+  const updatedContext = {
+    ...context,
+    sentAt: new Date().toISOString(),
+    sentChannel: params.channel,
+    sentConversationKey: params.conversationKey,
+    sentProviderMessageId: params.providerMessageId || null,
+  };
+  await prisma.magicLink.update({
+    where: { id: params.magicLinkId },
+    data: { context: updatedContext },
+  });
 }
 
 async function resolveConversationStateMode(params: {
@@ -156,7 +252,7 @@ async function sendInstagramMessage(params: {
             buttons: [
               {
                 type: 'web_url',
-                title: 'Randevu',
+                title: 'Randevu Oluştur',
                 url: bookingUrl,
               },
             ],
@@ -273,7 +369,7 @@ async function sendWhatsappViaChakra(params: {
             type: 'reply',
             reply: {
               id: 'BOOKING_INTENT',
-              title: 'Randevu',
+              title: 'Randevu Oluştur',
             },
           },
         ],
@@ -331,9 +427,23 @@ router.post('/send', async (req: any, res: any) => {
   const bookingIntent = asBoolean(body?.bookingIntent) || asBoolean(body?.intentBooking) || asBoolean(body?.toolBookingIntent);
 
   let magicLinkUrl = pickMagicLinkUrl(body);
-  let magicLinkAction: 'created' | 'renewed' | null = null;
+  let magicLinkAction: 'created' | 'renewed' | 'pending' | null = null;
+  let magicLinkToMark: { id: number; context: unknown } | null = null;
 
   try {
+    if (!magicLinkUrl) {
+      const pending = await findPendingMagicLink({
+        salonId,
+        channel,
+        conversationKey: resolvedConversationKey,
+      });
+      if (pending) {
+        magicLinkUrl = buildMagicUrl(pending.token);
+        magicLinkAction = 'pending';
+        magicLinkToMark = { id: pending.id, context: pending.context };
+      }
+    }
+
     if (!magicLinkUrl && bookingIntent) {
       const rawConversationId = extractRawConversationKey(channel, resolvedConversationKey);
       const phoneFromBody = typeof body.phone === 'string' ? body.phone.trim() : '';
@@ -356,6 +466,13 @@ router.post('/send', async (req: any, res: any) => {
 
       magicLinkUrl = ensured.magicUrl;
       magicLinkAction = ensured.action;
+      const created = await prisma.magicLink.findUnique({
+        where: { token: ensured.token },
+        select: { id: true, context: true },
+      });
+      if (created) {
+        magicLinkToMark = { id: created.id, context: created.context };
+      }
     }
 
     const mode = await resolveConversationStateMode({
@@ -421,6 +538,16 @@ router.post('/send', async (req: any, res: any) => {
         eventTimestamp: true,
       },
     });
+
+    if (magicLinkUrl && magicLinkToMark) {
+      await markMagicLinkSent({
+        magicLinkId: magicLinkToMark.id,
+        context: magicLinkToMark.context,
+        channel,
+        conversationKey: resolvedConversationKey,
+        providerMessageId: savedMessage.providerMessageId,
+      });
+    }
 
     await prisma.outboundMessageTrace.upsert({
       where: {
