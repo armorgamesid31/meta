@@ -4503,6 +4503,45 @@ function resolveMessageDirection(messageType: string): 'inbound' | 'outbound' | 
   return 'inbound';
 }
 
+function extractInstagramActors(rawPayload: unknown): { senderId: string | null; recipientId: string | null; isEcho: boolean } {
+  const raw = asObject(rawPayload);
+  const entry = Array.isArray(raw.entry) ? asObject(raw.entry[0]) : {};
+  const messaging = Array.isArray(entry.messaging) ? asObject(entry.messaging[0]) : {};
+  const message = asObject(messaging.message);
+  const sender = asObject(messaging.sender);
+  const recipient = asObject(messaging.recipient);
+
+  return {
+    senderId: typeof sender.id === 'string' ? sender.id.trim() : null,
+    recipientId: typeof recipient.id === 'string' ? recipient.id.trim() : null,
+    isEcho: message.is_echo === true,
+  };
+}
+
+function resolveInstagramConversationKeyFromRow(input: {
+  conversationKey: string;
+  messageType: string;
+  externalAccountId?: string | null;
+  rawPayload?: unknown;
+}): string {
+  const fromKey = extractRawConversationKey('INSTAGRAM', input.conversationKey);
+  const actors = extractInstagramActors(input.rawPayload);
+  const fromActors = actors.isEcho ? actors.recipientId : actors.senderId;
+  if (fromActors && fromActors.trim()) {
+    return normalizeInstagramIdentity(fromActors) || fromActors.trim();
+  }
+
+  // Legacy tolerance: old echo rows persisted with business key + customer in externalAccountId.
+  if ((input.messageType || '').toLowerCase().startsWith('echo_')) {
+    const ext = typeof input.externalAccountId === 'string' ? input.externalAccountId.trim() : '';
+    if (ext) {
+      return normalizeInstagramIdentity(ext) || ext;
+    }
+  }
+
+  return fromKey;
+}
+
 router.get('/conversations', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
   if (!salonId) {
@@ -4526,11 +4565,13 @@ router.get('/conversations', authenticateToken, async (req: any, res: any) => {
       select: {
         conversationKey: true,
         channel: true,
+        externalAccountId: true,
         customerName: true,
         messageType: true,
         text: true,
         status: true,
         eventTimestamp: true,
+        rawPayload: true,
       },
     });
 
@@ -4550,7 +4591,15 @@ router.get('/conversations', authenticateToken, async (req: any, res: any) => {
     >();
 
     for (const row of rows) {
-      const canonicalConversationKey = extractRawConversationKey(row.channel as 'INSTAGRAM' | 'WHATSAPP', row.conversationKey);
+      const canonicalConversationKey =
+        row.channel === 'INSTAGRAM'
+          ? resolveInstagramConversationKeyFromRow({
+              conversationKey: row.conversationKey,
+              messageType: row.messageType,
+              externalAccountId: row.externalAccountId,
+              rawPayload: row.rawPayload,
+            })
+          : extractRawConversationKey('WHATSAPP', row.conversationKey);
       const key = `${row.channel}:${canonicalConversationKey}`;
       const existing = byConversation.get(key);
       const unread = row.status !== 'DONE' ? 1 : 0;
@@ -4700,14 +4749,39 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
   const limit = asPositiveInt(req.query.limit, 80, 1, 200);
 
   try {
+    const keyCandidates = conversationKeyCandidates(channel, conversationKey);
+    const rawKeyCandidates = Array.from(new Set(keyCandidates.map((key) => extractRawConversationKey(channel, key))));
+    const where: any =
+      channel === 'INSTAGRAM'
+        ? {
+            salonId,
+            channel,
+            OR: [
+              {
+                conversationKey: {
+                  in: keyCandidates,
+                },
+              },
+              {
+                messageType: {
+                  startsWith: 'echo_',
+                },
+                externalAccountId: {
+                  in: rawKeyCandidates,
+                },
+              },
+            ],
+          }
+        : {
+            salonId,
+            channel,
+            conversationKey: {
+              in: keyCandidates,
+            },
+          };
+
     const rows = await prisma.inboundMessageQueue.findMany({
-      where: {
-        salonId,
-        channel,
-        conversationKey: {
-          in: conversationKeyCandidates(channel, conversationKey),
-        },
-      },
+      where,
       orderBy: {
         eventTimestamp: 'asc',
       },
@@ -4775,14 +4849,29 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
 
   try {
     const keyCandidates = conversationKeyCandidates(channel, conversationKey);
-    const latestInbound = await prisma.inboundMessageQueue.findFirst({
-      where: {
-        salonId,
-        channel,
-        conversationKey: {
-          in: keyCandidates,
+    const rawKeyCandidates = Array.from(new Set(keyCandidates.map((key) => extractRawConversationKey(channel, key))));
+    const latestInboundWhere: any = {
+      salonId,
+      channel,
+      OR: [
+        {
+          conversationKey: {
+            in: keyCandidates,
+          },
         },
-      },
+        {
+          messageType: {
+            startsWith: 'echo_',
+          },
+          externalAccountId: {
+            in: rawKeyCandidates,
+          },
+        },
+      ],
+    };
+
+    const latestInbound = await prisma.inboundMessageQueue.findFirst({
+      where: latestInboundWhere,
       orderBy: {
         eventTimestamp: 'desc',
       },
@@ -4790,6 +4879,8 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
         conversationKey: true,
         externalAccountId: true,
         customerName: true,
+        messageType: true,
+        rawPayload: true,
       },
     });
 
@@ -4797,7 +4888,20 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
       return res.status(404).json({ message: 'Conversation not found.' });
     }
     const resolvedConversationKey = latestInbound.conversationKey || conversationKey;
-    const rawRecipientId = extractRawConversationKey(channel, resolvedConversationKey);
+    const actors = extractInstagramActors(latestInbound.rawPayload);
+    let rawRecipientId =
+      (actors.isEcho ? actors.recipientId : actors.senderId) ||
+      extractRawConversationKey(channel, resolvedConversationKey);
+    const keyRaw = extractRawConversationKey(channel, resolvedConversationKey);
+    if ((!rawRecipientId || rawRecipientId === keyRaw) && (latestInbound.messageType || '').toLowerCase().startsWith('echo_')) {
+      const legacyRecipient = typeof latestInbound.externalAccountId === 'string' ? latestInbound.externalAccountId.trim() : '';
+      if (legacyRecipient) {
+        rawRecipientId = legacyRecipient;
+      }
+    }
+    if (!rawRecipientId) {
+      return res.status(400).json({ message: 'Conversation recipient could not be resolved.' });
+    }
 
     const settings = await prisma.salonAiAgentSettings.findUnique({
       where: { salonId },
@@ -4808,9 +4912,13 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
     const metaDirect = asObject(faqAnswers.metaDirect);
     const instagram = asObject(metaDirect.instagram);
     const accessToken = typeof instagram.accessToken === 'string' ? instagram.accessToken.trim() : '';
-    const senderInstagramId =
-      (typeof instagram.externalAccountId === 'string' ? instagram.externalAccountId.trim() : '') ||
-      latestInbound.externalAccountId;
+    let senderInstagramId = typeof instagram.externalAccountId === 'string' ? instagram.externalAccountId.trim() : '';
+    if (!senderInstagramId) {
+      senderInstagramId = (actors.isEcho ? actors.senderId : actors.recipientId) || '';
+    }
+    if (!senderInstagramId && keyRaw && keyRaw !== rawRecipientId) {
+      senderInstagramId = keyRaw;
+    }
 
     if (!accessToken || !senderInstagramId) {
       return res.status(400).json({ message: 'Instagram is not connected yet.' });
@@ -4929,14 +5037,38 @@ router.post('/conversations/:channel/:conversationKey/handover', authenticateTok
 
   try {
     const keyCandidates = conversationKeyCandidates(channel, conversationKey);
+    const rawKeyCandidates = Array.from(new Set(keyCandidates.map((key) => extractRawConversationKey(channel, key))));
+    const latestInboundWhere: any =
+      channel === 'INSTAGRAM'
+        ? {
+            salonId,
+            channel,
+            OR: [
+              {
+                conversationKey: {
+                  in: keyCandidates,
+                },
+              },
+              {
+                messageType: {
+                  startsWith: 'echo_',
+                },
+                externalAccountId: {
+                  in: rawKeyCandidates,
+                },
+              },
+            ],
+          }
+        : {
+            salonId,
+            channel,
+            conversationKey: {
+              in: keyCandidates,
+            },
+          };
+
     const latestInbound = await prisma.inboundMessageQueue.findFirst({
-      where: {
-        salonId,
-        channel,
-        conversationKey: {
-          in: keyCandidates,
-        },
-      },
+      where: latestInboundWhere,
       orderBy: {
         eventTimestamp: 'desc',
       },
@@ -5019,11 +5151,13 @@ router.get('/instagram-inbox/conversations', authenticateToken, async (req: any,
       select: {
         id: true,
         conversationKey: true,
+        externalAccountId: true,
         customerName: true,
         messageType: true,
         text: true,
         status: true,
         eventTimestamp: true,
+        rawPayload: true,
       },
     });
 
@@ -5042,7 +5176,12 @@ router.get('/instagram-inbox/conversations', authenticateToken, async (req: any,
     >();
 
     for (const row of rows) {
-      const key = extractRawConversationKey('INSTAGRAM', row.conversationKey);
+      const key = resolveInstagramConversationKeyFromRow({
+        conversationKey: row.conversationKey,
+        messageType: row.messageType,
+        externalAccountId: row.externalAccountId,
+        rawPayload: row.rawPayload,
+      });
       const existing = byConversation.get(key);
       const unread = row.status !== 'DONE' ? 1 : 0;
       const isHandover = row.messageType === 'handover_request';
@@ -5167,14 +5306,30 @@ router.get('/instagram-inbox/conversations/:conversationKey/messages', authentic
   const limit = asPositiveInt(req.query.limit, 80, 1, 200);
 
   try {
-    const rows = await prisma.inboundMessageQueue.findMany({
-      where: {
-        salonId,
-        channel: 'INSTAGRAM',
-        conversationKey: {
-          in: conversationKeyCandidates('INSTAGRAM', conversationKey),
+    const keyCandidates = conversationKeyCandidates('INSTAGRAM', conversationKey);
+    const rawKeyCandidates = Array.from(new Set(keyCandidates.map((key) => extractRawConversationKey('INSTAGRAM', key))));
+    const where: any = {
+      salonId,
+      channel: 'INSTAGRAM',
+      OR: [
+        {
+          conversationKey: {
+            in: keyCandidates,
+          },
         },
-      },
+        {
+          messageType: {
+            startsWith: 'echo_',
+          },
+          externalAccountId: {
+            in: rawKeyCandidates,
+          },
+        },
+      ],
+    };
+
+    const rows = await prisma.inboundMessageQueue.findMany({
+      where,
       orderBy: {
         eventTimestamp: 'asc',
       },
@@ -5233,14 +5388,29 @@ router.post('/instagram-inbox/conversations/:conversationKey/reply', authenticat
 
   try {
     const keyCandidates = conversationKeyCandidates('INSTAGRAM', conversationKey);
-    const latestInbound = await prisma.inboundMessageQueue.findFirst({
-      where: {
-        salonId,
-        channel: 'INSTAGRAM',
-        conversationKey: {
-          in: keyCandidates,
+    const rawKeyCandidates = Array.from(new Set(keyCandidates.map((key) => extractRawConversationKey('INSTAGRAM', key))));
+    const latestInboundWhere: any = {
+      salonId,
+      channel: 'INSTAGRAM',
+      OR: [
+        {
+          conversationKey: {
+            in: keyCandidates,
+          },
         },
-      },
+        {
+          messageType: {
+            startsWith: 'echo_',
+          },
+          externalAccountId: {
+            in: rawKeyCandidates,
+          },
+        },
+      ],
+    };
+
+    const latestInbound = await prisma.inboundMessageQueue.findFirst({
+      where: latestInboundWhere,
       orderBy: {
         eventTimestamp: 'desc',
       },
@@ -5248,6 +5418,8 @@ router.post('/instagram-inbox/conversations/:conversationKey/reply', authenticat
         conversationKey: true,
         externalAccountId: true,
         customerName: true,
+        messageType: true,
+        rawPayload: true,
       },
     });
 
@@ -5255,7 +5427,20 @@ router.post('/instagram-inbox/conversations/:conversationKey/reply', authenticat
       return res.status(404).json({ message: 'Conversation not found.' });
     }
     const resolvedConversationKey = latestInbound.conversationKey || conversationKey;
-    const rawRecipientId = extractRawConversationKey('INSTAGRAM', resolvedConversationKey);
+    const actors = extractInstagramActors(latestInbound.rawPayload);
+    let rawRecipientId =
+      (actors.isEcho ? actors.recipientId : actors.senderId) ||
+      extractRawConversationKey('INSTAGRAM', resolvedConversationKey);
+    const keyRaw = extractRawConversationKey('INSTAGRAM', resolvedConversationKey);
+    if ((!rawRecipientId || rawRecipientId === keyRaw) && (latestInbound.messageType || '').toLowerCase().startsWith('echo_')) {
+      const legacyRecipient = typeof latestInbound.externalAccountId === 'string' ? latestInbound.externalAccountId.trim() : '';
+      if (legacyRecipient) {
+        rawRecipientId = legacyRecipient;
+      }
+    }
+    if (!rawRecipientId) {
+      return res.status(400).json({ message: 'Conversation recipient could not be resolved.' });
+    }
 
     const settings = await prisma.salonAiAgentSettings.findUnique({
       where: { salonId },
@@ -5266,9 +5451,13 @@ router.post('/instagram-inbox/conversations/:conversationKey/reply', authenticat
     const metaDirect = asObject(faqAnswers.metaDirect);
     const instagram = asObject(metaDirect.instagram);
     const accessToken = typeof instagram.accessToken === 'string' ? instagram.accessToken.trim() : '';
-    const senderInstagramId =
-      (typeof instagram.externalAccountId === 'string' ? instagram.externalAccountId.trim() : '') ||
-      latestInbound.externalAccountId;
+    let senderInstagramId = typeof instagram.externalAccountId === 'string' ? instagram.externalAccountId.trim() : '';
+    if (!senderInstagramId) {
+      senderInstagramId = (actors.isEcho ? actors.senderId : actors.recipientId) || '';
+    }
+    if (!senderInstagramId && keyRaw && keyRaw !== rawRecipientId) {
+      senderInstagramId = keyRaw;
+    }
 
     if (!accessToken || !senderInstagramId) {
       return res.status(400).json({ message: 'Instagram is not connected yet.' });
@@ -5382,14 +5571,29 @@ router.post('/instagram-inbox/conversations/:conversationKey/handover', authenti
 
   try {
     const keyCandidates = conversationKeyCandidates('INSTAGRAM', conversationKey);
-    const latestInbound = await prisma.inboundMessageQueue.findFirst({
-      where: {
-        salonId,
-        channel: 'INSTAGRAM',
-        conversationKey: {
-          in: keyCandidates,
+    const rawKeyCandidates = Array.from(new Set(keyCandidates.map((key) => extractRawConversationKey('INSTAGRAM', key))));
+    const latestInboundWhere: any = {
+      salonId,
+      channel: 'INSTAGRAM',
+      OR: [
+        {
+          conversationKey: {
+            in: keyCandidates,
+          },
         },
-      },
+        {
+          messageType: {
+            startsWith: 'echo_',
+          },
+          externalAccountId: {
+            in: rawKeyCandidates,
+          },
+        },
+      ],
+    };
+
+    const latestInbound = await prisma.inboundMessageQueue.findFirst({
+      where: latestInboundWhere,
       orderBy: {
         eventTimestamp: 'desc',
       },

@@ -464,7 +464,12 @@ function normalizeWebhookPayload(body: any) {
         }));
 
         const messageType = postback ? 'postback' : parseMetaMessageType('INSTAGRAM', m, media);
-        const channelUserId = ev?.sender?.id || null;
+        const senderId = ev?.sender?.id || null;
+        const recipientId = ev?.recipient?.id || null;
+        // For echo events sender is the business account.
+        // Conversation/user identity must always represent the customer side.
+        const channelUserId = isEcho ? recipientId : senderId;
+        const externalAccountId = isEcho ? senderId : recipientId;
         const mediaUrls = media.map((mm: any) => mm?.url).filter(Boolean);
         const primaryMedia = media[0] || null;
 
@@ -476,9 +481,9 @@ function normalizeWebhookPayload(body: any) {
           text: m?.text || postback?.title || postback?.payload || null,
           timestamp: Number(ev?.timestamp || Date.now()),
           eventTimestamp: toIsoFromTs(ev?.timestamp),
-          senderId: ev?.sender?.id || null,
-          recipientId: ev?.recipient?.id || null,
-          externalAccountId: ev?.recipient?.id || entry?.id || null,
+          senderId,
+          recipientId,
+          externalAccountId: externalAccountId || entry?.id || null,
           externalBusinessId: entry?.id || null,
           channelUserId,
           channelConversationKey: `INSTAGRAM:${channelUserId || 'unknown'}`,
