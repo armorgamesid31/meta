@@ -4491,6 +4491,18 @@ function extractRawConversationKey(channel: 'INSTAGRAM' | 'WHATSAPP', value: str
   return trimmed;
 }
 
+function conversationKeyCandidates(channel: 'INSTAGRAM' | 'WHATSAPP', value: string): string[] {
+  const raw = extractRawConversationKey(channel, value);
+  return Array.from(new Set([value.trim(), raw, `${channel}:${raw}`].filter(Boolean)));
+}
+
+function resolveMessageDirection(messageType: string): 'inbound' | 'outbound' | 'system' {
+  const normalized = (messageType || '').trim().toLowerCase();
+  if (normalized === 'handover_request') return 'system';
+  if (normalized.includes('outbound') || normalized.startsWith('echo_')) return 'outbound';
+  return 'inbound';
+}
+
 router.get('/conversations', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
   if (!salonId) {
@@ -4538,7 +4550,8 @@ router.get('/conversations', authenticateToken, async (req: any, res: any) => {
     >();
 
     for (const row of rows) {
-      const key = `${row.channel}:${row.conversationKey}`;
+      const canonicalConversationKey = extractRawConversationKey(row.channel as 'INSTAGRAM' | 'WHATSAPP', row.conversationKey);
+      const key = `${row.channel}:${canonicalConversationKey}`;
       const existing = byConversation.get(key);
       const unread = row.status !== 'DONE' ? 1 : 0;
       const isHandover = row.messageType === 'handover_request';
@@ -4546,7 +4559,7 @@ router.get('/conversations', authenticateToken, async (req: any, res: any) => {
       if (!existing) {
         byConversation.set(key, {
           channel: row.channel as 'INSTAGRAM' | 'WHATSAPP',
-          conversationKey: row.conversationKey,
+          conversationKey: canonicalConversationKey,
           customerName: row.customerName || null,
           lastMessageType: row.messageType,
           lastMessageText: row.text || null,
@@ -4691,7 +4704,9 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
       where: {
         salonId,
         channel,
-        conversationKey,
+        conversationKey: {
+          in: conversationKeyCandidates(channel, conversationKey),
+        },
       },
       orderBy: {
         eventTimestamp: 'asc',
@@ -4711,12 +4726,7 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
 
     const items = rows.map((row) => {
       const raw = asObject(row.rawPayload);
-      const direction =
-        row.messageType === 'text_outbound'
-          ? 'outbound'
-          : row.messageType === 'handover_request'
-            ? 'system'
-            : 'inbound';
+      const direction = resolveMessageDirection(row.messageType);
 
       return {
         id: row.id,
@@ -4764,16 +4774,20 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
   }
 
   try {
+    const keyCandidates = conversationKeyCandidates(channel, conversationKey);
     const latestInbound = await prisma.inboundMessageQueue.findFirst({
       where: {
         salonId,
-        channel: 'INSTAGRAM',
-        conversationKey,
+        channel,
+        conversationKey: {
+          in: keyCandidates,
+        },
       },
       orderBy: {
         eventTimestamp: 'desc',
       },
       select: {
+        conversationKey: true,
         externalAccountId: true,
         customerName: true,
       },
@@ -4782,6 +4796,8 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
     if (!latestInbound) {
       return res.status(404).json({ message: 'Conversation not found.' });
     }
+    const resolvedConversationKey = latestInbound.conversationKey || conversationKey;
+    const rawRecipientId = extractRawConversationKey(channel, resolvedConversationKey);
 
     const settings = await prisma.salonAiAgentSettings.findUnique({
       where: { salonId },
@@ -4804,7 +4820,7 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
     const graphResponse = await axios.post(
       url,
       {
-        recipient: { id: conversationKey },
+        recipient: { id: rawRecipientId },
         message: { text },
       },
       {
@@ -4821,7 +4837,7 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
       data: {
         salonId,
         channel: 'INSTAGRAM',
-        conversationKey,
+        conversationKey: resolvedConversationKey,
         providerMessageId: graphMessageId,
         externalAccountId: senderInstagramId,
         customerName: latestInbound.customerName || null,
@@ -4846,7 +4862,7 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
       },
       update: {
         salonId,
-        conversationKey,
+        conversationKey: resolvedConversationKey,
         source: 'HUMAN_APP',
         externalAccountId: senderInstagramId,
         text,
@@ -4855,7 +4871,7 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
       create: {
         salonId,
         channel: 'INSTAGRAM',
-        conversationKey,
+        conversationKey: resolvedConversationKey,
         providerMessageId: graphMessageId,
         source: 'HUMAN_APP',
         externalAccountId: senderInstagramId,
@@ -4867,7 +4883,7 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
     await markConversationHumanActive({
       salonId,
       channel: 'INSTAGRAM',
-      conversationKey,
+      conversationKey: resolvedConversationKey,
       profileName: latestInbound.customerName || null,
     });
 
@@ -4912,16 +4928,20 @@ router.post('/conversations/:channel/:conversationKey/handover', authenticateTok
   const note = typeof req.body?.note === 'string' ? req.body.note.trim() : '';
 
   try {
+    const keyCandidates = conversationKeyCandidates(channel, conversationKey);
     const latestInbound = await prisma.inboundMessageQueue.findFirst({
       where: {
         salonId,
         channel,
-        conversationKey,
+        conversationKey: {
+          in: keyCandidates,
+        },
       },
       orderBy: {
         eventTimestamp: 'desc',
       },
       select: {
+        conversationKey: true,
         externalAccountId: true,
         customerName: true,
       },
@@ -4930,12 +4950,13 @@ router.post('/conversations/:channel/:conversationKey/handover', authenticateTok
     if (!latestInbound) {
       return res.status(404).json({ message: 'Conversation not found.' });
     }
+    const resolvedConversationKey = latestInbound.conversationKey || conversationKey;
 
     const saved = await prisma.inboundMessageQueue.create({
       data: {
         salonId,
         channel,
-        conversationKey,
+        conversationKey: resolvedConversationKey,
         providerMessageId: `handover_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
         externalAccountId: latestInbound.externalAccountId,
         customerName: latestInbound.customerName || null,
@@ -4954,7 +4975,7 @@ router.post('/conversations/:channel/:conversationKey/handover', authenticateTok
     await markConversationHumanPending({
       salonId,
       channel,
-      conversationKey,
+      conversationKey: resolvedConversationKey,
       note: note || 'Human handover requested.',
       profileName: latestInbound.customerName || null,
     });
@@ -5021,7 +5042,7 @@ router.get('/instagram-inbox/conversations', authenticateToken, async (req: any,
     >();
 
     for (const row of rows) {
-      const key = row.conversationKey;
+      const key = extractRawConversationKey('INSTAGRAM', row.conversationKey);
       const existing = byConversation.get(key);
       const unread = row.status !== 'DONE' ? 1 : 0;
       const isHandover = row.messageType === 'handover_request';
@@ -5150,7 +5171,9 @@ router.get('/instagram-inbox/conversations/:conversationKey/messages', authentic
       where: {
         salonId,
         channel: 'INSTAGRAM',
-        conversationKey,
+        conversationKey: {
+          in: conversationKeyCandidates('INSTAGRAM', conversationKey),
+        },
       },
       orderBy: {
         eventTimestamp: 'asc',
@@ -5170,12 +5193,7 @@ router.get('/instagram-inbox/conversations/:conversationKey/messages', authentic
 
     const items = rows.map((row) => {
       const raw = asObject(row.rawPayload);
-      const direction =
-        row.messageType === 'text_outbound'
-          ? 'outbound'
-          : row.messageType === 'handover_request'
-            ? 'system'
-            : 'inbound';
+      const direction = resolveMessageDirection(row.messageType);
 
       return {
         id: row.id,
@@ -5214,16 +5232,20 @@ router.post('/instagram-inbox/conversations/:conversationKey/reply', authenticat
   }
 
   try {
+    const keyCandidates = conversationKeyCandidates('INSTAGRAM', conversationKey);
     const latestInbound = await prisma.inboundMessageQueue.findFirst({
       where: {
         salonId,
         channel: 'INSTAGRAM',
-        conversationKey,
+        conversationKey: {
+          in: keyCandidates,
+        },
       },
       orderBy: {
         eventTimestamp: 'desc',
       },
       select: {
+        conversationKey: true,
         externalAccountId: true,
         customerName: true,
       },
@@ -5232,6 +5254,8 @@ router.post('/instagram-inbox/conversations/:conversationKey/reply', authenticat
     if (!latestInbound) {
       return res.status(404).json({ message: 'Conversation not found.' });
     }
+    const resolvedConversationKey = latestInbound.conversationKey || conversationKey;
+    const rawRecipientId = extractRawConversationKey('INSTAGRAM', resolvedConversationKey);
 
     const settings = await prisma.salonAiAgentSettings.findUnique({
       where: { salonId },
@@ -5254,7 +5278,7 @@ router.post('/instagram-inbox/conversations/:conversationKey/reply', authenticat
     const graphResponse = await axios.post(
       url,
       {
-        recipient: { id: conversationKey },
+        recipient: { id: rawRecipientId },
         message: { text },
       },
       {
@@ -5271,7 +5295,7 @@ router.post('/instagram-inbox/conversations/:conversationKey/reply', authenticat
       data: {
         salonId,
         channel: 'INSTAGRAM',
-        conversationKey,
+        conversationKey: resolvedConversationKey,
         providerMessageId: graphMessageId,
         externalAccountId: senderInstagramId,
         customerName: latestInbound.customerName || null,
@@ -5296,7 +5320,7 @@ router.post('/instagram-inbox/conversations/:conversationKey/reply', authenticat
       },
       update: {
         salonId,
-        conversationKey,
+        conversationKey: resolvedConversationKey,
         source: 'HUMAN_APP',
         externalAccountId: senderInstagramId,
         text,
@@ -5305,7 +5329,7 @@ router.post('/instagram-inbox/conversations/:conversationKey/reply', authenticat
       create: {
         salonId,
         channel: 'INSTAGRAM',
-        conversationKey,
+        conversationKey: resolvedConversationKey,
         providerMessageId: graphMessageId,
         source: 'HUMAN_APP',
         externalAccountId: senderInstagramId,
@@ -5317,7 +5341,7 @@ router.post('/instagram-inbox/conversations/:conversationKey/reply', authenticat
     await markConversationHumanActive({
       salonId,
       channel: 'INSTAGRAM',
-      conversationKey,
+      conversationKey: resolvedConversationKey,
       profileName: latestInbound.customerName || null,
     });
 
@@ -5357,16 +5381,20 @@ router.post('/instagram-inbox/conversations/:conversationKey/handover', authenti
   const note = typeof req.body?.note === 'string' ? req.body.note.trim() : '';
 
   try {
+    const keyCandidates = conversationKeyCandidates('INSTAGRAM', conversationKey);
     const latestInbound = await prisma.inboundMessageQueue.findFirst({
       where: {
         salonId,
         channel: 'INSTAGRAM',
-        conversationKey,
+        conversationKey: {
+          in: keyCandidates,
+        },
       },
       orderBy: {
         eventTimestamp: 'desc',
       },
       select: {
+        conversationKey: true,
         externalAccountId: true,
         customerName: true,
       },
@@ -5375,12 +5403,13 @@ router.post('/instagram-inbox/conversations/:conversationKey/handover', authenti
     if (!latestInbound) {
       return res.status(404).json({ message: 'Conversation not found.' });
     }
+    const resolvedConversationKey = latestInbound.conversationKey || conversationKey;
 
     const saved = await prisma.inboundMessageQueue.create({
       data: {
         salonId,
         channel: 'INSTAGRAM',
-        conversationKey,
+        conversationKey: resolvedConversationKey,
         providerMessageId: `handover_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
         externalAccountId: latestInbound.externalAccountId,
         customerName: latestInbound.customerName || null,
@@ -5399,7 +5428,7 @@ router.post('/instagram-inbox/conversations/:conversationKey/handover', authenti
     await markConversationHumanPending({
       salonId,
       channel: 'INSTAGRAM',
-      conversationKey,
+      conversationKey: resolvedConversationKey,
       note: note || 'Human handover requested.',
       profileName: latestInbound.customerName || null,
     });
