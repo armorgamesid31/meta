@@ -12,10 +12,11 @@ interface RegisterRequest {
   originChannel?: string;
   originPhone?: string;
   instagramId?: string;
+  magicToken?: string;
 }
 
 router.post('/register', async (req: any, res: any) => {
-  const { fullName, phone, gender, birthDate, acceptMarketing, originChannel, originPhone, instagramId } =
+  const { fullName, phone, gender, birthDate, acceptMarketing, originChannel, originPhone, instagramId, magicToken } =
     req.body as RegisterRequest;
   const salonIdNum = req.salon?.id;
 
@@ -25,11 +26,60 @@ router.post('/register', async (req: any, res: any) => {
 
   try {
     const normalizeDigits = (value: string | null | undefined) => (value || '').replace(/\D/g, '');
+    const normalizeInstagramIdentity = (value: string | null | undefined): string => {
+      let out = (value || '').trim();
+      if (!out) return '';
+      if (out.startsWith('id:')) out = out.slice(3);
+      if (out.toUpperCase().startsWith('INSTAGRAM:')) out = out.slice('INSTAGRAM:'.length);
+      if (out.toLowerCase().startsWith('customer:')) return '';
+      return out.replace(/^@/, '').trim();
+    };
+    const toObject = (value: unknown): Record<string, any> | null => {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+      return value as Record<string, any>;
+    };
+
     const normalizedInputPhone = normalizeDigits(phone.trim());
     const normalizedOriginPhone = normalizeDigits(originPhone || '');
     const isWhatsappOrigin = typeof originChannel === 'string' && originChannel.toUpperCase() === 'WHATSAPP';
     const isPhoneMatch = Boolean(normalizedInputPhone && normalizedOriginPhone && normalizedInputPhone === normalizedOriginPhone);
     const shouldVerify = isWhatsappOrigin && isPhoneMatch;
+
+    let resolvedInstagramId = normalizeInstagramIdentity(instagramId || '');
+
+    if (!resolvedInstagramId && typeof magicToken === 'string' && magicToken.trim()) {
+      const link = await prisma.magicLink.findUnique({
+        where: { token: magicToken.trim() },
+        select: { phone: true, context: true, expiresAt: true },
+      });
+
+      if (link && link.expiresAt > new Date()) {
+        const context = toObject(link.context);
+        const contextChannel = typeof context?.channel === 'string' ? context.channel.trim().toUpperCase() : '';
+        const contextConversationKey =
+          typeof context?.conversationKey === 'string' ? context.conversationKey.trim().toUpperCase() : '';
+        const isInstagramLink =
+          String(link.phone || '').trim().startsWith('id:') ||
+          contextChannel === 'INSTAGRAM' ||
+          contextConversationKey.startsWith('INSTAGRAM:');
+
+        if (isInstagramLink) {
+          const candidates = [
+            link.phone,
+            typeof context?.customerKey === 'string' ? context.customerKey : null,
+            typeof context?.canonicalUserId === 'string' ? context.canonicalUserId : null,
+            typeof context?.conversationKey === 'string' ? context.conversationKey : null,
+          ];
+          for (const candidate of candidates) {
+            const normalized = normalizeInstagramIdentity(candidate || '');
+            if (normalized) {
+              resolvedInstagramId = normalized;
+              break;
+            }
+          }
+        }
+      }
+    }
 
     const existing = await prisma.customer.findFirst({
       where: {
@@ -59,7 +109,7 @@ router.post('/register', async (req: any, res: any) => {
       if (typeof acceptMarketing === 'boolean' && existing.acceptMarketing !== acceptMarketing) {
         updates.acceptMarketing = acceptMarketing;
       }
-      const ig = typeof instagramId === 'string' ? instagramId.trim() : '';
+      const ig = resolvedInstagramId;
       if (ig && (!existing.instagram || existing.instagram.trim().length === 0)) {
         updates.instagram = ig;
       }
@@ -92,7 +142,7 @@ router.post('/register', async (req: any, res: any) => {
         acceptMarketing,
         salonId: salonIdNum,
         registrationStatus: shouldVerify ? 'VERIFIED' : 'PENDING',
-        instagram: typeof instagramId === 'string' && instagramId.trim().length > 0 ? instagramId.trim() : null
+        instagram: resolvedInstagramId || null
       }
     });
 
