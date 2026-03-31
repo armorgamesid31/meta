@@ -55,12 +55,20 @@ router.get('/context', async (req: any, res: any) => {
 
   const phone = isIdentity ? '' : rawIdentity;
   const customerKey = typeof context.customerKey === 'string' ? context.customerKey.trim() : '';
+  const normalizedInstagram = normalizeInstagramKey(isIdentity ? identityValue : customerKey);
 
   let customer = null as any;
   if (phone) {
     customer = await prisma.customer.findFirst({
       where: {
         phone,
+        salonId
+      }
+    });
+  } else if (normalizedInstagram) {
+    customer = await prisma.customer.findFirst({
+      where: {
+        instagram: normalizedInstagram,
         salonId
       }
     });
@@ -73,7 +81,7 @@ router.get('/context', async (req: any, res: any) => {
     });
   }
 
-  const isKnownCustomer = !!customer && customer.registrationStatus === 'VERIFIED';
+  const isKnownCustomer = !!customer;
 
   let appointments: { id: number; startTime: Date; endTime: Date; status: string }[] = [];
   if (customer) {
