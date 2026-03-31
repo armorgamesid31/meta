@@ -277,6 +277,53 @@ async function loadAgentSettings(salonId: number) {
   };
 }
 
+async function loadSalonInfo(salonId: number) {
+  const salon = await prisma.salon.findUnique({
+    where: { id: salonId },
+    select: {
+      id: true,
+      name: true,
+      city: true,
+      district: true,
+      address: true,
+      instagramUrl: true,
+      whatsappPhone: true,
+      tagline: true,
+      about: true,
+      settings: {
+        select: {
+          workStartHour: true,
+          workEndHour: true,
+          slotInterval: true,
+          workingDays: true,
+          timezone: true,
+          commonQuestions: true,
+        },
+      },
+    },
+  });
+
+  const settings = salon?.settings;
+
+  return {
+    salonId,
+    name: salon?.name || null,
+    city: salon?.city || null,
+    district: salon?.district || null,
+    address: salon?.address || null,
+    instagramUrl: salon?.instagramUrl || null,
+    whatsappPhone: salon?.whatsappPhone || null,
+    tagline: salon?.tagline || null,
+    about: salon?.about || null,
+    timezone: settings?.timezone || 'Europe/Istanbul',
+    workStartHour: settings?.workStartHour ?? 9,
+    workEndHour: settings?.workEndHour ?? 18,
+    slotInterval: settings?.slotInterval ?? 30,
+    workingDays: settings?.workingDays ?? null,
+    commonQuestions: settings?.commonQuestions ?? null,
+  };
+}
+
 function chooseN8nTarget(channel: ChannelType) {
   if (channel === 'INSTAGRAM' && N8N_NORMALIZED_INSTAGRAM_WEBHOOK_URL) return N8N_NORMALIZED_INSTAGRAM_WEBHOOK_URL;
   if (channel === 'WHATSAPP' && N8N_NORMALIZED_WHATSAPP_WEBHOOK_URL) return N8N_NORMALIZED_WHATSAPP_WEBHOOK_URL;
@@ -513,6 +560,7 @@ async function processIncomingBatch(items: any[]) {
 
     const statePolicy = computeStatePolicy(state.mode);
     const agentSettings = await loadAgentSettings(salonId);
+    const salonInfo = await loadSalonInfo(salonId);
 
     processed.push({
       ...row,
@@ -525,6 +573,7 @@ async function processIncomingBatch(items: any[]) {
       phone_available: channel === 'WHATSAPP' || Boolean(customer?.phone),
       instagram_linked: Boolean(customer?.instagram && customer.instagram.trim()),
       canGenerateMagicLinkDirectly: computeMagicDirect(channel, customerStatus),
+      salonInfo,
       agentSettings,
       state: {
         mode: state.mode,
