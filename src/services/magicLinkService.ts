@@ -1,7 +1,8 @@
-import { MagicLink, MagicLinkType, Prisma } from '@prisma/client';
+import { ChannelType, MagicLink, MagicLinkType, Prisma } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { prisma } from '../prisma.js';
 import { buildBookingUrl } from '../utils/bookingUrl.js';
+import { resolveIdentity, upsertIdentitySession } from './identityService.js';
 
 const TOKEN_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
 const MAGIC_LINK_TTL_MINUTES = 60;
@@ -19,26 +20,9 @@ function generateToken(length = 16): string {
   return out;
 }
 
-function normalizeIdentity(phone: unknown, customerKey: unknown): string | null {
-  const normalizedPhone = typeof phone === 'string' ? phone.trim() : '';
-  if (normalizedPhone) {
-    return normalizedPhone;
-  }
-
-  const normalizedKey = typeof customerKey === 'string' ? customerKey.trim() : '';
-  if (normalizedKey) {
-    return `id:${normalizedKey}`;
-  }
-
-  return null;
-}
-
-function extractSalonId(context: Prisma.JsonValue | null): number | null {
-  if (!context || typeof context !== 'object' || Array.isArray(context)) {
-    return null;
-  }
-  const value = (context as any).salonId;
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+function asObject(value: unknown): Record<string, any> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return value as Record<string, any>;
 }
 
 function normalizeSlug(value: unknown): string | null {
@@ -66,36 +50,87 @@ export async function ensureMagicLink(params: {
   type?: MagicLinkType;
   phone?: string | null;
   customerKey?: string | null;
+  channel?: ChannelType | null;
   context?: Prisma.InputJsonValue | null;
   salonSlug?: string | null;
+  conversationKey?: string | null;
+  canonicalUserId?: string | null;
+  customerId?: number | null;
 }) {
   const type = params.type || 'BOOKING';
-  const subject = normalizeIdentity(params.phone, params.customerKey);
-  if (!subject) {
-    throw new Error('phone_or_customer_key_required');
+  const now = new Date();
+  const contextObj = asObject(params.context);
+  const contextChannel = typeof contextObj.channel === 'string' ? (contextObj.channel as string) : null;
+  const contextConversationKey = typeof contextObj.conversationKey === 'string' ? contextObj.conversationKey : null;
+  const contextCanonicalUserId = typeof contextObj.canonicalUserId === 'string' ? contextObj.canonicalUserId : null;
+  const contextCustomerId = Number.isInteger(Number(contextObj.customerId)) ? Number(contextObj.customerId) : null;
+
+  const conversationKey = params.conversationKey || contextConversationKey || null;
+  const canonicalUserId = params.canonicalUserId || contextCanonicalUserId || null;
+  const customerId = params.customerId || contextCustomerId || null;
+
+  const identity = resolveIdentity({
+    channel: params.channel || contextChannel,
+    phone: params.phone,
+    customerKey: params.customerKey,
+    conversationKey,
+  });
+
+  if (!identity) {
+    throw new Error('identity_required');
   }
 
-  const now = Date.now();
-  const expiresAt = new Date(now + MAGIC_LINK_TTL_MINUTES * 60 * 1000);
-  const mergedContext: Prisma.InputJsonValue = {
-    ...(typeof params.context === 'object' && params.context && !Array.isArray(params.context) ? params.context : {}),
+  const session = await upsertIdentitySession({
     salonId: params.salonId,
-    customerKey: params.customerKey || null,
+    identity,
+    conversationKey,
+    canonicalUserId,
+    customerId,
+    outboundAt: now,
+    status: customerId ? 'LINKED' : 'ACTIVE',
+  });
+
+  await prisma.magicLink.updateMany({
+    where: {
+      salonId: params.salonId,
+      channel: identity.channel,
+      subjectNormalized: identity.subjectNormalized,
+      type,
+      status: 'ACTIVE',
+      expiresAt: { lt: now },
+    },
+    data: {
+      status: 'EXPIRED',
+    },
+  });
+
+  const expiresAt = new Date(now.getTime() + MAGIC_LINK_TTL_MINUTES * 60 * 1000);
+  const mergedContext: Prisma.InputJsonValue = {
+    ...contextObj,
+    salonId: params.salonId,
+    channel: identity.channel,
+    customerKey: params.customerKey || contextObj.customerKey || null,
+    conversationKey: conversationKey || null,
+    canonicalUserId: canonicalUserId || null,
+    customerId: customerId || null,
+    identitySessionId: session.id,
+    subjectNormalized: identity.subjectNormalized,
   };
 
-  const candidates = await prisma.magicLink.findMany({
+  const reusable = await prisma.magicLink.findFirst({
     where: {
-      phone: subject,
+      salonId: params.salonId,
+      channel: identity.channel,
       type,
+      subjectNormalized: identity.subjectNormalized,
+      status: 'ACTIVE',
       usedAt: null,
+      expiresAt: { gt: now },
     },
     orderBy: {
       createdAt: 'desc',
     },
-    take: 20,
   });
-
-  const reusable = candidates.find((item) => extractSalonId(item.context as Prisma.JsonValue | null) === params.salonId);
 
   let record: MagicLink;
   let action: 'created' | 'renewed';
@@ -104,8 +139,13 @@ export async function ensureMagicLink(params: {
     record = await prisma.magicLink.update({
       where: { id: reusable.id },
       data: {
-        expiresAt,
+        phone: identity.subjectRaw,
+        subjectType: identity.subjectType,
+        subjectNormalized: identity.subjectNormalized,
+        identitySessionId: session.id,
         context: mergedContext,
+        expiresAt,
+        status: 'ACTIVE',
       },
     });
     action = 'renewed';
@@ -114,20 +154,22 @@ export async function ensureMagicLink(params: {
     record = await prisma.magicLink.create({
       data: {
         token,
-        phone: subject,
+        phone: identity.subjectRaw,
         type,
         context: mergedContext,
+        salonId: params.salonId,
+        channel: identity.channel,
+        subjectType: identity.subjectType,
+        subjectNormalized: identity.subjectNormalized,
+        identitySessionId: session.id,
+        status: 'ACTIVE',
         expiresAt,
       },
     });
     action = 'created';
   }
 
-  const contextSlug =
-    params.context && typeof params.context === 'object' && !Array.isArray(params.context)
-      ? normalizeSlug((params.context as any).salonSlug)
-      : null;
-
+  const contextSlug = normalizeSlug(contextObj.salonSlug);
   const magicUrl = buildBookingUrl({
     token: record.token,
     salonId: params.salonId,

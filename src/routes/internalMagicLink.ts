@@ -1,4 +1,4 @@
-import { MagicLinkType } from '@prisma/client';
+import { ChannelType, MagicLinkType } from '@prisma/client';
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { ensureMagicLink } from '../services/magicLinkService.js';
@@ -21,6 +21,15 @@ function asMagicType(value: unknown): MagicLinkType {
   return 'BOOKING';
 }
 
+function asChannel(value: unknown): ChannelType | null {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toUpperCase();
+  if (normalized === 'INSTAGRAM' || normalized === 'WHATSAPP') {
+    return normalized as ChannelType;
+  }
+  return null;
+}
+
 router.post('/ensure', async (req: any, res: any) => {
   const respond = (ok: boolean) => res.status(200).json(ok);
 
@@ -34,6 +43,7 @@ router.post('/ensure', async (req: any, res: any) => {
   let customerKey = rawCustomerKey;
   let phone = typeof body.phone === 'string' ? body.phone.trim() : '';
   const context = typeof body.context === 'object' && body.context !== null ? body.context : null;
+  const explicitChannel = asChannel(body.channel);
 
   if (rawCustomerKey && rawCustomerKey.startsWith('customer:')) {
     const parsed = Number(rawCustomerKey.slice('customer:'.length));
@@ -79,6 +89,7 @@ router.post('/ensure', async (req: any, res: any) => {
     await ensureMagicLink({
       salonId,
       type: asMagicType(body.type),
+      channel: explicitChannel || asChannel((context as any)?.channel || null),
       phone: phone || null,
       customerKey: customerKey || null,
       context,

@@ -5,6 +5,7 @@ import { prisma } from '../prisma.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { ensureSalonServiceCategories } from '../services/salonCategorySetup.js';
 import { ensureSalonServiceRegions } from '../services/salonRegionSetup.js';
+import { normalizeInstagramIdentity, normalizePhoneDigits } from '../services/identityService.js';
 
 const router = Router();
 
@@ -4481,6 +4482,15 @@ function asInboundChannel(value: unknown): 'INSTAGRAM' | 'WHATSAPP' | null {
   return null;
 }
 
+function extractRawConversationKey(channel: 'INSTAGRAM' | 'WHATSAPP', value: string): string {
+  const trimmed = value.trim();
+  const prefix = `${channel}:`;
+  if (trimmed.startsWith(prefix)) {
+    return trimmed.slice(prefix.length).trim();
+  }
+  return trimmed;
+}
+
 router.get('/conversations', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
   if (!salonId) {
@@ -4558,13 +4568,95 @@ router.get('/conversations', authenticateToken, async (req: any, res: any) => {
       }
     }
 
-    const items = Array.from(byConversation.values())
+    const baseItems = Array.from(byConversation.values())
       .sort((a, b) => b.lastEventTimestamp.getTime() - a.lastEventTimestamp.getTime())
-      .slice(0, limit)
-      .map((item) => ({
+      .slice(0, limit);
+
+    const conversationStateRows = baseItems.length
+      ? await prisma.conversationState.findMany({
+          where: {
+            salonId,
+            OR: baseItems.map((item) => {
+              const raw = extractRawConversationKey(item.channel, item.conversationKey);
+              return {
+                channel: item.channel,
+                conversationKey: {
+                  in: Array.from(new Set([item.conversationKey, raw, `${item.channel}:${raw}`])).filter(Boolean),
+                },
+              };
+            }),
+          },
+          select: {
+            channel: true,
+            conversationKey: true,
+            customerId: true,
+          },
+        })
+      : [];
+
+    const stateCustomerByConversation = new Map<string, number>();
+    for (const row of conversationStateRows) {
+      if (!row.customerId) continue;
+      stateCustomerByConversation.set(`${row.channel}:${row.conversationKey}`, row.customerId);
+    }
+
+    const identityNeedles = baseItems
+      .map((item) => {
+        const raw = extractRawConversationKey(item.channel, item.conversationKey);
+        const normalized = item.channel === 'WHATSAPP'
+          ? normalizePhoneDigits(raw)
+          : normalizeInstagramIdentity(raw);
+        return {
+          channel: item.channel,
+          normalized,
+        };
+      })
+      .filter((item) => item.normalized.length > 0);
+
+    const identityRows = identityNeedles.length
+      ? await prisma.identityBinding.findMany({
+          where: {
+            salonId,
+            OR: identityNeedles.map((item) => ({
+              channel: item.channel,
+              subjectNormalized: item.normalized,
+            })),
+          },
+          select: {
+            channel: true,
+            subjectNormalized: true,
+            customerId: true,
+          },
+        })
+      : [];
+
+    const bindingCustomerByIdentity = new Map<string, number>();
+    for (const row of identityRows) {
+      bindingCustomerByIdentity.set(`${row.channel}:${row.subjectNormalized}`, row.customerId);
+    }
+
+    const items = baseItems.map((item) => {
+      const raw = extractRawConversationKey(item.channel, item.conversationKey);
+      const normalized = item.channel === 'WHATSAPP'
+        ? normalizePhoneDigits(raw)
+        : normalizeInstagramIdentity(raw);
+
+      const conversationCandidates = Array.from(new Set([item.conversationKey, raw, `${item.channel}:${raw}`])).filter(Boolean);
+      const linkedFromState = conversationCandidates
+        .map((key) => stateCustomerByConversation.get(`${item.channel}:${key}`) || null)
+        .find((id) => typeof id === 'number') || null;
+      const linkedFromBinding = normalized
+        ? bindingCustomerByIdentity.get(`${item.channel}:${normalized}`) || null
+        : null;
+      const linkedCustomerId = linkedFromState || linkedFromBinding || null;
+
+      return {
         ...item,
+        linkedCustomerId,
+        identityLinked: Boolean(linkedCustomerId),
         lastEventTimestamp: item.lastEventTimestamp.toISOString(),
-      }));
+      };
+    });
 
     return res.status(200).json({
       items,
@@ -4958,13 +5050,77 @@ router.get('/instagram-inbox/conversations', authenticateToken, async (req: any,
       }
     }
 
-    const items = Array.from(byConversation.values())
+    const baseItems = Array.from(byConversation.values())
       .sort((a, b) => b.lastEventTimestamp.getTime() - a.lastEventTimestamp.getTime())
-      .slice(0, limit)
-      .map((item) => ({
+      .slice(0, limit);
+
+    const conversationStateRows = baseItems.length
+      ? await prisma.conversationState.findMany({
+          where: {
+            salonId,
+            channel: 'INSTAGRAM',
+            OR: baseItems.map((item) => {
+              const raw = extractRawConversationKey('INSTAGRAM', item.conversationKey);
+              return {
+                conversationKey: {
+                  in: Array.from(new Set([item.conversationKey, raw, `INSTAGRAM:${raw}`])).filter(Boolean),
+                },
+              };
+            }),
+          },
+          select: {
+            conversationKey: true,
+            customerId: true,
+          },
+        })
+      : [];
+
+    const stateCustomerByConversation = new Map<string, number>();
+    for (const row of conversationStateRows) {
+      if (!row.customerId) continue;
+      stateCustomerByConversation.set(row.conversationKey, row.customerId);
+    }
+
+    const identityNeedles = baseItems
+      .map((item) => normalizeInstagramIdentity(extractRawConversationKey('INSTAGRAM', item.conversationKey)))
+      .filter((value) => value.length > 0);
+
+    const identityRows = identityNeedles.length
+      ? await prisma.identityBinding.findMany({
+          where: {
+            salonId,
+            channel: 'INSTAGRAM',
+            subjectNormalized: { in: identityNeedles },
+          },
+          select: {
+            subjectNormalized: true,
+            customerId: true,
+          },
+        })
+      : [];
+
+    const bindingCustomerByIdentity = new Map<string, number>();
+    for (const row of identityRows) {
+      bindingCustomerByIdentity.set(row.subjectNormalized, row.customerId);
+    }
+
+    const items = baseItems.map((item) => {
+      const raw = extractRawConversationKey('INSTAGRAM', item.conversationKey);
+      const normalized = normalizeInstagramIdentity(raw);
+      const conversationCandidates = Array.from(new Set([item.conversationKey, raw, `INSTAGRAM:${raw}`])).filter(Boolean);
+      const linkedFromState = conversationCandidates
+        .map((key) => stateCustomerByConversation.get(key) || null)
+        .find((id) => typeof id === 'number') || null;
+      const linkedFromBinding = normalized ? bindingCustomerByIdentity.get(normalized) || null : null;
+      const linkedCustomerId = linkedFromState || linkedFromBinding || null;
+
+      return {
         ...item,
+        linkedCustomerId,
+        identityLinked: Boolean(linkedCustomerId),
         lastEventTimestamp: item.lastEventTimestamp.toISOString(),
-      }));
+      };
+    });
 
     return res.status(200).json({
       items,

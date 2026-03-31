@@ -2,6 +2,7 @@ import { ChannelType, InboundMessageStatus, OutboundMessageSource } from '@prism
 import axios from 'axios';
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
+import { resolveIdentity } from '../services/identityService.js';
 import { ensureMagicLink } from '../services/magicLinkService.js';
 import { buildBookingUrl } from '../utils/bookingUrl.js';
 
@@ -47,12 +48,6 @@ function extractContextNumber(context: unknown, key: string): number | null {
     if (Number.isFinite(parsed)) return parsed;
   }
   return null;
-}
-
-function getMagicLinkSubject(channel: ChannelType, conversationKey: string): string | null {
-  const raw = extractRawConversationKey(channel, conversationKey);
-  if (!raw) return null;
-  return channel === 'WHATSAPP' ? raw : `id:${raw}`;
 }
 
 function wasMagicLinkSent(context: unknown): boolean {
@@ -110,14 +105,21 @@ async function findPendingMagicLink(params: {
   channel: ChannelType;
   conversationKey: string;
 }) {
-  const subject = getMagicLinkSubject(params.channel, params.conversationKey);
-  if (!subject) return null;
+  const identity = resolveIdentity({
+    channel: params.channel,
+    conversationKey: params.conversationKey,
+  });
+  if (!identity) return null;
 
   const candidates = await prisma.magicLink.findMany({
     where: {
-      phone: subject,
+      salonId: params.salonId,
+      channel: params.channel,
+      subjectNormalized: identity.subjectNormalized,
       type: 'BOOKING',
+      status: 'ACTIVE',
       usedAt: null,
+      expiresAt: { gt: new Date() },
     },
     orderBy: { createdAt: 'desc' },
     take: 10,
@@ -133,8 +135,7 @@ async function findPendingMagicLink(params: {
     if (contextSalonId && contextSalonId !== params.salonId) continue;
 
     const contextConversationKey = extractContextString(context, 'conversationKey');
-    if (!contextConversationKey) continue;
-    if (!conversationCandidates.includes(contextConversationKey)) continue;
+    if (contextConversationKey && !conversationCandidates.includes(contextConversationKey)) continue;
 
     if (wasMagicLinkSent(context)) continue;
 
@@ -458,8 +459,12 @@ router.post('/send', async (req: any, res: any) => {
       const ensured = await ensureMagicLink({
         salonId,
         type: 'BOOKING',
+        channel,
         phone: phoneFromBody || (channel === 'WHATSAPP' ? rawConversationId : null),
         customerKey: customerKeyFromBody || fallbackCustomerKey,
+        conversationKey: resolvedConversationKey,
+        canonicalUserId: canonicalUserId || null,
+        customerId: customerId || null,
         context: {
           salonId,
           channel,

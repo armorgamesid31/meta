@@ -722,17 +722,17 @@ router.get("/magic-links", authenticateToken, async (req: any, res: any) => {
   try {
     // Query real magic links for this salon
     const magicLinks = await prisma.magicLink.findMany({
-      where: {
-        context: {
-          path: ['salonId'],
-          equals: salonId
-        }
-      },
+      where: { salonId },
       select: {
         id: true,
         token: true,
         phone: true,
+        channel: true,
+        subjectType: true,
+        subjectNormalized: true,
         type: true,
+        status: true,
+        usedByCustomerId: true,
         usedAt: true,
         expiresAt: true,
         createdAt: true
@@ -748,7 +748,11 @@ router.get("/magic-links", authenticateToken, async (req: any, res: any) => {
       id: link.id,
       token: link.token,
       phone: link.phone,
-      status: link.usedAt ? 'USED' : (link.expiresAt > new Date() ? 'ACTIVE' : 'EXPIRED'),
+      channel: link.channel,
+      subjectType: link.subjectType,
+      subjectNormalized: link.subjectNormalized,
+      usedByCustomerId: link.usedByCustomerId,
+      status: link.expiresAt > new Date() ? link.status : 'EXPIRED',
       createdAt: link.createdAt.toISOString(),
       expiresAt: link.expiresAt.toISOString()
     }));

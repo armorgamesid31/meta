@@ -7,6 +7,13 @@ import {
 import axios from 'axios';
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
+import {
+  findBoundCustomer,
+  normalizeInstagramIdentity,
+  normalizePhoneDigits,
+  resolveIdentity,
+  upsertIdentitySession,
+} from '../services/identityService.js';
 
 const router = Router();
 
@@ -40,14 +47,6 @@ function toEventDate(payload: any): Date {
     if (!Number.isNaN(parsed.getTime())) return parsed;
   }
   return new Date();
-}
-
-function normalizePhoneDigits(value: string | null | undefined): string {
-  return (value || '').replace(/\D/g, '');
-}
-
-function normalizeInstagramIdentity(value: string | null | undefined): string {
-  return (value || '').trim().toLowerCase();
 }
 
 function parseMetaMessageType(channel: ChannelType, msg: any, media: Array<{ type: string }>): string {
@@ -94,7 +93,7 @@ async function resolveSalonId(channel: ChannelType, externalAccountId: string | 
   return binding?.salonId || null;
 }
 
-async function resolveCustomer(input: { salonId: number; channel: ChannelType; channelUserId: string | null }) {
+async function resolveCustomerLegacy(input: { salonId: number; channel: ChannelType; channelUserId: string | null }) {
   if (!input.channelUserId) return null;
 
   if (input.channel === 'WHATSAPP') {
@@ -127,8 +126,46 @@ async function resolveCustomer(input: { salonId: number; channel: ChannelType; c
   );
 }
 
-function computeCustomerStatus(customer: { instagram: string | null } | null): 'unregistered' | 'number_registered' | 'both_registered' {
+async function resolveCustomer(input: {
+  salonId: number;
+  channel: ChannelType;
+  channelUserId: string | null;
+  conversationKey: string;
+}) {
+  const identity = resolveIdentity({
+    channel: input.channel,
+    phone: input.channel === 'WHATSAPP' ? input.channelUserId : null,
+    customerKey: input.channel === 'INSTAGRAM' ? input.channelUserId : null,
+    conversationKey: input.conversationKey,
+  });
+
+  if (identity) {
+    const bound = await findBoundCustomer({
+      salonId: input.salonId,
+      channel: input.channel,
+      subjectNormalized: identity.subjectNormalized,
+    });
+    if (bound) {
+      return { customer: bound, identity, identityLinked: true };
+    }
+  }
+
+  const legacy = await resolveCustomerLegacy({
+    salonId: input.salonId,
+    channel: input.channel,
+    channelUserId: input.channelUserId,
+  });
+
+  return { customer: legacy, identity, identityLinked: false };
+}
+
+function computeCustomerStatus(input: {
+  customer: { instagram: string | null } | null;
+  identityLinked: boolean;
+}): 'unregistered' | 'number_registered' | 'both_registered' {
+  const { customer, identityLinked } = input;
   if (!customer) return 'unregistered';
+  if (identityLinked) return 'both_registered';
   return customer.instagram && customer.instagram.trim().length > 0 ? 'both_registered' : 'number_registered';
 }
 
@@ -482,13 +519,14 @@ async function processIncomingBatch(items: any[]) {
       continue;
     }
 
-    const customer = await resolveCustomer({
+    const { customer, identity, identityLinked } = await resolveCustomer({
       salonId,
       channel,
       channelUserId: typeof row.channelUserId === 'string' ? row.channelUserId : null,
+      conversationKey,
     });
 
-    const customerStatus = computeCustomerStatus(customer);
+    const customerStatus = computeCustomerStatus({ customer, identityLinked });
     const canonicalUserId = customer?.id ? `customer:${customer.id}` : conversationKey;
 
     const nameSource = customer?.id
@@ -509,6 +547,22 @@ async function processIncomingBatch(items: any[]) {
 
     const eventDate = toEventDate(row);
     const forceAutoByCancel = isHumanCancelSignal(row);
+
+    if (identity) {
+      await upsertIdentitySession({
+        salonId,
+        identity,
+        conversationKey,
+        canonicalUserId,
+        customerId: customer?.id || null,
+        inboundAt: eventDate,
+        status: customer?.id ? 'LINKED' : 'ACTIVE',
+        metadata: {
+          lastProviderMessageId: providerMessageId,
+          lastDirection: row.isEcho ? 'echo' : 'inbound',
+        },
+      });
+    }
 
     await prisma.inboundMessageQueue.upsert({
       where: {
@@ -571,7 +625,8 @@ async function processIncomingBatch(items: any[]) {
       profileName,
       nameSource,
       phone_available: channel === 'WHATSAPP' || Boolean(customer?.phone),
-      instagram_linked: Boolean(customer?.instagram && customer.instagram.trim()),
+      instagram_linked: Boolean(identityLinked || (customer?.instagram && customer.instagram.trim())),
+      identityLinked,
       canGenerateMagicLinkDirectly: computeMagicDirect(channel, customerStatus),
       salonInfo,
       agentSettings,

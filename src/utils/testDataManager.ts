@@ -1,5 +1,6 @@
 import { prisma } from '../prisma.js';
 import { logCustomerBehavior, BehaviorType } from './behaviorTracking.js';
+import { resolveIdentity, upsertIdentitySession } from '../services/identityService.js';
 
 /**
  * Test data management utilities for isolated, deterministic testing
@@ -248,6 +249,20 @@ export class TestDataManager {
 
       const { randomBytes } = await import('crypto');
       const token = randomBytes(32).toString('hex');
+      const identity = resolveIdentity({
+        channel: 'WHATSAPP',
+        phone: this.testPhone,
+      });
+      if (!identity) {
+        throw new Error('Unable to resolve test identity');
+      }
+      const session = await upsertIdentitySession({
+        salonId,
+        identity,
+        conversationKey: `WHATSAPP:${this.testPhone}`,
+        outboundAt: new Date(),
+        status: 'ACTIVE',
+      });
 
       const magicLink = await prisma.magicLink.create({
         data: {
@@ -255,8 +270,16 @@ export class TestDataManager {
           phone: this.testPhone,
           type: type as any,
           context: {
-            salonId
+            salonId,
+            channel: 'WHATSAPP',
+            conversationKey: `WHATSAPP:${this.testPhone}`,
           },
+          salonId,
+          channel: 'WHATSAPP',
+          subjectType: identity.subjectType,
+          subjectNormalized: identity.subjectNormalized,
+          identitySessionId: session.id,
+          status: 'ACTIVE',
           expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
         }
       });

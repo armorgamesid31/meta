@@ -1,5 +1,12 @@
+import { ChannelType } from '@prisma/client';
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
+import {
+  normalizeInstagramIdentity,
+  resolveIdentity,
+  upsertIdentityBinding,
+  upsertIdentitySession,
+} from '../services/identityService.js';
 
 const router = Router();
 
@@ -15,161 +22,242 @@ interface RegisterRequest {
   magicToken?: string;
 }
 
+function normalizeDigits(value: string | null | undefined): string {
+  return (value || '').replace(/\D/g, '');
+}
+
+function asChannel(value: unknown): ChannelType | null {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toUpperCase();
+  if (normalized === 'WHATSAPP' || normalized === 'INSTAGRAM') {
+    return normalized as ChannelType;
+  }
+  return null;
+}
+
+function asObject(value: unknown): Record<string, any> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return value as Record<string, any>;
+}
+
 router.post('/register', async (req: any, res: any) => {
-  const { fullName, phone, gender, birthDate, acceptMarketing, originChannel, originPhone, instagramId, magicToken } =
-    req.body as RegisterRequest;
+  const {
+    fullName,
+    phone,
+    gender,
+    birthDate,
+    acceptMarketing,
+    originChannel,
+    originPhone,
+    instagramId,
+    magicToken,
+  } = req.body as RegisterRequest;
   const salonIdNum = req.salon?.id;
 
   if (!fullName || !phone || typeof acceptMarketing !== 'boolean' || !salonIdNum) {
-    return res.status(400).json({ message: 'fullName, phone, and acceptMarketing are required, and must be in a tenant subdomain' });
+    return res
+      .status(400)
+      .json({ message: 'fullName, phone, and acceptMarketing are required, and must be in a tenant subdomain' });
   }
 
   try {
-    const normalizeDigits = (value: string | null | undefined) => (value || '').replace(/\D/g, '');
-    const normalizeInstagramIdentity = (value: string | null | undefined): string => {
-      let out = (value || '').trim();
-      if (!out) return '';
-      if (out.startsWith('id:')) out = out.slice(3);
-      if (out.toUpperCase().startsWith('INSTAGRAM:')) out = out.slice('INSTAGRAM:'.length);
-      if (out.toLowerCase().startsWith('customer:')) return '';
-      return out.replace(/^@/, '').trim();
-    };
-    const toObject = (value: unknown): Record<string, any> | null => {
-      if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-      return value as Record<string, any>;
-    };
-
     const normalizedInputPhone = normalizeDigits(phone.trim());
     const normalizedOriginPhone = normalizeDigits(originPhone || '');
-    const isWhatsappOrigin = typeof originChannel === 'string' && originChannel.toUpperCase() === 'WHATSAPP';
+    const originChannelTyped = asChannel(originChannel);
+    const isWhatsappOrigin = originChannelTyped === 'WHATSAPP';
     const isPhoneMatch = Boolean(normalizedInputPhone && normalizedOriginPhone && normalizedInputPhone === normalizedOriginPhone);
     const shouldVerify = isWhatsappOrigin && isPhoneMatch;
 
-    let resolvedInstagramId = normalizeInstagramIdentity(instagramId || '');
+    let resolvedInstagramId = normalizeInstagramIdentity(instagramId || '') || null;
+    let magicLink: {
+      token: string;
+      channel: ChannelType;
+      subjectType: 'PHONE' | 'INSTAGRAM_ID';
+      phone: string;
+      subjectNormalized: string;
+      identitySessionId: string;
+      expiresAt: Date;
+      status: string;
+      context: unknown;
+    } | null = null;
 
-    if (!resolvedInstagramId && typeof magicToken === 'string' && magicToken.trim()) {
-      const link = await prisma.magicLink.findUnique({
+    if (typeof magicToken === 'string' && magicToken.trim()) {
+      const fetched = await prisma.magicLink.findUnique({
         where: { token: magicToken.trim() },
-        select: { phone: true, context: true, expiresAt: true },
+        select: {
+          token: true,
+          channel: true,
+          subjectType: true,
+          phone: true,
+          subjectNormalized: true,
+          identitySessionId: true,
+          expiresAt: true,
+          status: true,
+          context: true,
+          salonId: true,
+        },
       });
 
-      if (link && link.expiresAt > new Date()) {
-        const context = toObject(link.context);
-        const contextChannel = typeof context?.channel === 'string' ? context.channel.trim().toUpperCase() : '';
-        const contextConversationKey =
-          typeof context?.conversationKey === 'string' ? context.conversationKey.trim().toUpperCase() : '';
-        const isInstagramLink =
-          String(link.phone || '').trim().startsWith('id:') ||
-          contextChannel === 'INSTAGRAM' ||
-          contextConversationKey.startsWith('INSTAGRAM:');
-
-        if (isInstagramLink) {
-          const candidates = [
-            link.phone,
-            typeof context?.customerKey === 'string' ? context.customerKey : null,
-            typeof context?.canonicalUserId === 'string' ? context.canonicalUserId : null,
-            typeof context?.conversationKey === 'string' ? context.conversationKey : null,
-          ];
-          for (const candidate of candidates) {
-            const normalized = normalizeInstagramIdentity(candidate || '');
-            if (normalized) {
-              resolvedInstagramId = normalized;
-              break;
-            }
-          }
+      if (fetched && fetched.salonId === salonIdNum && fetched.expiresAt > new Date() && fetched.status === 'ACTIVE') {
+        magicLink = fetched;
+        if (!resolvedInstagramId && fetched.subjectType === 'INSTAGRAM_ID') {
+          const fromToken = normalizeInstagramIdentity(fetched.phone);
+          resolvedInstagramId = fromToken || null;
         }
       }
-    }
-
-    const existing = await prisma.customer.findFirst({
-      where: {
-        phone: phone.trim(),
-        salonId: salonIdNum
-      }
-    });
-
-    if (existing) {
-      const updates: Record<string, any> = {};
-      if (shouldVerify && existing.registrationStatus !== 'VERIFIED') {
-        updates.registrationStatus = 'VERIFIED';
-      }
-      const trimmedName = fullName?.trim() || '';
-      if (trimmedName && (!existing.name || existing.name.trim().length === 0)) {
-        updates.name = trimmedName;
-      }
-      if (gender && !existing.gender && ['male', 'female', 'other'].includes(gender)) {
-        updates.gender = gender;
-      }
-      if (birthDate && !existing.birthDate) {
-        const birthDateVal = new Date(birthDate);
-        if (!isNaN(birthDateVal.getTime())) {
-          updates.birthDate = birthDateVal;
-        }
-      }
-      if (typeof acceptMarketing === 'boolean' && existing.acceptMarketing !== acceptMarketing) {
-        updates.acceptMarketing = acceptMarketing;
-      }
-      const ig = resolvedInstagramId;
-      if (ig && (!existing.instagram || existing.instagram.trim().length === 0)) {
-        updates.instagram = ig;
-      }
-      const updated = Object.keys(updates).length > 0
-        ? await prisma.customer.update({
-            where: { id: existing.id },
-            data: updates
-          })
-        : existing;
-      return res.status(200).json({
-        customerId: existing.id,
-        isNew: false,
-        registrationStatus: updated.registrationStatus
-      });
     }
 
     const birthDateVal = birthDate ? new Date(birthDate) : null;
-    if (birthDate && isNaN(birthDateVal!.getTime())) {
+    if (birthDate && Number.isNaN(birthDateVal!.getTime())) {
       return res.status(400).json({ message: 'birthDate must be a valid ISO date' });
     }
 
     const genderVal = gender && ['male', 'female', 'other'].includes(gender) ? gender : null;
+    const trimmedName = fullName?.trim() || '';
+    const trimmedPhone = phone.trim();
 
-    const customer = await prisma.customer.create({
-      data: {
-        name: fullName.trim(),
-        phone: phone.trim(),
-        gender: genderVal,
-        birthDate: birthDateVal,
-        acceptMarketing,
+    const existing = await prisma.customer.findFirst({
+      where: {
+        phone: trimmedPhone,
         salonId: salonIdNum,
-        registrationStatus: shouldVerify ? 'VERIFIED' : 'PENDING',
-        instagram: resolvedInstagramId || null
-      }
+      },
     });
 
-    await prisma.customerRiskProfile.create({
-      data: {
+    const identity =
+      (magicLink
+        ? {
+            channel: magicLink.channel,
+            subjectType: magicLink.subjectType,
+            subjectRaw: magicLink.phone,
+            subjectNormalized: magicLink.subjectNormalized,
+          }
+        : resolveIdentity({
+            channel: originChannelTyped,
+            phone: isWhatsappOrigin ? originPhone || trimmedPhone : null,
+            customerKey: originChannelTyped === 'INSTAGRAM' ? resolvedInstagramId : null,
+          })) || null;
+
+    const upsertCustomer = async () => {
+      if (existing) {
+        const updates: Record<string, any> = {};
+
+        if (shouldVerify && existing.registrationStatus !== 'VERIFIED') {
+          updates.registrationStatus = 'VERIFIED';
+        }
+        if (trimmedName && (!existing.name || existing.name.trim().length === 0)) {
+          updates.name = trimmedName;
+        }
+        if (genderVal && !existing.gender) {
+          updates.gender = genderVal;
+        }
+        if (birthDateVal && !existing.birthDate) {
+          updates.birthDate = birthDateVal;
+        }
+        if (typeof acceptMarketing === 'boolean' && existing.acceptMarketing !== acceptMarketing) {
+          updates.acceptMarketing = acceptMarketing;
+        }
+        if (resolvedInstagramId && (!existing.instagram || existing.instagram.trim().length === 0)) {
+          updates.instagram = resolvedInstagramId;
+        }
+
+        if (!Object.keys(updates).length) return existing;
+        return prisma.customer.update({
+          where: { id: existing.id },
+          data: updates,
+        });
+      }
+
+      const customer = await prisma.customer.create({
+        data: {
+          name: trimmedName || null,
+          phone: trimmedPhone,
+          gender: genderVal,
+          birthDate: birthDateVal,
+          acceptMarketing,
+          salonId: salonIdNum,
+          registrationStatus: shouldVerify ? 'VERIFIED' : 'PENDING',
+          instagram: resolvedInstagramId,
+        },
+      });
+
+      await prisma.customerRiskProfile.create({
+        data: {
+          customerId: customer.id,
+          salonId: salonIdNum,
+          riskScore: 0,
+          riskLevel: null,
+        },
+      });
+
+      return customer;
+    };
+
+    const customer = await upsertCustomer();
+
+    if (identity) {
+      const context = asObject(magicLink?.context);
+      const session = await upsertIdentitySession({
+        salonId: salonIdNum,
+        identity,
+        conversationKey: typeof context.conversationKey === 'string' ? context.conversationKey : null,
+        canonicalUserId: `customer:${customer.id}`,
         customerId: customer.id,
-        salonId: salonIdNum,
-        riskScore: 0,
-        riskLevel: null
-      }
-    });
+        status: 'LINKED',
+      });
 
-    return res.status(201).json({
+      await upsertIdentityBinding({
+        salonId: salonIdNum,
+        channel: identity.channel,
+        subjectNormalized: identity.subjectNormalized,
+        subjectRaw: identity.subjectRaw,
+        customerId: customer.id,
+        sessionId: session.id,
+        source: 'MAGIC_LINK_REGISTER',
+      });
+
+      if (!resolvedInstagramId && identity.channel === 'INSTAGRAM') {
+        const normalizedIg = normalizeInstagramIdentity(identity.subjectRaw);
+        if (normalizedIg) {
+          resolvedInstagramId = normalizedIg;
+          await prisma.customer.update({
+            where: { id: customer.id },
+            data: { instagram: normalizedIg },
+          });
+        }
+      }
+
+      if (magicLink) {
+        const currentContext = asObject(magicLink.context);
+        await prisma.magicLink.update({
+          where: { token: magicLink.token },
+          data: {
+            usedByCustomerId: customer.id,
+            identitySessionId: session.id,
+            context: {
+              ...currentContext,
+              customerId: customer.id,
+              canonicalUserId: `customer:${customer.id}`,
+            },
+          },
+        });
+      }
+    }
+
+    return res.status(existing ? 200 : 201).json({
       customerId: customer.id,
-      isNew: true,
-      registrationStatus: customer.registrationStatus
+      isNew: !existing,
+      registrationStatus: customer.registrationStatus,
     });
   } catch (error) {
     const prismaError = error as { code?: string };
     if (prismaError.code === 'P2002') {
       const existing = await prisma.customer.findFirst({
-        where: { phone: phone.trim(), salonId: salonIdNum }
+        where: { phone: phone.trim(), salonId: salonIdNum },
       });
       if (existing) {
         return res.status(200).json({
           customerId: existing.id,
-          isNew: false
+          isNew: false,
         });
       }
     }

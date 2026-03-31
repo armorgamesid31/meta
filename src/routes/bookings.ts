@@ -5,6 +5,7 @@ import { AvailabilityEngine } from '../modules/availability/engine.js';
 import { SlotsEngine } from '../modules/availability/slots-engine.js';
 import { DateNormalizer } from '../modules/availability/normalizer.js';
 import { calculateSmartDuration, ServiceWithCategory } from '../utils/durationCalculator.js';
+import { normalizeInstagramIdentity } from '../services/identityService.js';
 
 const router = Router();
 
@@ -531,11 +532,15 @@ router.post('/', async (req: any, res: any, next: any) => {
         try {
           await prisma.magicLink.updateMany({
             where: { 
-                token, 
+                token,
+                salonId,
                 usedAt: null,
-                context: { path: ['salonId'], equals: salonId }
+                status: 'ACTIVE',
             },
-            data: { usedAt: new Date() }
+            data: {
+              usedAt: new Date(),
+              status: 'USED',
+            }
           });
         } catch (_) {}
       }
@@ -572,18 +577,22 @@ router.post('/appointments-by-token', async (req: any, res: any) => {
 
   try {
     const magicLink = await prisma.magicLink.findFirst({
-      where: { 
-          token,
-          context: { path: ['salonId'], equals: salonId }
-      }
+      where: {
+        token,
+        salonId,
+      },
     });
 
     if (!magicLink) {
       return res.status(404).json({ message: 'Magic link not found for this salon' });
     }
 
-    if (magicLink.expiresAt < new Date()) {
+    if (magicLink.expiresAt < new Date() || magicLink.status === 'EXPIRED' || magicLink.status === 'REVOKED') {
       return res.status(410).json({ message: 'Magic link has expired' });
+    }
+
+    if (magicLink.status !== 'ACTIVE') {
+      return res.status(410).json({ message: 'Magic link is not active' });
     }
 
     if (magicLink.usedAt) {
@@ -594,25 +603,67 @@ router.post('/appointments-by-token', async (req: any, res: any) => {
       return res.status(400).json({ message: 'Invalid magic link type' });
     }
 
-    const phone = magicLink.phone.trim();
-    let customer = await prisma.customer.findFirst({
-      where: {
-        phone,
-        salonId: salonId
-      }
-    });
+    const fallbackPhoneFromLink = magicLink.subjectType === 'PHONE'
+      ? magicLink.phone.trim()
+      : `IG_${magicLink.subjectNormalized}`;
+
+    let customer = magicLink.usedByCustomerId
+      ? await prisma.customer.findFirst({
+          where: {
+            id: magicLink.usedByCustomerId,
+            salonId,
+          },
+        })
+      : null;
 
     if (!customer) {
-      const customerName = people[0].name || `Customer ${phone}`;
-      customer = await prisma.customer.create({
-        data: {
-          phone,
-          name: customerName,
-          salonId: salonId,
-          registrationStatus: 'PENDING'
-        }
+      const binding = await prisma.identityBinding.findUnique({
+        where: {
+          salonId_channel_subjectNormalized: {
+            salonId,
+            channel: magicLink.channel,
+            subjectNormalized: magicLink.subjectNormalized,
+          },
+        },
+        select: { customerId: true },
+      });
+
+      if (binding?.customerId) {
+        customer = await prisma.customer.findFirst({
+          where: {
+            id: binding.customerId,
+            salonId,
+          },
+        });
+      }
+    }
+
+    if (!customer && magicLink.subjectType === 'PHONE') {
+      customer = await prisma.customer.findFirst({
+        where: {
+          phone: fallbackPhoneFromLink,
+          salonId,
+        },
       });
     }
+
+    if (!customer) {
+      const customerName = people[0].name || `Customer ${fallbackPhoneFromLink}`;
+      const fallbackInstagram = magicLink.subjectType === 'INSTAGRAM_ID'
+        ? normalizeInstagramIdentity(magicLink.phone) || null
+        : null;
+      customer = await prisma.customer.create({
+        data: {
+          phone: fallbackPhoneFromLink,
+          name: customerName,
+          salonId,
+          registrationStatus: 'PENDING',
+          instagram: fallbackInstagram,
+        },
+      });
+    }
+
+    const customerPhoneForAppointment = customer.phone || fallbackPhoneFromLink;
 
     const appointmentDateTime = new Date(datetime);
     if (isNaN(appointmentDateTime.getTime())) {
@@ -700,7 +751,7 @@ router.post('/appointments-by-token', async (req: any, res: any) => {
               serviceId: serviceItem.serviceId,
               customerId: customer.id,
               customerName: person.name,
-              customerPhone: phone,
+              customerPhone: customerPhoneForAppointment,
               startTime: appointmentDateTime,
               endTime: endTime,
               status: 'BOOKED',
@@ -719,8 +770,12 @@ router.post('/appointments-by-token', async (req: any, res: any) => {
     if (magicLink.usedAt === null) {
       try {
         await prisma.magicLink.updateMany({
-          where: { token, usedAt: null },
-          data: { usedAt: new Date() }
+          where: { token, salonId, usedAt: null, status: 'ACTIVE' },
+          data: {
+            usedAt: new Date(),
+            status: 'USED',
+            usedByCustomerId: customer.id,
+          },
         });
       } catch (_) {}
     }
@@ -738,7 +793,7 @@ router.post('/appointments-by-token', async (req: any, res: any) => {
         location: 'Salon Address'
       },
       customer: {
-        phone,
+        phone: customerPhoneForAppointment,
         name: customer.name
       },
       datetime: appointmentDateTime.toLocaleString('tr-TR')
