@@ -2,6 +2,10 @@ function normalizeBaseUrl(input: string): string {
   return input.trim().replace(/\/+$/, '');
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function normalizeSlug(value: unknown, fallback?: string): string {
   if (typeof value === 'string' && value.trim()) {
     return value.trim();
@@ -39,6 +43,13 @@ export function buildBookingUrl(params: {
   const normalized = normalizeBaseUrl(template);
 
   if (hasToken) {
+    if (!/(?:[?&])token=/.test(normalized)) {
+      const bareTokenPattern = new RegExp(`(?:\\?|&)${escapeRegExp(params.token)}(?:$|&)`);
+      if (bareTokenPattern.test(normalized)) {
+        const separator = normalized.includes('?') ? '&' : '?';
+        return `${normalized}${separator}token=${encodeURIComponent(params.token)}`;
+      }
+    }
     return normalized;
   }
 

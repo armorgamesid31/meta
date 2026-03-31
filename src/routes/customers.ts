@@ -107,6 +107,12 @@ router.post('/register', async (req: any, res: any) => {
       }
     }
 
+    if (originChannelTyped === 'INSTAGRAM' && !resolvedInstagramId && !magicLink) {
+      return res.status(400).json({
+        message: 'Instagram kimligi dogrulanamadi. Lutfen size gonderilen son baglantiyi kullanin.',
+      });
+    }
+
     const birthDateVal = birthDate ? new Date(birthDate) : null;
     if (birthDate && Number.isNaN(birthDateVal!.getTime())) {
       return res.status(400).json({ message: 'birthDate must be a valid ISO date' });
