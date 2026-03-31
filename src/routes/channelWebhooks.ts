@@ -285,7 +285,7 @@ async function evaluateConversationState(input: {
 
 function computeStatePolicy(mode: ConversationAutomationMode) {
   if (mode === 'AUTO') return { aiAllowed: true, responsePolicy: 'normal' };
-  if (mode === 'HUMAN_PENDING') return { aiAllowed: true, responsePolicy: 'pending_wait_with_cancel' };
+  if (mode === 'HUMAN_PENDING') return { aiAllowed: false, responsePolicy: 'pending_wait_with_cancel' };
   if (mode === 'AUTO_RESUME_PENDING') return { aiAllowed: true, responsePolicy: 'resume_then_normal' };
   if (mode === 'MANUAL_ALWAYS') return { aiAllowed: false, responsePolicy: 'manual_notify_only' };
   return { aiAllowed: false, responsePolicy: 'human_active_suppress' };

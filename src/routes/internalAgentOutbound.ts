@@ -11,6 +11,10 @@ const router = Router();
 const META_GRAPH_VERSION = (process.env.META_GRAPH_VERSION || 'v23.0').trim();
 const CHAKRA_WHATSAPP_SEND_URL = (process.env.CHAKRA_WHATSAPP_SEND_URL || '').trim();
 const CHAKRA_API_TOKEN = (process.env.CHAKRA_API_TOKEN || '').trim();
+const HUMAN_PENDING_WAIT_TEXT = (
+  process.env.HUMAN_PENDING_WAIT_TEXT ||
+  'Talebinizi ekip arkadaşlarımıza ilettim. Kısa süre içinde size dönüş yapacağız. Beklemek istemiyorsanız “İptal Et” seçeneğini kullanabilirsiniz.'
+).trim();
 
 function isInternalAuthorized(req: any): boolean {
   const configured = process.env.INTERNAL_API_KEY;
@@ -492,11 +496,18 @@ router.post('/send', async (req: any, res: any) => {
       conversationKey: resolvedConversationKey,
     });
 
+    let outboundText = text;
+    let pendingWaitEnforced = false;
     let actionKind: ActionKind = 'none';
-    if (magicLinkUrl) {
-      actionKind = 'booking';
-    } else if (forceCancelButton || mode === 'HUMAN_PENDING') {
+    if (mode === 'HUMAN_PENDING') {
       actionKind = 'cancel';
+      pendingWaitEnforced = true;
+      outboundText = HUMAN_PENDING_WAIT_TEXT || text;
+      magicLinkUrl = null;
+    } else if (forceCancelButton) {
+      actionKind = 'cancel';
+    } else if (magicLinkUrl) {
+      actionKind = 'booking';
     }
 
     const sent =
@@ -504,7 +515,7 @@ router.post('/send', async (req: any, res: any) => {
         ? await sendInstagramMessage({
             salonId,
             conversationKey: resolvedConversationKey,
-            text,
+            text: outboundText,
             actionKind,
             magicLinkUrl,
             externalAccountId: externalAccountIdFromInbound,
@@ -512,7 +523,7 @@ router.post('/send', async (req: any, res: any) => {
         : await sendWhatsappViaChakra({
             salonId,
             conversationKey: resolvedConversationKey,
-            text,
+            text: outboundText,
             actionKind,
             magicLinkUrl,
             externalAccountId: externalAccountIdFromInbound,
@@ -529,12 +540,14 @@ router.post('/send', async (req: any, res: any) => {
         externalAccountId: sent.externalAccountId || externalAccountIdFromInbound || '',
         customerName,
         messageType: actionKind === 'none' ? 'text_outbound_ai' : `interactive_${actionKind}_outbound_ai`,
-        text,
+        text: outboundText,
         eventTimestamp: now,
         rawPayload: {
           direction: 'outbound',
           source: 'AI_AGENT',
           bookingIntent,
+          responsePolicy: mode === 'HUMAN_PENDING' ? 'pending_wait_with_cancel' : 'normal',
+          pendingWaitEnforced,
           actionKind,
           magicLinkUrl: magicLinkUrl || null,
           magicLinkAction,
@@ -574,7 +587,7 @@ router.post('/send', async (req: any, res: any) => {
         canonicalUserId: canonicalUserId || null,
         customerId: customerId || null,
         source: OutboundMessageSource.AI_AGENT,
-        text,
+        text: outboundText,
         sentAt: now,
       },
       create: {
@@ -586,7 +599,7 @@ router.post('/send', async (req: any, res: any) => {
         canonicalUserId: canonicalUserId || null,
         customerId: customerId || null,
         source: OutboundMessageSource.AI_AGENT,
-        text,
+        text: outboundText,
         sentAt: now,
       },
     });

@@ -136,6 +136,24 @@ const META_GRAPH_VERSION = (process.env.META_GRAPH_VERSION || 'v23.0').trim();
 const DEFAULT_HUMAN_ACTIVE_MINUTES = Number(process.env.CONVERSATION_HUMAN_ACTIVE_MINUTES || 360);
 const DEFAULT_WORKING_DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'] as const;
 type WorkingDayKey = (typeof DEFAULT_WORKING_DAYS)[number] | 'SUN';
+type ConversationAutomationModeValue =
+  | 'AUTO'
+  | 'HUMAN_PENDING'
+  | 'HUMAN_ACTIVE'
+  | 'MANUAL_ALWAYS'
+  | 'AUTO_RESUME_PENDING';
+type ConversationStateSnapshot = {
+  channel: 'INSTAGRAM' | 'WHATSAPP';
+  conversationKey: string;
+  customerId: number | null;
+  mode: ConversationAutomationModeValue;
+  manualAlways: boolean;
+  humanPendingSince: Date | null;
+  humanActiveUntil: Date | null;
+  lastHumanMessageAt: Date | null;
+  lastCustomerMessageAt: Date | null;
+  updatedAt: Date | null;
+};
 
 function asObject(value: unknown): Record<string, any> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -200,7 +218,9 @@ async function markConversationHumanPending(input: {
     },
     update: {
       mode: 'HUMAN_PENDING',
+      manualAlways: false,
       humanPendingSince: now,
+      humanActiveUntil: null,
       ...(input.note ? { notes: input.note } : {}),
       ...(input.profileName ? { profileName: input.profileName } : {}),
     },
@@ -214,6 +234,66 @@ async function markConversationHumanPending(input: {
       profileName: input.profileName || null,
     },
   });
+}
+
+async function markConversationAuto(input: {
+  salonId: number;
+  channel: 'INSTAGRAM' | 'WHATSAPP';
+  conversationKey: string;
+  note?: string | null;
+  profileName?: string | null;
+}) {
+  return prisma.conversationState.upsert({
+    where: {
+      salonId_channel_conversationKey: {
+        salonId: input.salonId,
+        channel: input.channel,
+        conversationKey: input.conversationKey,
+      },
+    },
+    update: {
+      mode: 'AUTO',
+      manualAlways: false,
+      humanPendingSince: null,
+      humanActiveUntil: null,
+      ...(input.note ? { notes: input.note } : {}),
+      ...(input.profileName ? { profileName: input.profileName } : {}),
+    },
+    create: {
+      salonId: input.salonId,
+      channel: input.channel,
+      conversationKey: input.conversationKey,
+      mode: 'AUTO',
+      manualAlways: false,
+      humanPendingSince: null,
+      humanActiveUntil: null,
+      notes: input.note || null,
+      profileName: input.profileName || null,
+    },
+  });
+}
+
+function serializeConversationState(state: ConversationStateSnapshot | null) {
+  return {
+    automationMode: state?.mode || 'AUTO',
+    manualAlways: Boolean(state?.manualAlways),
+    humanPendingSince: state?.humanPendingSince?.toISOString() || null,
+    humanActiveUntil: state?.humanActiveUntil?.toISOString() || null,
+    lastHumanMessageAt: state?.lastHumanMessageAt?.toISOString() || null,
+    lastCustomerMessageAt: state?.lastCustomerMessageAt?.toISOString() || null,
+  };
+}
+
+function isHandoverMode(mode: string | null | undefined): boolean {
+  return mode === 'HUMAN_PENDING' || mode === 'HUMAN_ACTIVE';
+}
+
+function pickLatestState(rows: ConversationStateSnapshot[]): ConversationStateSnapshot | null {
+  if (!rows.length) return null;
+  const sorted = rows
+    .slice()
+    .sort((a, b) => (b.updatedAt?.getTime() || 0) - (a.updatedAt?.getTime() || 0));
+  return sorted[0] || null;
 }
 
 function toTimezoneDateKey(date: Date, timeZone = ANALYTICS_TIMEZONE): string {
@@ -4694,14 +4774,31 @@ router.get('/conversations', authenticateToken, async (req: any, res: any) => {
             channel: true,
             conversationKey: true,
             customerId: true,
+            mode: true,
+            manualAlways: true,
+            humanPendingSince: true,
+            humanActiveUntil: true,
+            lastHumanMessageAt: true,
+            lastCustomerMessageAt: true,
+            updatedAt: true,
           },
         })
       : [];
 
-    const stateCustomerByConversation = new Map<string, number>();
+    const stateByConversation = new Map<string, ConversationStateSnapshot>();
     for (const row of conversationStateRows) {
-      if (!row.customerId) continue;
-      stateCustomerByConversation.set(`${row.channel}:${row.conversationKey}`, row.customerId);
+      stateByConversation.set(`${row.channel}:${row.conversationKey}`, {
+        channel: row.channel as 'INSTAGRAM' | 'WHATSAPP',
+        conversationKey: row.conversationKey,
+        customerId: row.customerId || null,
+        mode: row.mode as ConversationAutomationModeValue,
+        manualAlways: Boolean(row.manualAlways),
+        humanPendingSince: row.humanPendingSince || null,
+        humanActiveUntil: row.humanActiveUntil || null,
+        lastHumanMessageAt: row.lastHumanMessageAt || null,
+        lastCustomerMessageAt: row.lastCustomerMessageAt || null,
+        updatedAt: row.updatedAt || null,
+      });
     }
 
     const identityNeedles = baseItems
@@ -4746,9 +4843,11 @@ router.get('/conversations', authenticateToken, async (req: any, res: any) => {
         : normalizeInstagramIdentity(raw);
 
       const conversationCandidates = Array.from(new Set([item.conversationKey, raw, `${item.channel}:${raw}`])).filter(Boolean);
-      const linkedFromState = conversationCandidates
-        .map((key) => stateCustomerByConversation.get(`${item.channel}:${key}`) || null)
-        .find((id) => typeof id === 'number') || null;
+      const stateMatches = conversationCandidates
+        .map((key) => stateByConversation.get(`${item.channel}:${key}`) || null)
+        .filter((row): row is ConversationStateSnapshot => Boolean(row));
+      const stateRow = pickLatestState(stateMatches);
+      const linkedFromState = stateRow?.customerId || null;
       const linkedFromBinding = normalized
         ? bindingCustomerByIdentity.get(`${item.channel}:${normalized}`) || null
         : null;
@@ -4758,6 +4857,7 @@ router.get('/conversations', authenticateToken, async (req: any, res: any) => {
         ...item,
         linkedCustomerId,
         identityLinked: Boolean(linkedCustomerId),
+        ...serializeConversationState(stateRow),
         lastEventTimestamp: item.lastEventTimestamp.toISOString(),
       };
     });
@@ -4839,6 +4939,41 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
         rawPayload: true,
       },
     });
+    const stateRows = await prisma.conversationState.findMany({
+      where: {
+        salonId,
+        channel,
+        conversationKey: {
+          in: keyCandidates,
+        },
+      },
+      select: {
+        channel: true,
+        conversationKey: true,
+        customerId: true,
+        mode: true,
+        manualAlways: true,
+        humanPendingSince: true,
+        humanActiveUntil: true,
+        lastHumanMessageAt: true,
+        lastCustomerMessageAt: true,
+        updatedAt: true,
+      },
+    });
+    const stateRow = pickLatestState(
+      stateRows.map((row) => ({
+        channel: row.channel as 'INSTAGRAM' | 'WHATSAPP',
+        conversationKey: row.conversationKey,
+        customerId: row.customerId || null,
+        mode: row.mode as ConversationAutomationModeValue,
+        manualAlways: Boolean(row.manualAlways),
+        humanPendingSince: row.humanPendingSince || null,
+        humanActiveUntil: row.humanActiveUntil || null,
+        lastHumanMessageAt: row.lastHumanMessageAt || null,
+        lastCustomerMessageAt: row.lastCustomerMessageAt || null,
+        updatedAt: row.updatedAt || null,
+      })),
+    );
 
     const items = rows.map((row) => {
       const raw = asObject(row.rawPayload);
@@ -4857,7 +4992,10 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
       };
     });
 
-    return res.status(200).json({ items });
+    return res.status(200).json({
+      items,
+      conversationState: serializeConversationState(stateRow),
+    });
   } catch (error) {
     console.error('Admin conversation messages error:', error);
     return res.status(500).json({ message: 'Internal server error.' });
@@ -5140,6 +5278,51 @@ router.post('/conversations/:channel/:conversationKey/handover', authenticateTok
       return res.status(404).json({ message: 'Conversation not found.' });
     }
     const resolvedConversationKey = latestInbound.conversationKey || conversationKey;
+    const stateCandidates = Array.from(
+      new Set([...keyCandidates, ...conversationKeyCandidates(channel, resolvedConversationKey)]),
+    );
+    const existingStateRows = await prisma.conversationState.findMany({
+      where: {
+        salonId,
+        channel,
+        conversationKey: {
+          in: stateCandidates,
+        },
+      },
+      select: {
+        channel: true,
+        conversationKey: true,
+        customerId: true,
+        mode: true,
+        manualAlways: true,
+        humanPendingSince: true,
+        humanActiveUntil: true,
+        lastHumanMessageAt: true,
+        lastCustomerMessageAt: true,
+        updatedAt: true,
+      },
+    });
+    const existingState = pickLatestState(
+      existingStateRows.map((row) => ({
+        channel: row.channel as 'INSTAGRAM' | 'WHATSAPP',
+        conversationKey: row.conversationKey,
+        customerId: row.customerId || null,
+        mode: row.mode as ConversationAutomationModeValue,
+        manualAlways: Boolean(row.manualAlways),
+        humanPendingSince: row.humanPendingSince || null,
+        humanActiveUntil: row.humanActiveUntil || null,
+        lastHumanMessageAt: row.lastHumanMessageAt || null,
+        lastCustomerMessageAt: row.lastCustomerMessageAt || null,
+        updatedAt: row.updatedAt || null,
+      })),
+    );
+    if (existingState && isHandoverMode(existingState.mode)) {
+      return res.status(200).json({
+        ok: true,
+        alreadyRequested: true,
+        state: serializeConversationState(existingState),
+      });
+    }
 
     const saved = await prisma.inboundMessageQueue.create({
       data: {
@@ -5161,7 +5344,7 @@ router.post('/conversations/:channel/:conversationKey/handover', authenticateTok
       },
     });
 
-    await markConversationHumanPending({
+    const updatedState = await markConversationHumanPending({
       salonId,
       channel,
       conversationKey: resolvedConversationKey,
@@ -5170,6 +5353,8 @@ router.post('/conversations/:channel/:conversationKey/handover', authenticateTok
     });
 
     return res.status(200).json({
+      ok: true,
+      alreadyRequested: false,
       item: {
         id: saved.id,
         providerMessageId: saved.providerMessageId,
@@ -5179,9 +5364,114 @@ router.post('/conversations/:channel/:conversationKey/handover', authenticateTok
         direction: 'system',
         eventTimestamp: saved.eventTimestamp.toISOString(),
       },
+      state: serializeConversationState({
+        channel,
+        conversationKey: updatedState.conversationKey,
+        customerId: updatedState.customerId || null,
+        mode: updatedState.mode as ConversationAutomationModeValue,
+        manualAlways: Boolean(updatedState.manualAlways),
+        humanPendingSince: updatedState.humanPendingSince || null,
+        humanActiveUntil: updatedState.humanActiveUntil || null,
+        lastHumanMessageAt: updatedState.lastHumanMessageAt || null,
+        lastCustomerMessageAt: updatedState.lastCustomerMessageAt || null,
+        updatedAt: updatedState.updatedAt || null,
+      }),
     });
   } catch (error) {
     console.error('Admin conversations handover error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.post('/conversations/:channel/:conversationKey/resume-auto', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const channel = asInboundChannel(req.params.channel);
+  if (!channel) {
+    return res.status(400).json({ message: 'channel must be INSTAGRAM or WHATSAPP.' });
+  }
+
+  const conversationKey = typeof req.params.conversationKey === 'string' ? req.params.conversationKey.trim() : '';
+  if (!conversationKey) {
+    return res.status(400).json({ message: 'conversationKey is required.' });
+  }
+
+  try {
+    const keyCandidates = conversationKeyCandidates(channel, conversationKey);
+    const rawKeyCandidates = Array.from(new Set(keyCandidates.map((key) => extractRawConversationKey(channel, key))));
+    const latestInboundWhere: any =
+      channel === 'INSTAGRAM'
+        ? {
+            salonId,
+            channel,
+            OR: [
+              {
+                conversationKey: {
+                  in: keyCandidates,
+                },
+              },
+              {
+                messageType: {
+                  startsWith: 'echo_',
+                },
+                externalAccountId: {
+                  in: rawKeyCandidates,
+                },
+              },
+            ],
+          }
+        : {
+            salonId,
+            channel,
+            conversationKey: {
+              in: keyCandidates,
+            },
+          };
+
+    const latestInbound = await prisma.inboundMessageQueue.findFirst({
+      where: latestInboundWhere,
+      orderBy: {
+        eventTimestamp: 'desc',
+      },
+      select: {
+        conversationKey: true,
+        customerName: true,
+      },
+    });
+
+    if (!latestInbound) {
+      return res.status(404).json({ message: 'Conversation not found.' });
+    }
+    const resolvedConversationKey = latestInbound.conversationKey || conversationKey;
+
+    const updatedState = await markConversationAuto({
+      salonId,
+      channel,
+      conversationKey: resolvedConversationKey,
+      note: 'manual_resumed_by_salon',
+      profileName: latestInbound.customerName || null,
+    });
+
+    return res.status(200).json({
+      ok: true,
+      state: serializeConversationState({
+        channel,
+        conversationKey: updatedState.conversationKey,
+        customerId: updatedState.customerId || null,
+        mode: updatedState.mode as ConversationAutomationModeValue,
+        manualAlways: Boolean(updatedState.manualAlways),
+        humanPendingSince: updatedState.humanPendingSince || null,
+        humanActiveUntil: updatedState.humanActiveUntil || null,
+        lastHumanMessageAt: updatedState.lastHumanMessageAt || null,
+        lastCustomerMessageAt: updatedState.lastCustomerMessageAt || null,
+        updatedAt: updatedState.updatedAt || null,
+      }),
+    });
+  } catch (error) {
+    console.error('Admin conversations resume-auto error:', error);
     return res.status(500).json({ message: 'Internal server error.' });
   }
 });
@@ -5299,14 +5589,31 @@ router.get('/instagram-inbox/conversations', authenticateToken, async (req: any,
           select: {
             conversationKey: true,
             customerId: true,
+            mode: true,
+            manualAlways: true,
+            humanPendingSince: true,
+            humanActiveUntil: true,
+            lastHumanMessageAt: true,
+            lastCustomerMessageAt: true,
+            updatedAt: true,
           },
         })
       : [];
 
-    const stateCustomerByConversation = new Map<string, number>();
+    const stateByConversation = new Map<string, ConversationStateSnapshot>();
     for (const row of conversationStateRows) {
-      if (!row.customerId) continue;
-      stateCustomerByConversation.set(row.conversationKey, row.customerId);
+      stateByConversation.set(row.conversationKey, {
+        channel: 'INSTAGRAM',
+        conversationKey: row.conversationKey,
+        customerId: row.customerId || null,
+        mode: row.mode as ConversationAutomationModeValue,
+        manualAlways: Boolean(row.manualAlways),
+        humanPendingSince: row.humanPendingSince || null,
+        humanActiveUntil: row.humanActiveUntil || null,
+        lastHumanMessageAt: row.lastHumanMessageAt || null,
+        lastCustomerMessageAt: row.lastCustomerMessageAt || null,
+        updatedAt: row.updatedAt || null,
+      });
     }
 
     const identityNeedles = baseItems
@@ -5336,9 +5643,11 @@ router.get('/instagram-inbox/conversations', authenticateToken, async (req: any,
       const raw = extractRawConversationKey('INSTAGRAM', item.conversationKey);
       const normalized = normalizeInstagramIdentity(raw);
       const conversationCandidates = Array.from(new Set([item.conversationKey, raw, `INSTAGRAM:${raw}`])).filter(Boolean);
-      const linkedFromState = conversationCandidates
-        .map((key) => stateCustomerByConversation.get(key) || null)
-        .find((id) => typeof id === 'number') || null;
+      const stateMatches = conversationCandidates
+        .map((key) => stateByConversation.get(key) || null)
+        .filter((row): row is ConversationStateSnapshot => Boolean(row));
+      const stateRow = pickLatestState(stateMatches);
+      const linkedFromState = stateRow?.customerId || null;
       const linkedFromBinding = normalized ? bindingCustomerByIdentity.get(normalized) || null : null;
       const linkedCustomerId = linkedFromState || linkedFromBinding || null;
 
@@ -5346,6 +5655,7 @@ router.get('/instagram-inbox/conversations', authenticateToken, async (req: any,
         ...item,
         linkedCustomerId,
         identityLinked: Boolean(linkedCustomerId),
+        ...serializeConversationState(stateRow),
         lastEventTimestamp: item.lastEventTimestamp.toISOString(),
       };
     });
@@ -5413,6 +5723,41 @@ router.get('/instagram-inbox/conversations/:conversationKey/messages', authentic
         rawPayload: true,
       },
     });
+    const stateRows = await prisma.conversationState.findMany({
+      where: {
+        salonId,
+        channel: 'INSTAGRAM',
+        conversationKey: {
+          in: keyCandidates,
+        },
+      },
+      select: {
+        channel: true,
+        conversationKey: true,
+        customerId: true,
+        mode: true,
+        manualAlways: true,
+        humanPendingSince: true,
+        humanActiveUntil: true,
+        lastHumanMessageAt: true,
+        lastCustomerMessageAt: true,
+        updatedAt: true,
+      },
+    });
+    const stateRow = pickLatestState(
+      stateRows.map((row) => ({
+        channel: row.channel as 'INSTAGRAM' | 'WHATSAPP',
+        conversationKey: row.conversationKey,
+        customerId: row.customerId || null,
+        mode: row.mode as ConversationAutomationModeValue,
+        manualAlways: Boolean(row.manualAlways),
+        humanPendingSince: row.humanPendingSince || null,
+        humanActiveUntil: row.humanActiveUntil || null,
+        lastHumanMessageAt: row.lastHumanMessageAt || null,
+        lastCustomerMessageAt: row.lastCustomerMessageAt || null,
+        updatedAt: row.updatedAt || null,
+      })),
+    );
 
     const items = rows.map((row) => {
       const raw = asObject(row.rawPayload);
@@ -5431,7 +5776,10 @@ router.get('/instagram-inbox/conversations/:conversationKey/messages', authentic
       };
     });
 
-    return res.status(200).json({ items });
+    return res.status(200).json({
+      items,
+      conversationState: serializeConversationState(stateRow),
+    });
   } catch (error) {
     console.error('Admin instagram inbox messages error:', error);
     return res.status(500).json({ message: 'Internal server error.' });
@@ -5687,6 +6035,51 @@ router.post('/instagram-inbox/conversations/:conversationKey/handover', authenti
       return res.status(404).json({ message: 'Conversation not found.' });
     }
     const resolvedConversationKey = latestInbound.conversationKey || conversationKey;
+    const stateCandidates = Array.from(
+      new Set([...keyCandidates, ...conversationKeyCandidates('INSTAGRAM', resolvedConversationKey)]),
+    );
+    const existingStateRows = await prisma.conversationState.findMany({
+      where: {
+        salonId,
+        channel: 'INSTAGRAM',
+        conversationKey: {
+          in: stateCandidates,
+        },
+      },
+      select: {
+        channel: true,
+        conversationKey: true,
+        customerId: true,
+        mode: true,
+        manualAlways: true,
+        humanPendingSince: true,
+        humanActiveUntil: true,
+        lastHumanMessageAt: true,
+        lastCustomerMessageAt: true,
+        updatedAt: true,
+      },
+    });
+    const existingState = pickLatestState(
+      existingStateRows.map((row) => ({
+        channel: row.channel as 'INSTAGRAM' | 'WHATSAPP',
+        conversationKey: row.conversationKey,
+        customerId: row.customerId || null,
+        mode: row.mode as ConversationAutomationModeValue,
+        manualAlways: Boolean(row.manualAlways),
+        humanPendingSince: row.humanPendingSince || null,
+        humanActiveUntil: row.humanActiveUntil || null,
+        lastHumanMessageAt: row.lastHumanMessageAt || null,
+        lastCustomerMessageAt: row.lastCustomerMessageAt || null,
+        updatedAt: row.updatedAt || null,
+      })),
+    );
+    if (existingState && isHandoverMode(existingState.mode)) {
+      return res.status(200).json({
+        ok: true,
+        alreadyRequested: true,
+        state: serializeConversationState(existingState),
+      });
+    }
 
     const saved = await prisma.inboundMessageQueue.create({
       data: {
@@ -5708,7 +6101,7 @@ router.post('/instagram-inbox/conversations/:conversationKey/handover', authenti
       },
     });
 
-    await markConversationHumanPending({
+    const updatedState = await markConversationHumanPending({
       salonId,
       channel: 'INSTAGRAM',
       conversationKey: resolvedConversationKey,
@@ -5717,6 +6110,8 @@ router.post('/instagram-inbox/conversations/:conversationKey/handover', authenti
     });
 
     return res.status(200).json({
+      ok: true,
+      alreadyRequested: false,
       item: {
         id: saved.id,
         providerMessageId: saved.providerMessageId,
@@ -5726,9 +6121,100 @@ router.post('/instagram-inbox/conversations/:conversationKey/handover', authenti
         direction: 'system',
         eventTimestamp: saved.eventTimestamp.toISOString(),
       },
+      state: serializeConversationState({
+        channel: 'INSTAGRAM',
+        conversationKey: updatedState.conversationKey,
+        customerId: updatedState.customerId || null,
+        mode: updatedState.mode as ConversationAutomationModeValue,
+        manualAlways: Boolean(updatedState.manualAlways),
+        humanPendingSince: updatedState.humanPendingSince || null,
+        humanActiveUntil: updatedState.humanActiveUntil || null,
+        lastHumanMessageAt: updatedState.lastHumanMessageAt || null,
+        lastCustomerMessageAt: updatedState.lastCustomerMessageAt || null,
+        updatedAt: updatedState.updatedAt || null,
+      }),
     });
   } catch (error) {
     console.error('Admin instagram inbox handover error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.post('/instagram-inbox/conversations/:conversationKey/resume-auto', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const conversationKey = typeof req.params.conversationKey === 'string' ? req.params.conversationKey.trim() : '';
+  if (!conversationKey) {
+    return res.status(400).json({ message: 'conversationKey is required.' });
+  }
+
+  try {
+    const keyCandidates = conversationKeyCandidates('INSTAGRAM', conversationKey);
+    const rawKeyCandidates = Array.from(new Set(keyCandidates.map((key) => extractRawConversationKey('INSTAGRAM', key))));
+    const latestInboundWhere: any = {
+      salonId,
+      channel: 'INSTAGRAM',
+      OR: [
+        {
+          conversationKey: {
+            in: keyCandidates,
+          },
+        },
+        {
+          messageType: {
+            startsWith: 'echo_',
+          },
+          externalAccountId: {
+            in: rawKeyCandidates,
+          },
+        },
+      ],
+    };
+
+    const latestInbound = await prisma.inboundMessageQueue.findFirst({
+      where: latestInboundWhere,
+      orderBy: {
+        eventTimestamp: 'desc',
+      },
+      select: {
+        conversationKey: true,
+        customerName: true,
+      },
+    });
+
+    if (!latestInbound) {
+      return res.status(404).json({ message: 'Conversation not found.' });
+    }
+    const resolvedConversationKey = latestInbound.conversationKey || conversationKey;
+
+    const updatedState = await markConversationAuto({
+      salonId,
+      channel: 'INSTAGRAM',
+      conversationKey: resolvedConversationKey,
+      note: 'manual_resumed_by_salon',
+      profileName: latestInbound.customerName || null,
+    });
+
+    return res.status(200).json({
+      ok: true,
+      state: serializeConversationState({
+        channel: 'INSTAGRAM',
+        conversationKey: updatedState.conversationKey,
+        customerId: updatedState.customerId || null,
+        mode: updatedState.mode as ConversationAutomationModeValue,
+        manualAlways: Boolean(updatedState.manualAlways),
+        humanPendingSince: updatedState.humanPendingSince || null,
+        humanActiveUntil: updatedState.humanActiveUntil || null,
+        lastHumanMessageAt: updatedState.lastHumanMessageAt || null,
+        lastCustomerMessageAt: updatedState.lastCustomerMessageAt || null,
+        updatedAt: updatedState.updatedAt || null,
+      }),
+    });
+  } catch (error) {
+    console.error('Admin instagram inbox resume-auto error:', error);
     return res.status(500).json({ message: 'Internal server error.' });
   }
 });
