@@ -56,6 +56,13 @@ interface PrefillConnection {
   bindingIds?: string[];
 }
 
+interface MetaTokenResult {
+  accessToken: string;
+  tokenType: string | null;
+  expiresIn: number | null;
+  instagramUserId?: string | null;
+}
+
 const defaultScopes: Record<MetaChannel, string[]> = {
   INSTAGRAM: [
     'instagram_business_basic',
@@ -381,6 +388,12 @@ async function exchangeInstagramToken(code: string, redirectUri: string) {
   if (!shortLivedToken || typeof shortLivedToken !== 'string') {
     throw new Error('Instagram did not return short-lived access token.');
   }
+  const instagramUserId =
+    typeof shortTokenPayload?.user_id === 'string' && shortTokenPayload.user_id.trim()
+      ? shortTokenPayload.user_id.trim()
+      : Number.isFinite(Number(shortTokenPayload?.user_id))
+        ? String(shortTokenPayload.user_id)
+        : null;
 
   const longLivedResponse = await axios.get('https://graph.instagram.com/access_token', {
     params: {
@@ -402,10 +415,11 @@ async function exchangeInstagramToken(code: string, redirectUri: string) {
     expiresIn: Number.isFinite(Number(longLivedResponse.data?.expires_in))
       ? Number(longLivedResponse.data.expires_in)
       : null,
+    instagramUserId,
   };
 }
 
-async function exchangeCodeForToken(code: string, redirectUri: string, channel: MetaChannel) {
+async function exchangeCodeForToken(code: string, redirectUri: string, channel: MetaChannel): Promise<MetaTokenResult> {
   if (channel === 'INSTAGRAM') {
     return exchangeInstagramToken(code, redirectUri);
   }
@@ -435,6 +449,7 @@ async function exchangeCodeForToken(code: string, redirectUri: string, channel: 
     accessToken,
     tokenType: typeof response.data?.token_type === 'string' ? response.data.token_type : null,
     expiresIn: Number.isFinite(Number(response.data?.expires_in)) ? Number(response.data.expires_in) : null,
+    instagramUserId: null,
   };
 }
 
@@ -534,7 +549,7 @@ async function runProbe(channel: MetaChannel, accessToken: string) {
 async function finalizeConnection(args: {
   salonId: number;
   channel: MetaChannel;
-  token: { accessToken: string; tokenType: string | null; expiresIn: number | null };
+  token: MetaTokenResult;
   prefill?: PrefillConnection;
 }) {
   const { salonId, channel, token, prefill } = args;
@@ -806,10 +821,19 @@ router.get('/callback', async (req: any, res: any) => {
   try {
     const redirectUri = getRedirectUri(req);
     const token = await exchangeCodeForToken(code, redirectUri, channel);
+    const prefillFromToken: PrefillConnection | undefined =
+      channel === 'INSTAGRAM' && token.instagramUserId
+        ? {
+            externalAccountId: token.instagramUserId,
+            externalDisplayName: token.instagramUserId,
+            bindingIds: [token.instagramUserId],
+          }
+        : undefined;
     const { probe } = await finalizeConnection({
       salonId: statePayload.sid,
       channel,
       token,
+      prefill: prefillFromToken,
     });
 
     return res.status(200).send(renderCallbackHtml({
@@ -871,8 +895,14 @@ router.post('/exchange-code', authenticateToken, async (req: any, res: any) => {
         req.body?.businessId,
         req.body?.externalAccountId,
         req.body?.externalBusinessId,
+        channel === 'INSTAGRAM' ? token.instagramUserId : null,
       ]),
     };
+
+    if (channel === 'INSTAGRAM' && token.instagramUserId) {
+      prefill.externalAccountId = token.instagramUserId;
+      prefill.externalDisplayName = prefill.externalDisplayName || token.instagramUserId;
+    }
 
     const { probe, probeError } = await finalizeConnection({
       salonId,
@@ -978,6 +1008,24 @@ router.post('/probe', authenticateToken, async (req: any, res: any) => {
       });
     } catch (probeError) {
       const message = getAxiosErrorMessage(probeError);
+
+      if (channel === 'INSTAGRAM' && loaded.store[key].externalAccountId) {
+        loaded.store[key] = {
+          ...loaded.store[key],
+          status: 'CONNECTED',
+          message: `Connected. Probe skipped: ${message}`,
+          lastProbeAt: new Date().toISOString(),
+          lastProbeOk: false,
+          lastError: message,
+        };
+        await saveStoreForSalon(salonId, loaded.faqAnswers, loaded.store);
+        return res.status(200).json({
+          ok: true,
+          channel,
+          warning: message,
+          message: 'Connection is active, but probe endpoint is not supported for this token.',
+        });
+      }
 
       loaded.store[key] = {
         ...loaded.store[key],
