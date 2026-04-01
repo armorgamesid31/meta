@@ -382,27 +382,40 @@ async function exchangeInstagramToken(code: string, redirectUri: string) {
     throw new Error('Instagram did not return short-lived access token.');
   }
 
-  const longLivedResponse = await axios.get('https://graph.instagram.com/access_token', {
-    params: {
-      grant_type: 'ig_exchange_token',
-      client_secret: instagramAppSecret,
-      access_token: shortLivedToken,
-    },
-    timeout: 20000,
-  });
+  try {
+    const longLivedResponse = await axios.get('https://graph.instagram.com/access_token', {
+      params: {
+        grant_type: 'ig_exchange_token',
+        client_secret: instagramAppSecret,
+        access_token: shortLivedToken,
+      },
+      timeout: 20000,
+    });
 
-  const longLivedToken = longLivedResponse.data?.access_token;
-  if (!longLivedToken || typeof longLivedToken !== 'string') {
-    throw new Error('Instagram did not return long-lived access token.');
+    const longLivedToken = longLivedResponse.data?.access_token;
+    if (!longLivedToken || typeof longLivedToken !== 'string') {
+      throw new Error('Instagram did not return long-lived access token.');
+    }
+
+    return {
+      accessToken: longLivedToken,
+      tokenType: 'bearer',
+      expiresIn: Number.isFinite(Number(longLivedResponse.data?.expires_in))
+        ? Number(longLivedResponse.data.expires_in)
+        : null,
+    };
+  } catch (error) {
+    // Some Instagram Login configurations reject ig_exchange_token with method errors.
+    // Keep connection usable by falling back to short-lived token.
+    console.warn('Instagram long-lived token exchange failed, using short-lived token:', getAxiosErrorMessage(error));
+    return {
+      accessToken: shortLivedToken,
+      tokenType: 'bearer',
+      expiresIn: Number.isFinite(Number(shortTokenPayload?.expires_in))
+        ? Number(shortTokenPayload.expires_in)
+        : null,
+    };
   }
-
-  return {
-    accessToken: longLivedToken,
-    tokenType: 'bearer',
-    expiresIn: Number.isFinite(Number(longLivedResponse.data?.expires_in))
-      ? Number(longLivedResponse.data.expires_in)
-      : null,
-  };
 }
 
 async function exchangeCodeForToken(code: string, redirectUri: string, channel: MetaChannel) {
