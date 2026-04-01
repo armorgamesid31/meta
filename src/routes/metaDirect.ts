@@ -440,10 +440,28 @@ async function exchangeCodeForToken(code: string, redirectUri: string, channel: 
 
 function getAxiosErrorMessage(error: unknown): string {
   if (axios.isAxiosError(error)) {
-    const fbError = (error.response?.data as any)?.error?.message;
-    if (typeof fbError === 'string' && fbError.trim()) {
-      return fbError.trim();
+    const responseData = (error.response?.data as any) || {};
+    const nestedMessage = responseData?.error?.message;
+    if (typeof nestedMessage === 'string' && nestedMessage.trim()) {
+      return nestedMessage.trim();
     }
+
+    const flatMessage = responseData?.error_message;
+    if (typeof flatMessage === 'string' && flatMessage.trim()) {
+      const errorType = typeof responseData?.error_type === 'string' ? responseData.error_type.trim() : '';
+      const code = responseData?.code;
+      const meta = [errorType, Number.isFinite(Number(code)) ? `code ${code}` : ''].filter(Boolean).join(', ');
+      return meta ? `${flatMessage.trim()} (${meta})` : flatMessage.trim();
+    }
+
+    if (typeof responseData?.message === 'string' && responseData.message.trim()) {
+      return responseData.message.trim();
+    }
+
+    if (error.response?.status) {
+      return `Meta API request failed with status ${error.response.status}.`;
+    }
+
     if (error.message?.trim()) {
       return error.message.trim();
     }
