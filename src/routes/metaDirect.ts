@@ -395,28 +395,41 @@ async function exchangeInstagramToken(code: string, redirectUri: string) {
         ? String(shortTokenPayload.user_id)
         : null;
 
-  const longLivedResponse = await axios.get('https://graph.instagram.com/access_token', {
-    params: {
-      grant_type: 'ig_exchange_token',
-      client_secret: instagramAppSecret,
-      access_token: shortLivedToken,
-    },
-    timeout: 20000,
-  });
+  try {
+    const longLivedResponse = await axios.get('https://graph.instagram.com/access_token', {
+      params: {
+        grant_type: 'ig_exchange_token',
+        client_secret: instagramAppSecret,
+        access_token: shortLivedToken,
+      },
+      timeout: 20000,
+    });
 
-  const longLivedToken = longLivedResponse.data?.access_token;
-  if (!longLivedToken || typeof longLivedToken !== 'string') {
-    throw new Error('Instagram did not return long-lived access token.');
+    const longLivedToken = longLivedResponse.data?.access_token;
+    if (!longLivedToken || typeof longLivedToken !== 'string') {
+      throw new Error('Instagram did not return long-lived access token.');
+    }
+
+    return {
+      accessToken: longLivedToken,
+      tokenType: 'bearer',
+      expiresIn: Number.isFinite(Number(longLivedResponse.data?.expires_in))
+        ? Number(longLivedResponse.data.expires_in)
+        : null,
+      instagramUserId,
+    };
+  } catch (error) {
+    // Some Instagram app configurations reject ig_exchange_token GET.
+    // Keep flow usable with the short-lived token and continue binding.
+    return {
+      accessToken: shortLivedToken,
+      tokenType: 'bearer',
+      expiresIn: Number.isFinite(Number(shortTokenPayload?.expires_in))
+        ? Number(shortTokenPayload.expires_in)
+        : null,
+      instagramUserId,
+    };
   }
-
-  return {
-    accessToken: longLivedToken,
-    tokenType: 'bearer',
-    expiresIn: Number.isFinite(Number(longLivedResponse.data?.expires_in))
-      ? Number(longLivedResponse.data.expires_in)
-      : null,
-    instagramUserId,
-  };
 }
 
 async function exchangeCodeForToken(code: string, redirectUri: string, channel: MetaChannel): Promise<MetaTokenResult> {
