@@ -4756,6 +4756,37 @@ function resolveInstagramConversationKeyFromRow(input: {
   return primaryActor || secondaryActor || normalizedKey || fromKey;
 }
 
+async function resolveConnectedInstagramAccountIdForSalon(salonId: number): Promise<string | null> {
+  const [settings, binding] = await Promise.all([
+    prisma.salonAiAgentSettings.findUnique({
+      where: { salonId },
+      select: { faqAnswers: true },
+    }),
+    prisma.salonChannelBinding.findFirst({
+      where: {
+        salonId,
+        channel: 'INSTAGRAM',
+        isActive: true,
+      },
+      orderBy: {
+        updatedAt: 'desc',
+      },
+      select: {
+        externalAccountId: true,
+      },
+    }),
+  ]);
+
+  const fromSettings = (() => {
+    const faq = asObject(settings?.faqAnswers);
+    const meta = asObject(faq.metaDirect);
+    const ig = asObject(meta.instagram);
+    return typeof ig.externalAccountId === 'string' ? ig.externalAccountId.trim() : null;
+  })();
+  const fromBinding = typeof binding?.externalAccountId === 'string' ? binding.externalAccountId.trim() : null;
+  return fromSettings || fromBinding || null;
+}
+
 router.get('/conversations', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
   if (!salonId) {
@@ -4790,22 +4821,9 @@ router.get('/conversations', authenticateToken, async (req: any, res: any) => {
     });
 
     const hasInstagramRows = rows.some((row) => row.channel === 'INSTAGRAM');
-    const instagramConnectedAccountId = hasInstagramRows
-      ? (() => {
-          const settingsPromise = prisma.salonAiAgentSettings.findUnique({
-            where: { salonId },
-            select: { faqAnswers: true },
-          });
-          return settingsPromise;
-        })()
+    const connectedInstagramId = hasInstagramRows
+      ? await resolveConnectedInstagramAccountIdForSalon(salonId)
       : null;
-    const settings = instagramConnectedAccountId ? await instagramConnectedAccountId : null;
-    const connectedInstagramId = (() => {
-      const faq = asObject(settings?.faqAnswers);
-      const meta = asObject(faq.metaDirect);
-      const ig = asObject(meta.instagram);
-      return typeof ig.externalAccountId === 'string' ? ig.externalAccountId.trim() : null;
-    })();
 
     const byConversation = new Map<
       string,
@@ -5801,16 +5819,7 @@ router.get('/instagram-inbox/conversations', authenticateToken, async (req: any,
         rawPayload: true,
       },
     });
-    const settings = await prisma.salonAiAgentSettings.findUnique({
-      where: { salonId },
-      select: { faqAnswers: true },
-    });
-    const connectedInstagramId = (() => {
-      const faq = asObject(settings?.faqAnswers);
-      const meta = asObject(faq.metaDirect);
-      const ig = asObject(meta.instagram);
-      return typeof ig.externalAccountId === 'string' ? ig.externalAccountId.trim() : null;
-    })();
+    const connectedInstagramId = await resolveConnectedInstagramAccountIdForSalon(salonId);
 
     const byConversation = new Map<
       string,

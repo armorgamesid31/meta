@@ -6,6 +6,7 @@ import {
   OutboundMessageSource,
 } from '@prisma/client';
 import axios from 'axios';
+import { createHash } from 'crypto';
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import {
@@ -66,6 +67,16 @@ function toEventDate(payload: any): Date {
     if (!Number.isNaN(parsed.getTime())) return parsed;
   }
   return new Date();
+}
+
+function buildMessageSignature(input: {
+  conversationKey: string;
+  messageType: string;
+  text: string | null;
+  eventDate: Date;
+}): string {
+  const payload = `${input.conversationKey}|${input.messageType}|${input.text || ''}|${input.eventDate.getTime()}`;
+  return createHash('sha1').update(payload).digest('hex').slice(0, 16);
 }
 
 function parseMetaMessageType(channel: ChannelType, msg: any, media: Array<{ type: string }>): string {
@@ -807,7 +818,8 @@ async function processIncomingBatch(items: any[]) {
 
   for (const row of items) {
     const channel = row.channel as ChannelType;
-    const providerMessageId = String(row.providerMessageId || '').trim();
+    const incomingProviderMessageId = String(row.providerMessageId || '').trim();
+    let providerMessageId = incomingProviderMessageId;
     const conversationKey = String(row.channelConversationKey || '').trim();
     const externalAccountId = typeof row.externalAccountId === 'string' ? row.externalAccountId.trim() : null;
     const externalBusinessId = typeof row.externalBusinessId === 'string' ? row.externalBusinessId.trim() : null;
@@ -880,6 +892,42 @@ async function processIncomingBatch(items: any[]) {
 
     const eventDate = toEventDate(row);
     const forceAutoByCancel = isHumanCancelSignal(row);
+    const intendedMessageType = row.isEcho ? `echo_${row.messageType}` : row.messageType;
+
+    const existingProviderRow = await prisma.inboundMessageQueue.findUnique({
+      where: {
+        channel_providerMessageId: {
+          channel,
+          providerMessageId,
+        },
+      },
+      select: {
+        conversationKey: true,
+        messageType: true,
+        text: true,
+        eventTimestamp: true,
+      },
+    });
+
+    if (existingProviderRow) {
+      const existingTs = existingProviderRow.eventTimestamp.getTime();
+      const incomingTs = eventDate.getTime();
+      const withinRetryWindow = Math.abs(existingTs - incomingTs) <= 120000;
+      const sameConversation = existingProviderRow.conversationKey === conversationKey;
+      const sameMessageType = existingProviderRow.messageType === intendedMessageType;
+      const sameText = (existingProviderRow.text || null) === (row.text || null);
+      const likelyRetryOrEcho = sameConversation && sameMessageType && sameText && withinRetryWindow;
+
+      if (!likelyRetryOrEcho) {
+        const signature = buildMessageSignature({
+          conversationKey,
+          messageType: intendedMessageType,
+          text: row.text || null,
+          eventDate,
+        });
+        providerMessageId = `${providerMessageId}__${signature}`;
+      }
+    }
 
     if (identity) {
       await upsertIdentitySession({
@@ -909,7 +957,7 @@ async function processIncomingBatch(items: any[]) {
         conversationKey,
         externalAccountId: externalAccountId || externalBusinessId || '',
         customerName: profileName,
-        messageType: row.isEcho ? `echo_${row.messageType}` : row.messageType,
+        messageType: intendedMessageType,
         text: row.text || null,
         eventTimestamp: eventDate,
         rawPayload: rawPayloadForStorage as any,
@@ -923,7 +971,7 @@ async function processIncomingBatch(items: any[]) {
         providerMessageId,
         externalAccountId: externalAccountId || externalBusinessId || '',
         customerName: profileName,
-        messageType: row.isEcho ? `echo_${row.messageType}` : row.messageType,
+        messageType: intendedMessageType,
         text: row.text || null,
         eventTimestamp: eventDate,
         rawPayload: rawPayloadForStorage as any,
@@ -951,6 +999,8 @@ async function processIncomingBatch(items: any[]) {
 
     processed.push({
       ...row,
+      providerMessageId,
+      originalProviderMessageId: incomingProviderMessageId !== providerMessageId ? incomingProviderMessageId : undefined,
       salonId,
       customerId: customer?.id || null,
       customerStatus,
