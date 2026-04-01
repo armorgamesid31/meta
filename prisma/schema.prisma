@@ -46,6 +46,7 @@ model Salon {
   inboundMessages     InboundMessageQueue[]
   conversationStates  ConversationState[]
   outboundMessages    OutboundMessageTrace[]
+  channelProfiles     ChannelProfileCache[]
   magicLinks          MagicLink[]
   identitySessions    IdentitySession[]
   identityBindings    IdentityBinding[]
@@ -240,25 +241,25 @@ model SearchContext {
 }
 
 model MagicLink {
-  id              Int                @id @default(autoincrement())
-  token           String             @unique
-  phone           String
-  type            MagicLinkType
-  context         Json?
-  salonId         Int
-  channel         ChannelType
-  subjectType     IdentitySubjectType
+  id                Int                 @id @default(autoincrement())
+  token             String              @unique
+  phone             String
+  type              MagicLinkType
+  context           Json?
+  salonId           Int
+  channel           ChannelType
+  subjectType       IdentitySubjectType
   subjectNormalized String
-  status          MagicLinkStatus    @default(ACTIVE)
+  status            MagicLinkStatus     @default(ACTIVE)
   identitySessionId String
-  usedByCustomerId Int?
-  expiresAt       DateTime           @db.Timestamp(6)
-  usedAt          DateTime?          @db.Timestamp(6)
-  createdAt       DateTime?          @default(now()) @db.Timestamp(6)
-  updatedAt       DateTime?          @default(now()) @updatedAt @db.Timestamp(6)
-  identitySession IdentitySession    @relation(fields: [identitySessionId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  salon           Salon              @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  usedByCustomer  Customer?          @relation("MagicLinkUsedByCustomer", fields: [usedByCustomerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  usedByCustomerId  Int?
+  expiresAt         DateTime            @db.Timestamp(6)
+  usedAt            DateTime?           @db.Timestamp(6)
+  createdAt         DateTime?           @default(now()) @db.Timestamp(6)
+  updatedAt         DateTime?           @default(now()) @updatedAt @db.Timestamp(6)
+  identitySession   IdentitySession     @relation(fields: [identitySessionId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  salon             Salon               @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  usedByCustomer    Customer?           @relation("MagicLinkUsedByCustomer", fields: [usedByCustomerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([salonId, channel, subjectNormalized, status], map: "idx_magiclink_lookup")
   @@index([identitySessionId, createdAt], map: "idx_magiclink_session_created")
@@ -314,22 +315,22 @@ model IdentityBinding {
 }
 
 model Customer {
-  id              Int             @id @default(autoincrement())
-  name            String?
-  phone           String
-  instagram       String?
-  createdAt       DateTime?       @default(now()) @db.Timestamp(6)
-  updatedAt       DateTime?       @default(now()) @updatedAt @db.Timestamp(6)
-  salonId         Int
-  gender          CustomerGender?
-  birthDate       DateTime?       @db.Date
-  acceptMarketing Boolean?        @default(false)
+  id                 Int                        @id @default(autoincrement())
+  name               String?
+  phone              String
+  instagram          String?
+  createdAt          DateTime?                  @default(now()) @db.Timestamp(6)
+  updatedAt          DateTime?                  @default(now()) @updatedAt @db.Timestamp(6)
+  salonId            Int
+  gender             CustomerGender?
+  birthDate          DateTime?                  @db.Date
+  acceptMarketing    Boolean?                   @default(false)
   registrationStatus CustomerRegistrationStatus @default(VERIFIED)
-  appointments    Appointment[]
-  identityBindings IdentityBinding[]
-  identitySessions IdentitySession[]
-  salon           Salon           @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  usedMagicLinks  MagicLink[]     @relation("MagicLinkUsedByCustomer")
+  appointments       Appointment[]
+  identityBindings   IdentityBinding[]
+  identitySessions   IdentitySession[]
+  salon              Salon                      @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  usedMagicLinks     MagicLink[]                @relation("MagicLinkUsedByCustomer")
 
   @@unique([phone, salonId])
   @@index([salonId, createdAt], map: "idx_customer_salon_created")
@@ -768,23 +769,23 @@ model InboundMessageQueue {
 }
 
 model ConversationState {
-  id                           Int                        @id @default(autoincrement())
-  salonId                      Int
-  channel                      ChannelType
-  conversationKey              String
-  canonicalUserId              String?
-  customerId                   Int?
-  mode                         ConversationAutomationMode @default(AUTO)
-  humanPendingSince            DateTime?                  @db.Timestamp(6)
-  humanActiveUntil             DateTime?                  @db.Timestamp(6)
-  lastHumanMessageAt           DateTime?                  @db.Timestamp(6)
-  lastCustomerMessageAt        DateTime?                  @db.Timestamp(6)
-  manualAlways                 Boolean                    @default(false)
-  profileName                  String?
-  notes                        String?
-  createdAt                    DateTime?                  @default(now()) @db.Timestamp(6)
-  updatedAt                    DateTime?                  @default(now()) @updatedAt @db.Timestamp(6)
-  salon                        Salon                      @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id                    Int                        @id @default(autoincrement())
+  salonId               Int
+  channel               ChannelType
+  conversationKey       String
+  canonicalUserId       String?
+  customerId            Int?
+  mode                  ConversationAutomationMode @default(AUTO)
+  humanPendingSince     DateTime?                  @db.Timestamp(6)
+  humanActiveUntil      DateTime?                  @db.Timestamp(6)
+  lastHumanMessageAt    DateTime?                  @db.Timestamp(6)
+  lastCustomerMessageAt DateTime?                  @db.Timestamp(6)
+  manualAlways          Boolean                    @default(false)
+  profileName           String?
+  notes                 String?
+  createdAt             DateTime?                  @default(now()) @db.Timestamp(6)
+  updatedAt             DateTime?                  @default(now()) @updatedAt @db.Timestamp(6)
+  salon                 Salon                      @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([salonId, channel, conversationKey], map: "uq_conversation_state_salon_channel_key")
   @@index([salonId, mode, updatedAt], map: "idx_conversation_state_salon_mode_updated")
@@ -812,6 +813,29 @@ model OutboundMessageTrace {
   @@index([source, sentAt], map: "idx_outbound_trace_source_sent")
 }
 
+model ChannelProfileCache {
+  id                Int                       @id @default(autoincrement())
+  salonId           Int
+  channel           ChannelType
+  subjectNormalized String
+  subjectRaw        String?
+  profileName       String?
+  profileUsername   String?
+  profilePicUrl     String?
+  rawProfile        Json?
+  fetchStatus       ChannelProfileFetchStatus @default(PENDING)
+  fetchAttempts     Int                       @default(0)
+  fetchAttemptedAt  DateTime?                 @db.Timestamp(6)
+  fetchedAt         DateTime?                 @db.Timestamp(6)
+  lastError         String?
+  createdAt         DateTime?                 @default(now()) @db.Timestamp(6)
+  updatedAt         DateTime?                 @default(now()) @updatedAt @db.Timestamp(6)
+  salon             Salon                     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([salonId, channel, subjectNormalized], map: "uq_channel_profile_cache_subject")
+  @@index([salonId, channel, updatedAt], map: "idx_channel_profile_cache_salon_channel_updated")
+}
+
 model ServiceGender {
   serviceId Int
   gender    CustomerGender
@@ -836,6 +860,12 @@ enum UserRole {
   MANAGER
   RECEPTION
   FINANCE
+}
+
+enum ChannelProfileFetchStatus {
+  PENDING
+  SUCCESS
+  FAILED
 }
 
 enum AppointmentStatus {

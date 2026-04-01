@@ -4849,6 +4849,49 @@ router.get('/conversations', authenticateToken, async (req: any, res: any) => {
       });
     }
 
+    const instagramSubjects = Array.from(
+      new Set(
+        baseItems
+          .filter((item) => item.channel === 'INSTAGRAM')
+          .map((item) => normalizeInstagramIdentity(extractRawConversationKey('INSTAGRAM', item.conversationKey)))
+          .filter((value) => value.length > 0),
+      ),
+    );
+
+    const instagramProfileCacheRows = instagramSubjects.length
+      ? await prisma.channelProfileCache.findMany({
+          where: {
+            salonId,
+            channel: 'INSTAGRAM',
+            subjectNormalized: {
+              in: instagramSubjects,
+            },
+          },
+          select: {
+            subjectNormalized: true,
+            profileName: true,
+            profileUsername: true,
+            profilePicUrl: true,
+          },
+        })
+      : [];
+
+    const instagramProfileBySubject = new Map<
+      string,
+      {
+        profileName: string | null;
+        profileUsername: string | null;
+        profilePicUrl: string | null;
+      }
+    >();
+    for (const row of instagramProfileCacheRows) {
+      instagramProfileBySubject.set(row.subjectNormalized, {
+        profileName: row.profileName || null,
+        profileUsername: row.profileUsername || null,
+        profilePicUrl: row.profilePicUrl || null,
+      });
+    }
+
     const identityNeedles = baseItems
       .map((item) => {
         const raw = extractRawConversationKey(item.channel, item.conversationKey);
@@ -4940,6 +4983,14 @@ router.get('/conversations', authenticateToken, async (req: any, res: any) => {
 
     const items = itemsWithLink.map((item) => {
       const { stateRow, ...baseItem } = item;
+      const normalizedInstagramSubject =
+        baseItem.channel === 'INSTAGRAM'
+          ? normalizeInstagramIdentity(extractRawConversationKey('INSTAGRAM', baseItem.conversationKey))
+          : '';
+      const cachedInstagramProfile =
+        normalizedInstagramSubject && instagramProfileBySubject.has(normalizedInstagramSubject)
+          ? instagramProfileBySubject.get(normalizedInstagramSubject) || null
+          : null;
       const linkedCustomerName =
         baseItem.linkedCustomerId && linkedCustomerNameById.has(baseItem.linkedCustomerId)
           ? linkedCustomerNameById.get(baseItem.linkedCustomerId) || null
@@ -4947,7 +4998,9 @@ router.get('/conversations', authenticateToken, async (req: any, res: any) => {
 
       return {
         ...baseItem,
-        customerName: linkedCustomerName || baseItem.customerName,
+        customerName: linkedCustomerName || baseItem.customerName || cachedInstagramProfile?.profileName || null,
+        profileUsername: baseItem.profileUsername || cachedInstagramProfile?.profileUsername || null,
+        profilePicUrl: baseItem.profilePicUrl || cachedInstagramProfile?.profilePicUrl || null,
         linkedCustomerName,
         identityLinked: Boolean(baseItem.linkedCustomerId),
         ...serializeConversationState(stateRow),
@@ -5721,6 +5774,48 @@ router.get('/instagram-inbox/conversations', authenticateToken, async (req: any,
       });
     }
 
+    const instagramSubjects = Array.from(
+      new Set(
+        baseItems
+          .map((item) => normalizeInstagramIdentity(extractRawConversationKey('INSTAGRAM', item.conversationKey)))
+          .filter((value) => value.length > 0),
+      ),
+    );
+
+    const instagramProfileCacheRows = instagramSubjects.length
+      ? await prisma.channelProfileCache.findMany({
+          where: {
+            salonId,
+            channel: 'INSTAGRAM',
+            subjectNormalized: {
+              in: instagramSubjects,
+            },
+          },
+          select: {
+            subjectNormalized: true,
+            profileName: true,
+            profileUsername: true,
+            profilePicUrl: true,
+          },
+        })
+      : [];
+
+    const instagramProfileBySubject = new Map<
+      string,
+      {
+        profileName: string | null;
+        profileUsername: string | null;
+        profilePicUrl: string | null;
+      }
+    >();
+    for (const row of instagramProfileCacheRows) {
+      instagramProfileBySubject.set(row.subjectNormalized, {
+        profileName: row.profileName || null,
+        profileUsername: row.profileUsername || null,
+        profilePicUrl: row.profilePicUrl || null,
+      });
+    }
+
     const identityNeedles = baseItems
       .map((item) => normalizeInstagramIdentity(extractRawConversationKey('INSTAGRAM', item.conversationKey)))
       .filter((value) => value.length > 0);
@@ -5793,6 +5888,13 @@ router.get('/instagram-inbox/conversations', authenticateToken, async (req: any,
 
     const items = itemsWithLink.map((item) => {
       const { stateRow, ...baseItem } = item;
+      const normalizedInstagramSubject = normalizeInstagramIdentity(
+        extractRawConversationKey('INSTAGRAM', baseItem.conversationKey),
+      );
+      const cachedInstagramProfile =
+        normalizedInstagramSubject && instagramProfileBySubject.has(normalizedInstagramSubject)
+          ? instagramProfileBySubject.get(normalizedInstagramSubject) || null
+          : null;
       const linkedCustomerName =
         baseItem.linkedCustomerId && linkedCustomerNameById.has(baseItem.linkedCustomerId)
           ? linkedCustomerNameById.get(baseItem.linkedCustomerId) || null
@@ -5800,7 +5902,9 @@ router.get('/instagram-inbox/conversations', authenticateToken, async (req: any,
 
       return {
         ...baseItem,
-        customerName: linkedCustomerName || baseItem.customerName,
+        customerName: linkedCustomerName || baseItem.customerName || cachedInstagramProfile?.profileName || null,
+        profileUsername: baseItem.profileUsername || cachedInstagramProfile?.profileUsername || null,
+        profilePicUrl: baseItem.profilePicUrl || cachedInstagramProfile?.profilePicUrl || null,
         linkedCustomerName,
         identityLinked: Boolean(baseItem.linkedCustomerId),
         ...serializeConversationState(stateRow),

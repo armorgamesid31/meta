@@ -1,4 +1,5 @@
 import {
+  ChannelProfileFetchStatus,
   ChannelType,
   ConversationAutomationMode,
   InboundMessageStatus,
@@ -37,6 +38,13 @@ type InstagramScopedProfile = {
   followerCount: number | null;
   isUserFollowBusiness: boolean | null;
   isBusinessFollowUser: boolean | null;
+};
+
+type InstagramProfileCacheRow = {
+  subjectNormalized: string;
+  profileName: string | null;
+  profileUsername: string | null;
+  profilePicUrl: string | null;
 };
 
 function toIsoFromTs(ts: unknown): string {
@@ -474,6 +482,173 @@ async function fetchInstagramScopedProfile(input: {
   }
 }
 
+function fromInstagramProfileCacheRow(
+  row: InstagramProfileCacheRow | null | undefined,
+): InstagramScopedProfile | null {
+  if (!row) return null;
+  if (!row.profileName && !row.profileUsername && !row.profilePicUrl) return null;
+  return {
+    id: row.subjectNormalized,
+    name: row.profileName,
+    username: row.profileUsername,
+    profilePic: row.profilePicUrl,
+    followerCount: null,
+    isUserFollowBusiness: null,
+    isBusinessFollowUser: null,
+  };
+}
+
+async function findInstagramProfileCacheRow(input: {
+  salonId: number;
+  subjectNormalized: string;
+}): Promise<InstagramProfileCacheRow | null> {
+  return prisma.channelProfileCache.findUnique({
+    where: {
+      salonId_channel_subjectNormalized: {
+        salonId: input.salonId,
+        channel: ChannelType.INSTAGRAM,
+        subjectNormalized: input.subjectNormalized,
+      },
+    },
+    select: {
+      subjectNormalized: true,
+      profileName: true,
+      profileUsername: true,
+      profilePicUrl: true,
+    },
+  });
+}
+
+async function getOrFetchInstagramProfileOnce(input: {
+  salonId: number;
+  subjectNormalized: string;
+  subjectRaw: string;
+  accessToken: string;
+}): Promise<InstagramScopedProfile | null> {
+  const subjectNormalized = normalizeInstagramScopedId(input.subjectNormalized);
+  if (!subjectNormalized) return null;
+
+  const uniqueWhere = {
+    salonId_channel_subjectNormalized: {
+      salonId: input.salonId,
+      channel: ChannelType.INSTAGRAM as ChannelType,
+      subjectNormalized,
+    },
+  };
+
+  let cacheRow = await prisma.channelProfileCache.findUnique({
+    where: uniqueWhere,
+    select: {
+      subjectNormalized: true,
+      profileName: true,
+      profileUsername: true,
+      profilePicUrl: true,
+      fetchAttempts: true,
+    },
+  });
+
+  if (!cacheRow) {
+    try {
+      await prisma.channelProfileCache.create({
+        data: {
+          salonId: input.salonId,
+          channel: ChannelType.INSTAGRAM,
+          subjectNormalized,
+          subjectRaw: input.subjectRaw || subjectNormalized,
+          fetchStatus: ChannelProfileFetchStatus.PENDING,
+          fetchAttempts: 0,
+        },
+      });
+    } catch (error: any) {
+      // Unique collision means another worker inserted first; safe to continue.
+      const prismaCode = error?.code || error?.meta?.code;
+      if (prismaCode !== 'P2002') {
+        throw error;
+      }
+    }
+
+    cacheRow = await prisma.channelProfileCache.findUnique({
+      where: uniqueWhere,
+      select: {
+        subjectNormalized: true,
+        profileName: true,
+        profileUsername: true,
+        profilePicUrl: true,
+        fetchAttempts: true,
+      },
+    });
+  }
+
+  const cachedProfile = fromInstagramProfileCacheRow(cacheRow);
+  if (cachedProfile) return cachedProfile;
+
+  if ((cacheRow?.fetchAttempts || 0) > 0) {
+    // Automatic fetch already attempted once for this subject.
+    return null;
+  }
+
+  const claimed = await prisma.channelProfileCache.updateMany({
+    where: {
+      salonId: input.salonId,
+      channel: ChannelType.INSTAGRAM,
+      subjectNormalized,
+      fetchAttempts: 0,
+    },
+    data: {
+      fetchAttempts: 1,
+      fetchAttemptedAt: new Date(),
+      fetchStatus: ChannelProfileFetchStatus.PENDING,
+      subjectRaw: input.subjectRaw || subjectNormalized,
+    },
+  });
+
+  if (claimed.count === 0) {
+    const latest = await findInstagramProfileCacheRow({
+      salonId: input.salonId,
+      subjectNormalized,
+    });
+    return fromInstagramProfileCacheRow(latest);
+  }
+
+  const fetched = await fetchInstagramScopedProfile({
+    scopedUserId: subjectNormalized,
+    accessToken: input.accessToken,
+  });
+
+  if (fetched) {
+    await prisma.channelProfileCache.update({
+      where: uniqueWhere,
+      data: {
+        profileName: fetched.name,
+        profileUsername: fetched.username,
+        profilePicUrl: fetched.profilePic,
+        rawProfile: {
+          id: fetched.id,
+          name: fetched.name,
+          username: fetched.username,
+          profile_pic: fetched.profilePic,
+          follower_count: fetched.followerCount,
+          is_user_follow_business: fetched.isUserFollowBusiness,
+          is_business_follow_user: fetched.isBusinessFollowUser,
+        } as any,
+        fetchStatus: ChannelProfileFetchStatus.SUCCESS,
+        fetchedAt: new Date(),
+        lastError: null,
+      },
+    });
+    return fetched;
+  }
+
+  await prisma.channelProfileCache.update({
+    where: uniqueWhere,
+    data: {
+      fetchStatus: ChannelProfileFetchStatus.FAILED,
+      lastError: 'profile_lookup_failed',
+    },
+  });
+  return null;
+}
+
 async function forwardToN8n(payload: any, channel: ChannelType) {
   const target = chooseN8nTarget(channel);
   if (!target) return;
@@ -628,7 +803,7 @@ function normalizeWebhookPayload(body: any) {
 async function processIncomingBatch(items: any[]) {
   const processed: any[] = [];
   const instagramCredentialsBySalon = new Map<number, { accessToken: string; externalAccountId: string | null } | null>();
-  const instagramProfileCache = new Map<string, InstagramScopedProfile | null>();
+  const instagramProfileBySubject = new Map<string, InstagramScopedProfile | null>();
 
   for (const row of items) {
     const channel = row.channel as ChannelType;
@@ -658,14 +833,16 @@ async function processIncomingBatch(items: any[]) {
         const connectedAccountId = normalizeInstagramScopedId(credentials?.externalAccountId || '');
         if (credentials?.accessToken && (!connectedAccountId || connectedAccountId !== scopedUserId)) {
           const cacheKey = `${salonId}:${scopedUserId}`;
-          if (instagramProfileCache.has(cacheKey)) {
-            instagramProfile = instagramProfileCache.get(cacheKey) || null;
+          if (instagramProfileBySubject.has(cacheKey)) {
+            instagramProfile = instagramProfileBySubject.get(cacheKey) || null;
           } else {
-            instagramProfile = await fetchInstagramScopedProfile({
-              scopedUserId,
+            instagramProfile = await getOrFetchInstagramProfileOnce({
+              salonId,
+              subjectNormalized: scopedUserId,
+              subjectRaw: typeof row.channelUserId === 'string' ? row.channelUserId : scopedUserId,
               accessToken: credentials.accessToken,
             });
-            instagramProfileCache.set(cacheKey, instagramProfile);
+            instagramProfileBySubject.set(cacheKey, instagramProfile);
           }
         }
       }
