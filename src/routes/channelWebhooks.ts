@@ -27,6 +27,17 @@ const N8N_NORMALIZED_WHATSAPP_WEBHOOK_URL = (process.env.N8N_NORMALIZED_WHATSAPP
 const N8N_INTERNAL_API_KEY = (process.env.N8N_INTERNAL_API_KEY || '').trim();
 
 const HUMAN_ACTIVE_MINUTES = Number(process.env.CONVERSATION_HUMAN_ACTIVE_MINUTES || 360);
+const META_GRAPH_VERSION = (process.env.META_GRAPH_VERSION || 'v23.0').trim();
+
+type InstagramScopedProfile = {
+  id: string;
+  name: string | null;
+  username: string | null;
+  profilePic: string | null;
+  followerCount: number | null;
+  isUserFollowBusiness: boolean | null;
+  isBusinessFollowUser: boolean | null;
+};
 
 function toIsoFromTs(ts: unknown): string {
   const n = Number(ts);
@@ -367,6 +378,102 @@ function chooseN8nTarget(channel: ChannelType) {
   return N8N_NORMALIZED_WEBHOOK_URL;
 }
 
+function asObject(value: unknown): Record<string, any> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+  return value as Record<string, any>;
+}
+
+function asNullableString(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
+function normalizeInstagramScopedId(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  return normalizeInstagramIdentity(trimmed) || trimmed;
+}
+
+function enrichRawPayloadWithInstagramProfile(rawPayload: unknown, profile: InstagramScopedProfile | null): unknown {
+  if (!profile) return rawPayload;
+  const raw = asObject(rawPayload);
+  if (!Object.keys(raw).length) return rawPayload;
+
+  return {
+    ...raw,
+    instagramProfile: {
+      id: profile.id,
+      name: profile.name,
+      username: profile.username,
+      profile_pic: profile.profilePic,
+      follower_count: profile.followerCount,
+      is_user_follow_business: profile.isUserFollowBusiness,
+      is_business_follow_user: profile.isBusinessFollowUser,
+    },
+  };
+}
+
+async function loadInstagramMetaDirectCredentials(salonId: number) {
+  const settings = await prisma.salonAiAgentSettings.findUnique({
+    where: { salonId },
+    select: { faqAnswers: true },
+  });
+  const faq = asObject(settings?.faqAnswers);
+  const metaDirect = asObject(faq.metaDirect);
+  const instagram = asObject(metaDirect.instagram);
+
+  const accessToken = asNullableString(instagram.accessToken);
+  if (!accessToken) return null;
+
+  return {
+    accessToken,
+    externalAccountId: asNullableString(instagram.externalAccountId),
+  };
+}
+
+async function fetchInstagramScopedProfile(input: {
+  scopedUserId: string;
+  accessToken: string;
+}): Promise<InstagramScopedProfile | null> {
+  const scopedUserId = normalizeInstagramScopedId(input.scopedUserId);
+  if (!scopedUserId || !input.accessToken.trim()) return null;
+
+  try {
+    const response = await axios.get(`https://graph.instagram.com/${META_GRAPH_VERSION}/${scopedUserId}`, {
+      params: {
+        fields:
+          'name,username,profile_pic,follower_count,is_user_follow_business,is_business_follow_user',
+        access_token: input.accessToken.trim(),
+      },
+      timeout: 20000,
+    });
+
+    const data = asObject(response.data);
+    return {
+      id: asNullableString(data.id) || scopedUserId,
+      name: asNullableString(data.name),
+      username: asNullableString(data.username),
+      profilePic: asNullableString(data.profile_pic),
+      followerCount: Number.isFinite(Number(data.follower_count)) ? Number(data.follower_count) : null,
+      isUserFollowBusiness:
+        typeof data.is_user_follow_business === 'boolean' ? data.is_user_follow_business : null,
+      isBusinessFollowUser:
+        typeof data.is_business_follow_user === 'boolean' ? data.is_business_follow_user : null,
+    };
+  } catch (error: any) {
+    const detail = error?.response?.data?.error || error?.response?.data || error?.message || 'unknown_error';
+    console.error('Instagram profile lookup failed:', {
+      scopedUserId,
+      detail,
+    });
+    return null;
+  }
+}
+
 async function forwardToN8n(payload: any, channel: ChannelType) {
   const target = chooseN8nTarget(channel);
   if (!target) return;
@@ -520,6 +627,8 @@ function normalizeWebhookPayload(body: any) {
 
 async function processIncomingBatch(items: any[]) {
   const processed: any[] = [];
+  const instagramCredentialsBySalon = new Map<number, { accessToken: string; externalAccountId: string | null } | null>();
+  const instagramProfileCache = new Map<string, InstagramScopedProfile | null>();
 
   for (const row of items) {
     const channel = row.channel as ChannelType;
@@ -534,6 +643,34 @@ async function processIncomingBatch(items: any[]) {
       continue;
     }
 
+    let instagramProfile: InstagramScopedProfile | null = null;
+    if (channel === 'INSTAGRAM' && !row.isEcho) {
+      const scopedUserId = normalizeInstagramScopedId(
+        typeof row.channelUserId === 'string' ? row.channelUserId : '',
+      );
+      if (scopedUserId) {
+        let credentials = instagramCredentialsBySalon.get(salonId);
+        if (credentials === undefined) {
+          credentials = await loadInstagramMetaDirectCredentials(salonId);
+          instagramCredentialsBySalon.set(salonId, credentials);
+        }
+
+        const connectedAccountId = normalizeInstagramScopedId(credentials?.externalAccountId || '');
+        if (credentials?.accessToken && (!connectedAccountId || connectedAccountId !== scopedUserId)) {
+          const cacheKey = `${salonId}:${scopedUserId}`;
+          if (instagramProfileCache.has(cacheKey)) {
+            instagramProfile = instagramProfileCache.get(cacheKey) || null;
+          } else {
+            instagramProfile = await fetchInstagramScopedProfile({
+              scopedUserId,
+              accessToken: credentials.accessToken,
+            });
+            instagramProfileCache.set(cacheKey, instagramProfile);
+          }
+        }
+      }
+    }
+
     const { customer, identity, identityLinked } = await resolveCustomer({
       salonId,
       channel,
@@ -543,12 +680,14 @@ async function processIncomingBatch(items: any[]) {
 
     const customerStatus = computeCustomerStatus({ customer, identityLinked });
     const canonicalUserId = customer?.id ? `customer:${customer.id}` : conversationKey;
+    const channelProfileName =
+      asNullableString(row.rawProfileName) || asNullableString(instagramProfile?.name) || null;
 
     const nameSource = customer?.id
       ? customer.name && customer.name.trim().length > 0
         ? 'customer_record'
         : 'none'
-      : row.rawProfileName
+      : channelProfileName
         ? 'channel_profile'
         : 'none';
 
@@ -556,9 +695,11 @@ async function processIncomingBatch(items: any[]) {
       ? customer.name && customer.name.trim().length > 0
         ? customer.name.trim()
         : null
-      : typeof row.rawProfileName === 'string' && row.rawProfileName.trim()
-        ? row.rawProfileName.trim()
-        : null;
+      : channelProfileName;
+
+    const profileUsername = asNullableString(instagramProfile?.username);
+    const profilePictureUrl = asNullableString(instagramProfile?.profilePic);
+    const rawPayloadForStorage = enrichRawPayloadWithInstagramProfile(row.raw, instagramProfile);
 
     const eventDate = toEventDate(row);
     const forceAutoByCancel = isHumanCancelSignal(row);
@@ -594,7 +735,7 @@ async function processIncomingBatch(items: any[]) {
         messageType: row.isEcho ? `echo_${row.messageType}` : row.messageType,
         text: row.text || null,
         eventTimestamp: eventDate,
-        rawPayload: row.raw as any,
+        rawPayload: rawPayloadForStorage as any,
         status: row.isEcho ? InboundMessageStatus.DONE : InboundMessageStatus.PENDING,
         processedAt: row.isEcho ? new Date() : null,
       },
@@ -608,7 +749,7 @@ async function processIncomingBatch(items: any[]) {
         messageType: row.isEcho ? `echo_${row.messageType}` : row.messageType,
         text: row.text || null,
         eventTimestamp: eventDate,
-        rawPayload: row.raw as any,
+        rawPayload: rawPayloadForStorage as any,
         status: row.isEcho ? InboundMessageStatus.DONE : InboundMessageStatus.PENDING,
         processedAt: row.isEcho ? new Date() : null,
       },
@@ -638,6 +779,19 @@ async function processIncomingBatch(items: any[]) {
       customerStatus,
       canonicalUserId,
       profileName,
+      profileUsername,
+      profilePictureUrl,
+      channelProfile: instagramProfile
+        ? {
+            id: instagramProfile.id,
+            name: instagramProfile.name,
+            username: instagramProfile.username,
+            profile_pic: instagramProfile.profilePic,
+            follower_count: instagramProfile.followerCount,
+            is_user_follow_business: instagramProfile.isUserFollowBusiness,
+            is_business_follow_user: instagramProfile.isBusinessFollowUser,
+          }
+        : null,
       nameSource,
       phone_available: channel === 'WHATSAPP' || Boolean(customer?.phone),
       instagram_linked: Boolean(identityLinked || (customer?.instagram && customer.instagram.trim())),
@@ -655,6 +809,8 @@ async function processIncomingBatch(items: any[]) {
       conversationKey,
       customer_status: customerStatus,
       can_generate_magic_link_directly: computeMagicDirect(channel, customerStatus),
+      profile_username: profileUsername,
+      profile_picture_url: profilePictureUrl,
       success: true,
       result: 'ok',
     });

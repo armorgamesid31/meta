@@ -4598,6 +4598,32 @@ function extractInstagramActors(rawPayload: unknown): { senderId: string | null;
   };
 }
 
+function extractInstagramProfile(rawPayload: unknown): {
+  name: string | null;
+  username: string | null;
+  profilePicUrl: string | null;
+} {
+  const raw = asObject(rawPayload);
+  const profile = asObject(raw.instagramProfile);
+  const fallback = asObject(raw.channelProfile);
+  const source = Object.keys(profile).length ? profile : fallback;
+
+  const asString = (value: unknown): string | null => {
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    return trimmed || null;
+  };
+
+  return {
+    name: asString(source.name),
+    username: asString(source.username),
+    profilePicUrl:
+      asString(source.profile_pic) ||
+      asString(source.profilePic) ||
+      asString(source.profilePictureUrl),
+  };
+}
+
 function isEchoMessageType(messageType: string): boolean {
   return (messageType || '').trim().toLowerCase().startsWith('echo_');
 }
@@ -4702,6 +4728,8 @@ router.get('/conversations', authenticateToken, async (req: any, res: any) => {
         channel: 'INSTAGRAM' | 'WHATSAPP';
         conversationKey: string;
         customerName: string | null;
+        profileUsername: string | null;
+        profilePicUrl: string | null;
         lastMessageType: string;
         lastMessageText: string | null;
         lastEventTimestamp: Date;
@@ -4726,12 +4754,16 @@ router.get('/conversations', authenticateToken, async (req: any, res: any) => {
       const existing = byConversation.get(key);
       const unread = row.status !== 'DONE' ? 1 : 0;
       const isHandover = row.messageType === 'handover_request';
+      const profile = row.channel === 'INSTAGRAM' ? extractInstagramProfile(row.rawPayload) : null;
+      const profileName = row.customerName || profile?.name || null;
 
       if (!existing) {
         byConversation.set(key, {
           channel: row.channel as 'INSTAGRAM' | 'WHATSAPP',
           conversationKey: canonicalConversationKey,
-          customerName: row.customerName || null,
+          customerName: profileName,
+          profileUsername: profile?.username || null,
+          profilePicUrl: profile?.profilePicUrl || null,
           lastMessageType: row.messageType,
           lastMessageText: row.text || null,
           lastEventTimestamp: row.eventTimestamp,
@@ -4747,8 +4779,14 @@ router.get('/conversations', authenticateToken, async (req: any, res: any) => {
       if (!existing.hasHandoverRequest && isHandover) {
         existing.hasHandoverRequest = true;
       }
-      if (!existing.customerName && row.customerName) {
-        existing.customerName = row.customerName;
+      if (!existing.customerName && profileName) {
+        existing.customerName = profileName;
+      }
+      if (!existing.profileUsername && profile?.username) {
+        existing.profileUsername = profile.username;
+      }
+      if (!existing.profilePicUrl && profile?.profilePicUrl) {
+        existing.profilePicUrl = profile.profilePicUrl;
       }
     }
 
@@ -4836,7 +4874,7 @@ router.get('/conversations', authenticateToken, async (req: any, res: any) => {
       bindingCustomerByIdentity.set(`${row.channel}:${row.subjectNormalized}`, row.customerId);
     }
 
-    const items = baseItems.map((item) => {
+    const itemsWithLink = baseItems.map((item) => {
       const raw = extractRawConversationKey(item.channel, item.conversationKey);
       const normalized = item.channel === 'WHATSAPP'
         ? normalizePhoneDigits(raw)
@@ -4856,9 +4894,54 @@ router.get('/conversations', authenticateToken, async (req: any, res: any) => {
       return {
         ...item,
         linkedCustomerId,
-        identityLinked: Boolean(linkedCustomerId),
+        stateRow,
+      };
+    });
+
+    const linkedCustomerIds = Array.from(
+      new Set(
+        itemsWithLink
+          .map((item) => item.linkedCustomerId)
+          .filter((value): value is number => typeof value === 'number' && value > 0),
+      ),
+    );
+
+    const linkedCustomers = linkedCustomerIds.length
+      ? await prisma.customer.findMany({
+          where: {
+            salonId,
+            id: {
+              in: linkedCustomerIds,
+            },
+          },
+          select: {
+            id: true,
+            name: true,
+          },
+        })
+      : [];
+
+    const linkedCustomerNameById = new Map<number, string>();
+    for (const customer of linkedCustomers) {
+      if (typeof customer.name === 'string' && customer.name.trim()) {
+        linkedCustomerNameById.set(customer.id, customer.name.trim());
+      }
+    }
+
+    const items = itemsWithLink.map((item) => {
+      const { stateRow, ...baseItem } = item;
+      const linkedCustomerName =
+        baseItem.linkedCustomerId && linkedCustomerNameById.has(baseItem.linkedCustomerId)
+          ? linkedCustomerNameById.get(baseItem.linkedCustomerId) || null
+          : null;
+
+      return {
+        ...baseItem,
+        customerName: linkedCustomerName || baseItem.customerName,
+        linkedCustomerName,
+        identityLinked: Boolean(baseItem.linkedCustomerId),
         ...serializeConversationState(stateRow),
-        lastEventTimestamp: item.lastEventTimestamp.toISOString(),
+        lastEventTimestamp: baseItem.lastEventTimestamp.toISOString(),
       };
     });
 
@@ -5523,6 +5606,8 @@ router.get('/instagram-inbox/conversations', authenticateToken, async (req: any,
       {
         conversationKey: string;
         customerName: string | null;
+        profileUsername: string | null;
+        profilePicUrl: string | null;
         lastMessageType: string;
         lastMessageText: string | null;
         lastEventTimestamp: Date;
@@ -5543,11 +5628,15 @@ router.get('/instagram-inbox/conversations', authenticateToken, async (req: any,
       const existing = byConversation.get(key);
       const unread = row.status !== 'DONE' ? 1 : 0;
       const isHandover = row.messageType === 'handover_request';
+      const profile = extractInstagramProfile(row.rawPayload);
+      const profileName = row.customerName || profile.name || null;
 
       if (!existing) {
         byConversation.set(key, {
           conversationKey: key,
-          customerName: row.customerName || null,
+          customerName: profileName,
+          profileUsername: profile.username || null,
+          profilePicUrl: profile.profilePicUrl || null,
           lastMessageType: row.messageType,
           lastMessageText: row.text || null,
           lastEventTimestamp: row.eventTimestamp,
@@ -5563,8 +5652,14 @@ router.get('/instagram-inbox/conversations', authenticateToken, async (req: any,
       if (!existing.hasHandoverRequest && isHandover) {
         existing.hasHandoverRequest = true;
       }
-      if (!existing.customerName && row.customerName) {
-        existing.customerName = row.customerName;
+      if (!existing.customerName && profileName) {
+        existing.customerName = profileName;
+      }
+      if (!existing.profileUsername && profile.username) {
+        existing.profileUsername = profile.username;
+      }
+      if (!existing.profilePicUrl && profile.profilePicUrl) {
+        existing.profilePicUrl = profile.profilePicUrl;
       }
     }
 
@@ -5639,7 +5734,7 @@ router.get('/instagram-inbox/conversations', authenticateToken, async (req: any,
       bindingCustomerByIdentity.set(row.subjectNormalized, row.customerId);
     }
 
-    const items = baseItems.map((item) => {
+    const itemsWithLink = baseItems.map((item) => {
       const raw = extractRawConversationKey('INSTAGRAM', item.conversationKey);
       const normalized = normalizeInstagramIdentity(raw);
       const conversationCandidates = Array.from(new Set([item.conversationKey, raw, `INSTAGRAM:${raw}`])).filter(Boolean);
@@ -5654,9 +5749,52 @@ router.get('/instagram-inbox/conversations', authenticateToken, async (req: any,
       return {
         ...item,
         linkedCustomerId,
-        identityLinked: Boolean(linkedCustomerId),
+        stateRow,
+      };
+    });
+
+    const linkedCustomerIds = Array.from(
+      new Set(
+        itemsWithLink
+          .map((item) => item.linkedCustomerId)
+          .filter((value): value is number => typeof value === 'number' && value > 0),
+      ),
+    );
+
+    const linkedCustomers = linkedCustomerIds.length
+      ? await prisma.customer.findMany({
+          where: {
+            salonId,
+            id: { in: linkedCustomerIds },
+          },
+          select: {
+            id: true,
+            name: true,
+          },
+        })
+      : [];
+
+    const linkedCustomerNameById = new Map<number, string>();
+    for (const customer of linkedCustomers) {
+      if (typeof customer.name === 'string' && customer.name.trim()) {
+        linkedCustomerNameById.set(customer.id, customer.name.trim());
+      }
+    }
+
+    const items = itemsWithLink.map((item) => {
+      const { stateRow, ...baseItem } = item;
+      const linkedCustomerName =
+        baseItem.linkedCustomerId && linkedCustomerNameById.has(baseItem.linkedCustomerId)
+          ? linkedCustomerNameById.get(baseItem.linkedCustomerId) || null
+          : null;
+
+      return {
+        ...baseItem,
+        customerName: linkedCustomerName || baseItem.customerName,
+        linkedCustomerName,
+        identityLinked: Boolean(baseItem.linkedCustomerId),
         ...serializeConversationState(stateRow),
-        lastEventTimestamp: item.lastEventTimestamp.toISOString(),
+        lastEventTimestamp: baseItem.lastEventTimestamp.toISOString(),
       };
     });
 
