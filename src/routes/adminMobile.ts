@@ -4615,12 +4615,22 @@ function extractInstagramProfile(rawPayload: unknown): {
   };
 
   return {
-    name: asString(source.name),
-    username: asString(source.username),
+    name:
+      asString(source.name) ||
+      asString(raw.profileName) ||
+      asString(raw.profile_name) ||
+      asString(raw.customerName),
+    username:
+      asString(source.username) ||
+      asString(raw.profileUsername) ||
+      asString(raw.profile_username),
     profilePicUrl:
       asString(source.profile_pic) ||
       asString(source.profilePic) ||
-      asString(source.profilePictureUrl),
+      asString(source.profilePictureUrl) ||
+      asString(raw.profilePictureUrl) ||
+      asString(raw.profile_picture_url) ||
+      asString(raw.profilePicUrl),
   };
 }
 
