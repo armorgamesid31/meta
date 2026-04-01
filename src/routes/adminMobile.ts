@@ -5132,26 +5132,37 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
   try {
     const keyCandidates = conversationKeyCandidates(channel, conversationKey);
     const rawKeyCandidates = Array.from(new Set(keyCandidates.map((key) => extractRawConversationKey(channel, key))));
+    const connectedInstagramId =
+      channel === 'INSTAGRAM'
+        ? normalizeInstagramIdentity((await resolveConnectedInstagramAccountIdForSalon(salonId)) || '')
+        : '';
+    const rawKeyCandidatesForLegacyEcho =
+      channel === 'INSTAGRAM' && connectedInstagramId
+        ? rawKeyCandidates.filter((key) => normalizeInstagramIdentity(key) !== connectedInstagramId)
+        : rawKeyCandidates;
+    const instagramOrClauses: any[] = [
+      {
+        conversationKey: {
+          in: keyCandidates,
+        },
+      },
+    ];
+    if (rawKeyCandidatesForLegacyEcho.length > 0) {
+      instagramOrClauses.push({
+        messageType: {
+          startsWith: 'echo_',
+        },
+        externalAccountId: {
+          in: rawKeyCandidatesForLegacyEcho,
+        },
+      });
+    }
     const where: any =
       channel === 'INSTAGRAM'
         ? {
             salonId,
             channel,
-            OR: [
-              {
-                conversationKey: {
-                  in: keyCandidates,
-                },
-              },
-              {
-                messageType: {
-                  startsWith: 'echo_',
-                },
-                externalAccountId: {
-                  in: rawKeyCandidates,
-                },
-              },
-            ],
+            OR: instagramOrClauses,
           }
         : {
             salonId,
@@ -6095,24 +6106,31 @@ router.get('/instagram-inbox/conversations/:conversationKey/messages', authentic
   try {
     const keyCandidates = conversationKeyCandidates('INSTAGRAM', conversationKey);
     const rawKeyCandidates = Array.from(new Set(keyCandidates.map((key) => extractRawConversationKey('INSTAGRAM', key))));
+    const connectedInstagramId = normalizeInstagramIdentity((await resolveConnectedInstagramAccountIdForSalon(salonId)) || '');
+    const rawKeyCandidatesForLegacyEcho = connectedInstagramId
+      ? rawKeyCandidates.filter((key) => normalizeInstagramIdentity(key) !== connectedInstagramId)
+      : rawKeyCandidates;
+    const instagramOrClauses: any[] = [
+      {
+        conversationKey: {
+          in: keyCandidates,
+        },
+      },
+    ];
+    if (rawKeyCandidatesForLegacyEcho.length > 0) {
+      instagramOrClauses.push({
+        messageType: {
+          startsWith: 'echo_',
+        },
+        externalAccountId: {
+          in: rawKeyCandidatesForLegacyEcho,
+        },
+      });
+    }
     const where: any = {
       salonId,
       channel: 'INSTAGRAM',
-      OR: [
-        {
-          conversationKey: {
-            in: keyCandidates,
-          },
-        },
-        {
-          messageType: {
-            startsWith: 'echo_',
-          },
-          externalAccountId: {
-            in: rawKeyCandidates,
-          },
-        },
-      ],
+      OR: instagramOrClauses,
     };
 
     const rows = await prisma.inboundMessageQueue.findMany({
