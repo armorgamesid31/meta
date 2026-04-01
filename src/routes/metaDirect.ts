@@ -12,7 +12,6 @@ const META_APP_ID = (process.env.META_APP_ID || '').trim();
 const META_APP_SECRET = (process.env.META_APP_SECRET || '').trim();
 const META_INSTAGRAM_APP_ID = (process.env.META_INSTAGRAM_APP_ID || '').trim();
 const META_INSTAGRAM_APP_SECRET = (process.env.META_INSTAGRAM_APP_SECRET || '').trim();
-const META_INSTAGRAM_EMBED_URL = (process.env.META_INSTAGRAM_EMBED_URL || '').trim();
 const META_REDIRECT_URI = (process.env.META_REDIRECT_URI || '').trim();
 const META_STATE_SECRET = (process.env.META_STATE_SECRET || process.env.JWT_SECRET || '').trim();
 const META_WHATSAPP_CONFIG_ID = (process.env.META_WHATSAPP_CONFIG_ID || '').trim();
@@ -240,45 +239,6 @@ function buildAuthorizeUrl(
   scopes: string[],
 ): string {
   const clientId = getClientId(channel);
-
-  if (channel === 'INSTAGRAM') {
-    if (META_INSTAGRAM_EMBED_URL) {
-      try {
-        const embedUrl = new URL(META_INSTAGRAM_EMBED_URL);
-        if (!embedUrl.searchParams.get('client_id')) {
-          embedUrl.searchParams.set('client_id', clientId);
-        }
-        embedUrl.searchParams.set('redirect_uri', redirectUri);
-        embedUrl.searchParams.set('response_type', 'code');
-        embedUrl.searchParams.set('state', state);
-
-        const hasConfigId = Boolean(embedUrl.searchParams.get('config_id'));
-        if (!hasConfigId && !embedUrl.searchParams.get('scope') && scopes.length > 0) {
-          embedUrl.searchParams.set('scope', scopes.join(','));
-        }
-
-        return embedUrl.toString();
-      } catch (error) {
-        console.warn('META_INSTAGRAM_EMBED_URL is invalid, falling back to generated OAuth URL.');
-      }
-    }
-
-    const params = new URLSearchParams({
-      client_id: clientId,
-      redirect_uri: redirectUri,
-      state,
-      response_type: 'code',
-    });
-
-    if (META_INSTAGRAM_CONFIG_ID) {
-      params.set('config_id', META_INSTAGRAM_CONFIG_ID);
-    } else if (scopes.length > 0) {
-      params.set('scope', scopes.join(','));
-    }
-
-    return `https://www.instagram.com/oauth/authorize?${params.toString()}`;
-  }
-
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
@@ -286,6 +246,13 @@ function buildAuthorizeUrl(
     response_type: 'code',
     scope: scopes.join(','),
   });
+
+  if (channel === 'INSTAGRAM') {
+    if (META_INSTAGRAM_CONFIG_ID) {
+      params.set('config_id', META_INSTAGRAM_CONFIG_ID);
+    }
+    return `https://www.instagram.com/oauth/authorize?${params.toString()}`;
+  }
 
   // Optional: Login for Business config-based flow (Embedded Signup compatible) for WhatsApp.
   if (META_WHATSAPP_CONFIG_ID) {
