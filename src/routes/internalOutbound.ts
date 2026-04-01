@@ -54,6 +54,11 @@ router.post('/register', async (req: any, res: any) => {
   const customerId = Number.isInteger(Number(body.customerId)) ? Number(body.customerId) : null;
   const externalAccountId = typeof body.externalAccountId === 'string' ? body.externalAccountId.trim() : null;
   const text = typeof body.text === 'string' ? body.text.trim() : null;
+  const sourceUserId = Number.isInteger(Number(body.sourceUserId)) ? Number(body.sourceUserId) : null;
+  const sourceUserEmail =
+    typeof body.sourceUserEmail === 'string' && body.sourceUserEmail.trim()
+      ? body.sourceUserEmail.trim()
+      : null;
 
   const item = await prisma.outboundMessageTrace.upsert({
     where: {
@@ -69,6 +74,8 @@ router.post('/register', async (req: any, res: any) => {
       externalAccountId: externalAccountId || null,
       canonicalUserId: canonicalUserId || null,
       customerId: customerId || null,
+      sourceUserId: sourceUserId || null,
+      sourceUserEmail: sourceUserEmail || null,
       text: text || null,
       sentAt,
       updatedAt: new Date(),
@@ -82,6 +89,8 @@ router.post('/register', async (req: any, res: any) => {
       externalAccountId: externalAccountId || null,
       canonicalUserId: canonicalUserId || null,
       customerId: customerId || null,
+      sourceUserId: sourceUserId || null,
+      sourceUserEmail: sourceUserEmail || null,
       text: text || null,
       sentAt,
     },

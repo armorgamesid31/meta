@@ -5,6 +5,7 @@ import {
   OutboundMessageSource,
   Prisma,
 } from '@prisma/client';
+import { createHash } from 'crypto';
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
 
@@ -138,6 +139,21 @@ function toEventDate(payload: any): Date {
   return new Date();
 }
 
+function buildMessageSignature(input: {
+  conversationKey: string;
+  messageType: string;
+  text: string | null;
+  eventDate: Date;
+}) {
+  const raw = [
+    input.conversationKey.trim(),
+    input.messageType.trim(),
+    (input.text || '').trim(),
+    input.eventDate.toISOString(),
+  ].join('|');
+  return createHash('sha256').update(raw).digest('hex').slice(0, 12);
+}
+
 async function resolveSalonId(channel: ChannelType, externalAccountId: string | null, externalBusinessId: string | null) {
   const candidates = [externalAccountId, externalBusinessId].filter(
     (value): value is string => typeof value === 'string' && value.trim().length > 0,
@@ -183,7 +199,7 @@ router.post('/ingest', async (req: any, res: any) => {
   for (let i = 0; i < payload.length; i += 1) {
     const row = payload[i] || {};
     const channel = asChannel(row.channel);
-    const providerMessageId = typeof row.providerMessageId === 'string' ? row.providerMessageId.trim() : '';
+    let providerMessageId = typeof row.providerMessageId === 'string' ? row.providerMessageId.trim() : '';
     const conversationKey = typeof row.conversationKey === 'string' ? row.conversationKey.trim() : '';
     const externalAccountId = typeof row.externalAccountId === 'string' ? row.externalAccountId.trim() : null;
     const externalBusinessId = typeof row.externalBusinessId === 'string' ? row.externalBusinessId.trim() : null;
@@ -207,6 +223,8 @@ router.post('/ingest', async (req: any, res: any) => {
         ? instagramMerge?.normalizedRawPayload || (rawSource as Prisma.InputJsonValue)
         : (rawSource as Prisma.InputJsonValue);
     const isEcho = isOutboundEcho(row);
+    const intendedMessageType = isEcho ? `echo_${messageType}` : messageType;
+    const eventDate = toEventDate(row);
 
     if (!channel || !providerMessageId || !conversationKey) {
       results.push({ index: i, ok: false, result: 'invalid_payload' });
@@ -217,6 +235,42 @@ router.post('/ingest', async (req: any, res: any) => {
     if (!salonId) {
       results.push({ index: i, ok: false, result: 'salon_not_found' });
       continue;
+    }
+
+    const existingProviderRow = await prisma.inboundMessageQueue.findUnique({
+      where: {
+        channel_providerMessageId: {
+          channel,
+          providerMessageId,
+        },
+      },
+      select: {
+        conversationKey: true,
+        messageType: true,
+        text: true,
+        eventTimestamp: true,
+      },
+    });
+
+    if (existingProviderRow) {
+      const existingTs = existingProviderRow.eventTimestamp.getTime();
+      const incomingTs = eventDate.getTime();
+      const withinRetryWindow = Math.abs(existingTs - incomingTs) <= 120000;
+      const sameConversation = existingProviderRow.conversationKey === conversationKey;
+      const sameText = (existingProviderRow.text || null) === (text || null);
+      const likelyRetryOrEcho = sameConversation && sameText && withinRetryWindow;
+
+      // Some providers/workflows can reuse non-unique providerMessageId.
+      // Keep history by deriving a deterministic synthetic id per message signature.
+      if (!likelyRetryOrEcho) {
+        const signature = buildMessageSignature({
+          conversationKey,
+          messageType: intendedMessageType,
+          text,
+          eventDate,
+        });
+        providerMessageId = `${providerMessageId}__${signature}`;
+      }
     }
 
     try {
@@ -246,7 +300,6 @@ router.post('/ingest', async (req: any, res: any) => {
             : 'human_external_echo';
 
       const inboundStatus = isEcho ? InboundMessageStatus.DONE : InboundMessageStatus.PENDING;
-      const eventDate = toEventDate(row);
       const finalText = text || outboundTrace?.text || null;
       const finalCanonicalUserId = canonicalUserId || outboundTrace?.canonicalUserId || null;
       const finalCustomerId = customerId || outboundTrace?.customerId || null;
@@ -263,7 +316,7 @@ router.post('/ingest', async (req: any, res: any) => {
           conversationKey,
           externalAccountId: externalAccountId || externalBusinessId || '',
           customerName,
-          messageType: isEcho ? `echo_${messageType}` : messageType,
+          messageType: intendedMessageType,
           text: finalText,
           eventTimestamp: eventDate,
           rawPayload,
@@ -278,7 +331,7 @@ router.post('/ingest', async (req: any, res: any) => {
           providerMessageId,
           externalAccountId: externalAccountId || externalBusinessId || '',
           customerName,
-          messageType: isEcho ? `echo_${messageType}` : messageType,
+          messageType: intendedMessageType,
           text: finalText,
           eventTimestamp: eventDate,
           rawPayload,

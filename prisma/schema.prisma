@@ -801,6 +801,8 @@ model OutboundMessageTrace {
   externalAccountId String?
   canonicalUserId   String?
   customerId        Int?
+  sourceUserId      Int?
+  sourceUserEmail   String?
   source            OutboundMessageSource
   text              String?
   sentAt            DateTime              @db.Timestamp(6)

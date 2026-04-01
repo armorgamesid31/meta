@@ -4583,6 +4583,81 @@ function resolveMessageDirection(messageType: string): 'inbound' | 'outbound' | 
   return 'inbound';
 }
 
+type MessageOutboundSource = 'AI_AGENT' | 'HUMAN_APP' | 'HUMAN_EXTERNAL' | null;
+
+function asMessageOutboundSource(value: unknown): MessageOutboundSource {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toUpperCase();
+  if (normalized === 'AI_AGENT' || normalized === 'HUMAN_APP') {
+    return normalized as MessageOutboundSource;
+  }
+  return null;
+}
+
+function resolveOutboundMessageMeta(input: {
+  direction: 'inbound' | 'outbound' | 'system';
+  channel: 'INSTAGRAM' | 'WHATSAPP';
+  messageType: string;
+  rawPayload: unknown;
+  traceSource: unknown;
+  traceUserId: number | null;
+  traceUserEmail: string | null;
+}): {
+  outboundSource: MessageOutboundSource;
+  outboundSourceLabel: string | null;
+  outboundSenderUserId: number | null;
+  outboundSenderEmail: string | null;
+} {
+  if (input.direction !== 'outbound') {
+    return {
+      outboundSource: null,
+      outboundSourceLabel: null,
+      outboundSenderUserId: null,
+      outboundSenderEmail: null,
+    };
+  }
+
+  const raw = asObject(input.rawPayload);
+  const sentBy = asObject(raw.sentBy);
+  const rawSource = asMessageOutboundSource(raw.source);
+  const traceSource = asMessageOutboundSource(input.traceSource);
+  const outboundSource: MessageOutboundSource = traceSource || rawSource || 'HUMAN_EXTERNAL';
+
+  const senderUserId =
+    outboundSource === 'HUMAN_APP'
+      ? Number.isInteger(input.traceUserId)
+        ? input.traceUserId
+        : Number.isInteger(Number(sentBy.userId))
+          ? Number(sentBy.userId)
+          : null
+      : null;
+  const senderEmailRaw =
+    outboundSource === 'HUMAN_APP'
+      ? input.traceUserEmail || (typeof sentBy.email === 'string' ? sentBy.email.trim() : null)
+      : null;
+  const senderEmail = senderEmailRaw && senderEmailRaw.trim() ? senderEmailRaw.trim() : null;
+
+  const outboundSourceLabel =
+    outboundSource === 'AI_AGENT'
+      ? 'AI Agent'
+      : outboundSource === 'HUMAN_APP'
+        ? senderEmail
+          ? `App (${senderEmail})`
+          : senderUserId
+            ? `App (User #${senderUserId})`
+            : 'App User'
+        : input.channel === 'INSTAGRAM'
+          ? 'Instagram Direct'
+          : 'External';
+
+  return {
+    outboundSource,
+    outboundSourceLabel,
+    outboundSenderUserId: senderUserId,
+    outboundSenderEmail: senderEmail,
+  };
+}
+
 function extractInstagramActors(rawPayload: unknown): { senderId: string | null; recipientId: string | null; isEcho: boolean } {
   const raw = asObject(rawPayload);
   const entry = Array.isArray(raw.entry) ? asObject(raw.entry[0]) : {};
@@ -5085,6 +5160,40 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
         rawPayload: true,
       },
     });
+    const providerMessageIds = rows
+      .map((row) => row.providerMessageId)
+      .filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
+    const traces = providerMessageIds.length
+      ? await prisma.outboundMessageTrace.findMany({
+          where: {
+            channel,
+            providerMessageId: {
+              in: providerMessageIds,
+            },
+          },
+          select: {
+            providerMessageId: true,
+            source: true,
+            sourceUserId: true,
+            sourceUserEmail: true,
+          },
+        })
+      : [];
+    const traceByProviderId = new Map<
+      string,
+      {
+        source: string;
+        sourceUserId: number | null;
+        sourceUserEmail: string | null;
+      }
+    >();
+    for (const trace of traces) {
+      traceByProviderId.set(trace.providerMessageId, {
+        source: trace.source,
+        sourceUserId: trace.sourceUserId || null,
+        sourceUserEmail: trace.sourceUserEmail || null,
+      });
+    }
     const stateRows = await prisma.conversationState.findMany({
       where: {
         salonId,
@@ -5124,6 +5233,16 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
     const items = rows.map((row) => {
       const raw = asObject(row.rawPayload);
       const direction = resolveMessageDirection(row.messageType);
+      const trace = traceByProviderId.get(row.providerMessageId) || null;
+      const outboundMeta = resolveOutboundMessageMeta({
+        direction,
+        channel,
+        messageType: row.messageType,
+        rawPayload: row.rawPayload,
+        traceSource: trace?.source || null,
+        traceUserId: trace?.sourceUserId || null,
+        traceUserEmail: trace?.sourceUserEmail || null,
+      });
 
       return {
         id: row.id,
@@ -5133,6 +5252,11 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
         text: row.text,
         status: row.status,
         direction,
+        deliveryChannel: channel,
+        outboundSource: outboundMeta.outboundSource,
+        outboundSourceLabel: outboundMeta.outboundSourceLabel,
+        outboundSenderUserId: outboundMeta.outboundSenderUserId,
+        outboundSenderEmail: outboundMeta.outboundSenderEmail,
         eventTimestamp: row.eventTimestamp.toISOString(),
         raw,
       };
@@ -5214,6 +5338,21 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
       return res.status(404).json({ message: 'Conversation not found.' });
     }
     const resolvedConversationKey = latestInbound.conversationKey || conversationKey;
+    const senderUserId = Number.isInteger(Number(req.user?.userId)) ? Number(req.user.userId) : null;
+    const senderUser = senderUserId
+      ? await prisma.salonUser.findFirst({
+          where: {
+            id: senderUserId,
+            salonId,
+          },
+          select: {
+            id: true,
+            email: true,
+          },
+        })
+      : null;
+    const senderUserEmail =
+      typeof senderUser?.email === 'string' && senderUser.email.trim() ? senderUser.email.trim() : null;
 
     const settings = await prisma.salonAiAgentSettings.findUnique({
       where: { salonId },
@@ -5295,6 +5434,11 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
         eventTimestamp: new Date(),
         rawPayload: {
           direction: 'outbound',
+          source: 'HUMAN_APP',
+          sentBy: {
+            userId: senderUser?.id || null,
+            email: senderUserEmail,
+          },
           graphResponse: graphResponse.data || null,
         } as any,
         status: 'DONE',
@@ -5315,6 +5459,8 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
         source: 'HUMAN_APP',
         externalAccountId: senderInstagramId,
         text,
+        sourceUserId: senderUser?.id || null,
+        sourceUserEmail: senderUserEmail,
         sentAt: new Date(),
       },
       create: {
@@ -5325,6 +5471,8 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
         source: 'HUMAN_APP',
         externalAccountId: senderInstagramId,
         text,
+        sourceUserId: senderUser?.id || null,
+        sourceUserEmail: senderUserEmail,
         sentAt: new Date(),
       },
     });
@@ -5975,6 +6123,40 @@ router.get('/instagram-inbox/conversations/:conversationKey/messages', authentic
         rawPayload: true,
       },
     });
+    const providerMessageIds = rows
+      .map((row) => row.providerMessageId)
+      .filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
+    const traces = providerMessageIds.length
+      ? await prisma.outboundMessageTrace.findMany({
+          where: {
+            channel: 'INSTAGRAM',
+            providerMessageId: {
+              in: providerMessageIds,
+            },
+          },
+          select: {
+            providerMessageId: true,
+            source: true,
+            sourceUserId: true,
+            sourceUserEmail: true,
+          },
+        })
+      : [];
+    const traceByProviderId = new Map<
+      string,
+      {
+        source: string;
+        sourceUserId: number | null;
+        sourceUserEmail: string | null;
+      }
+    >();
+    for (const trace of traces) {
+      traceByProviderId.set(trace.providerMessageId, {
+        source: trace.source,
+        sourceUserId: trace.sourceUserId || null,
+        sourceUserEmail: trace.sourceUserEmail || null,
+      });
+    }
     const stateRows = await prisma.conversationState.findMany({
       where: {
         salonId,
@@ -6014,6 +6196,16 @@ router.get('/instagram-inbox/conversations/:conversationKey/messages', authentic
     const items = rows.map((row) => {
       const raw = asObject(row.rawPayload);
       const direction = resolveMessageDirection(row.messageType);
+      const trace = traceByProviderId.get(row.providerMessageId) || null;
+      const outboundMeta = resolveOutboundMessageMeta({
+        direction,
+        channel: 'INSTAGRAM',
+        messageType: row.messageType,
+        rawPayload: row.rawPayload,
+        traceSource: trace?.source || null,
+        traceUserId: trace?.sourceUserId || null,
+        traceUserEmail: trace?.sourceUserEmail || null,
+      });
 
       return {
         id: row.id,
@@ -6023,6 +6215,11 @@ router.get('/instagram-inbox/conversations/:conversationKey/messages', authentic
         text: row.text,
         status: row.status,
         direction,
+        deliveryChannel: 'INSTAGRAM',
+        outboundSource: outboundMeta.outboundSource,
+        outboundSourceLabel: outboundMeta.outboundSourceLabel,
+        outboundSenderUserId: outboundMeta.outboundSenderUserId,
+        outboundSenderEmail: outboundMeta.outboundSenderEmail,
         eventTimestamp: row.eventTimestamp.toISOString(),
         raw,
       };
@@ -6095,6 +6292,21 @@ router.post('/instagram-inbox/conversations/:conversationKey/reply', authenticat
       return res.status(404).json({ message: 'Conversation not found.' });
     }
     const resolvedConversationKey = latestInbound.conversationKey || conversationKey;
+    const senderUserId = Number.isInteger(Number(req.user?.userId)) ? Number(req.user.userId) : null;
+    const senderUser = senderUserId
+      ? await prisma.salonUser.findFirst({
+          where: {
+            id: senderUserId,
+            salonId,
+          },
+          select: {
+            id: true,
+            email: true,
+          },
+        })
+      : null;
+    const senderUserEmail =
+      typeof senderUser?.email === 'string' && senderUser.email.trim() ? senderUser.email.trim() : null;
     const settings = await prisma.salonAiAgentSettings.findUnique({
       where: { salonId },
       select: { faqAnswers: true },
@@ -6172,6 +6384,11 @@ router.post('/instagram-inbox/conversations/:conversationKey/reply', authenticat
         eventTimestamp: new Date(),
         rawPayload: {
           direction: 'outbound',
+          source: 'HUMAN_APP',
+          sentBy: {
+            userId: senderUser?.id || null,
+            email: senderUserEmail,
+          },
           graphResponse: graphResponse.data || null,
         } as any,
         status: 'DONE',
@@ -6192,6 +6409,8 @@ router.post('/instagram-inbox/conversations/:conversationKey/reply', authenticat
         source: 'HUMAN_APP',
         externalAccountId: senderInstagramId,
         text,
+        sourceUserId: senderUser?.id || null,
+        sourceUserEmail: senderUserEmail,
         sentAt: new Date(),
       },
       create: {
@@ -6202,6 +6421,8 @@ router.post('/instagram-inbox/conversations/:conversationKey/reply', authenticat
         source: 'HUMAN_APP',
         externalAccountId: senderInstagramId,
         text,
+        sourceUserId: senderUser?.id || null,
+        sourceUserEmail: senderUserEmail,
         sentAt: new Date(),
       },
     });
