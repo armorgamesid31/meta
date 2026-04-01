@@ -13,7 +13,12 @@ interface AuthRequest extends Request {
 
 export const authenticateToken = async (req: AuthRequest, res: Response, next: NextFunction) => {
   const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+  const headerToken = authHeader && authHeader.split(' ')[1];
+  const queryTokenRaw = req.query?.authToken ?? req.query?.token;
+  const queryToken = typeof queryTokenRaw === 'string' ? queryTokenRaw.trim() : '';
+  const token =
+    headerToken ||
+    (req.method === 'GET' && queryToken ? queryToken : null);
   const salonHeaderRaw = req.headers['x-salon-id'];
 
   if (token == null) return res.sendStatus(401); // No token

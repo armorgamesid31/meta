@@ -6,6 +6,7 @@ import {
   Prisma,
 } from '@prisma/client';
 import { prisma } from '../prisma.js';
+import { publishConversationStreamEvent } from './conversationEventsBus.js';
 
 type UpsertConversationMessageEventInput = {
   salonId: number;
@@ -73,5 +74,15 @@ export async function upsertConversationMessageEvent(
       outboundSenderEmail: input.outboundSenderEmail || null,
       rawPayload: input.rawPayload,
     },
+  });
+
+  publishConversationStreamEvent({
+    salonId: input.salonId,
+    channel: input.channel,
+    conversationKey: input.conversationKey,
+    providerMessageId,
+    messageType: input.messageType,
+    direction: input.direction,
+    eventTimestamp: input.eventTimestamp.toISOString(),
   });
 }

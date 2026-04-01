@@ -7,8 +7,41 @@ import { ensureSalonServiceCategories } from '../services/salonCategorySetup.js'
 import { ensureSalonServiceRegions } from '../services/salonRegionSetup.js';
 import { normalizeInstagramIdentity, normalizePhoneDigits } from '../services/identityService.js';
 import { upsertConversationMessageEvent } from '../services/conversationMessageEvents.js';
+import { subscribeConversationStream } from '../services/conversationEventsBus.js';
 
 const router = Router();
+
+router.get('/conversations/stream', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const channelFilter = asInboundChannel(req.query.channel);
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+
+  res.write(`event: ready\ndata: ${JSON.stringify({ ok: true, salonId, channel: channelFilter || null })}\n\n`);
+
+  const unsubscribe = subscribeConversationStream(salonId, (event) => {
+    if (channelFilter && event.channel !== channelFilter) return;
+    res.write(`event: conversation.update\ndata: ${JSON.stringify(event)}\n\n`);
+  });
+
+  const keepAlive = setInterval(() => {
+    res.write(': keep-alive\n\n');
+  }, 25000);
+
+  req.on('close', () => {
+    clearInterval(keepAlive);
+    unsubscribe();
+    res.end();
+  });
+});
 
 function parseIsoDate(value: unknown): Date | null {
   if (typeof value !== 'string') {
