@@ -2,6 +2,7 @@ import { ChannelType, InboundMessageStatus, OutboundMessageSource } from '@prism
 import axios from 'axios';
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
+import { upsertConversationMessageEvent } from '../services/conversationMessageEvents.js';
 import { resolveIdentity } from '../services/identityService.js';
 import { ensureMagicLink } from '../services/magicLinkService.js';
 import { buildBookingUrl } from '../utils/bookingUrl.js';
@@ -602,6 +603,32 @@ router.post('/send', async (req: any, res: any) => {
         text: outboundText,
         sentAt: now,
       },
+    });
+
+    await upsertConversationMessageEvent({
+      salonId,
+      channel,
+      conversationKey: resolvedConversationKey,
+      providerMessageId: sent.providerMessageId,
+      externalAccountId: sent.externalAccountId || externalAccountIdFromInbound || '',
+      customerName,
+      messageType: actionKind === 'none' ? 'text_outbound_ai' : `interactive_${actionKind}_outbound_ai`,
+      text: outboundText,
+      direction: 'OUTBOUND',
+      eventTimestamp: now,
+      processingStatus: InboundMessageStatus.DONE,
+      outboundSource: OutboundMessageSource.AI_AGENT,
+      rawPayload: {
+        direction: 'outbound',
+        source: 'AI_AGENT',
+        bookingIntent,
+        responsePolicy: mode === 'HUMAN_PENDING' ? 'pending_wait_with_cancel' : 'normal',
+        pendingWaitEnforced,
+        actionKind,
+        magicLinkUrl: magicLinkUrl || null,
+        magicLinkAction,
+        providerResponse: sent.rawResponse,
+      } as any,
     });
 
     return res.status(200).json({

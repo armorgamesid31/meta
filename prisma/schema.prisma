@@ -44,6 +44,7 @@ model Salon {
   messageTemplates    SalonMessageTemplate[]
   channelBindings     SalonChannelBinding[]
   inboundMessages     InboundMessageQueue[]
+  conversationEvents  ConversationMessageEvent[]
   conversationStates  ConversationState[]
   outboundMessages    OutboundMessageTrace[]
   channelProfiles     ChannelProfileCache[]
@@ -768,6 +769,33 @@ model InboundMessageQueue {
   @@index([status, createdAt], map: "idx_inbound_status_created")
 }
 
+model ConversationMessageEvent {
+  id                   Int                    @id @default(autoincrement())
+  salonId              Int
+  channel              ChannelType
+  conversationKey      String
+  providerMessageId    String
+  externalAccountId    String?
+  customerName         String?
+  messageType          String
+  text                 String?
+  direction            MessageEventDirection
+  eventTimestamp       DateTime               @db.Timestamp(6)
+  processingStatus     InboundMessageStatus?  @default(DONE)
+  outboundSource       OutboundMessageSource?
+  outboundSenderUserId Int?
+  outboundSenderEmail  String?
+  rawPayload           Json
+  createdAt            DateTime?              @default(now()) @db.Timestamp(6)
+  updatedAt            DateTime?              @default(now()) @updatedAt @db.Timestamp(6)
+  salon                Salon                  @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([channel, providerMessageId], map: "uq_message_event_channel_provider")
+  @@index([salonId, channel, conversationKey, eventTimestamp], map: "idx_message_event_salon_conv_ts")
+  @@index([salonId, channel, eventTimestamp], map: "idx_message_event_salon_channel_ts")
+  @@index([salonId, channel, conversationKey, processingStatus], map: "idx_message_event_salon_conv_status")
+}
+
 model ConversationState {
   id                    Int                        @id @default(autoincrement())
   salonId               Int
@@ -1007,4 +1035,10 @@ enum ConversationAutomationMode {
 enum OutboundMessageSource {
   AI_AGENT
   HUMAN_APP
+}
+
+enum MessageEventDirection {
+  INBOUND
+  OUTBOUND
+  SYSTEM
 }

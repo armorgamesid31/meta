@@ -8,6 +8,7 @@ import {
 import { createHash } from 'crypto';
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
+import { upsertConversationMessageEvent } from '../services/conversationMessageEvents.js';
 
 const router = Router();
 
@@ -339,6 +340,22 @@ router.post('/ingest', async (req: any, res: any) => {
           processedAt: isEcho ? new Date() : null,
         },
         select: { id: true },
+      });
+
+      await upsertConversationMessageEvent({
+        salonId,
+        channel,
+        conversationKey,
+        providerMessageId,
+        externalAccountId: externalAccountId || externalBusinessId || '',
+        customerName,
+        messageType: intendedMessageType,
+        text: finalText,
+        direction: isEcho ? 'OUTBOUND' : 'INBOUND',
+        eventTimestamp: eventDate,
+        processingStatus: inboundStatus,
+        outboundSource: isEcho ? outboundTrace?.source || null : null,
+        rawPayload,
       });
 
       const existingState = await prisma.conversationState.findUnique({

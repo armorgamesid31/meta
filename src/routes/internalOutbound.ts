@@ -1,6 +1,7 @@
-import { ChannelType, OutboundMessageSource } from '@prisma/client';
+import { ChannelType, InboundMessageStatus, OutboundMessageSource } from '@prisma/client';
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
+import { upsertConversationMessageEvent } from '../services/conversationMessageEvents.js';
 
 const router = Router();
 
@@ -100,6 +101,32 @@ router.post('/register', async (req: any, res: any) => {
       source: true,
       providerMessageId: true,
     },
+  });
+
+  await upsertConversationMessageEvent({
+    salonId,
+    channel,
+    conversationKey,
+    providerMessageId,
+    externalAccountId,
+    customerName: null,
+    messageType: source === OutboundMessageSource.AI_AGENT ? 'text_outbound_ai' : 'text_outbound',
+    text,
+    direction: 'OUTBOUND',
+    eventTimestamp: sentAt,
+    processingStatus: InboundMessageStatus.DONE,
+    outboundSource: source,
+    outboundSenderUserId: sourceUserId,
+    outboundSenderEmail: sourceUserEmail,
+    rawPayload: {
+      direction: 'outbound',
+      source,
+      sentBy: {
+        userId: sourceUserId,
+        email: sourceUserEmail,
+      },
+      registeredBy: 'internal_outbound_register',
+    } as any,
   });
 
   return res.status(200).json({ ok: true, item });

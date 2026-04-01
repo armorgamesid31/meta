@@ -16,6 +16,7 @@ import {
   resolveIdentity,
   upsertIdentitySession,
 } from '../services/identityService.js';
+import { upsertConversationMessageEvent } from '../services/conversationMessageEvents.js';
 
 const router = Router();
 
@@ -978,6 +979,21 @@ async function processIncomingBatch(items: any[]) {
         status: row.isEcho ? InboundMessageStatus.DONE : InboundMessageStatus.PENDING,
         processedAt: row.isEcho ? new Date() : null,
       },
+    });
+
+    await upsertConversationMessageEvent({
+      salonId,
+      channel,
+      conversationKey,
+      providerMessageId,
+      externalAccountId: externalAccountId || externalBusinessId || '',
+      customerName: profileName,
+      messageType: intendedMessageType,
+      text: row.text || null,
+      direction: row.isEcho ? 'OUTBOUND' : 'INBOUND',
+      eventTimestamp: eventDate,
+      processingStatus: row.isEcho ? InboundMessageStatus.DONE : InboundMessageStatus.PENDING,
+      rawPayload: rawPayloadForStorage as any,
     });
 
     const state = await evaluateConversationState({

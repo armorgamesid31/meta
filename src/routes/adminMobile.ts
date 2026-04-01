@@ -1,11 +1,12 @@
 import { Router } from 'express';
 import axios from 'axios';
-import type { CustomerGender } from '@prisma/client';
+import { InboundMessageStatus, OutboundMessageSource, type CustomerGender } from '@prisma/client';
 import { prisma } from '../prisma.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { ensureSalonServiceCategories } from '../services/salonCategorySetup.js';
 import { ensureSalonServiceRegions } from '../services/salonRegionSetup.js';
 import { normalizeInstagramIdentity, normalizePhoneDigits } from '../services/identityService.js';
+import { upsertConversationMessageEvent } from '../services/conversationMessageEvents.js';
 
 const router = Router();
 
@@ -4583,6 +4584,13 @@ function resolveMessageDirection(messageType: string): 'inbound' | 'outbound' | 
   return 'inbound';
 }
 
+function resolveStoredEventDirection(value: unknown, messageType: string): 'inbound' | 'outbound' | 'system' {
+  if (value === 'INBOUND') return 'inbound';
+  if (value === 'OUTBOUND') return 'outbound';
+  if (value === 'SYSTEM') return 'system';
+  return resolveMessageDirection(messageType);
+}
+
 type MessageOutboundSource = 'AI_AGENT' | 'HUMAN_APP' | 'HUMAN_EXTERNAL' | null;
 
 function asMessageOutboundSource(value: unknown): MessageOutboundSource {
@@ -4798,7 +4806,7 @@ router.get('/conversations', authenticateToken, async (req: any, res: any) => {
   const scanLimit = Math.max(limit * 60, 300);
 
   try {
-    const rows = await prisma.inboundMessageQueue.findMany({
+    const rows = await prisma.conversationMessageEvent.findMany({
       where: {
         salonId,
         channel: channelFilter || undefined,
@@ -4814,7 +4822,7 @@ router.get('/conversations', authenticateToken, async (req: any, res: any) => {
         customerName: true,
         messageType: true,
         text: true,
-        status: true,
+        processingStatus: true,
         eventTimestamp: true,
         rawPayload: true,
       },
@@ -4855,7 +4863,7 @@ router.get('/conversations', authenticateToken, async (req: any, res: any) => {
           : extractRawConversationKey('WHATSAPP', row.conversationKey);
       const key = `${row.channel}:${canonicalConversationKey}`;
       const existing = byConversation.get(key);
-      const unread = row.status !== 'DONE' ? 1 : 0;
+      const unread = row.processingStatus !== 'DONE' ? 1 : 0;
       const isHandover = row.messageType === 'handover_request';
       const profile = row.channel === 'INSTAGRAM' ? extractInstagramProfile(row.rawPayload) : null;
       const profileName = row.customerName || profile?.name || null;
@@ -5172,7 +5180,7 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
             },
           };
 
-    const rows = await prisma.inboundMessageQueue.findMany({
+    const rows = await prisma.conversationMessageEvent.findMany({
       where,
       orderBy: {
         eventTimestamp: 'asc',
@@ -5184,45 +5192,15 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
         customerName: true,
         messageType: true,
         text: true,
-        status: true,
+        direction: true,
+        processingStatus: true,
+        outboundSource: true,
+        outboundSenderUserId: true,
+        outboundSenderEmail: true,
         eventTimestamp: true,
         rawPayload: true,
       },
     });
-    const providerMessageIds = rows
-      .map((row) => row.providerMessageId)
-      .filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
-    const traces = providerMessageIds.length
-      ? await prisma.outboundMessageTrace.findMany({
-          where: {
-            channel,
-            providerMessageId: {
-              in: providerMessageIds,
-            },
-          },
-          select: {
-            providerMessageId: true,
-            source: true,
-            sourceUserId: true,
-            sourceUserEmail: true,
-          },
-        })
-      : [];
-    const traceByProviderId = new Map<
-      string,
-      {
-        source: string;
-        sourceUserId: number | null;
-        sourceUserEmail: string | null;
-      }
-    >();
-    for (const trace of traces) {
-      traceByProviderId.set(trace.providerMessageId, {
-        source: trace.source,
-        sourceUserId: trace.sourceUserId || null,
-        sourceUserEmail: trace.sourceUserEmail || null,
-      });
-    }
     const stateRows = await prisma.conversationState.findMany({
       where: {
         salonId,
@@ -5261,16 +5239,15 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
 
     const items = rows.map((row) => {
       const raw = asObject(row.rawPayload);
-      const direction = resolveMessageDirection(row.messageType);
-      const trace = traceByProviderId.get(row.providerMessageId) || null;
+      const direction = resolveStoredEventDirection(row.direction, row.messageType);
       const outboundMeta = resolveOutboundMessageMeta({
         direction,
         channel,
         messageType: row.messageType,
         rawPayload: row.rawPayload,
-        traceSource: trace?.source || null,
-        traceUserId: trace?.sourceUserId || null,
-        traceUserEmail: trace?.sourceUserEmail || null,
+        traceSource: row.outboundSource || null,
+        traceUserId: row.outboundSenderUserId || null,
+        traceUserEmail: row.outboundSenderEmail || null,
       });
 
       return {
@@ -5279,7 +5256,7 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
         customerName: row.customerName,
         messageType: row.messageType,
         text: row.text,
-        status: row.status,
+        status: row.processingStatus || 'DONE',
         direction,
         deliveryChannel: channel,
         outboundSource: outboundMeta.outboundSource,
@@ -5349,7 +5326,7 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
       ],
     };
 
-    const latestInbound = await prisma.inboundMessageQueue.findFirst({
+    const latestInbound = await prisma.conversationMessageEvent.findFirst({
       where: latestInboundWhere,
       orderBy: {
         eventTimestamp: 'desc',
@@ -5506,6 +5483,32 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
       },
     });
 
+    await upsertConversationMessageEvent({
+      salonId,
+      channel: 'INSTAGRAM',
+      conversationKey: canonicalConversationKey,
+      providerMessageId: graphMessageId,
+      externalAccountId: senderInstagramId,
+      customerName: latestInbound.customerName || null,
+      messageType: 'text_outbound',
+      text,
+      direction: 'OUTBOUND',
+      eventTimestamp: saved.eventTimestamp,
+      processingStatus: InboundMessageStatus.DONE,
+      outboundSource: OutboundMessageSource.HUMAN_APP,
+      outboundSenderUserId: senderUser?.id || null,
+      outboundSenderEmail: senderUserEmail,
+      rawPayload: {
+        direction: 'outbound',
+        source: 'HUMAN_APP',
+        sentBy: {
+          userId: senderUser?.id || null,
+          email: senderUserEmail,
+        },
+        graphResponse: graphResponse.data || null,
+      } as any,
+    });
+
     await markConversationHumanActive({
       salonId,
       channel: 'INSTAGRAM',
@@ -5585,7 +5588,7 @@ router.post('/conversations/:channel/:conversationKey/handover', authenticateTok
             },
           };
 
-    const latestInbound = await prisma.inboundMessageQueue.findFirst({
+    const latestInbound = await prisma.conversationMessageEvent.findFirst({
       where: latestInboundWhere,
       orderBy: {
         eventTimestamp: 'desc',
@@ -5665,6 +5668,24 @@ router.post('/conversations/:channel/:conversationKey/handover', authenticateTok
         status: 'DONE',
         processedAt: new Date(),
       },
+    });
+
+    await upsertConversationMessageEvent({
+      salonId,
+      channel,
+      conversationKey: resolvedConversationKey,
+      providerMessageId: saved.providerMessageId,
+      externalAccountId: latestInbound.externalAccountId,
+      customerName: latestInbound.customerName || null,
+      messageType: 'handover_request',
+      text: note || 'Human handover requested.',
+      direction: 'SYSTEM',
+      eventTimestamp: saved.eventTimestamp,
+      processingStatus: InboundMessageStatus.DONE,
+      rawPayload: {
+        direction: 'system',
+        handoverRequested: true,
+      } as any,
     });
 
     const updatedState = await markConversationHumanPending({
@@ -5754,7 +5775,7 @@ router.post('/conversations/:channel/:conversationKey/resume-auto', authenticate
             },
           };
 
-    const latestInbound = await prisma.inboundMessageQueue.findFirst({
+    const latestInbound = await prisma.conversationMessageEvent.findFirst({
       where: latestInboundWhere,
       orderBy: {
         eventTimestamp: 'desc',
@@ -5809,7 +5830,7 @@ router.get('/instagram-inbox/conversations', authenticateToken, async (req: any,
   const scanLimit = Math.max(limit * 40, 200);
 
   try {
-    const rows = await prisma.inboundMessageQueue.findMany({
+    const rows = await prisma.conversationMessageEvent.findMany({
       where: {
         salonId,
         channel: 'INSTAGRAM',
@@ -5825,7 +5846,7 @@ router.get('/instagram-inbox/conversations', authenticateToken, async (req: any,
         customerName: true,
         messageType: true,
         text: true,
-        status: true,
+        processingStatus: true,
         eventTimestamp: true,
         rawPayload: true,
       },
@@ -5857,7 +5878,7 @@ router.get('/instagram-inbox/conversations', authenticateToken, async (req: any,
         connectedAccountId: connectedInstagramId,
       });
       const existing = byConversation.get(key);
-      const unread = row.status !== 'DONE' ? 1 : 0;
+      const unread = row.processingStatus !== 'DONE' ? 1 : 0;
       const isHandover = row.messageType === 'handover_request';
       const profile = extractInstagramProfile(row.rawPayload);
       const profileName = row.customerName || profile.name || null;
@@ -6133,7 +6154,7 @@ router.get('/instagram-inbox/conversations/:conversationKey/messages', authentic
       OR: instagramOrClauses,
     };
 
-    const rows = await prisma.inboundMessageQueue.findMany({
+    const rows = await prisma.conversationMessageEvent.findMany({
       where,
       orderBy: {
         eventTimestamp: 'asc',
@@ -6145,45 +6166,15 @@ router.get('/instagram-inbox/conversations/:conversationKey/messages', authentic
         customerName: true,
         messageType: true,
         text: true,
-        status: true,
+        direction: true,
+        processingStatus: true,
+        outboundSource: true,
+        outboundSenderUserId: true,
+        outboundSenderEmail: true,
         eventTimestamp: true,
         rawPayload: true,
       },
     });
-    const providerMessageIds = rows
-      .map((row) => row.providerMessageId)
-      .filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
-    const traces = providerMessageIds.length
-      ? await prisma.outboundMessageTrace.findMany({
-          where: {
-            channel: 'INSTAGRAM',
-            providerMessageId: {
-              in: providerMessageIds,
-            },
-          },
-          select: {
-            providerMessageId: true,
-            source: true,
-            sourceUserId: true,
-            sourceUserEmail: true,
-          },
-        })
-      : [];
-    const traceByProviderId = new Map<
-      string,
-      {
-        source: string;
-        sourceUserId: number | null;
-        sourceUserEmail: string | null;
-      }
-    >();
-    for (const trace of traces) {
-      traceByProviderId.set(trace.providerMessageId, {
-        source: trace.source,
-        sourceUserId: trace.sourceUserId || null,
-        sourceUserEmail: trace.sourceUserEmail || null,
-      });
-    }
     const stateRows = await prisma.conversationState.findMany({
       where: {
         salonId,
@@ -6222,16 +6213,15 @@ router.get('/instagram-inbox/conversations/:conversationKey/messages', authentic
 
     const items = rows.map((row) => {
       const raw = asObject(row.rawPayload);
-      const direction = resolveMessageDirection(row.messageType);
-      const trace = traceByProviderId.get(row.providerMessageId) || null;
+      const direction = resolveStoredEventDirection(row.direction, row.messageType);
       const outboundMeta = resolveOutboundMessageMeta({
         direction,
         channel: 'INSTAGRAM',
         messageType: row.messageType,
         rawPayload: row.rawPayload,
-        traceSource: trace?.source || null,
-        traceUserId: trace?.sourceUserId || null,
-        traceUserEmail: trace?.sourceUserEmail || null,
+        traceSource: row.outboundSource || null,
+        traceUserId: row.outboundSenderUserId || null,
+        traceUserEmail: row.outboundSenderEmail || null,
       });
 
       return {
@@ -6240,7 +6230,7 @@ router.get('/instagram-inbox/conversations/:conversationKey/messages', authentic
         customerName: row.customerName,
         messageType: row.messageType,
         text: row.text,
-        status: row.status,
+        status: row.processingStatus || 'DONE',
         direction,
         deliveryChannel: 'INSTAGRAM',
         outboundSource: outboundMeta.outboundSource,
@@ -6301,7 +6291,7 @@ router.post('/instagram-inbox/conversations/:conversationKey/reply', authenticat
       ],
     };
 
-    const latestInbound = await prisma.inboundMessageQueue.findFirst({
+    const latestInbound = await prisma.conversationMessageEvent.findFirst({
       where: latestInboundWhere,
       orderBy: {
         eventTimestamp: 'desc',
@@ -6454,6 +6444,32 @@ router.post('/instagram-inbox/conversations/:conversationKey/reply', authenticat
       },
     });
 
+    await upsertConversationMessageEvent({
+      salonId,
+      channel: 'INSTAGRAM',
+      conversationKey: canonicalConversationKey,
+      providerMessageId: graphMessageId,
+      externalAccountId: senderInstagramId,
+      customerName: latestInbound.customerName || null,
+      messageType: 'text_outbound',
+      text,
+      direction: 'OUTBOUND',
+      eventTimestamp: saved.eventTimestamp,
+      processingStatus: InboundMessageStatus.DONE,
+      outboundSource: OutboundMessageSource.HUMAN_APP,
+      outboundSenderUserId: senderUser?.id || null,
+      outboundSenderEmail: senderUserEmail,
+      rawPayload: {
+        direction: 'outbound',
+        source: 'HUMAN_APP',
+        sentBy: {
+          userId: senderUser?.id || null,
+          email: senderUserEmail,
+        },
+        graphResponse: graphResponse.data || null,
+      } as any,
+    });
+
     await markConversationHumanActive({
       salonId,
       channel: 'INSTAGRAM',
@@ -6519,7 +6535,7 @@ router.post('/instagram-inbox/conversations/:conversationKey/handover', authenti
       ],
     };
 
-    const latestInbound = await prisma.inboundMessageQueue.findFirst({
+    const latestInbound = await prisma.conversationMessageEvent.findFirst({
       where: latestInboundWhere,
       orderBy: {
         eventTimestamp: 'desc',
@@ -6601,6 +6617,24 @@ router.post('/instagram-inbox/conversations/:conversationKey/handover', authenti
       },
     });
 
+    await upsertConversationMessageEvent({
+      salonId,
+      channel: 'INSTAGRAM',
+      conversationKey: resolvedConversationKey,
+      providerMessageId: saved.providerMessageId,
+      externalAccountId: latestInbound.externalAccountId,
+      customerName: latestInbound.customerName || null,
+      messageType: 'handover_request',
+      text: note || 'Human handover requested.',
+      direction: 'SYSTEM',
+      eventTimestamp: saved.eventTimestamp,
+      processingStatus: InboundMessageStatus.DONE,
+      rawPayload: {
+        direction: 'system',
+        handoverRequested: true,
+      } as any,
+    });
+
     const updatedState = await markConversationHumanPending({
       salonId,
       channel: 'INSTAGRAM',
@@ -6674,7 +6708,7 @@ router.post('/instagram-inbox/conversations/:conversationKey/resume-auto', authe
       ],
     };
 
-    const latestInbound = await prisma.inboundMessageQueue.findFirst({
+    const latestInbound = await prisma.conversationMessageEvent.findFirst({
       where: latestInboundWhere,
       orderBy: {
         eventTimestamp: 'desc',
