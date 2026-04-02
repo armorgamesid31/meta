@@ -61,6 +61,7 @@ interface PrefillConnection {
 
 interface MetaTokenResult {
   accessToken: string;
+  backupAccessToken?: string | null;
   tokenType: string | null;
   expiresIn: number | null;
   instagramUserId?: string | null;
@@ -439,6 +440,7 @@ async function exchangeInstagramToken(code: string, redirectUri: string) {
 
     return {
       accessToken: longLivedToken,
+      backupAccessToken: shortLivedToken,
       tokenType: 'bearer',
       expiresIn: Number.isFinite(Number(longLivedResponse.data?.expires_in))
         ? Number(longLivedResponse.data.expires_in)
@@ -450,6 +452,7 @@ async function exchangeInstagramToken(code: string, redirectUri: string) {
     // Keep flow usable with the short-lived token and continue binding.
     return {
       accessToken: shortLivedToken,
+      backupAccessToken: null,
       tokenType: 'bearer',
       expiresIn: Number.isFinite(Number(shortTokenPayload?.expires_in))
         ? Number(shortTokenPayload.expires_in)
@@ -460,17 +463,35 @@ async function exchangeInstagramToken(code: string, redirectUri: string) {
 }
 
 async function validateInstagramToken(accessToken: string): Promise<InstagramValidationResult> {
-  let response;
-  try {
-    response = await axios.get(`https://graph.instagram.com/${META_GRAPH_VERSION}/me`, {
-      params: {
-        access_token: accessToken,
-        fields: 'id,username',
-      },
-      timeout: 20000,
-    });
-  } catch (error) {
-    throw wrapStepError('instagram_validate_token_me', error);
+  const candidates = [
+    `https://graph.instagram.com/${META_GRAPH_VERSION}/me`,
+    'https://graph.instagram.com/me',
+  ];
+
+  let response: any = null;
+  let lastError: Error | null = null;
+
+  for (const [index, url] of candidates.entries()) {
+    try {
+      response = await axios.get(url, {
+        params: {
+          access_token: accessToken,
+          fields: 'id,username',
+        },
+        timeout: 20000,
+      });
+      break;
+    } catch (error) {
+      const wrapped = wrapStepError(
+        index === 0 ? 'instagram_validate_token_me' : 'instagram_validate_token_me_fallback',
+        error,
+      );
+      lastError = wrapped;
+    }
+  }
+
+  if (!response) {
+    throw lastError || new Error('instagram_validate_token_me: failed to validate token.');
   }
 
   const accountId = typeof response.data?.id === 'string' ? response.data.id.trim() : '';
@@ -505,23 +526,44 @@ function getInstagramSubscribedFields(): string[] {
 
 async function ensureInstagramSubscription(igAccountId: string, accessToken: string): Promise<void> {
   const subscribedFields = getInstagramSubscribedFields().join(',');
+  const body = new URLSearchParams({
+    subscribed_fields: subscribedFields,
+  }).toString();
+  const targets = [
+    {
+      step: 'instagram_subscribe_apps',
+      url: `https://graph.instagram.com/${META_GRAPH_VERSION}/${igAccountId}/subscribed_apps`,
+    },
+    {
+      step: 'instagram_subscribe_apps_me',
+      url: `https://graph.instagram.com/${META_GRAPH_VERSION}/me/subscribed_apps`,
+    },
+    {
+      step: 'instagram_subscribe_apps_fb_fallback',
+      url: `https://graph.facebook.com/${META_GRAPH_VERSION}/${igAccountId}/subscribed_apps`,
+    },
+  ];
 
-  try {
-    await axios.post(
-      `https://graph.facebook.com/${META_GRAPH_VERSION}/${igAccountId}/subscribed_apps`,
-      new URLSearchParams({
-        subscribed_fields: subscribedFields,
-        access_token: accessToken,
-      }).toString(),
-      {
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        timeout: 20000,
-      },
-    );
-    return;
-  } catch (error) {
-    throw wrapStepError('instagram_subscribe_apps', error);
+  let lastError: Error | null = null;
+
+  for (const target of targets) {
+    try {
+      await axios.post(
+        target.url,
+        body,
+        {
+          params: { access_token: accessToken },
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          timeout: 20000,
+        },
+      );
+      return;
+    } catch (error) {
+      lastError = wrapStepError(target.step, error);
+    }
   }
+
+  throw lastError || new Error('instagram_subscribe_apps: failed to subscribe.');
 }
 
 async function exchangeCodeForToken(code: string, redirectUri: string, channel: MetaChannel): Promise<MetaTokenResult> {
@@ -683,10 +725,27 @@ async function finalizeConnection(args: {
   let probeError: string | null = null;
   let status: MetaStatus = 'CONNECTED';
   let message = 'Connected and verified with a live API call.';
+  let accessTokenToPersist = token.accessToken;
   const nowIso = new Date().toISOString();
 
   if (channel === 'INSTAGRAM') {
-    const validation = await validateInstagramToken(token.accessToken);
+    let tokenToUse = token.accessToken;
+    let validation: InstagramValidationResult;
+    try {
+      validation = await validateInstagramToken(tokenToUse);
+    } catch (error) {
+      const backup = typeof token.backupAccessToken === 'string' ? token.backupAccessToken.trim() : '';
+      if (!backup || backup === tokenToUse) {
+        throw error;
+      }
+      validation = await validateInstagramToken(backup);
+      tokenToUse = backup;
+      accessTokenToPersist = backup;
+      probeError = `primary_token_failed_fell_back_to_short_lived: ${getAxiosErrorMessage(error)}`;
+      status = 'DEGRADED';
+      message = 'Connected using short-lived token fallback. Long-lived token validation failed.';
+    }
+
     const bindingIds = sanitizeIds([
       ...(prefill?.bindingIds || []),
       validation.accountId,
@@ -706,9 +765,11 @@ async function finalizeConnection(args: {
     };
 
     try {
-      await ensureInstagramSubscription(validation.accountId, token.accessToken);
-      status = 'CONNECTED';
-      message = 'Connected, validated, and webhook subscription requested successfully.';
+      await ensureInstagramSubscription(validation.accountId, tokenToUse);
+      if (status !== 'DEGRADED') {
+        status = 'CONNECTED';
+        message = 'Connected, validated, and webhook subscription requested successfully.';
+      }
     } catch (error) {
       probeError = getAxiosErrorMessage(error);
       status = 'DEGRADED';
@@ -752,7 +813,7 @@ async function finalizeConnection(args: {
       probe?.externalDisplayName ||
       prefill?.externalDisplayName ||
       loaded.store[key].externalDisplayName,
-    accessToken: token.accessToken,
+    accessToken: accessTokenToPersist,
     tokenType: token.tokenType,
     expiresIn: token.expiresIn,
     lastConnectedAt: status === 'CONNECTED' || status === 'DEGRADED' ? nowIso : loaded.store[key].lastConnectedAt,
