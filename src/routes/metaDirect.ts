@@ -460,13 +460,18 @@ async function exchangeInstagramToken(code: string, redirectUri: string) {
 }
 
 async function validateInstagramToken(accessToken: string): Promise<InstagramValidationResult> {
-  const response = await axios.get(`https://graph.instagram.com/${META_GRAPH_VERSION}/me`, {
-    params: {
-      access_token: accessToken,
-      fields: 'id,username',
-    },
-    timeout: 20000,
-  });
+  let response;
+  try {
+    response = await axios.get(`https://graph.instagram.com/${META_GRAPH_VERSION}/me`, {
+      params: {
+        access_token: accessToken,
+        fields: 'id,username',
+      },
+      timeout: 20000,
+    });
+  } catch (error) {
+    throw wrapStepError('instagram_validate_token_me', error);
+  }
 
   const accountId = typeof response.data?.id === 'string' ? response.data.id.trim() : '';
   if (!accountId) {
@@ -515,8 +520,7 @@ async function ensureInstagramSubscription(igAccountId: string, accessToken: str
     );
     return;
   } catch (error) {
-    const primaryMessage = getAxiosErrorMessage(error);
-    throw new Error(`Instagram webhook subscription failed: ${primaryMessage}`);
+    throw wrapStepError('instagram_subscribe_apps', error);
   }
 }
 
@@ -570,6 +574,39 @@ function getAxiosErrorMessage(error: unknown): string {
   }
 
   return 'Unknown Meta API error.';
+}
+
+function getAxiosErrorDetails(error: unknown) {
+  if (!axios.isAxiosError(error)) return null;
+  const payload = (error.response?.data || {}) as any;
+  const fb = (payload?.error || {}) as any;
+  return {
+    method: error.config?.method ? String(error.config.method).toUpperCase() : null,
+    url: error.config?.url || null,
+    status: error.response?.status ?? null,
+    fbTraceId: fb.fbtrace_id || error.response?.headers?.['x-fb-trace-id'] || null,
+    type: fb.type || null,
+    code: fb.code ?? null,
+    subcode: fb.error_subcode ?? null,
+    message: fb.message || error.message || 'Unknown Axios error',
+  };
+}
+
+function wrapStepError(step: string, error: unknown): Error {
+  const details = getAxiosErrorDetails(error);
+  if (!details) {
+    return new Error(`${step}: ${getAxiosErrorMessage(error)}`);
+  }
+  const meta = [
+    details.method ? `method=${details.method}` : null,
+    details.url ? `url=${details.url}` : null,
+    details.status ? `status=${details.status}` : null,
+    details.type ? `type=${details.type}` : null,
+    details.code !== null ? `code=${details.code}` : null,
+    details.subcode !== null ? `subcode=${details.subcode}` : null,
+    details.fbTraceId ? `fbtrace=${details.fbTraceId}` : null,
+  ].filter(Boolean).join(' ');
+  return new Error(`${step}: ${details.message}${meta ? ` [${meta}]` : ''}`);
 }
 
 async function probeInstagram(accessToken: string) {
@@ -950,6 +987,11 @@ router.get('/callback', async (req: any, res: any) => {
   const key = toMetaKey(channel);
 
   const fail = async (message: string) => {
+    console.error('Meta Direct callback failed:', {
+      salonId: statePayload.sid,
+      channel,
+      message,
+    });
     try {
       const loaded = await loadStoreForSalon(statePayload.sid);
       loaded.store[key] = {
@@ -1007,6 +1049,12 @@ router.get('/callback', async (req: any, res: any) => {
           : `Connection completed with warnings (${status}). ${probeError || 'Check Meta webhook subscription.'}`,
     }));
   } catch (error) {
+    console.error('Meta Direct callback exchange failed:', {
+      salonId: statePayload.sid,
+      channel,
+      detail: getAxiosErrorDetails(error),
+      message: getAxiosErrorMessage(error),
+    });
     return fail(getAxiosErrorMessage(error));
   }
 });
@@ -1094,6 +1142,10 @@ router.post('/exchange-code', authenticateToken, async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Meta Direct exchange-code failed:', error);
+    console.error('Meta Direct exchange-code detail:', {
+      detail: getAxiosErrorDetails(error),
+      message: getAxiosErrorMessage(error),
+    });
     return res.status(400).json({
       ok: false,
       message: getAxiosErrorMessage(error),
