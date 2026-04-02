@@ -462,10 +462,21 @@ async function exchangeInstagramToken(code: string, redirectUri: string) {
   }
 }
 
-async function validateInstagramToken(accessToken: string): Promise<InstagramValidationResult> {
+async function validateInstagramToken(
+  accessToken: string,
+  accountIdHint?: string | null,
+): Promise<InstagramValidationResult> {
+  const normalizedHint =
+    typeof accountIdHint === 'string' && accountIdHint.trim() ? accountIdHint.trim() : null;
   const candidates = [
     `https://graph.instagram.com/${META_GRAPH_VERSION}/me`,
     'https://graph.instagram.com/me',
+    ...(normalizedHint
+      ? [
+          `https://graph.instagram.com/${META_GRAPH_VERSION}/${normalizedHint}`,
+          `https://graph.instagram.com/${normalizedHint}`,
+        ]
+      : []),
   ];
 
   let response: any = null;
@@ -494,7 +505,10 @@ async function validateInstagramToken(accessToken: string): Promise<InstagramVal
     throw lastError || new Error('instagram_validate_token_me: failed to validate token.');
   }
 
-  const accountId = typeof response.data?.id === 'string' ? response.data.id.trim() : '';
+  const accountId =
+    typeof response.data?.id === 'string' && response.data.id.trim()
+      ? response.data.id.trim()
+      : normalizedHint || '';
   if (!accountId) {
     throw new Error('Instagram token is valid format but account id is missing from /me response.');
   }
@@ -729,21 +743,67 @@ async function finalizeConnection(args: {
   const nowIso = new Date().toISOString();
 
   if (channel === 'INSTAGRAM') {
+    const instagramIdHint =
+      (typeof token.instagramUserId === 'string' && token.instagramUserId.trim()
+        ? token.instagramUserId.trim()
+        : null) ||
+      (typeof prefill?.externalAccountId === 'string' && prefill.externalAccountId.trim()
+        ? prefill.externalAccountId.trim()
+        : null);
+    const maybeValidationFromHint = (
+      error: unknown,
+    ): InstagramValidationResult | null => {
+      if (!instagramIdHint) return null;
+      const message = getAxiosErrorMessage(error).toLowerCase();
+      if (!message.includes('unsupported request - method type: get')) {
+        return null;
+      }
+      return {
+        accountId: instagramIdHint,
+        username:
+          typeof prefill?.externalDisplayName === 'string' &&
+          prefill.externalDisplayName.trim()
+            ? prefill.externalDisplayName.trim()
+            : null,
+      };
+    };
+
     let tokenToUse = token.accessToken;
     let validation: InstagramValidationResult;
     try {
-      validation = await validateInstagramToken(tokenToUse);
+      validation = await validateInstagramToken(tokenToUse, instagramIdHint);
     } catch (error) {
       const backup = typeof token.backupAccessToken === 'string' ? token.backupAccessToken.trim() : '';
-      if (!backup || backup === tokenToUse) {
-        throw error;
+      if (backup && backup !== tokenToUse) {
+        try {
+          validation = await validateInstagramToken(backup, instagramIdHint);
+          tokenToUse = backup;
+          accessTokenToPersist = backup;
+          probeError = `primary_token_failed_fell_back_to_short_lived: ${getAxiosErrorMessage(error)}`;
+          status = 'DEGRADED';
+          message = 'Connected using short-lived token fallback. Long-lived token validation failed.';
+        } catch (backupError) {
+          const hinted = maybeValidationFromHint(backupError);
+          if (!hinted) {
+            throw backupError;
+          }
+          validation = hinted;
+          tokenToUse = backup;
+          accessTokenToPersist = backup;
+          probeError = `instagram_validate_token_skipped_with_hint: ${getAxiosErrorMessage(backupError)}`;
+          status = 'DEGRADED';
+          message = 'Connected with account hint; token validation endpoint is unsupported for this token mode.';
+        }
+      } else {
+        const hinted = maybeValidationFromHint(error);
+        if (!hinted) {
+          throw error;
+        }
+        validation = hinted;
+        probeError = `instagram_validate_token_skipped_with_hint: ${getAxiosErrorMessage(error)}`;
+        status = 'DEGRADED';
+        message = 'Connected with account hint; token validation endpoint is unsupported for this token mode.';
       }
-      validation = await validateInstagramToken(backup);
-      tokenToUse = backup;
-      accessTokenToPersist = backup;
-      probeError = `primary_token_failed_fell_back_to_short_lived: ${getAxiosErrorMessage(error)}`;
-      status = 'DEGRADED';
-      message = 'Connected using short-lived token fallback. Long-lived token validation failed.';
     }
 
     const bindingIds = sanitizeIds([
