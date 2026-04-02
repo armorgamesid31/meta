@@ -18,9 +18,11 @@ const META_WHATSAPP_CONFIG_ID = (process.env.META_WHATSAPP_CONFIG_ID || '').trim
 const META_INSTAGRAM_CONFIG_ID = (process.env.META_INSTAGRAM_CONFIG_ID || '').trim();
 
 type MetaChannel = 'INSTAGRAM' | 'WHATSAPP';
-type MetaStatus = 'NOT_CONNECTED' | 'CONNECTING' | 'CONNECTED' | 'FAILED';
+type MetaStatus = 'NOT_CONNECTED' | 'CONNECTING' | 'CONNECTED' | 'DEGRADED' | 'FAILED';
 type MetaChannelKey = 'instagram' | 'whatsapp';
 type ConnectMode = 'OAUTH' | 'EMBEDDED_SIGNUP';
+type ConnectionMode = 'INSTAGRAM_LOGIN' | 'WHATSAPP_EMBEDDED_SIGNUP' | 'WHATSAPP_OAUTH';
+type CredentialsSource = 'META_INSTAGRAM' | 'META_APP';
 
 interface MetaChannelState {
   status: MetaStatus;
@@ -34,6 +36,7 @@ interface MetaChannelState {
   lastConnectedAt: string | null;
   lastProbeAt: string | null;
   lastProbeOk: boolean | null;
+  lastWebhookAt: string | null;
   lastError: string | null;
 }
 
@@ -61,6 +64,11 @@ interface MetaTokenResult {
   tokenType: string | null;
   expiresIn: number | null;
   instagramUserId?: string | null;
+}
+
+interface InstagramValidationResult {
+  accountId: string;
+  username: string | null;
 }
 
 const defaultScopes: Record<MetaChannel, string[]> = {
@@ -111,6 +119,7 @@ function defaultChannelState(): MetaChannelState {
     lastConnectedAt: null,
     lastProbeAt: null,
     lastProbeOk: null,
+    lastWebhookAt: null,
     lastError: null,
   };
 }
@@ -125,7 +134,7 @@ function normalizeStore(input: unknown): MetaStore {
 
     return {
       status:
-        status === 'CONNECTING' || status === 'CONNECTED' || status === 'FAILED' || status === 'NOT_CONNECTED'
+        status === 'CONNECTING' || status === 'CONNECTED' || status === 'DEGRADED' || status === 'FAILED' || status === 'NOT_CONNECTED'
           ? (status as MetaStatus)
           : base.status,
       message: typeof value.message === 'string' ? value.message : base.message,
@@ -148,6 +157,7 @@ function normalizeStore(input: unknown): MetaStore {
       lastConnectedAt: typeof value.lastConnectedAt === 'string' ? value.lastConnectedAt : null,
       lastProbeAt: typeof value.lastProbeAt === 'string' ? value.lastProbeAt : null,
       lastProbeOk: typeof value.lastProbeOk === 'boolean' ? value.lastProbeOk : null,
+      lastWebhookAt: typeof value.lastWebhookAt === 'string' ? value.lastWebhookAt : null,
       lastError: typeof value.lastError === 'string' ? value.lastError : null,
     };
   };
@@ -222,21 +232,40 @@ function getScopes(channel: MetaChannel): string[] {
     .map((item) => item.trim())
     .filter(Boolean);
 
-  return parsed.length > 0 ? parsed : defaultScopes[channel];
+  const scopes = parsed.length > 0 ? parsed : defaultScopes[channel];
+  if (channel !== 'INSTAGRAM') {
+    return scopes;
+  }
+
+  const required = ['instagram_business_basic', 'instagram_business_manage_messages'];
+  const normalized = new Set(scopes.map((item) => item.trim()).filter(Boolean));
+  for (const permission of required) {
+    normalized.add(permission);
+  }
+  return Array.from(normalized);
 }
 
 function getClientId(channel: MetaChannel): string {
   if (channel === 'INSTAGRAM') {
-    return META_INSTAGRAM_APP_ID || META_APP_ID;
+    return META_INSTAGRAM_APP_ID;
   }
   return META_APP_ID;
 }
 
 function getClientSecret(channel: MetaChannel): string {
   if (channel === 'INSTAGRAM') {
-    return META_INSTAGRAM_APP_SECRET || META_APP_SECRET;
+    return META_INSTAGRAM_APP_SECRET;
   }
   return META_APP_SECRET;
+}
+
+function getConnectionMode(channel: MetaChannel): ConnectionMode {
+  if (channel === 'INSTAGRAM') return 'INSTAGRAM_LOGIN';
+  return META_WHATSAPP_CONFIG_ID ? 'WHATSAPP_EMBEDDED_SIGNUP' : 'WHATSAPP_OAUTH';
+}
+
+function getCredentialsSource(channel: MetaChannel): CredentialsSource {
+  return channel === 'INSTAGRAM' ? 'META_INSTAGRAM' : 'META_APP';
 }
 
 function buildAuthorizeUrl(
@@ -358,9 +387,7 @@ async function exchangeInstagramToken(code: string, redirectUri: string) {
   const instagramAppId = getClientId('INSTAGRAM');
   const instagramAppSecret = getClientSecret('INSTAGRAM');
   if (!instagramAppId || !instagramAppSecret) {
-    throw new Error(
-      'META_INSTAGRAM_APP_ID (or META_APP_ID) and META_INSTAGRAM_APP_SECRET (or META_APP_SECRET) must be configured.',
-    );
+    throw new Error('META_INSTAGRAM_APP_ID and META_INSTAGRAM_APP_SECRET must be configured.');
   }
 
   const shortLivedResponse = await axios.post(
@@ -432,6 +459,67 @@ async function exchangeInstagramToken(code: string, redirectUri: string) {
   }
 }
 
+async function validateInstagramToken(accessToken: string): Promise<InstagramValidationResult> {
+  const response = await axios.get(`https://graph.instagram.com/${META_GRAPH_VERSION}/me`, {
+    params: {
+      access_token: accessToken,
+      fields: 'id,username',
+    },
+    timeout: 20000,
+  });
+
+  const accountId = typeof response.data?.id === 'string' ? response.data.id.trim() : '';
+  if (!accountId) {
+    throw new Error('Instagram token is valid format but account id is missing from /me response.');
+  }
+
+  const username =
+    typeof response.data?.username === 'string' && response.data.username.trim()
+      ? response.data.username.trim()
+      : null;
+
+  return { accountId, username };
+}
+
+const defaultInstagramSubscribedFields = [
+  'messages',
+  'messaging_postbacks',
+  'messaging_seen',
+  'message_reactions',
+];
+
+function getInstagramSubscribedFields(): string[] {
+  const raw = (process.env.META_INSTAGRAM_SUBSCRIBED_FIELDS || '').trim();
+  if (!raw) return defaultInstagramSubscribedFields;
+  const values = raw
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return values.length ? values : defaultInstagramSubscribedFields;
+}
+
+async function ensureInstagramSubscription(igAccountId: string, accessToken: string): Promise<void> {
+  const subscribedFields = getInstagramSubscribedFields().join(',');
+
+  try {
+    await axios.post(
+      `https://graph.facebook.com/${META_GRAPH_VERSION}/${igAccountId}/subscribed_apps`,
+      new URLSearchParams({
+        subscribed_fields: subscribedFields,
+        access_token: accessToken,
+      }).toString(),
+      {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        timeout: 20000,
+      },
+    );
+    return;
+  } catch (error) {
+    const primaryMessage = getAxiosErrorMessage(error);
+    throw new Error(`Instagram webhook subscription failed: ${primaryMessage}`);
+  }
+}
+
 async function exchangeCodeForToken(code: string, redirectUri: string, channel: MetaChannel): Promise<MetaTokenResult> {
   if (channel === 'INSTAGRAM') {
     return exchangeInstagramToken(code, redirectUri);
@@ -485,23 +573,9 @@ function getAxiosErrorMessage(error: unknown): string {
 }
 
 async function probeInstagram(accessToken: string) {
-  const response = await axios.get('https://graph.instagram.com/me', {
-    params: {
-      access_token: accessToken,
-      fields: 'id,username',
-    },
-    timeout: 20000,
-  });
-
-  const igId = typeof response.data?.id === 'string' ? response.data.id.trim() : '';
-  if (!igId) {
-    throw new Error('Instagram professional account not found.');
-  }
-
-  const username =
-    typeof response.data?.username === 'string' && response.data.username.trim()
-      ? response.data.username.trim()
-      : null;
+  const validation = await validateInstagramToken(accessToken);
+  const igId = validation.accountId;
+  const username = validation.username;
 
   return {
     externalAccountId: igId,
@@ -570,31 +644,65 @@ async function finalizeConnection(args: {
 
   let probe: Awaited<ReturnType<typeof runProbe>> | null = null;
   let probeError: string | null = null;
+  let status: MetaStatus = 'CONNECTED';
+  let message = 'Connected and verified with a live API call.';
+  const nowIso = new Date().toISOString();
 
-  const bindingIds = sanitizeIds(prefill?.bindingIds || []);
-  if (bindingIds.length > 0) {
+  if (channel === 'INSTAGRAM') {
+    const validation = await validateInstagramToken(token.accessToken);
+    const bindingIds = sanitizeIds([
+      ...(prefill?.bindingIds || []),
+      validation.accountId,
+      prefill?.externalAccountId || null,
+    ]);
+
+    if (!bindingIds.length) {
+      throw new Error('Instagram connection did not return a bindable account id.');
+    }
+
     await setBindings(salonId, channel, bindingIds);
-  }
+    probe = {
+      externalAccountId: validation.accountId,
+      externalBusinessId: prefill?.externalBusinessId || null,
+      externalDisplayName: validation.username || prefill?.externalDisplayName || validation.accountId,
+      bindingIds,
+    };
 
-  if (bindingIds.length === 0) {
     try {
-      probe = await runProbe(channel, token.accessToken);
-      await setBindings(salonId, channel, probe.bindingIds);
+      await ensureInstagramSubscription(validation.accountId, token.accessToken);
+      status = 'CONNECTED';
+      message = 'Connected, validated, and webhook subscription requested successfully.';
     } catch (error) {
-      // Token can still be valid; probe can be retried later with broader business setup.
       probeError = getAxiosErrorMessage(error);
+      status = 'DEGRADED';
+      message =
+        'Connected and token validated, but webhook subscription could not be confirmed. Complete subscription in Meta Dashboard.';
+    }
+  } else {
+    const bindingIds = sanitizeIds(prefill?.bindingIds || []);
+    if (bindingIds.length > 0) {
+      await setBindings(salonId, channel, bindingIds);
+    }
+
+    if (bindingIds.length === 0) {
+      try {
+        probe = await runProbe(channel, token.accessToken);
+        await setBindings(salonId, channel, probe.bindingIds);
+      } catch (error) {
+        probeError = getAxiosErrorMessage(error);
+        status = 'DEGRADED';
+        message = `Connected, but probe could not verify channel details: ${probeError}`;
+      }
+    } else {
+      message = 'Connected via Embedded Signup. Binding captured.';
     }
   }
 
   const loaded = await loadStoreForSalon(salonId);
   loaded.store[key] = {
     ...loaded.store[key],
-    status: 'CONNECTED',
-    message: probe
-      ? 'Connected and verified with a live API call.'
-      : bindingIds.length > 0
-        ? 'Connected via Embedded Signup. Binding captured.'
-        : 'Connected. Token saved. Run Probe to finalize account binding.',
+    status,
+    message,
     externalAccountId:
       probe?.externalAccountId ||
       prefill?.externalAccountId ||
@@ -610,16 +718,17 @@ async function finalizeConnection(args: {
     accessToken: token.accessToken,
     tokenType: token.tokenType,
     expiresIn: token.expiresIn,
-    lastConnectedAt: new Date().toISOString(),
-    lastProbeAt: probe ? new Date().toISOString() : loaded.store[key].lastProbeAt,
-    lastProbeOk: probe ? true : loaded.store[key].lastProbeOk,
-    lastError: probe ? null : probeError,
+    lastConnectedAt: status === 'CONNECTED' || status === 'DEGRADED' ? nowIso : loaded.store[key].lastConnectedAt,
+    lastProbeAt: nowIso,
+    lastProbeOk: true,
+    lastError: probeError,
   };
   await saveStoreForSalon(salonId, loaded.faqAnswers, loaded.store);
 
   return {
     probe,
     probeError,
+    status,
   };
 }
 
@@ -694,18 +803,48 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
       .filter((item) => item.channel === ChannelType.WHATSAPP)
       .map((item) => item.externalAccountId);
 
+    const igBindingIds = sanitizeIds(igBindings);
+    const waBindingIds = sanitizeIds(waBindings);
+    const igTokenLikelyValid = Boolean(store.instagram.accessToken && store.instagram.lastProbeOk);
+    const igWebhookSubscribedLikely =
+      store.instagram.status === 'CONNECTED' &&
+      !store.instagram.lastError;
+    const igMissingRequirements: string[] = [];
+    if (!store.instagram.accessToken) igMissingRequirements.push('missing_access_token');
+    if (!igBindingIds.length) igMissingRequirements.push('missing_binding');
+    if (!igTokenLikelyValid) igMissingRequirements.push('token_not_verified');
+    if (!store.instagram.lastWebhookAt) igMissingRequirements.push('webhook_not_observed');
+    if (!igWebhookSubscribedLikely) igMissingRequirements.push('webhook_subscription_unconfirmed');
+
     return res.status(200).json({
       instagram: {
         ...store.instagram,
         connected: store.instagram.status === 'CONNECTED',
-        bindingReady: igBindings.length > 0,
-        activeBindingIds: sanitizeIds(igBindings),
+        bindingReady: igBindingIds.length > 0 && igTokenLikelyValid,
+        activeBindingIds: igBindingIds,
+        diagnostics: {
+          tokenValid: igTokenLikelyValid,
+          bindingExists: igBindingIds.length > 0,
+          lastWebhookAt: store.instagram.lastWebhookAt,
+          webhookSubscribedLikely: igWebhookSubscribedLikely,
+          missingRequirements: igMissingRequirements,
+        },
       },
       whatsapp: {
         ...store.whatsapp,
         connected: store.whatsapp.status === 'CONNECTED',
-        bindingReady: waBindings.length > 0,
-        activeBindingIds: sanitizeIds(waBindings),
+        bindingReady: waBindingIds.length > 0,
+        activeBindingIds: waBindingIds,
+        diagnostics: {
+          tokenValid: Boolean(store.whatsapp.accessToken && store.whatsapp.lastProbeOk),
+          bindingExists: waBindingIds.length > 0,
+          lastWebhookAt: null,
+          webhookSubscribedLikely: null,
+          missingRequirements: [
+            ...(store.whatsapp.accessToken ? [] : ['missing_access_token']),
+            ...(waBindingIds.length > 0 ? [] : ['missing_binding']),
+          ],
+        },
       },
       connectorNote: 'Chakra flow remains active in production; Meta Direct is in beta prep.',
       graphVersion: META_GRAPH_VERSION,
@@ -730,7 +869,13 @@ router.post('/connect-url', authenticateToken, async (req: any, res: any) => {
 
     const appId = getClientId(channel);
     if (!appId) {
-      return res.status(500).json({ message: channel === 'INSTAGRAM' ? 'META_INSTAGRAM_APP_ID (or META_APP_ID) is missing.' : 'META_APP_ID is missing.' });
+      return res.status(500).json({ message: channel === 'INSTAGRAM' ? 'META_INSTAGRAM_APP_ID is missing.' : 'META_APP_ID is missing.' });
+    }
+    const appSecret = getClientSecret(channel);
+    if (!appSecret) {
+      return res.status(500).json({
+        message: channel === 'INSTAGRAM' ? 'META_INSTAGRAM_APP_SECRET is missing.' : 'META_APP_SECRET is missing.',
+      });
     }
 
     if (!META_STATE_SECRET) {
@@ -752,6 +897,8 @@ router.post('/connect-url', authenticateToken, async (req: any, res: any) => {
       channel === 'WHATSAPP' && META_WHATSAPP_CONFIG_ID
         ? 'EMBEDDED_SIGNUP'
         : 'OAUTH';
+    const connectionMode = getConnectionMode(channel);
+    const credentialsSource = getCredentialsSource(channel);
     const configId = channel === 'WHATSAPP'
       ? (META_WHATSAPP_CONFIG_ID || null)
       : (META_INSTAGRAM_CONFIG_ID || null);
@@ -769,6 +916,8 @@ router.post('/connect-url', authenticateToken, async (req: any, res: any) => {
     return res.status(200).json({
       channel,
       connectMode,
+      connectionMode,
+      credentialsSource,
       authorizeUrl,
       redirectUri,
       appId,
@@ -842,7 +991,7 @@ router.get('/callback', async (req: any, res: any) => {
             bindingIds: [token.instagramUserId],
           }
         : undefined;
-    const { probe } = await finalizeConnection({
+    const { probe, status, probeError } = await finalizeConnection({
       salonId: statePayload.sid,
       channel,
       token,
@@ -850,11 +999,12 @@ router.get('/callback', async (req: any, res: any) => {
     });
 
     return res.status(200).send(renderCallbackHtml({
-      success: true,
+      success: status === 'CONNECTED',
       channel,
-      message: probe
-        ? `${channel} connected successfully and initial API call completed.`
-        : `${channel} connected successfully. Run Probe in app to finalize binding.`,
+      message:
+        status === 'CONNECTED'
+          ? `${channel} connected successfully and initial verification completed.`
+          : `Connection completed with warnings (${status}). ${probeError || 'Check Meta webhook subscription.'}`,
     }));
   } catch (error) {
     return fail(getAxiosErrorMessage(error));
@@ -917,27 +1067,87 @@ router.post('/exchange-code', authenticateToken, async (req: any, res: any) => {
       prefill.externalDisplayName = prefill.externalDisplayName || token.instagramUserId;
     }
 
-    const { probe, probeError } = await finalizeConnection({
+    const { probe, probeError, status } = await finalizeConnection({
       salonId,
       channel,
       token,
       prefill,
     });
 
+    const tokenValid = status === 'CONNECTED' || status === 'DEGRADED';
+    const bindingReady = Boolean((prefill.bindingIds || []).length > 0 || probe?.bindingIds?.length);
+
     return res.status(200).json({
       ok: true,
       channel,
-      connected: true,
-      bindingReady: Boolean(probe || (prefill.bindingIds || []).length > 0),
-      message: probe
-        ? 'Connected and probe succeeded.'
-        : (prefill.bindingIds || []).length > 0
-          ? 'Connected via Embedded Signup and binding captured.'
-          : 'Connected. Token saved. Run Probe to finalize binding.',
+      connected: status === 'CONNECTED',
+      status,
+      bindingReady: bindingReady && tokenValid,
+      tokenValid,
+      message:
+        status === 'CONNECTED'
+          ? 'Connected and verified.'
+          : status === 'DEGRADED'
+            ? `Connected with warnings: ${probeError || 'webhook subscription not confirmed'}.`
+            : 'Connection failed validation.',
       probeError,
     });
   } catch (error) {
     console.error('Meta Direct exchange-code failed:', error);
+    return res.status(400).json({
+      ok: false,
+      message: getAxiosErrorMessage(error),
+    });
+  }
+});
+
+router.post('/reconcile', authenticateToken, async (req: any, res: any) => {
+  try {
+    const salonId = req?.user?.salonId;
+    if (!Number.isInteger(salonId) || salonId <= 0) {
+      return res.status(401).json({ message: 'Unauthorized.' });
+    }
+
+    const channel = toMetaChannel(req.body?.channel || 'INSTAGRAM');
+    if (!channel) {
+      return res.status(400).json({ message: 'channel must be INSTAGRAM or WHATSAPP.' });
+    }
+
+    const loaded = await loadStoreForSalon(salonId);
+    const key = toMetaKey(channel);
+    const state = loaded.store[key];
+    if (!state.accessToken) {
+      return res.status(400).json({ message: `${channel} access token not found.` });
+    }
+
+    const { status, probeError } = await finalizeConnection({
+      salonId,
+      channel,
+      token: {
+        accessToken: state.accessToken,
+        tokenType: state.tokenType,
+        expiresIn: state.expiresIn,
+      },
+      prefill: {
+        externalAccountId: state.externalAccountId,
+        externalBusinessId: state.externalBusinessId,
+        externalDisplayName: state.externalDisplayName,
+        bindingIds: sanitizeIds([state.externalAccountId, state.externalBusinessId]),
+      },
+    });
+
+    return res.status(200).json({
+      ok: true,
+      channel,
+      status,
+      message:
+        status === 'CONNECTED'
+          ? 'Reconcile completed and connection is healthy.'
+          : `Reconcile completed with warnings: ${probeError || 'check diagnostics'}.`,
+      warning: probeError,
+    });
+  } catch (error) {
+    console.error('Meta Direct reconcile failed:', error);
     return res.status(400).json({
       ok: false,
       message: getAxiosErrorMessage(error),
@@ -1025,7 +1235,7 @@ router.post('/probe', authenticateToken, async (req: any, res: any) => {
       if (channel === 'INSTAGRAM' && loaded.store[key].externalAccountId) {
         loaded.store[key] = {
           ...loaded.store[key],
-          status: 'CONNECTED',
+          status: 'DEGRADED',
           message: `Connected. Probe skipped: ${message}`,
           lastProbeAt: new Date().toISOString(),
           lastProbeOk: false,
@@ -1035,6 +1245,7 @@ router.post('/probe', authenticateToken, async (req: any, res: any) => {
         return res.status(200).json({
           ok: true,
           channel,
+          status: 'DEGRADED',
           warning: message,
           message: 'Connection is active, but probe endpoint is not supported for this token.',
         });

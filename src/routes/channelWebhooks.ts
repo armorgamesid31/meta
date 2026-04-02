@@ -455,6 +455,47 @@ async function loadInstagramMetaDirectCredentials(salonId: number) {
   };
 }
 
+async function markInstagramWebhookSeen(salonId: number, eventDate: Date) {
+  const record = await prisma.salonAiAgentSettings.findUnique({
+    where: { salonId },
+    select: { faqAnswers: true },
+  });
+
+  const faq = asObject(record?.faqAnswers);
+  const metaDirect = asObject(faq.metaDirect);
+  const instagram = asObject(metaDirect.instagram);
+  const currentIso = asNullableString(instagram.lastWebhookAt);
+  const nextIso = eventDate.toISOString();
+
+  if (currentIso) {
+    const currentDate = new Date(currentIso);
+    if (!Number.isNaN(currentDate.getTime()) && currentDate.getTime() >= eventDate.getTime()) {
+      return;
+    }
+  }
+
+  const nextFaq = {
+    ...faq,
+    metaDirect: {
+      ...metaDirect,
+      instagram: {
+        ...instagram,
+        lastWebhookAt: nextIso,
+      },
+      whatsapp: asObject(metaDirect.whatsapp),
+    },
+  };
+
+  await prisma.salonAiAgentSettings.upsert({
+    where: { salonId },
+    update: { faqAnswers: nextFaq as any },
+    create: {
+      salonId,
+      faqAnswers: nextFaq as any,
+    },
+  });
+}
+
 async function fetchInstagramScopedProfile(input: {
   scopedUserId: string;
   accessToken: string;
@@ -829,6 +870,10 @@ async function processIncomingBatch(items: any[]) {
     if (!salonId) {
       processed.push({ ...row, success: false, result: 'salon_not_found' });
       continue;
+    }
+
+    if (channel === 'INSTAGRAM' && !row.isEcho) {
+      await markInstagramWebhookSeen(salonId, toEventDate(row));
     }
 
     let instagramProfile: InstagramScopedProfile | null = null;
