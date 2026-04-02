@@ -288,6 +288,7 @@ function buildAuthorizeUrl(
   });
 
   if (channel === 'INSTAGRAM') {
+    params.set('force_reauth', 'true');
     if (META_INSTAGRAM_CONFIG_ID) {
       params.set('config_id', META_INSTAGRAM_CONFIG_ID);
     }
@@ -1023,6 +1024,12 @@ router.post('/connect-url', authenticateToken, async (req: any, res: any) => {
     if (!appSecret) {
       return res.status(500).json({
         message: channel === 'INSTAGRAM' ? 'META_INSTAGRAM_APP_SECRET is missing.' : 'META_APP_SECRET is missing.',
+      });
+    }
+    if (channel === 'INSTAGRAM' && !META_INSTAGRAM_CONFIG_ID) {
+      return res.status(500).json({
+        message:
+          'META_INSTAGRAM_CONFIG_ID is missing. Use Instagram > API setup with Instagram login > Business login settings configuration ID.',
       });
     }
 
