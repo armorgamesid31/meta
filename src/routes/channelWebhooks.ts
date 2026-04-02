@@ -80,6 +80,23 @@ function buildMessageSignature(input: {
   return createHash('sha1').update(payload).digest('hex').slice(0, 16);
 }
 
+function normalizeMessageTypeForRetry(value: string): string {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return '';
+  let current = normalized;
+  if (current.startsWith('echo_')) {
+    current = current.slice('echo_'.length);
+  }
+  if (current.endsWith('_outbound')) {
+    current = current.slice(0, -'_outbound'.length);
+  }
+  return current;
+}
+
+function isSameMessageKindForRetry(a: string, b: string): boolean {
+  return normalizeMessageTypeForRetry(a) === normalizeMessageTypeForRetry(b);
+}
+
 function parseMetaMessageType(channel: ChannelType, msg: any, media: Array<{ type: string }>): string {
   if (channel === 'INSTAGRAM') {
     if (msg?.reply_to?.story || msg?.story) return 'story_reply';
@@ -960,7 +977,7 @@ async function processIncomingBatch(items: any[]) {
       const incomingTs = eventDate.getTime();
       const withinRetryWindow = Math.abs(existingTs - incomingTs) <= 120000;
       const sameConversation = existingProviderRow.conversationKey === conversationKey;
-      const sameMessageType = existingProviderRow.messageType === intendedMessageType;
+      const sameMessageType = isSameMessageKindForRetry(existingProviderRow.messageType, intendedMessageType);
       const sameText = (existingProviderRow.text || null) === (row.text || null);
       const likelyRetryOrEcho = sameConversation && sameMessageType && sameText && withinRetryWindow;
 
@@ -1026,6 +1043,39 @@ async function processIncomingBatch(items: any[]) {
       },
     });
 
+    const outboundTraceMeta = row.isEcho
+      ? await prisma.outboundMessageTrace.findUnique({
+          where: {
+            channel_providerMessageId: {
+              channel,
+              providerMessageId: incomingProviderMessageId || providerMessageId,
+            },
+          },
+          select: {
+            source: true,
+            sourceUserId: true,
+            sourceUserEmail: true,
+          },
+        })
+      : null;
+
+    const eventRawPayload = row.isEcho
+      ? ({
+          ...asObject(rawPayloadForStorage),
+          source: outboundTraceMeta?.source || asObject(rawPayloadForStorage).source || null,
+          sentBy: {
+            userId:
+              typeof outboundTraceMeta?.sourceUserId === 'number'
+                ? outboundTraceMeta.sourceUserId
+                : asObject(asObject(rawPayloadForStorage).sentBy).userId || null,
+            email:
+              typeof outboundTraceMeta?.sourceUserEmail === 'string'
+                ? outboundTraceMeta.sourceUserEmail
+                : asObject(asObject(rawPayloadForStorage).sentBy).email || null,
+          },
+        } as any)
+      : (rawPayloadForStorage as any);
+
     await upsertConversationMessageEvent({
       salonId,
       channel,
@@ -1038,7 +1088,10 @@ async function processIncomingBatch(items: any[]) {
       direction: row.isEcho ? 'OUTBOUND' : 'INBOUND',
       eventTimestamp: eventDate,
       processingStatus: row.isEcho ? InboundMessageStatus.DONE : InboundMessageStatus.PENDING,
-      rawPayload: rawPayloadForStorage as any,
+      outboundSource: row.isEcho ? outboundTraceMeta?.source || null : null,
+      outboundSenderUserId: row.isEcho ? outboundTraceMeta?.sourceUserId || null : null,
+      outboundSenderEmail: row.isEcho ? outboundTraceMeta?.sourceUserEmail || null : null,
+      rawPayload: eventRawPayload,
     });
 
     const state = await evaluateConversationState({
