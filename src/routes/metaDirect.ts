@@ -995,7 +995,7 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
           ],
         },
       },
-      connectorNote: 'Chakra flow remains active in production; Meta Direct is in beta prep.',
+      connectorNote: 'Chakra flow remains active in production; Meta Direct is active for Instagram DM.',
       graphVersion: META_GRAPH_VERSION,
     });
   } catch (error) {
