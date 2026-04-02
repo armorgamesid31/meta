@@ -16,8 +16,8 @@ const META_REDIRECT_URI = (process.env.META_REDIRECT_URI || '').trim();
 const META_STATE_SECRET = (process.env.META_STATE_SECRET || process.env.JWT_SECRET || '').trim();
 const META_WHATSAPP_CONFIG_ID = (process.env.META_WHATSAPP_CONFIG_ID || '').trim();
 const META_INSTAGRAM_CONFIG_ID = (process.env.META_INSTAGRAM_CONFIG_ID || '').trim();
-const META_INSTAGRAM_ALLOW_SHORT_LIVED_FALLBACK =
-  (process.env.META_INSTAGRAM_ALLOW_SHORT_LIVED_FALLBACK || '').trim().toLowerCase() === 'true';
+const META_INSTAGRAM_REQUIRE_LONG_LIVED =
+  (process.env.META_INSTAGRAM_REQUIRE_LONG_LIVED || '').trim().toLowerCase() === 'true';
 
 type MetaChannel = 'INSTAGRAM' | 'WHATSAPP';
 type MetaStatus = 'NOT_CONNECTED' | 'CONNECTING' | 'CONNECTED' | 'DEGRADED' | 'FAILED';
@@ -67,6 +67,7 @@ interface MetaTokenResult {
   tokenType: string | null;
   expiresIn: number | null;
   instagramUserId?: string | null;
+  longLivedExchangeWarning?: string | null;
 }
 
 interface InstagramValidationResult {
@@ -448,10 +449,11 @@ async function exchangeInstagramToken(code: string, redirectUri: string) {
         ? Number(longLivedResponse.data.expires_in)
         : null,
       instagramUserId,
+      longLivedExchangeWarning: null,
     };
   } catch (error) {
     const wrapped = wrapStepError('instagram_exchange_long_lived_token', error);
-    if (!META_INSTAGRAM_ALLOW_SHORT_LIVED_FALLBACK) {
+    if (META_INSTAGRAM_REQUIRE_LONG_LIVED) {
       throw wrapped;
     }
     return {
@@ -462,6 +464,7 @@ async function exchangeInstagramToken(code: string, redirectUri: string) {
         ? Number(shortTokenPayload.expires_in)
         : null,
       instagramUserId,
+      longLivedExchangeWarning: wrapped.message,
     };
   }
 }
@@ -767,11 +770,15 @@ async function finalizeConnection(args: {
         : null);
     let tokenToUse = token.accessToken;
     let validation: InstagramValidationResult;
+    const longLivedExchangeWarning =
+      typeof token.longLivedExchangeWarning === 'string' && token.longLivedExchangeWarning.trim()
+        ? token.longLivedExchangeWarning.trim()
+        : null;
     try {
       validation = await validateInstagramToken(tokenToUse, instagramIdCandidate);
     } catch (error) {
       const backup = typeof token.backupAccessToken === 'string' ? token.backupAccessToken.trim() : '';
-      if (META_INSTAGRAM_ALLOW_SHORT_LIVED_FALLBACK && backup && backup !== tokenToUse) {
+      if (backup && backup !== tokenToUse) {
         try {
           validation = await validateInstagramToken(backup, instagramIdCandidate);
           tokenToUse = backup;
@@ -809,7 +816,9 @@ async function finalizeConnection(args: {
       await ensureInstagramSubscription(validation.accountId, tokenToUse);
       if (status !== 'DEGRADED') {
         status = 'CONNECTED';
-        message = 'Connected, validated, and webhook subscription requested successfully.';
+        message = longLivedExchangeWarning
+          ? 'Connected and validated. Long-lived token exchange is unavailable for this app configuration; using OAuth token.'
+          : 'Connected, validated, and webhook subscription requested successfully.';
       }
     } catch (error) {
       probeError = getAxiosErrorMessage(error);
