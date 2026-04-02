@@ -16,6 +16,8 @@ const META_REDIRECT_URI = (process.env.META_REDIRECT_URI || '').trim();
 const META_STATE_SECRET = (process.env.META_STATE_SECRET || process.env.JWT_SECRET || '').trim();
 const META_WHATSAPP_CONFIG_ID = (process.env.META_WHATSAPP_CONFIG_ID || '').trim();
 const META_INSTAGRAM_CONFIG_ID = (process.env.META_INSTAGRAM_CONFIG_ID || '').trim();
+const META_INSTAGRAM_ALLOW_SHORT_LIVED_FALLBACK =
+  (process.env.META_INSTAGRAM_ALLOW_SHORT_LIVED_FALLBACK || '').trim().toLowerCase() === 'true';
 
 type MetaChannel = 'INSTAGRAM' | 'WHATSAPP';
 type MetaStatus = 'NOT_CONNECTED' | 'CONNECTING' | 'CONNECTED' | 'DEGRADED' | 'FAILED';
@@ -448,8 +450,10 @@ async function exchangeInstagramToken(code: string, redirectUri: string) {
       instagramUserId,
     };
   } catch (error) {
-    // Some Instagram app configurations reject ig_exchange_token GET.
-    // Keep flow usable with the short-lived token and continue binding.
+    const wrapped = wrapStepError('instagram_exchange_long_lived_token', error);
+    if (!META_INSTAGRAM_ALLOW_SHORT_LIVED_FALLBACK) {
+      throw wrapped;
+    }
     return {
       accessToken: shortLivedToken,
       backupAccessToken: null,
@@ -462,63 +466,78 @@ async function exchangeInstagramToken(code: string, redirectUri: string) {
   }
 }
 
+function pickInstagramMePayload(responseData: any): Record<string, any> {
+  if (Array.isArray(responseData?.data)) {
+    const first = responseData.data[0];
+    if (first && typeof first === 'object') return first as Record<string, any>;
+  }
+  if (responseData?.data && typeof responseData.data === 'object') {
+    return responseData.data as Record<string, any>;
+  }
+  if (responseData && typeof responseData === 'object') {
+    return responseData as Record<string, any>;
+  }
+  return {};
+}
+
 async function validateInstagramToken(
   accessToken: string,
-  accountIdHint?: string | null,
+  accountIdCandidate?: string | null,
 ): Promise<InstagramValidationResult> {
-  const normalizedHint =
-    typeof accountIdHint === 'string' && accountIdHint.trim() ? accountIdHint.trim() : null;
-  const candidates = [
+  const normalizedAccountIdCandidate =
+    typeof accountIdCandidate === 'string' && accountIdCandidate.trim()
+      ? accountIdCandidate.trim()
+      : null;
+  const endpoints = [
     `https://graph.instagram.com/${META_GRAPH_VERSION}/me`,
     'https://graph.instagram.com/me',
-    ...(normalizedHint
+    ...(normalizedAccountIdCandidate
       ? [
-          `https://graph.instagram.com/${META_GRAPH_VERSION}/${normalizedHint}`,
-          `https://graph.instagram.com/${normalizedHint}`,
+          `https://graph.instagram.com/${META_GRAPH_VERSION}/${normalizedAccountIdCandidate}`,
+          `https://graph.instagram.com/${normalizedAccountIdCandidate}`,
         ]
       : []),
   ];
+  const fieldSets = ['user_id,username', 'id,user_id,username'];
 
-  let response: any = null;
   let lastError: Error | null = null;
 
-  for (const [index, url] of candidates.entries()) {
-    try {
-      response = await axios.get(url, {
-        params: {
-          access_token: accessToken,
-          fields: 'id,username',
-        },
-        timeout: 20000,
-      });
-      break;
-    } catch (error) {
-      const wrapped = wrapStepError(
-        index === 0 ? 'instagram_validate_token_me' : 'instagram_validate_token_me_fallback',
-        error,
-      );
-      lastError = wrapped;
+  for (const url of endpoints) {
+    for (const fields of fieldSets) {
+      try {
+        const response = await axios.get(url, {
+          params: {
+            access_token: accessToken,
+            fields,
+          },
+          timeout: 20000,
+        });
+
+        const payload = pickInstagramMePayload(response.data);
+        const accountId =
+          (typeof payload?.user_id === 'string' && payload.user_id.trim()
+            ? payload.user_id.trim()
+            : '') ||
+          (typeof payload?.id === 'string' && payload.id.trim()
+            ? payload.id.trim()
+            : '');
+        const username =
+          typeof payload?.username === 'string' && payload.username.trim()
+            ? payload.username.trim()
+            : null;
+
+        if (!accountId) {
+          throw new Error('instagram_validate_token_me: account id missing in /me response payload.');
+        }
+
+        return { accountId, username };
+      } catch (error) {
+        lastError = wrapStepError(`instagram_validate_token_me[fields=${fields}]`, error);
+      }
     }
   }
 
-  if (!response) {
-    throw lastError || new Error('instagram_validate_token_me: failed to validate token.');
-  }
-
-  const accountId =
-    typeof response.data?.id === 'string' && response.data.id.trim()
-      ? response.data.id.trim()
-      : normalizedHint || '';
-  if (!accountId) {
-    throw new Error('Instagram token is valid format but account id is missing from /me response.');
-  }
-
-  const username =
-    typeof response.data?.username === 'string' && response.data.username.trim()
-      ? response.data.username.trim()
-      : null;
-
-  return { accountId, username };
+  throw lastError || new Error('instagram_validate_token_me: failed to validate token.');
 }
 
 const defaultInstagramSubscribedFields = [
@@ -545,16 +564,12 @@ async function ensureInstagramSubscription(igAccountId: string, accessToken: str
   }).toString();
   const targets = [
     {
-      step: 'instagram_subscribe_apps',
-      url: `https://graph.instagram.com/${META_GRAPH_VERSION}/${igAccountId}/subscribed_apps`,
-    },
-    {
       step: 'instagram_subscribe_apps_me',
       url: `https://graph.instagram.com/${META_GRAPH_VERSION}/me/subscribed_apps`,
     },
     {
-      step: 'instagram_subscribe_apps_fb_fallback',
-      url: `https://graph.facebook.com/${META_GRAPH_VERSION}/${igAccountId}/subscribed_apps`,
+      step: 'instagram_subscribe_apps_igid',
+      url: `https://graph.instagram.com/${META_GRAPH_VERSION}/${igAccountId}/subscribed_apps`,
     },
   ];
 
@@ -743,72 +758,38 @@ async function finalizeConnection(args: {
   const nowIso = new Date().toISOString();
 
   if (channel === 'INSTAGRAM') {
-    const instagramIdHint =
+    const instagramIdCandidate =
       (typeof token.instagramUserId === 'string' && token.instagramUserId.trim()
         ? token.instagramUserId.trim()
         : null) ||
       (typeof prefill?.externalAccountId === 'string' && prefill.externalAccountId.trim()
         ? prefill.externalAccountId.trim()
         : null);
-    const maybeValidationFromHint = (
-      error: unknown,
-    ): InstagramValidationResult | null => {
-      if (!instagramIdHint) return null;
-      const message = getAxiosErrorMessage(error).toLowerCase();
-      if (!message.includes('unsupported request - method type: get')) {
-        return null;
-      }
-      return {
-        accountId: instagramIdHint,
-        username:
-          typeof prefill?.externalDisplayName === 'string' &&
-          prefill.externalDisplayName.trim()
-            ? prefill.externalDisplayName.trim()
-            : null,
-      };
-    };
-
     let tokenToUse = token.accessToken;
     let validation: InstagramValidationResult;
     try {
-      validation = await validateInstagramToken(tokenToUse, instagramIdHint);
+      validation = await validateInstagramToken(tokenToUse, instagramIdCandidate);
     } catch (error) {
       const backup = typeof token.backupAccessToken === 'string' ? token.backupAccessToken.trim() : '';
-      if (backup && backup !== tokenToUse) {
+      if (META_INSTAGRAM_ALLOW_SHORT_LIVED_FALLBACK && backup && backup !== tokenToUse) {
         try {
-          validation = await validateInstagramToken(backup, instagramIdHint);
+          validation = await validateInstagramToken(backup, instagramIdCandidate);
           tokenToUse = backup;
           accessTokenToPersist = backup;
           probeError = `primary_token_failed_fell_back_to_short_lived: ${getAxiosErrorMessage(error)}`;
           status = 'DEGRADED';
           message = 'Connected using short-lived token fallback. Long-lived token validation failed.';
         } catch (backupError) {
-          const hinted = maybeValidationFromHint(backupError);
-          if (!hinted) {
-            throw backupError;
-          }
-          validation = hinted;
-          tokenToUse = backup;
-          accessTokenToPersist = backup;
-          probeError = `instagram_validate_token_skipped_with_hint: ${getAxiosErrorMessage(backupError)}`;
-          status = 'DEGRADED';
-          message = 'Connected with account hint; token validation endpoint is unsupported for this token mode.';
+          throw backupError;
         }
       } else {
-        const hinted = maybeValidationFromHint(error);
-        if (!hinted) {
-          throw error;
-        }
-        validation = hinted;
-        probeError = `instagram_validate_token_skipped_with_hint: ${getAxiosErrorMessage(error)}`;
-        status = 'DEGRADED';
-        message = 'Connected with account hint; token validation endpoint is unsupported for this token mode.';
+        throw error;
       }
     }
 
     const bindingIds = sanitizeIds([
-      ...(prefill?.bindingIds || []),
       validation.accountId,
+      ...(prefill?.bindingIds || []),
       prefill?.externalAccountId || null,
     ]);
 
@@ -1404,26 +1385,6 @@ router.post('/probe', authenticateToken, async (req: any, res: any) => {
       });
     } catch (probeError) {
       const message = getAxiosErrorMessage(probeError);
-
-      if (channel === 'INSTAGRAM' && loaded.store[key].externalAccountId) {
-        loaded.store[key] = {
-          ...loaded.store[key],
-          status: 'DEGRADED',
-          message: `Connected. Probe skipped: ${message}`,
-          lastProbeAt: new Date().toISOString(),
-          lastProbeOk: false,
-          lastError: message,
-        };
-        await saveStoreForSalon(salonId, loaded.faqAnswers, loaded.store);
-        return res.status(200).json({
-          ok: true,
-          channel,
-          status: 'DEGRADED',
-          warning: message,
-          message: 'Connection is active, but probe endpoint is not supported for this token.',
-        });
-      }
-
       loaded.store[key] = {
         ...loaded.store[key],
         status: 'FAILED',
