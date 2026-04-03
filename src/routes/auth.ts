@@ -5,6 +5,7 @@ import { authenticateToken } from '../middleware/auth.js';
 import { UserRole } from '@prisma/client';
 import { createAuthTokens, revokeRefreshToken, rotateRefreshToken } from '../services/mobileAuth.js';
 import { ensureSalonServiceCategories } from '../services/salonCategorySetup.js';
+import { ensureSalonAccessSeed } from '../services/accessControl.js';
 
 const router = Router();
 
@@ -55,6 +56,11 @@ router.post('/register-salon', async (req: any, res: any) => {
     } catch (categoryError) {
       console.error('Salon category bootstrap warning:', categoryError);
     }
+    try {
+      await ensureSalonAccessSeed(salon.id);
+    } catch (accessSeedError) {
+      console.error('Salon access seed warning:', accessSeedError);
+    }
 
     const ownerUser = salon.users.find(user => user.role === UserRole.OWNER);
 
@@ -96,17 +102,26 @@ router.post('/login', async (req: any, res: any) => {
     if (!user) {
       return res.status(401).json({ message: 'Hatalı giriş bilgileri.' });
     }
+    if (!user.isActive) {
+      return res.status(403).json({ message: 'User account is inactive.' });
+    }
 
     const passwordMatch = await bcrypt.compare(password, user.passwordHash);
     if (!passwordMatch) {
       return res.status(401).json({ message: 'Hatalı giriş bilgileri.' });
     }
 
+    await prisma.salonUser.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() },
+    });
+
     const { accessToken, refreshToken } = await createAuthTokens({
       id: user.id,
       salonId: user.salonId,
       role: user.role as string,
     } as any);
+    await ensureSalonAccessSeed(user.salonId);
 
     res.status(200).json({
       token: accessToken,
@@ -116,7 +131,8 @@ router.post('/login', async (req: any, res: any) => {
         id: user.id,
         email: user.email,
         role: user.role,
-        salonId: user.salonId
+        salonId: user.salonId,
+        passwordResetRequired: user.passwordResetRequired === true,
       }
     });
   } catch (error) {
@@ -138,6 +154,9 @@ router.post('/refresh', async (req: any, res: any) => {
     if (!rotated) {
       return res.status(401).json({ message: 'Invalid refresh token.' });
     }
+    if (!rotated.user.isActive) {
+      return res.status(403).json({ message: 'User account is inactive.' });
+    }
 
     return res.status(200).json({
       token: rotated.accessToken,
@@ -148,6 +167,7 @@ router.post('/refresh', async (req: any, res: any) => {
         email: rotated.user.email,
         role: rotated.user.role,
         salonId: rotated.user.salonId,
+        passwordResetRequired: rotated.user.passwordResetRequired === true,
       },
     });
 

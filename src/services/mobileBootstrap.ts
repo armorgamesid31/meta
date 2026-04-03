@@ -103,20 +103,23 @@ export function buildCapabilities(role: string) {
   };
 }
 
-export function buildFeatureFlags(role: string, bookingMode?: string | null, hasWhatsapp?: boolean) {
+export function buildFeatureFlags(role: string, bookingMode?: string | null, hasWhatsapp?: boolean, permissions?: string[]) {
   const normalized = normalizeRole(role);
   const capabilities = ROLE_CAPABILITIES[normalized] || ROLE_CAPABILITIES.STAFF;
+  const permissionSet = new Set((permissions || []).map((item) => String(item || '').trim()));
+  const has = (key: string) => permissionSet.has(key);
+  const usePermissionSet = permissionSet.size > 0;
 
   return {
     dashboard: true,
-    appointments: capabilities.manageAppointments,
-    customers: capabilities.manageCustomers,
-    analytics: capabilities.viewAnalytics,
-    inventory: capabilities.manageInventory || capabilities.viewFinance,
-    campaigns: capabilities.manageCampaigns || capabilities.manageMarketing,
-    automations: capabilities.manageAutomations,
-    blacklist: capabilities.manageBlacklist,
-    websiteBuilder: capabilities.manageSalon,
+    appointments: usePermissionSet ? has('appointments.view') || has('appointments.manage') : capabilities.manageAppointments,
+    customers: usePermissionSet ? has('customers.view') || has('customers.manage') : capabilities.manageCustomers,
+    analytics: usePermissionSet ? has('analytics.view') : capabilities.viewAnalytics,
+    inventory: usePermissionSet ? has('inventory.manage') : capabilities.manageInventory || capabilities.viewFinance,
+    campaigns: usePermissionSet ? has('campaigns.manage') || has('campaigns.publish') : capabilities.manageCampaigns || capabilities.manageMarketing,
+    automations: usePermissionSet ? has('automations.manage') : capabilities.manageAutomations,
+    blacklist: usePermissionSet ? has('blacklist.manage') : capabilities.manageBlacklist,
+    websiteBuilder: usePermissionSet ? has('website.manage') : capabilities.manageSalon,
     whatsappAutomation: bookingMode === 'WHATSAPP' || Boolean(hasWhatsapp),
   };
 }

@@ -100,8 +100,12 @@ model SalonAiAgentSettings {
 model SalonUser {
   id                     Int                  @id @default(autoincrement())
   email                  String
+  displayName            String?
   passwordHash           String
   role                   String
+  isActive               Boolean              @default(true)
+  passwordResetRequired  Boolean              @default(false)
+  lastLoginAt            DateTime?            @db.Timestamp(6)
   createdAt              DateTime?            @default(now()) @db.Timestamp(6)
   updatedAt              DateTime?            @default(now()) @updatedAt @db.Timestamp(6)
   salonId                Int
@@ -1090,6 +1094,59 @@ model HandoverAlertState {
 
   @@unique([salonId, channel, conversationKey], map: "uq_handover_alert_salon_channel_key")
   @@index([state, updatedAt], map: "idx_handover_alert_state_updated")
+}
+
+model PermissionDefinition {
+  id          Int       @id @default(autoincrement())
+  key         String    @unique(map: "uq_permission_definition_key")
+  module      String
+  description String?
+  isCritical  Boolean   @default(false)
+  createdAt   DateTime? @default(now()) @db.Timestamp(6)
+  updatedAt   DateTime? @default(now()) @updatedAt @db.Timestamp(6)
+}
+
+model SalonRolePermission {
+  id              Int       @id @default(autoincrement())
+  salonId         Int
+  role            String
+  permissionId    Int
+  granted         Boolean   @default(true)
+  updatedByUserId Int?
+  createdAt       DateTime? @default(now()) @db.Timestamp(6)
+  updatedAt       DateTime? @default(now()) @updatedAt @db.Timestamp(6)
+
+  @@unique([salonId, role, permissionId], map: "uq_salon_role_permission")
+  @@index([salonId, role], map: "idx_salon_role_permission_salon_role")
+}
+
+model UserPermissionOverride {
+  id              Int       @id @default(autoincrement())
+  salonId         Int
+  userId          Int
+  permissionId    Int
+  granted         Boolean
+  reason          String?
+  expiresAt       DateTime? @db.Timestamp(6)
+  updatedByUserId Int?
+  createdAt       DateTime? @default(now()) @db.Timestamp(6)
+  updatedAt       DateTime? @default(now()) @updatedAt @db.Timestamp(6)
+
+  @@unique([salonId, userId, permissionId], map: "uq_user_permission_override")
+  @@index([salonId, userId], map: "idx_user_permission_override_salon_user")
+}
+
+model AccessAuditLog {
+  id          Int       @id @default(autoincrement())
+  salonId     Int
+  actorUserId Int?
+  action      String
+  targetType  String
+  targetId    String?
+  metadata    Json?
+  createdAt   DateTime? @default(now()) @db.Timestamp(6)
+
+  @@index([salonId, createdAt], map: "idx_access_audit_salon_created")
 }
 
 enum UserRole {

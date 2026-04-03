@@ -31,14 +31,20 @@ export async function createAuthTokens(user: Pick<SalonUser, 'id' | 'salonId' | 
   const accessToken = generateToken(toAccessTokenPayload(user));
   const refreshToken = createRefreshToken();
 
-  await prisma.mobileAuthSession.create({
-    data: {
-      userId: user.id,
-      salonId: user.salonId,
-      refreshTokenHash: hashToken(refreshToken),
-      expiresAt: getTokenExpiry(REFRESH_TOKEN_TTL_DAYS),
-    },
-  });
+  await prisma.$transaction([
+    prisma.mobileAuthSession.create({
+      data: {
+        userId: user.id,
+        salonId: user.salonId,
+        refreshTokenHash: hashToken(refreshToken),
+        expiresAt: getTokenExpiry(REFRESH_TOKEN_TTL_DAYS),
+      },
+    }),
+    prisma.salonUser.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() },
+    }),
+  ]);
 
   return {
     accessToken,
@@ -81,6 +87,11 @@ export async function rotateRefreshToken(refreshToken: string) {
         refreshTokenHash: newRefreshTokenHash,
         expiresAt: getTokenExpiry(REFRESH_TOKEN_TTL_DAYS),
       },
+    });
+
+    await tx.salonUser.update({
+      where: { id: session.userId },
+      data: { lastLoginAt: now },
     });
 
     const accessToken = generateToken(toAccessTokenPayload(session.user));

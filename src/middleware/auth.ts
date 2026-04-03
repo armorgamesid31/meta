@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { verifyToken } from '../utils/jwt.js';
 import { UserRole } from '@prisma/client';
 import { prisma } from '../prisma.js';
+import { hasPermission, normalizeRole } from '../services/accessControl.js';
 
 interface AuthRequest extends Request {
   user?: {
@@ -38,11 +39,14 @@ export const authenticateToken = async (req: AuthRequest, res: Response, next: N
   try {
     const user = await prisma.salonUser.findUnique({
       where: { id: payload.userId },
-      select: { salonId: true },
+      select: { salonId: true, role: true, isActive: true },
     });
 
     if (!user) {
       return res.sendStatus(401);
+    }
+    if (!user.isActive) {
+      return res.status(403).json({ message: 'Account is inactive.' });
     }
 
     let resolvedSalonId = payload.salonId;
@@ -63,6 +67,7 @@ export const authenticateToken = async (req: AuthRequest, res: Response, next: N
 
     req.user = {
       ...payload,
+      role: normalizeRole(user.role),
       salonId: resolvedSalonId,
     };
     next();
@@ -87,26 +92,16 @@ export const requirePermission = (permissionKey: string) => {
       return res.status(401).json({ message: 'Unauthorized' });
     }
 
-    const { userId, salonId } = req.user;
+    const { userId, salonId, role } = req.user;
 
     try {
-      // Check if user has the permission through role assignments or overrides
-      const userPermissions = await prisma.$queryRaw`
-        SELECT DISTINCT p.key
-        FROM permissions p
-        LEFT JOIN role_permissions rp ON p.id = rp.permission_id
-        LEFT JOIN user_role_assignments ura ON rp.role_id = ura.role_id AND ura.salon_id = ${salonId}
-        LEFT JOIN user_permission_overrides upo ON p.id = upo.permission_id AND upo.salon_id = ${salonId} AND upo.user_id = ${userId}
-        WHERE (
-          (ura.user_id = ${userId} AND rp.granted = true) OR
-          (upo.user_id = ${userId} AND upo.granted = true)
-        )
-        AND (upo.expires_at IS NULL OR upo.expires_at > NOW())
-      ` as Array<{ key: string }>;
-
-      const permissionKeys = userPermissions.map(p => p.key);
-
-      if (!permissionKeys.includes(permissionKey)) {
+      const allowed = await hasPermission({
+        salonId,
+        userId,
+        role,
+        permissionKey,
+      });
+      if (!allowed) {
         return res.status(403).json({ message: 'Insufficient permissions' });
       }
 

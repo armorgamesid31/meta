@@ -14,6 +14,7 @@ import bookingRoutes from './routes/bookings.js';
 import availabilityRoutes from './routes/availability.js';
 import authRoutes from './routes/auth.js';
 import adminMobileRoutes from './routes/adminMobile.js';
+import adminAccessRoutes from './routes/adminAccess.js';
 import adminContentRoutes from './routes/adminContent.js';
 import mobileRoutes from './routes/mobile.js';
 import customerRoutes from './routes/customers.js';
@@ -29,6 +30,9 @@ import internalOutboundRoutes from './routes/internalOutbound.js';
 import internalAgentOutboundRoutes from './routes/internalAgentOutbound.js';
 import channelWebhooksRoutes from './routes/channelWebhooks.js';
 import { multiTenantMiddleware } from './middleware/multiTenant.js';
+import { authenticateToken } from './middleware/auth.js';
+import { requireAdminRoutePermission } from './middleware/access.js';
+import { ensurePermissionCatalog } from './services/accessControl.js';
 import { startNotificationJobs } from './services/notifications.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -164,7 +168,8 @@ app.use(multiTenantMiddleware);
 app.use('/auth', authRoutes);
 app.use('/api/mobile', mobileRoutes);
 app.use('/api/admin/content', adminContentRoutes);
-app.use('/api/admin', adminMobileRoutes);
+app.use('/api/admin/access', adminAccessRoutes);
+app.use('/api/admin', authenticateToken, requireAdminRoutePermission, adminMobileRoutes);
 app.use('/api/content', contentRoutes);
 app.use('/api/internal/service-translations', internalServiceTranslationsRoutes);
 app.use('/api/salon', salonRoutes);
@@ -270,6 +275,9 @@ const PORT = (Number(process.env.PORT) || 3000);
 const HOST = "0.0.0.0";
 app.listen(PORT, HOST, () => {
   console.log(`🚀 Server running on ${HOST}:${PORT}`);
+  ensurePermissionCatalog().catch((error) => {
+    console.error('Access permission catalog bootstrap warning:', error);
+  });
   startNotificationJobs();
 });
 export default app;

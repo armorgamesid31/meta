@@ -8,6 +8,7 @@ import {
   buildSubscription,
 } from '../services/mobileBootstrap.js';
 import { getDefaultNotificationPolicy } from '../services/notifications.js';
+import { ACCESS_VERSION, ensureSalonAccessSeed, getEffectivePermissionSet } from '../services/accessControl.js';
 
 const router = Router();
 
@@ -40,6 +41,13 @@ router.get('/bootstrap', authenticateToken, async (req: any, res: any) => {
     }
 
     const normalizedWhatsapp = (user.salon.whatsappPhone || '').replace(/[^\d]/g, '');
+    await ensureSalonAccessSeed(user.salon.id);
+    const effectivePermissionSet = await getEffectivePermissionSet({
+      salonId: user.salon.id,
+      userId: user.id,
+      role: user.role,
+    });
+    const permissions = Array.from(effectivePermissionSet).sort();
 
     const [settings, serviceCount, staffCount] = await prisma.$transaction([
       prisma.salonSettings.findUnique({
@@ -74,7 +82,9 @@ router.get('/bootstrap', authenticateToken, async (req: any, res: any) => {
         country: user.salon.countryCode,
       },
       capabilities: buildCapabilities(user.role),
-      featureFlags: buildFeatureFlags(user.role, user.salon.bookingMode, Boolean(normalizedWhatsapp)),
+      featureFlags: buildFeatureFlags(user.role, user.salon.bookingMode, Boolean(normalizedWhatsapp), permissions),
+      permissions,
+      accessVersion: ACCESS_VERSION,
       subscription: buildSubscription(),
       setupChecklist: {
         ...setupChecklist,
