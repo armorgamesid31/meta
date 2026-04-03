@@ -230,6 +230,10 @@ model Appointment {
   customerRating     Int?
   customerReview     String?
   customerReviewedAt DateTime?                    @db.Timestamp(6)
+  preferenceMode     AppointmentPreferenceMode?   @default(ANY)
+  preferredStaffId   Int?
+  rescheduledFromAppointmentId Int?
+  rescheduleBatchId  String?
   createdAt          DateTime?                    @default(now()) @db.Timestamp(6)
   updatedAt          DateTime?                    @default(now()) @updatedAt @db.Timestamp(6)
   salonId            Int
@@ -246,6 +250,8 @@ model Appointment {
   @@index([salonId, startTime], map: "idx_appointment_salon_start")
   @@index([salonId, status, startTime], map: "idx_appointment_salon_status_start")
   @@index([staffId, startTime, endTime], map: "idx_staff_time")
+  @@index([salonId, rescheduleBatchId], map: "idx_appointment_salon_reschedule_batch")
+  @@index([rescheduledFromAppointmentId], map: "idx_appointment_rescheduled_from")
 }
 
 model SearchContext {
@@ -1168,6 +1174,11 @@ enum AppointmentStatus {
   CANCELLED
   NO_SHOW
   COMPLETED
+}
+
+enum AppointmentPreferenceMode {
+  ANY
+  SPECIFIC
 }
 
 enum PaymentMethod {

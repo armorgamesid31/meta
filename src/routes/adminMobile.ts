@@ -16,6 +16,10 @@ import {
   resolveHandoverAlert,
   upsertSalonNotificationPolicy,
 } from '../services/notifications.js';
+import {
+  buildAppointmentReschedulePreview,
+  commitAppointmentReschedule,
+} from '../services/appointmentReschedule.js';
 
 const router = Router();
 
@@ -126,6 +130,31 @@ function asPaymentMethod(value: unknown): 'CASH' | 'CARD' | 'TRANSFER' | 'OTHER'
     return normalized as 'CASH' | 'CARD' | 'TRANSFER' | 'OTHER';
   }
   return null;
+}
+
+function parseAppointmentIds(input: unknown): number[] {
+  if (!Array.isArray(input)) return [];
+  const dedup = new Set<number>();
+  for (const raw of input) {
+    const numeric = Number(raw);
+    if (Number.isInteger(numeric) && numeric > 0) {
+      dedup.add(numeric);
+    }
+  }
+  return Array.from(dedup);
+}
+
+function parseRescheduleAssignments(input: unknown): Record<number, number> {
+  const rows = Array.isArray(input) ? input : [];
+  const map: Record<number, number> = {};
+  for (const row of rows) {
+    const appointmentId = Number((row as any)?.appointmentId);
+    const staffId = Number((row as any)?.staffId);
+    if (Number.isInteger(appointmentId) && appointmentId > 0 && Number.isInteger(staffId) && staffId > 0) {
+      map[appointmentId] = staffId;
+    }
+  }
+  return map;
 }
 
 function toRiskLevel(score: number): 'LOW' | 'MEDIUM' | 'HIGH' {
@@ -3082,6 +3111,138 @@ router.patch('/appointments/:id/status', authenticateToken, async (req: any, res
     }
     console.error('Admin appointment status update error:', error);
     return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.post('/appointments/reschedule-preview', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) return;
+
+  const appointmentIds = parseAppointmentIds(req.body?.appointmentIds);
+  const newStartTime = parseIsoDate(req.body?.newStartTime);
+  const assignments = parseRescheduleAssignments(req.body?.assignments);
+
+  if (!appointmentIds.length) {
+    return res.status(400).json({ message: 'appointmentIds must be a non-empty array.' });
+  }
+  if (!newStartTime) {
+    return res.status(400).json({ message: 'newStartTime is required as ISO date.' });
+  }
+
+  try {
+    const preview = await buildAppointmentReschedulePreview({
+      salonId,
+      appointmentIds,
+      newStartTime,
+      assignments,
+    });
+    return res.status(200).json(preview);
+  } catch (error) {
+    console.error('Admin appointment reschedule preview error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.post('/appointments/reschedule-commit', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) return;
+
+  const appointmentIds = parseAppointmentIds(req.body?.appointmentIds);
+  const newStartTime = parseIsoDate(req.body?.newStartTime);
+  const assignments = parseRescheduleAssignments(req.body?.assignments);
+  const idempotencyKey =
+    typeof req.body?.idempotencyKey === 'string' && req.body.idempotencyKey.trim()
+      ? req.body.idempotencyKey.trim()
+      : null;
+
+  if (!appointmentIds.length) {
+    return res.status(400).json({ message: 'appointmentIds must be a non-empty array.' });
+  }
+  if (!newStartTime) {
+    return res.status(400).json({ message: 'newStartTime is required as ISO date.' });
+  }
+
+  try {
+    const committed = await commitAppointmentReschedule({
+      salonId,
+      appointmentIds,
+      newStartTime,
+      assignments,
+      idempotencyKey,
+    });
+
+    try {
+      const timezone = await getSalonTimezone(salonId);
+      for (const appointment of committed.createdAppointments) {
+        await notifySameDayAppointmentChange({
+          salonId,
+          event: 'UPDATED',
+          appointmentId: appointment.id,
+          customerName: appointment.customerName,
+          serviceName: appointment.service?.name || null,
+          startTime: new Date(appointment.startTime),
+          timezone,
+        });
+      }
+    } catch (notifyError) {
+      console.error('Appointment reschedule commit notification error:', notifyError);
+    }
+
+    return res.status(200).json({
+      batchId: committed.batchId,
+      previousAppointmentIds: committed.previousAppointmentIds,
+      items: committed.createdAppointments,
+    });
+  } catch (error: any) {
+    const message = error?.message || 'Internal server error.';
+    const status = /manual specialist selection|no eligible|only booked|not found/i.test(message) ? 409 : 500;
+    if (status === 500) {
+      console.error('Admin appointment reschedule commit error:', error);
+    }
+    return res.status(status).json({ message });
+  }
+});
+
+router.patch('/appointments/:id/reschedule', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) return;
+
+  const appointmentId = Number(req.params.id);
+  const newStartTime = parseIsoDate(req.body?.startTime);
+  const explicitStaffId = Number(req.body?.staffId);
+  if (!Number.isInteger(appointmentId) || appointmentId <= 0) {
+    return res.status(400).json({ message: 'Invalid appointment id.' });
+  }
+  if (!newStartTime) {
+    return res.status(400).json({ message: 'startTime is required as ISO date.' });
+  }
+
+  const assignments =
+    Number.isInteger(explicitStaffId) && explicitStaffId > 0
+      ? { [appointmentId]: explicitStaffId }
+      : {};
+
+  try {
+    const committed = await commitAppointmentReschedule({
+      salonId,
+      appointmentIds: [appointmentId],
+      newStartTime,
+      assignments,
+      idempotencyKey: null,
+    });
+    const item = committed.createdAppointments[0] || null;
+    return res.status(200).json({
+      item,
+      previousAppointmentId: committed.previousAppointmentIds[0] || appointmentId,
+      batchId: committed.batchId,
+    });
+  } catch (error: any) {
+    const message = error?.message || 'Internal server error.';
+    const status = /manual specialist selection|no eligible|only booked|not found/i.test(message) ? 409 : 500;
+    if (status === 500) {
+      console.error('Admin appointment reschedule legacy endpoint error:', error);
+    }
+    return res.status(status).json({ message });
   }
 });
 

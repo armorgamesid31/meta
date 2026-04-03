@@ -107,7 +107,19 @@ router.get('/context', async (req: any, res: any) => {
 
   const isKnownCustomer = Boolean(customer);
 
-  let appointments: { id: number; startTime: Date; endTime: Date; status: string }[] = [];
+  let appointments: Array<{
+    id: number;
+    startTime: Date;
+    endTime: Date;
+    status: string;
+    serviceName: string | null;
+    staffName: string | null;
+    canUpdate: boolean;
+    isFuture: boolean;
+    groupKey: string;
+    rescheduledFromAppointmentId: number | null;
+    rescheduleBatchId: string | null;
+  }> = [];
   let activePackages: Array<{
     id: number;
     name: string;
@@ -127,16 +139,59 @@ router.get('/context', async (req: any, res: any) => {
         salonId,
         status: { not: 'CANCELLED' },
       },
-      select: { id: true, startTime: true, endTime: true, status: true },
-      orderBy: { startTime: 'desc' },
-      take: 5,
+      select: {
+        id: true,
+        startTime: true,
+        endTime: true,
+        status: true,
+        rescheduledFromAppointmentId: true,
+        rescheduleBatchId: true,
+        service: {
+          select: {
+            name: true,
+          },
+        },
+        staff: {
+          select: {
+            name: true,
+          },
+        },
+      },
+      orderBy: [{ startTime: 'asc' }, { id: 'asc' }],
+      take: 20,
     });
-    appointments = raw.map((a) => ({
-      id: a.id,
-      startTime: a.startTime,
-      endTime: a.endTime,
-      status: a.status,
-    }));
+
+    const nowForEligibility = Date.now();
+    let groupCursor = 0;
+    let currentGroupKey = '';
+    let previousEndMs = 0;
+    for (const item of raw) {
+      const startMs = new Date(item.startTime).getTime();
+      const endMs = new Date(item.endTime).getTime();
+      const isFuture = startMs > nowForEligibility;
+      const gapMs = startMs - previousEndMs;
+      if (!currentGroupKey || gapMs > 5 * 60 * 1000 || gapMs < 0) {
+        groupCursor += 1;
+        currentGroupKey = `${new Date(item.startTime).toISOString().slice(0, 10)}:${groupCursor}`;
+      }
+      previousEndMs = endMs;
+
+      appointments.push({
+        id: item.id,
+        startTime: item.startTime,
+        endTime: item.endTime,
+        status: item.status,
+        serviceName: item.service?.name || null,
+        staffName: item.staff?.name || null,
+        canUpdate: isFuture && ['BOOKED', 'CONFIRMED'].includes(String(item.status || '').toUpperCase()),
+        isFuture,
+        groupKey: currentGroupKey,
+        rescheduledFromAppointmentId: item.rescheduledFromAppointmentId || null,
+        rescheduleBatchId: item.rescheduleBatchId || null,
+      });
+    }
+
+    appointments.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
 
     const nowForPackages = new Date();
     await (prisma as any).customerPackage.updateMany({

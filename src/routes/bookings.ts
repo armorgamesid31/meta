@@ -7,6 +7,10 @@ import { DateNormalizer } from '../modules/availability/normalizer.js';
 import { calculateSmartDuration, ServiceWithCategory } from '../utils/durationCalculator.js';
 import { normalizeInstagramIdentity } from '../services/identityService.js';
 import { notifySameDayAppointmentChange } from '../services/notifications.js';
+import {
+  buildAppointmentReschedulePreview,
+  commitAppointmentReschedule,
+} from '../services/appointmentReschedule.js';
 
 const router = Router();
 
@@ -46,6 +50,94 @@ async function emitSameDayChangeBestEffort(input: {
   } catch (error) {
     console.error('Failed to emit same-day notification from bookings route:', error);
   }
+}
+
+function parseAppointmentIds(input: unknown): number[] {
+  if (!Array.isArray(input)) return [];
+  const dedup = new Set<number>();
+  for (const row of input) {
+    const id = Number(row);
+    if (Number.isInteger(id) && id > 0) dedup.add(id);
+  }
+  return Array.from(dedup);
+}
+
+function parseRescheduleAssignments(input: unknown): Record<number, number> {
+  const list = Array.isArray(input) ? input : [];
+  const map: Record<number, number> = {};
+  for (const row of list) {
+    const appointmentId = Number((row as any)?.appointmentId);
+    const staffId = Number((row as any)?.staffId);
+    if (Number.isInteger(appointmentId) && appointmentId > 0 && Number.isInteger(staffId) && staffId > 0) {
+      map[appointmentId] = staffId;
+    }
+  }
+  return map;
+}
+
+function parseIsoDate(value: unknown): Date | null {
+  if (typeof value !== 'string') return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function isReschedulableAppointmentStatus(value: unknown): boolean {
+  const status = String(value || '').trim().toUpperCase();
+  return status === 'BOOKED' || status === 'CONFIRMED';
+}
+
+async function resolveMagicTokenCustomer(input: { token: string; salonId: number }) {
+  const now = new Date();
+  const magicLink = await prisma.magicLink.findUnique({
+    where: { token: input.token },
+    include: {
+      identitySession: {
+        select: {
+          customerId: true,
+        },
+      },
+    },
+  });
+
+  if (!magicLink || magicLink.salonId !== input.salonId) {
+    return { error: 'Magic token not found for this salon.', code: 404 as const };
+  }
+  if (magicLink.expiresAt < now || magicLink.status === 'EXPIRED' || magicLink.status === 'REVOKED') {
+    return { error: 'Magic token has expired.', code: 410 as const };
+  }
+
+  let customerId = magicLink.usedByCustomerId || magicLink.identitySession?.customerId || null;
+
+  if (!customerId) {
+    const binding = await prisma.identityBinding.findUnique({
+      where: {
+        salonId_channel_subjectNormalized: {
+          salonId: input.salonId,
+          channel: magicLink.channel,
+          subjectNormalized: magicLink.subjectNormalized,
+        },
+      },
+      select: { customerId: true },
+    });
+    customerId = binding?.customerId || null;
+  }
+
+  if (!customerId) {
+    return { error: 'No customer linked to magic token.', code: 403 as const };
+  }
+
+  const customer = await prisma.customer.findFirst({
+    where: {
+      id: customerId,
+      salonId: input.salonId,
+    },
+    select: { id: true, phone: true },
+  });
+  if (!customer) {
+    return { error: 'Customer not found for this token.', code: 404 as const };
+  }
+
+  return { customerId: customer.id, customerPhone: customer.phone };
 }
 
 interface AuthRequest extends Request {
@@ -343,6 +435,158 @@ router.post("/cancel", authenticateToken, async (req: any, res: any) => {
   }
 });
 
+router.post('/reschedule-preview', async (req: any, res: any) => {
+  const salonId = req.salon?.id;
+  if (!salonId) {
+    return res.status(400).json({ message: 'Salon context is required.' });
+  }
+
+  const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
+  const appointmentIds = parseAppointmentIds(req.body?.appointmentIds);
+  const newStartTime = parseIsoDate(req.body?.newStartTime);
+  const assignments = parseRescheduleAssignments(req.body?.assignments);
+
+  if (!token) {
+    return res.status(400).json({ message: 'token is required.' });
+  }
+  if (!appointmentIds.length) {
+    return res.status(400).json({ message: 'appointmentIds must be a non-empty array.' });
+  }
+  if (!newStartTime) {
+    return res.status(400).json({ message: 'newStartTime is required as ISO date.' });
+  }
+
+  try {
+    const resolved = await resolveMagicTokenCustomer({ token, salonId });
+    if ('error' in resolved) {
+      return res.status(resolved.code).json({ message: resolved.error });
+    }
+
+    const ownedAppointments = await prisma.appointment.findMany({
+      where: {
+        salonId,
+        customerId: resolved.customerId,
+        id: { in: appointmentIds },
+      },
+      select: {
+        id: true,
+        status: true,
+        startTime: true,
+      },
+    });
+    if (ownedAppointments.length !== appointmentIds.length) {
+      return res.status(403).json({ message: 'One or more appointments do not belong to this customer.' });
+    }
+    if (ownedAppointments.some((item) => !isReschedulableAppointmentStatus(item.status))) {
+      return res.status(409).json({ message: 'Only BOOKED/CONFIRMED appointments can be updated.' });
+    }
+    if (ownedAppointments.some((item) => new Date(item.startTime).getTime() <= Date.now())) {
+      return res.status(409).json({ message: 'Past appointments cannot be updated.' });
+    }
+
+    const preview = await buildAppointmentReschedulePreview({
+      salonId,
+      appointmentIds,
+      newStartTime,
+      assignments,
+    });
+
+    return res.status(200).json(preview);
+  } catch (error) {
+    console.error('Booking reschedule preview error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.post('/reschedule-commit', async (req: any, res: any) => {
+  const salonId = req.salon?.id;
+  if (!salonId) {
+    return res.status(400).json({ message: 'Salon context is required.' });
+  }
+
+  const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
+  const appointmentIds = parseAppointmentIds(req.body?.appointmentIds);
+  const newStartTime = parseIsoDate(req.body?.newStartTime);
+  const assignments = parseRescheduleAssignments(req.body?.assignments);
+  const idempotencyKey =
+    typeof req.body?.idempotencyKey === 'string' && req.body.idempotencyKey.trim()
+      ? req.body.idempotencyKey.trim()
+      : null;
+
+  if (!token) {
+    return res.status(400).json({ message: 'token is required.' });
+  }
+  if (!appointmentIds.length) {
+    return res.status(400).json({ message: 'appointmentIds must be a non-empty array.' });
+  }
+  if (!newStartTime) {
+    return res.status(400).json({ message: 'newStartTime is required as ISO date.' });
+  }
+
+  try {
+    const resolved = await resolveMagicTokenCustomer({ token, salonId });
+    if ('error' in resolved) {
+      return res.status(resolved.code).json({ message: resolved.error });
+    }
+
+    const ownedAppointments = await prisma.appointment.findMany({
+      where: {
+        salonId,
+        customerId: resolved.customerId,
+        id: { in: appointmentIds },
+      },
+      select: {
+        id: true,
+        status: true,
+        startTime: true,
+      },
+    });
+    if (ownedAppointments.length !== appointmentIds.length) {
+      return res.status(403).json({ message: 'One or more appointments do not belong to this customer.' });
+    }
+    if (ownedAppointments.some((item) => !isReschedulableAppointmentStatus(item.status))) {
+      return res.status(409).json({ message: 'Only BOOKED/CONFIRMED appointments can be updated.' });
+    }
+    if (ownedAppointments.some((item) => new Date(item.startTime).getTime() <= Date.now())) {
+      return res.status(409).json({ message: 'Past appointments cannot be updated.' });
+    }
+
+    const committed = await commitAppointmentReschedule({
+      salonId,
+      appointmentIds,
+      newStartTime,
+      assignments,
+      idempotencyKey,
+    });
+
+    await Promise.all(
+      committed.createdAppointments.map((apt) =>
+        emitSameDayChangeBestEffort({
+          salonId,
+          event: 'UPDATED',
+          appointmentId: apt.id,
+          customerName: apt.customerName,
+          serviceName: apt.service?.name || null,
+          startTime: new Date(apt.startTime),
+        }),
+      ),
+    );
+
+    return res.status(200).json({
+      batchId: committed.batchId,
+      previousAppointmentIds: committed.previousAppointmentIds,
+      items: committed.createdAppointments,
+    });
+  } catch (error: any) {
+    const message = error?.message || 'Internal server error.';
+    const status = /manual specialist selection|no eligible|only booked|not found|cannot/i.test(message) ? 409 : 500;
+    if (status === 500) {
+      console.error('Booking reschedule commit error:', error);
+    }
+    return res.status(status).json({ message });
+  }
+});
+
 // POST /api/bookings/reschedule - Reschedule an existing booking
 router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
   const { bookingId, newSlot } = req.body as any;
@@ -361,6 +605,54 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
   const salonId = req.user.salonId;
 
   try {
+    const modernAppointment = await prisma.appointment.findFirst({
+      where: { id: bookingId, salonId },
+      select: { id: true, customerName: true, startTime: true, service: { select: { name: true } } },
+    });
+
+    if (modernAppointment) {
+      const parsedStart = parseIsoDate(`${newSlot.date}T${newSlot.startTime}:00`);
+      if (!parsedStart) {
+        return res.status(400).json({ message: 'Invalid newSlot date/time.' });
+      }
+
+      const preferredStaffId = Number(Array.isArray(newSlot.staffIds) ? newSlot.staffIds[0] : null);
+      const assignments =
+        Number.isInteger(preferredStaffId) && preferredStaffId > 0 ? { [bookingId]: preferredStaffId } : {};
+
+      const committed = await commitAppointmentReschedule({
+        salonId,
+        appointmentIds: [bookingId],
+        newStartTime: parsedStart,
+        assignments,
+        idempotencyKey: null,
+      });
+
+      if (committed.createdAppointments.length) {
+        const first = committed.createdAppointments[0];
+        await emitSameDayChangeBestEffort({
+          salonId,
+          event: 'UPDATED',
+          appointmentId: first.id,
+          customerName: first.customerName,
+          serviceName: first.service?.name || modernAppointment.service?.name || null,
+          startTime: new Date(first.startTime),
+        });
+      }
+
+      return res.status(200).json({
+        message: 'Booking rescheduled successfully.',
+        oldBookingId: bookingId,
+        newAppointments: committed.createdAppointments.map((apt) => ({
+          id: apt.id,
+          startTime: apt.startTime,
+          endTime: apt.endTime,
+          staffId: apt.staffId,
+          serviceId: apt.serviceId,
+        })),
+      });
+    }
+
     const result = await prisma.$transaction(async (tx) => {
       const bookingRecord = await tx.$queryRaw`
         SELECT * FROM randevular
@@ -654,6 +946,9 @@ router.post('/', async (req: any, res: any, next: any) => {
       for (const serviceItem of services) {
           const serviceId = parseInt(serviceItem.serviceId);
           let staffId = parseInt(serviceItem.staffId);
+          const requestedPreferenceMode =
+            String(serviceItem?.staffPreference?.mode || '').trim().toUpperCase() === 'SPECIFIC' ? 'SPECIFIC' : 'ANY';
+          const requestedPreferredStaffId = Number(serviceItem?.staffPreference?.preferredStaffId);
           
           if (!staffId) {
               // Auto-assign: Find any staff that can perform this service in this salon
@@ -694,6 +989,20 @@ router.post('/', async (req: any, res: any, next: any) => {
           }
 
           const packageHint = packageByService.get(serviceId);
+          const effectiveSpecific = requestedPreferenceMode === 'SPECIFIC' || Boolean(serviceItem.staffId);
+          const effectivePreferredStaffId =
+            Number.isInteger(requestedPreferredStaffId) && requestedPreferredStaffId > 0
+              ? requestedPreferredStaffId
+              : effectiveSpecific
+                ? staffId
+                : null;
+          const staffPreferenceNote = effectiveSpecific
+            ? `[BOOK_PREF:SPECIFIC:${effectivePreferredStaffId || staffId}]`
+            : '[BOOK_PREF:ANY]';
+          const noteParts = [staffPreferenceNote];
+          if (packageHint) {
+            noteParts.push(`package:${packageHint}`);
+          }
           const appointment = await prisma.appointment.create({
             data: {
               salonId,
@@ -706,7 +1015,9 @@ router.post('/', async (req: any, res: any, next: any) => {
               endTime: end,
               status: 'BOOKED',
               source: source === 'SALON' ? 'ADMIN' : 'CUSTOMER',
-              notes: packageHint ? `package:${packageHint}` : null,
+              preferenceMode: effectiveSpecific ? 'SPECIFIC' : 'ANY',
+              preferredStaffId: effectiveSpecific ? (effectivePreferredStaffId || staffId) : null,
+              notes: noteParts.join('\n'),
             }
           });
           createdAppointments.push(appointment);
