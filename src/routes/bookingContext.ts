@@ -8,6 +8,20 @@ function asObject(value: unknown): Record<string, any> {
   return value as Record<string, any>;
 }
 
+function isRescheduleSchemaMissingError(error: unknown): boolean {
+  const code = String((error as any)?.code || '').trim().toUpperCase();
+  const target = String((error as any)?.meta?.target || '');
+  const message = String((error as any)?.message || '');
+  if (code === 'P2022') {
+    return /(preferenceMode|preferredStaffId|rescheduledFromAppointmentId|rescheduleBatchId)/i.test(
+      `${target} ${message}`,
+    );
+  }
+  return /(column .* does not exist).*(preferenceMode|preferredStaffId|rescheduledFromAppointmentId|rescheduleBatchId)/i.test(
+    message,
+  );
+}
+
 router.get('/context', async (req: any, res: any) => {
   const { token } = req.query;
 
@@ -133,33 +147,77 @@ router.get('/context', async (req: any, res: any) => {
   }> = [];
 
   if (customer) {
-    const raw = await prisma.appointment.findMany({
-      where: {
-        customerId: customer.id,
-        salonId,
-        status: { not: 'CANCELLED' },
-      },
-      select: {
-        id: true,
-        startTime: true,
-        endTime: true,
-        status: true,
-        rescheduledFromAppointmentId: true,
-        rescheduleBatchId: true,
-        service: {
-          select: {
-            name: true,
+    let raw: Array<{
+      id: number;
+      startTime: Date;
+      endTime: Date;
+      status: string;
+      rescheduledFromAppointmentId?: number | null;
+      rescheduleBatchId?: string | null;
+      service?: { name: string } | null;
+      staff?: { name: string } | null;
+    }> = [];
+
+    try {
+      raw = await prisma.appointment.findMany({
+        where: {
+          customerId: customer.id,
+          salonId,
+          status: { not: 'CANCELLED' },
+        },
+        select: {
+          id: true,
+          startTime: true,
+          endTime: true,
+          status: true,
+          rescheduledFromAppointmentId: true,
+          rescheduleBatchId: true,
+          service: {
+            select: {
+              name: true,
+            },
+          },
+          staff: {
+            select: {
+              name: true,
+            },
           },
         },
-        staff: {
-          select: {
-            name: true,
+        orderBy: [{ startTime: 'asc' }, { id: 'asc' }],
+        take: 20,
+      });
+    } catch (error) {
+      if (!isRescheduleSchemaMissingError(error)) {
+        throw error;
+      }
+
+      // Backward-compatible fallback for databases where reschedule V2 columns are not migrated yet.
+      raw = await prisma.appointment.findMany({
+        where: {
+          customerId: customer.id,
+          salonId,
+          status: { not: 'CANCELLED' },
+        },
+        select: {
+          id: true,
+          startTime: true,
+          endTime: true,
+          status: true,
+          service: {
+            select: {
+              name: true,
+            },
+          },
+          staff: {
+            select: {
+              name: true,
+            },
           },
         },
-      },
-      orderBy: [{ startTime: 'asc' }, { id: 'asc' }],
-      take: 20,
-    });
+        orderBy: [{ startTime: 'asc' }, { id: 'asc' }],
+        take: 20,
+      });
+    }
 
     const nowForEligibility = Date.now();
     let groupCursor = 0;
