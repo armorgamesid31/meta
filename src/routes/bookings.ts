@@ -1113,25 +1113,46 @@ router.post('/', async (req: any, res: any, next: any) => {
         for (const serviceItem of personServices) {
           const serviceId = parseInt(serviceItem.serviceId);
           let staffId = parseInt(serviceItem.staffId);
+          const staffOptionIds = Array.isArray(serviceItem?.staffOptionIds)
+            ? serviceItem.staffOptionIds.map((id: any) => Number(id)).filter((id: number) => Number.isInteger(id) && id > 0)
+            : [];
           const requestedPreferenceMode =
             String(serviceItem?.staffPreference?.mode || '').trim().toUpperCase() === 'SPECIFIC' ? 'SPECIFIC' : 'ANY';
           const requestedPreferredStaffId = Number(serviceItem?.staffPreference?.preferredStaffId);
           
           if (!staffId) {
-              // Auto-assign: Find any staff that can perform this service in this salon
-              const autoStaff = await prisma.staffService.findFirst({
+              if (staffOptionIds.length) {
+                const optionStaff = await prisma.staffService.findFirst({
                   where: {
+                    serviceId,
+                    staffId: { in: staffOptionIds },
+                    Staff: { salonId },
+                    isactive: true
+                  },
+                  select: { staffId: true },
+                  orderBy: { staffId: 'asc' },
+                });
+                if (optionStaff) {
+                  staffId = optionStaff.staffId;
+                }
+              }
+
+              if (!staffId) {
+                // Auto-assign: Find any staff that can perform this service in this salon
+                const autoStaff = await prisma.staffService.findFirst({
+                    where: {
                       serviceId,
                       Staff: { salonId },
                       isactive: true
-                  },
-                  select: { staffId: true }
-              });
-              
-              if (autoStaff) {
-                  staffId = autoStaff.staffId;
-              } else {
-                  return res.status(400).json({ message: `${serviceId} ID'li hizmeti verebilecek aktif personel bulunamadı.` });
+                    },
+                    select: { staffId: true }
+                });
+                
+                if (autoStaff) {
+                    staffId = autoStaff.staffId;
+                } else {
+                    return res.status(400).json({ message: `${serviceId} ID'li hizmeti verebilecek aktif personel bulunamadı.` });
+                }
               }
           }
 
