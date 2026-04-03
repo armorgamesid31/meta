@@ -1096,7 +1096,21 @@ router.post('/', async (req: any, res: any, next: any) => {
         }
       }
 
+      const servicesByPerson = new Map<number, any[]>();
       for (const serviceItem of services) {
+        const personIndex = Number.isInteger(Number(serviceItem?.personIndex)) && Number(serviceItem.personIndex) > 0
+          ? Number(serviceItem.personIndex)
+          : 1;
+        const list = servicesByPerson.get(personIndex) || [];
+        list.push(serviceItem);
+        servicesByPerson.set(personIndex, list);
+      }
+
+      const orderedPeople = Array.from(servicesByPerson.entries()).sort((a, b) => a[0] - b[0]);
+
+      for (const [personIndex, personServices] of orderedPeople) {
+        let personStartTime = new Date(b.startTime);
+        for (const serviceItem of personServices) {
           const serviceId = parseInt(serviceItem.serviceId);
           let staffId = parseInt(serviceItem.staffId);
           const requestedPreferenceMode =
@@ -1123,7 +1137,7 @@ router.post('/', async (req: any, res: any, next: any) => {
 
           const duration = parseInt(serviceItem.duration) || 30;
           
-          const start = new Date(currentStartTime);
+          const start = new Date(personStartTime);
           const end = new Date(start.getTime() + duration * 60 * 1000);
 
           // Simple collision check
@@ -1153,6 +1167,7 @@ router.post('/', async (req: any, res: any, next: any) => {
             ? `[BOOK_PREF:SPECIFIC:${effectivePreferredStaffId || staffId}]`
             : '[BOOK_PREF:ANY]';
           const noteParts = [staffPreferenceNote];
+          noteParts.push(`[PERSON:${personIndex}]`);
           if (packageHint) {
             noteParts.push(`package:${packageHint}`);
           }
@@ -1177,7 +1192,8 @@ router.post('/', async (req: any, res: any, next: any) => {
           
           // Next service starts after this one
           // Sequential: next service starts when previous one ends
-          currentStartTime = new Date(end.getTime());
+          personStartTime = new Date(end.getTime());
+        }
       }
 
       // Record behavior tracking or other logs if needed
