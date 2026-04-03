@@ -1237,6 +1237,18 @@ function mapStaffForMobile(staff: any) {
   };
 }
 
+function isPackageSchemaNotReadyError(error: any): boolean {
+  if (!error) return false;
+  if (error.code === 'P2021') return true;
+  const message = typeof error.message === 'string' ? error.message.toLowerCase() : '';
+  return (
+    message.includes('packagetemplate') ||
+    message.includes('customerpackage') ||
+    message.includes('packag ledger') ||
+    message.includes('relation') && message.includes('does not exist')
+  );
+}
+
 router.get('/appointments', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
   if (!salonId) {
@@ -2248,6 +2260,13 @@ router.get('/package-templates', authenticateToken, async (req: any, res: any) =
 
     return res.status(200).json({ items: items.map(toPackageTemplateDto) });
   } catch (error) {
+    if (isPackageSchemaNotReadyError(error)) {
+      return res.status(200).json({
+        items: [],
+        warning: 'Package schema is not ready. Run database migrations to enable package management.',
+        code: 'PACKAGE_SCHEMA_NOT_READY',
+      });
+    }
     console.error('Admin package templates list error:', error);
     return res.status(500).json({ message: 'Internal server error.' });
   }
@@ -2322,6 +2341,12 @@ router.post('/package-templates', authenticateToken, async (req: any, res: any) 
 
     return res.status(201).json({ item: toPackageTemplateDto(created) });
   } catch (error: any) {
+    if (isPackageSchemaNotReadyError(error)) {
+      return res.status(503).json({
+        message: 'Package schema is not ready. Run database migrations.',
+        code: 'PACKAGE_SCHEMA_NOT_READY',
+      });
+    }
     if (error?.code === 'P2002') {
       return res.status(409).json({ message: 'A template with this name already exists.' });
     }
@@ -2423,6 +2448,12 @@ router.put('/package-templates/:id', authenticateToken, async (req: any, res: an
 
     return res.status(200).json({ item: toPackageTemplateDto(updated) });
   } catch (error: any) {
+    if (isPackageSchemaNotReadyError(error)) {
+      return res.status(503).json({
+        message: 'Package schema is not ready. Run database migrations.',
+        code: 'PACKAGE_SCHEMA_NOT_READY',
+      });
+    }
     if (error?.code === 'P2002') {
       return res.status(409).json({ message: 'A template with this name already exists.' });
     }
@@ -2474,6 +2505,13 @@ router.get('/customers/:id/packages', authenticateToken, async (req: any, res: a
 
     return res.status(200).json({ items: items.map(toCustomerPackageDto) });
   } catch (error) {
+    if (isPackageSchemaNotReadyError(error)) {
+      return res.status(200).json({
+        items: [],
+        warning: 'Package schema is not ready. Run database migrations to enable package management.',
+        code: 'PACKAGE_SCHEMA_NOT_READY',
+      });
+    }
     console.error('Admin customer packages list error:', error);
     return res.status(500).json({ message: 'Internal server error.' });
   }
@@ -2636,6 +2674,12 @@ router.post('/customers/:id/packages', authenticateToken, async (req: any, res: 
 
     return res.status(201).json({ item: toCustomerPackageDto(created.item) });
   } catch (error) {
+    if (isPackageSchemaNotReadyError(error)) {
+      return res.status(503).json({
+        message: 'Package schema is not ready. Run database migrations.',
+        code: 'PACKAGE_SCHEMA_NOT_READY',
+      });
+    }
     console.error('Admin customer package create error:', error);
     return res.status(500).json({ message: 'Internal server error.' });
   }
@@ -2753,6 +2797,12 @@ router.post('/customers/:id/packages/:packageId/adjust', authenticateToken, asyn
 
     return res.status(200).json({ item: toCustomerPackageDto(result.item) });
   } catch (error) {
+    if (isPackageSchemaNotReadyError(error)) {
+      return res.status(503).json({
+        message: 'Package schema is not ready. Run database migrations.',
+        code: 'PACKAGE_SCHEMA_NOT_READY',
+      });
+    }
     console.error('Admin customer package adjust error:', error);
     return res.status(500).json({ message: 'Internal server error.' });
   }
@@ -2803,6 +2853,13 @@ router.get('/customers/:id/package-ledger', authenticateToken, async (req: any, 
       })),
     });
   } catch (error) {
+    if (isPackageSchemaNotReadyError(error)) {
+      return res.status(200).json({
+        items: [],
+        warning: 'Package schema is not ready. Run database migrations to enable package management.',
+        code: 'PACKAGE_SCHEMA_NOT_READY',
+      });
+    }
     console.error('Admin customer package ledger error:', error);
     return res.status(500).json({ message: 'Internal server error.' });
   }
@@ -2930,6 +2987,12 @@ router.patch('/appointments/:id/status', authenticateToken, async (req: any, res
 
     return res.status(200).json(result);
   } catch (error) {
+    if (isPackageSchemaNotReadyError(error)) {
+      return res.status(503).json({
+        message: 'Package schema is not ready. Run database migrations.',
+        code: 'PACKAGE_SCHEMA_NOT_READY',
+      });
+    }
     console.error('Admin appointment status update error:', error);
     return res.status(500).json({ message: 'Internal server error.' });
   }
