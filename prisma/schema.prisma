@@ -35,6 +35,10 @@ model Salon {
   inventoryItems      InventoryItem[]
   campaigns           Campaign[]
   automationRules     AutomationRule[]
+  packageTemplates    PackageTemplate[]
+  customerPackages    CustomerPackage[]
+  packageLedgers      PackageLedger[]
+  packageConsumptions AppointmentPackageConsumption[]
   analyticsPresets    AnalyticsPreset[]
   aiAgentSettings     SalonAiAgentSettings?
   blacklistEntries    BlacklistEntry[]
@@ -177,6 +181,10 @@ model Service {
   salon              Salon                @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   ServiceGender      ServiceGender[]
   translations       ServiceTranslation[]
+  templateServices   PackageTemplateService[]
+  packageBalances    CustomerPackageServiceBalance[]
+  packageLedgers     PackageLedger[]
+  packageConsumptions AppointmentPackageConsumption[]
   ServiceStats       ServiceStats[]
   StaffService       StaffService[]
 
@@ -224,6 +232,7 @@ model Appointment {
   gender             CustomerGender               @default(female)
   customer           Customer?                    @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   messageDispatches  AppointmentMessageDispatch[]
+  packageConsumptions AppointmentPackageConsumption[]
   salon              Salon                        @relation(fields: [salonId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   service            Service                      @relation(fields: [serviceId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   staff              Staff                        @relation(fields: [staffId], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -328,6 +337,9 @@ model Customer {
   acceptMarketing    Boolean?                   @default(false)
   registrationStatus CustomerRegistrationStatus @default(VERIFIED)
   appointments       Appointment[]
+  packages           CustomerPackage[]
+  packageLedgers     PackageLedger[]
+  packageConsumptions AppointmentPackageConsumption[]
   identityBindings   IdentityBinding[]
   identitySessions   IdentitySession[]
   salon              Salon                      @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
@@ -884,6 +896,122 @@ model StaffServiceCustomSlot {
   StaffService   StaffService @relation(fields: [staffServiceId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_staffservice")
 }
 
+model PackageTemplate {
+  id          Int                   @id @default(autoincrement())
+  salonId     Int
+  name        String
+  scopeType   PackageScopeType      @default(SINGLE_SERVICE)
+  isActive    Boolean               @default(true)
+  price       Float?
+  validityDays Int?
+  notes       String?
+  createdAt   DateTime?             @default(now()) @db.Timestamp(6)
+  updatedAt   DateTime?             @default(now()) @updatedAt @db.Timestamp(6)
+  salon       Salon                 @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  services    PackageTemplateService[]
+  customerPackages CustomerPackage[]
+
+  @@index([salonId, isActive], map: "idx_pkg_template_salon_active")
+  @@unique([salonId, name], map: "uq_pkg_template_salon_name")
+}
+
+model PackageTemplateService {
+  id               Int             @id @default(autoincrement())
+  packageTemplateId Int
+  serviceId        Int
+  initialQuota     Int
+  createdAt        DateTime?       @default(now()) @db.Timestamp(6)
+  packageTemplate  PackageTemplate @relation(fields: [packageTemplateId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  service          Service         @relation(fields: [serviceId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([packageTemplateId, serviceId], map: "uq_pkg_template_service")
+  @@index([serviceId], map: "idx_pkg_template_service_service")
+}
+
+model CustomerPackage {
+  id               Int                 @id @default(autoincrement())
+  salonId          Int
+  customerId       Int
+  packageTemplateId Int?
+  sourceType       PackageSourceType
+  scopeType        PackageScopeType    @default(SINGLE_SERVICE)
+  status           CustomerPackageStatus @default(ACTIVE)
+  name             String
+  startsAt         DateTime?           @db.Timestamp(6)
+  expiresAt        DateTime?           @db.Timestamp(6)
+  price            Float?
+  notes            String?
+  createdAt        DateTime?           @default(now()) @db.Timestamp(6)
+  updatedAt        DateTime?           @default(now()) @updatedAt @db.Timestamp(6)
+  customer         Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  salon            Salon               @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  template         PackageTemplate?    @relation(fields: [packageTemplateId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  serviceBalances  CustomerPackageServiceBalance[]
+  ledgers          PackageLedger[]
+  consumptions     AppointmentPackageConsumption[]
+
+  @@index([salonId, customerId, status], map: "idx_customer_pkg_salon_customer_status")
+  @@index([salonId, expiresAt], map: "idx_customer_pkg_salon_expires")
+}
+
+model CustomerPackageServiceBalance {
+  id              Int             @id @default(autoincrement())
+  customerPackageId Int
+  serviceId       Int
+  initialQuota    Int
+  remainingQuota  Int
+  createdAt       DateTime?       @default(now()) @db.Timestamp(6)
+  updatedAt       DateTime?       @default(now()) @updatedAt @db.Timestamp(6)
+  customerPackage CustomerPackage @relation(fields: [customerPackageId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  service         Service         @relation(fields: [serviceId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([customerPackageId, serviceId], map: "uq_customer_pkg_balance")
+  @@index([serviceId], map: "idx_customer_pkg_balance_service")
+}
+
+model PackageLedger {
+  id               Int               @id @default(autoincrement())
+  salonId          Int
+  customerId       Int
+  customerPackageId Int?
+  serviceId        Int?
+  appointmentId    Int?
+  actionType       PackageActionType
+  delta            Int
+  balanceAfter     Int?
+  reason           String?
+  metadata         Json?
+  createdAt        DateTime?         @default(now()) @db.Timestamp(6)
+  customer         Customer           @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  customerPackage  CustomerPackage?   @relation(fields: [customerPackageId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  salon            Salon              @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  service          Service?           @relation(fields: [serviceId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([salonId, customerId, createdAt], map: "idx_pkg_ledger_salon_customer_created")
+  @@index([customerPackageId, createdAt], map: "idx_pkg_ledger_customer_pkg_created")
+  @@index([appointmentId], map: "idx_pkg_ledger_appointment")
+}
+
+model AppointmentPackageConsumption {
+  id               Int             @id @default(autoincrement())
+  salonId          Int
+  appointmentId    Int
+  customerId       Int
+  customerPackageId Int
+  serviceId        Int
+  consumed         Int             @default(1)
+  restoredAt       DateTime?       @db.Timestamp(6)
+  createdAt        DateTime?       @default(now()) @db.Timestamp(6)
+  appointment      Appointment     @relation(fields: [appointmentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  customer         Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  customerPackage  CustomerPackage @relation(fields: [customerPackageId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  salon            Salon           @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  service          Service         @relation(fields: [serviceId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([appointmentId, serviceId], map: "uq_appointment_pkg_consumption")
+  @@index([salonId, customerId], map: "idx_appointment_pkg_consumption_salon_customer")
+}
+
 enum UserRole {
   OWNER
   STAFF
@@ -903,6 +1031,32 @@ enum AppointmentStatus {
   CANCELLED
   NO_SHOW
   COMPLETED
+}
+
+enum PackageScopeType {
+  SINGLE_SERVICE
+  POOL
+}
+
+enum PackageSourceType {
+  TEMPLATE
+  CUSTOM
+}
+
+enum CustomerPackageStatus {
+  ACTIVE
+  DEPLETED
+  EXPIRED
+  CANCELLED
+}
+
+enum PackageActionType {
+  ASSIGNED
+  AUTO_CONSUME
+  AUTO_RESTORE
+  MANUAL_ADJUST
+  SKIPPED_NO_ELIGIBLE_PACKAGE
+  SKIPPED_EXPIRED
 }
 
 enum AppointmentSource {

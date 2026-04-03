@@ -741,6 +741,459 @@ function parseServiceGenders(input: unknown) {
   return genders;
 }
 
+type ParsedPackageServiceQuota = {
+  serviceId: number;
+  initialQuota: number;
+};
+
+function parseServiceIdsFromAppointmentPayload(input: unknown): number[] {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+
+  const serviceIds: number[] = [];
+  const seen = new Set<number>();
+  for (const item of input) {
+    const candidate =
+      typeof item === 'number'
+        ? item
+        : typeof item === 'string'
+        ? Number(item)
+        : item && typeof item === 'object'
+        ? Number((item as any).serviceId)
+        : NaN;
+    if (!Number.isInteger(candidate) || candidate <= 0 || seen.has(candidate)) {
+      continue;
+    }
+    seen.add(candidate);
+    serviceIds.push(candidate);
+  }
+  return serviceIds;
+}
+
+function parsePackageScopeType(value: unknown): 'SINGLE_SERVICE' | 'POOL' {
+  if (typeof value !== 'string') {
+    return 'SINGLE_SERVICE';
+  }
+  const normalized = value.trim().toUpperCase();
+  return normalized === 'POOL' ? 'POOL' : 'SINGLE_SERVICE';
+}
+
+function parsePackageServices(input: unknown): ParsedPackageServiceQuota[] {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+
+  const rows: ParsedPackageServiceQuota[] = [];
+  const seen = new Set<number>();
+  for (const row of input) {
+    if (!row || typeof row !== 'object') {
+      continue;
+    }
+    const serviceId = Number((row as any).serviceId);
+    const initialQuota = Number((row as any).initialQuota);
+    if (!Number.isInteger(serviceId) || serviceId <= 0 || seen.has(serviceId)) {
+      continue;
+    }
+    if (!Number.isFinite(initialQuota) || initialQuota <= 0) {
+      continue;
+    }
+    seen.add(serviceId);
+    rows.push({
+      serviceId,
+      initialQuota: Math.floor(initialQuota),
+    });
+  }
+  return rows;
+}
+
+function parseDateOrNull(value: unknown): Date | null {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+  return parsed;
+}
+
+function parsePriceOrNull(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return null;
+  }
+  return parsed;
+}
+
+function asAppointmentStatus(value: unknown): 'BOOKED' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW' | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const normalized = value.trim().toUpperCase();
+  if (normalized === 'BOOKED' || normalized === 'COMPLETED' || normalized === 'CANCELLED' || normalized === 'NO_SHOW') {
+    return normalized;
+  }
+  return null;
+}
+
+async function refreshCustomerPackageStatus(tx: any, customerPackageId: number, now: Date) {
+  const pkg = await (tx as any).customerPackage.findUnique({
+    where: { id: customerPackageId },
+    include: {
+      serviceBalances: {
+        select: { remainingQuota: true },
+      },
+    },
+  });
+
+  if (!pkg) {
+    return null;
+  }
+  if (pkg.status === 'CANCELLED') {
+    return pkg.status;
+  }
+
+  let nextStatus: 'ACTIVE' | 'DEPLETED' | 'EXPIRED' = 'ACTIVE';
+  if (pkg.expiresAt && pkg.expiresAt < now) {
+    nextStatus = 'EXPIRED';
+  } else {
+    const hasRemaining = (pkg.serviceBalances || []).some((item: any) => item.remainingQuota > 0);
+    nextStatus = hasRemaining ? 'ACTIVE' : 'DEPLETED';
+  }
+
+  if (pkg.status !== nextStatus) {
+    await (tx as any).customerPackage.update({
+      where: { id: customerPackageId },
+      data: { status: nextStatus },
+    });
+  }
+  return nextStatus;
+}
+
+function sortByNearestExpiry(items: any[]) {
+  return [...items].sort((a, b) => {
+    const aExpiry = a.customerPackage?.expiresAt ? new Date(a.customerPackage.expiresAt).getTime() : Number.MAX_SAFE_INTEGER;
+    const bExpiry = b.customerPackage?.expiresAt ? new Date(b.customerPackage.expiresAt).getTime() : Number.MAX_SAFE_INTEGER;
+    if (aExpiry !== bExpiry) {
+      return aExpiry - bExpiry;
+    }
+    const aCreated = a.customerPackage?.createdAt ? new Date(a.customerPackage.createdAt).getTime() : 0;
+    const bCreated = b.customerPackage?.createdAt ? new Date(b.customerPackage.createdAt).getTime() : 0;
+    if (aCreated !== bCreated) {
+      return aCreated - bCreated;
+    }
+    return (a.id || 0) - (b.id || 0);
+  });
+}
+
+async function consumePackageForAppointmentService(tx: any, input: {
+  salonId: number;
+  customerId: number;
+  appointmentId: number;
+  serviceId: number;
+  now: Date;
+}) {
+  const { salonId, customerId, appointmentId, serviceId, now } = input;
+
+  const existingConsumption = await tx.appointmentPackageConsumption.findUnique({
+    where: {
+      appointmentId_serviceId: { appointmentId, serviceId },
+    },
+  });
+  if (existingConsumption && !existingConsumption.restoredAt) {
+    return { type: 'IDEMPOTENT', serviceId };
+  }
+
+  await (tx as any).customerPackage.updateMany({
+    where: {
+      salonId,
+      customerId,
+      status: 'ACTIVE',
+      expiresAt: { lt: now },
+    },
+    data: { status: 'EXPIRED' },
+  });
+
+  const eligibleBalancesRaw = await (tx as any).customerPackageServiceBalance.findMany({
+    where: {
+      serviceId,
+      remainingQuota: { gt: 0 },
+      customerPackage: {
+        salonId,
+        customerId,
+        status: 'ACTIVE',
+        AND: [
+          {
+            OR: [{ startsAt: null }, { startsAt: { lte: now } }],
+          },
+          {
+            OR: [{ expiresAt: null }, { expiresAt: { gte: now } }],
+          },
+        ],
+      },
+    },
+    include: {
+      customerPackage: {
+        select: { id: true, expiresAt: true, createdAt: true },
+      },
+    },
+  });
+  const eligibleBalances = sortByNearestExpiry(eligibleBalancesRaw);
+  const selectedBalance = eligibleBalances[0];
+
+  if (!selectedBalance) {
+    const expiredBalance = await (tx as any).customerPackageServiceBalance.findFirst({
+      where: {
+        serviceId,
+        remainingQuota: { gt: 0 },
+        customerPackage: {
+          salonId,
+          customerId,
+          expiresAt: { lt: now },
+        },
+      },
+      include: { customerPackage: { select: { id: true } } },
+      orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+    });
+
+    const actionType = expiredBalance ? 'SKIPPED_EXPIRED' : 'SKIPPED_NO_ELIGIBLE_PACKAGE';
+    await (tx as any).packageLedger.create({
+      data: {
+        salonId,
+        customerId,
+        customerPackageId: expiredBalance?.customerPackageId || null,
+        serviceId,
+        appointmentId,
+        actionType,
+        delta: 0,
+        balanceAfter: null,
+        reason: actionType,
+        metadata: {
+          source: 'appointment_status_completed',
+        },
+      },
+    });
+
+    return {
+      type: actionType,
+      serviceId,
+    };
+  }
+
+  const updatedBalance = await (tx as any).customerPackageServiceBalance.update({
+    where: { id: selectedBalance.id },
+    data: {
+      remainingQuota: { decrement: 1 },
+    },
+    select: {
+      id: true,
+      customerPackageId: true,
+      remainingQuota: true,
+    },
+  });
+
+  if (existingConsumption?.id) {
+    await tx.appointmentPackageConsumption.update({
+      where: { id: existingConsumption.id },
+      data: {
+        salonId,
+        customerId,
+        customerPackageId: selectedBalance.customerPackageId,
+        consumed: 1,
+        restoredAt: null,
+      },
+    });
+  } else {
+    await tx.appointmentPackageConsumption.create({
+      data: {
+        salonId,
+        appointmentId,
+        customerId,
+        customerPackageId: selectedBalance.customerPackageId,
+        serviceId,
+        consumed: 1,
+      },
+    });
+  }
+
+  await (tx as any).packageLedger.create({
+    data: {
+      salonId,
+      customerId,
+      customerPackageId: selectedBalance.customerPackageId,
+      serviceId,
+      appointmentId,
+      actionType: 'AUTO_CONSUME',
+      delta: -1,
+      balanceAfter: updatedBalance.remainingQuota,
+      reason: 'appointment_completed',
+      metadata: {
+        source: 'appointment_status_completed',
+      },
+    },
+  });
+
+  await refreshCustomerPackageStatus(tx, updatedBalance.customerPackageId, now);
+
+  return {
+    type: 'AUTO_CONSUME',
+    serviceId,
+    customerPackageId: updatedBalance.customerPackageId,
+    balanceAfter: updatedBalance.remainingQuota,
+  };
+}
+
+async function restorePackageForAppointmentService(tx: any, input: {
+  salonId: number;
+  customerId: number;
+  appointmentId: number;
+  serviceId: number;
+  now: Date;
+  reason: string;
+}) {
+  const { salonId, customerId, appointmentId, serviceId, now, reason } = input;
+  const consumption = await tx.appointmentPackageConsumption.findUnique({
+    where: {
+      appointmentId_serviceId: { appointmentId, serviceId },
+    },
+  });
+
+  if (!consumption || consumption.restoredAt) {
+    return { type: 'NO_CONSUMPTION', serviceId };
+  }
+
+  const balance = await (tx as any).customerPackageServiceBalance.findUnique({
+    where: {
+      customerPackageId_serviceId: {
+        customerPackageId: consumption.customerPackageId,
+        serviceId,
+      },
+    },
+    select: {
+      id: true,
+      remainingQuota: true,
+      customerPackageId: true,
+    },
+  });
+
+  if (!balance) {
+    return { type: 'BALANCE_NOT_FOUND', serviceId };
+  }
+
+  const restoredBalance = await (tx as any).customerPackageServiceBalance.update({
+    where: { id: balance.id },
+    data: {
+      remainingQuota: { increment: consumption.consumed },
+    },
+    select: {
+      customerPackageId: true,
+      remainingQuota: true,
+    },
+  });
+
+  await tx.appointmentPackageConsumption.update({
+    where: { id: consumption.id },
+    data: {
+      restoredAt: now,
+    },
+  });
+
+  await (tx as any).packageLedger.create({
+    data: {
+      salonId,
+      customerId,
+      customerPackageId: consumption.customerPackageId,
+      serviceId,
+      appointmentId,
+      actionType: 'AUTO_RESTORE',
+      delta: consumption.consumed,
+      balanceAfter: restoredBalance.remainingQuota,
+      reason,
+      metadata: {
+        source: 'appointment_status_rollback',
+      },
+    },
+  });
+
+  await refreshCustomerPackageStatus(tx, restoredBalance.customerPackageId, now);
+
+  return {
+    type: 'AUTO_RESTORE',
+    serviceId,
+    customerPackageId: restoredBalance.customerPackageId,
+    balanceAfter: restoredBalance.remainingQuota,
+  };
+}
+
+function toPackageTemplateDto(item: any) {
+  return {
+    id: item.id,
+    salonId: item.salonId,
+    name: item.name,
+    scopeType: item.scopeType,
+    isActive: item.isActive,
+    price: item.price,
+    validityDays: item.validityDays,
+    notes: item.notes,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+    services: (item.services || []).map((row: any) => ({
+      id: row.id,
+      serviceId: row.serviceId,
+      initialQuota: row.initialQuota,
+      service: row.service
+        ? {
+            id: row.service.id,
+            name: row.service.name,
+          }
+        : null,
+    })),
+  };
+}
+
+function toCustomerPackageDto(item: any) {
+  return {
+    id: item.id,
+    customerId: item.customerId,
+    packageTemplateId: item.packageTemplateId,
+    sourceType: item.sourceType,
+    scopeType: item.scopeType,
+    status: item.status,
+    name: item.name,
+    startsAt: item.startsAt,
+    expiresAt: item.expiresAt,
+    price: item.price,
+    notes: item.notes,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+    template: item.template
+      ? {
+          id: item.template.id,
+          name: item.template.name,
+        }
+      : null,
+    serviceBalances: (item.serviceBalances || []).map((row: any) => ({
+      id: row.id,
+      serviceId: row.serviceId,
+      initialQuota: row.initialQuota,
+      remainingQuota: row.remainingQuota,
+      service: row.service
+        ? {
+            id: row.service.id,
+            name: row.service.name,
+          }
+        : null,
+    })),
+  };
+}
+
 function mapStaffForMobile(staff: any) {
   const serviceById = new Map<number, any>();
 
@@ -1767,6 +2220,717 @@ router.put('/customers/:id/discount', authenticateToken, async (req: any, res: a
     });
   } catch (error) {
     console.error('Admin customer discount update error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.get('/package-templates', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  try {
+    const items = await (prisma as any).packageTemplate.findMany({
+      where: { salonId },
+      include: {
+        services: {
+          include: {
+            service: {
+              select: { id: true, name: true },
+            },
+          },
+          orderBy: [{ serviceId: 'asc' }],
+        },
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    });
+
+    return res.status(200).json({ items: items.map(toPackageTemplateDto) });
+  } catch (error) {
+    console.error('Admin package templates list error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.post('/package-templates', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+  const services = parsePackageServices(req.body?.services);
+  const scopeType = parsePackageScopeType(req.body?.scopeType);
+  const isActive = req.body?.isActive === undefined ? true : Boolean(req.body.isActive);
+  const price = parsePriceOrNull(req.body?.price);
+  const validityDaysRaw = req.body?.validityDays;
+  const validityDays =
+    validityDaysRaw === null || validityDaysRaw === undefined || validityDaysRaw === ''
+      ? null
+      : Number(validityDaysRaw);
+  const notes = typeof req.body?.notes === 'string' ? req.body.notes.trim() : null;
+
+  if (!name) {
+    return res.status(400).json({ message: 'name is required.' });
+  }
+  if (!services.length) {
+    return res.status(400).json({ message: 'At least one service with initialQuota is required.' });
+  }
+  if (validityDays !== null && (!Number.isInteger(validityDays) || validityDays <= 0)) {
+    return res.status(400).json({ message: 'validityDays must be a positive integer.' });
+  }
+
+  try {
+    const serviceIds = services.map((row) => row.serviceId);
+    const foundServices = await prisma.service.findMany({
+      where: {
+        salonId,
+        id: { in: serviceIds },
+      },
+      select: { id: true },
+    });
+    if (foundServices.length !== serviceIds.length) {
+      return res.status(404).json({ message: 'One or more services were not found.' });
+    }
+
+    const created = await (prisma as any).packageTemplate.create({
+      data: {
+        salonId,
+        name,
+        scopeType,
+        isActive,
+        price,
+        validityDays,
+        notes: notes || null,
+        services: {
+          create: services.map((row) => ({
+            serviceId: row.serviceId,
+            initialQuota: row.initialQuota,
+          })),
+        },
+      },
+      include: {
+        services: {
+          include: {
+            service: { select: { id: true, name: true } },
+          },
+          orderBy: [{ serviceId: 'asc' }],
+        },
+      },
+    });
+
+    return res.status(201).json({ item: toPackageTemplateDto(created) });
+  } catch (error: any) {
+    if (error?.code === 'P2002') {
+      return res.status(409).json({ message: 'A template with this name already exists.' });
+    }
+    console.error('Admin package template create error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.put('/package-templates/:id', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const templateId = Number(req.params.id);
+  if (!Number.isInteger(templateId) || templateId <= 0) {
+    return res.status(400).json({ message: 'Invalid template id.' });
+  }
+
+  const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+  const services = parsePackageServices(req.body?.services);
+  const scopeType = parsePackageScopeType(req.body?.scopeType);
+  const isActive = req.body?.isActive === undefined ? true : Boolean(req.body.isActive);
+  const price = parsePriceOrNull(req.body?.price);
+  const validityDaysRaw = req.body?.validityDays;
+  const validityDays =
+    validityDaysRaw === null || validityDaysRaw === undefined || validityDaysRaw === ''
+      ? null
+      : Number(validityDaysRaw);
+  const notes = typeof req.body?.notes === 'string' ? req.body.notes.trim() : null;
+
+  if (!name) {
+    return res.status(400).json({ message: 'name is required.' });
+  }
+  if (!services.length) {
+    return res.status(400).json({ message: 'At least one service with initialQuota is required.' });
+  }
+  if (validityDays !== null && (!Number.isInteger(validityDays) || validityDays <= 0)) {
+    return res.status(400).json({ message: 'validityDays must be a positive integer.' });
+  }
+
+  try {
+    const existing = await (prisma as any).packageTemplate.findFirst({
+      where: { id: templateId, salonId },
+      select: { id: true },
+    });
+    if (!existing) {
+      return res.status(404).json({ message: 'Template not found.' });
+    }
+
+    const serviceIds = services.map((row) => row.serviceId);
+    const foundServices = await prisma.service.findMany({
+      where: { salonId, id: { in: serviceIds } },
+      select: { id: true },
+    });
+    if (foundServices.length !== serviceIds.length) {
+      return res.status(404).json({ message: 'One or more services were not found.' });
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      await (tx as any).packageTemplate.update({
+        where: { id: templateId },
+        data: {
+          name,
+          scopeType,
+          isActive,
+          price,
+          validityDays,
+          notes: notes || null,
+        },
+      });
+
+      await (tx as any).packageTemplateService.deleteMany({
+        where: { packageTemplateId: templateId },
+      });
+
+      await (tx as any).packageTemplateService.createMany({
+        data: services.map((row) => ({
+          packageTemplateId: templateId,
+          serviceId: row.serviceId,
+          initialQuota: row.initialQuota,
+        })),
+      });
+
+      return (tx as any).packageTemplate.findUnique({
+        where: { id: templateId },
+        include: {
+          services: {
+            include: {
+              service: {
+                select: { id: true, name: true },
+              },
+            },
+            orderBy: [{ serviceId: 'asc' }],
+          },
+        },
+      });
+    });
+
+    return res.status(200).json({ item: toPackageTemplateDto(updated) });
+  } catch (error: any) {
+    if (error?.code === 'P2002') {
+      return res.status(409).json({ message: 'A template with this name already exists.' });
+    }
+    console.error('Admin package template update error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.get('/customers/:id/packages', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const customerId = Number(req.params.id);
+  if (!Number.isInteger(customerId) || customerId <= 0) {
+    return res.status(400).json({ message: 'Invalid customer id.' });
+  }
+
+  try {
+    const now = new Date();
+    await (prisma as any).customerPackage.updateMany({
+      where: {
+        salonId,
+        customerId,
+        status: 'ACTIVE',
+        expiresAt: { lt: now },
+      },
+      data: { status: 'EXPIRED' },
+    });
+
+    const items = await (prisma as any).customerPackage.findMany({
+      where: { salonId, customerId },
+      include: {
+        template: {
+          select: { id: true, name: true },
+        },
+        serviceBalances: {
+          include: {
+            service: {
+              select: { id: true, name: true },
+            },
+          },
+          orderBy: [{ serviceId: 'asc' }],
+        },
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    });
+
+    return res.status(200).json({ items: items.map(toCustomerPackageDto) });
+  } catch (error) {
+    console.error('Admin customer packages list error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.post('/customers/:id/packages', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const customerId = Number(req.params.id);
+  if (!Number.isInteger(customerId) || customerId <= 0) {
+    return res.status(400).json({ message: 'Invalid customer id.' });
+  }
+
+  const templateIdRaw = req.body?.templateId;
+  const templateId =
+    templateIdRaw === null || templateIdRaw === undefined || templateIdRaw === ''
+      ? null
+      : Number(templateIdRaw);
+
+  const now = new Date();
+
+  try {
+    const customer = await prisma.customer.findFirst({
+      where: { id: customerId, salonId },
+      select: { id: true },
+    });
+    if (!customer) {
+      return res.status(404).json({ message: 'Customer not found.' });
+    }
+
+    const created = await prisma.$transaction(async (tx) => {
+      let name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+      let services: ParsedPackageServiceQuota[] = [];
+      let sourceType: 'TEMPLATE' | 'CUSTOM' = 'CUSTOM';
+      let scopeType = parsePackageScopeType(req.body?.scopeType);
+      let price = parsePriceOrNull(req.body?.price);
+      let validityDays = req.body?.validityDays === undefined || req.body?.validityDays === null || req.body?.validityDays === ''
+        ? null
+        : Number(req.body.validityDays);
+      const notes = typeof req.body?.notes === 'string' ? req.body.notes.trim() : null;
+      const startsAt = parseDateOrNull(req.body?.startsAt) || now;
+      let expiresAt = parseDateOrNull(req.body?.expiresAt);
+      let packageTemplateId: number | null = null;
+
+      if (templateId !== null) {
+        if (!Number.isInteger(templateId) || templateId <= 0) {
+          return { error: { code: 400, message: 'templateId must be a positive integer.' } };
+        }
+        const template = await (tx as any).packageTemplate.findFirst({
+          where: { id: templateId, salonId },
+          include: { services: true },
+        });
+        if (!template) {
+          return { error: { code: 404, message: 'Template not found.' } };
+        }
+        if (!template.services.length) {
+          return { error: { code: 400, message: 'Template has no services.' } };
+        }
+
+        packageTemplateId = template.id;
+        sourceType = 'TEMPLATE';
+        scopeType = template.scopeType as any;
+        name = name || template.name;
+        services = template.services.map((row) => ({
+          serviceId: row.serviceId,
+          initialQuota: row.initialQuota,
+        }));
+        if (price === null && typeof template.price === 'number') {
+          price = template.price;
+        }
+        if (validityDays === null && typeof template.validityDays === 'number') {
+          validityDays = template.validityDays;
+        }
+      } else {
+        services = parsePackageServices(req.body?.services);
+        sourceType = 'CUSTOM';
+      }
+
+      if (!name) {
+        return { error: { code: 400, message: 'name is required.' } };
+      }
+      if (!services.length) {
+        return { error: { code: 400, message: 'At least one service with initialQuota is required.' } };
+      }
+      if (validityDays !== null && (!Number.isInteger(validityDays) || validityDays <= 0)) {
+        return { error: { code: 400, message: 'validityDays must be a positive integer.' } };
+      }
+      if (!expiresAt && validityDays) {
+        expiresAt = new Date(startsAt.getTime() + validityDays * 24 * 60 * 60 * 1000);
+      }
+      if (expiresAt && startsAt && expiresAt <= startsAt) {
+        return { error: { code: 400, message: 'expiresAt must be later than startsAt.' } };
+      }
+
+      const serviceIds = services.map((row) => row.serviceId);
+      const foundServices = await tx.service.findMany({
+        where: { salonId, id: { in: serviceIds } },
+        select: { id: true },
+      });
+      if (foundServices.length !== serviceIds.length) {
+        return { error: { code: 404, message: 'One or more services were not found.' } };
+      }
+
+      const pkg = await (tx as any).customerPackage.create({
+        data: {
+          salonId,
+          customerId,
+          packageTemplateId,
+          sourceType,
+          scopeType,
+          status: 'ACTIVE',
+          name,
+          startsAt,
+          expiresAt,
+          price,
+          notes: notes || null,
+          serviceBalances: {
+            create: services.map((row) => ({
+              serviceId: row.serviceId,
+              initialQuota: row.initialQuota,
+              remainingQuota: row.initialQuota,
+            })),
+          },
+        },
+        include: {
+          template: { select: { id: true, name: true } },
+          serviceBalances: {
+            include: { service: { select: { id: true, name: true } } },
+          },
+        },
+      });
+
+      for (const balance of pkg.serviceBalances) {
+        await (tx as any).packageLedger.create({
+          data: {
+            salonId,
+            customerId,
+            customerPackageId: pkg.id,
+            serviceId: balance.serviceId,
+            actionType: 'ASSIGNED',
+            delta: balance.initialQuota,
+            balanceAfter: balance.remainingQuota,
+            reason: sourceType === 'TEMPLATE' ? 'template_assignment' : 'custom_assignment',
+            metadata: {
+              sourceType,
+            },
+          },
+        });
+      }
+
+      return { item: pkg };
+    });
+
+    if ('error' in created) {
+      return res.status(created.error.code).json({ message: created.error.message });
+    }
+
+    return res.status(201).json({ item: toCustomerPackageDto(created.item) });
+  } catch (error) {
+    console.error('Admin customer package create error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.post('/customers/:id/packages/:packageId/adjust', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const customerId = Number(req.params.id);
+  const packageId = Number(req.params.packageId);
+  const serviceId = Number(req.body?.serviceId);
+  const delta = Number(req.body?.delta);
+  const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
+
+  if (!Number.isInteger(customerId) || customerId <= 0) {
+    return res.status(400).json({ message: 'Invalid customer id.' });
+  }
+  if (!Number.isInteger(packageId) || packageId <= 0) {
+    return res.status(400).json({ message: 'Invalid package id.' });
+  }
+  if (!Number.isInteger(serviceId) || serviceId <= 0) {
+    return res.status(400).json({ message: 'serviceId must be a positive integer.' });
+  }
+  if (!Number.isInteger(delta) || delta === 0) {
+    return res.status(400).json({ message: 'delta must be a non-zero integer.' });
+  }
+  if (!reason) {
+    return res.status(400).json({ message: 'reason is required.' });
+  }
+
+  try {
+    const now = new Date();
+    const result = await prisma.$transaction(async (tx) => {
+      const pkg = await (tx as any).customerPackage.findFirst({
+        where: {
+          id: packageId,
+          salonId,
+          customerId,
+        },
+        select: { id: true },
+      });
+      if (!pkg) {
+        return { error: { code: 404, message: 'Customer package not found.' } };
+      }
+
+      const balance = await (tx as any).customerPackageServiceBalance.findUnique({
+        where: {
+          customerPackageId_serviceId: {
+            customerPackageId: packageId,
+            serviceId,
+          },
+        },
+        select: {
+          id: true,
+          remainingQuota: true,
+          customerPackageId: true,
+        },
+      });
+      if (!balance) {
+        return { error: { code: 404, message: 'Service not found in package.' } };
+      }
+
+      const nextRemaining = balance.remainingQuota + delta;
+      if (nextRemaining < 0) {
+        return { error: { code: 409, message: 'Adjustment cannot make balance negative.' } };
+      }
+
+      const updatedBalance = await (tx as any).customerPackageServiceBalance.update({
+        where: { id: balance.id },
+        data: { remainingQuota: nextRemaining },
+        select: {
+          serviceId: true,
+          remainingQuota: true,
+        },
+      });
+
+      await (tx as any).packageLedger.create({
+        data: {
+          salonId,
+          customerId,
+          customerPackageId: packageId,
+          serviceId,
+          actionType: 'MANUAL_ADJUST',
+          delta,
+          balanceAfter: updatedBalance.remainingQuota,
+          reason,
+          metadata: {
+            adjustedAt: now.toISOString(),
+          },
+        },
+      });
+
+      await refreshCustomerPackageStatus(tx, packageId, now);
+
+      const item = await (tx as any).customerPackage.findUnique({
+        where: { id: packageId },
+        include: {
+          template: { select: { id: true, name: true } },
+          serviceBalances: {
+            include: { service: { select: { id: true, name: true } } },
+            orderBy: [{ serviceId: 'asc' }],
+          },
+        },
+      });
+
+      return { item };
+    });
+
+    if ('error' in result) {
+      return res.status(result.error.code).json({ message: result.error.message });
+    }
+
+    return res.status(200).json({ item: toCustomerPackageDto(result.item) });
+  } catch (error) {
+    console.error('Admin customer package adjust error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.get('/customers/:id/package-ledger', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const customerId = Number(req.params.id);
+  if (!Number.isInteger(customerId) || customerId <= 0) {
+    return res.status(400).json({ message: 'Invalid customer id.' });
+  }
+
+  const limit = asPositiveInt(req.query.limit, 200, 1, 500);
+
+  try {
+    const items = await (prisma as any).packageLedger.findMany({
+      where: { salonId, customerId },
+      include: {
+        service: {
+          select: { id: true, name: true },
+        },
+        customerPackage: {
+          select: { id: true, name: true },
+        },
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: limit,
+    });
+
+    return res.status(200).json({
+      items: items.map((item) => ({
+        id: item.id,
+        customerPackageId: item.customerPackageId,
+        packageName: item.customerPackage?.name || null,
+        serviceId: item.serviceId,
+        serviceName: item.service?.name || null,
+        appointmentId: item.appointmentId,
+        actionType: item.actionType,
+        delta: item.delta,
+        balanceAfter: item.balanceAfter,
+        reason: item.reason,
+        metadata: item.metadata,
+        createdAt: item.createdAt,
+      })),
+    });
+  } catch (error) {
+    console.error('Admin customer package ledger error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.patch('/appointments/:id/status', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const appointmentId = Number(req.params.id);
+  const nextStatus = asAppointmentStatus(req.body?.status);
+  if (!Number.isInteger(appointmentId) || appointmentId <= 0) {
+    return res.status(400).json({ message: 'Invalid appointment id.' });
+  }
+  if (!nextStatus) {
+    return res.status(400).json({ message: 'status must be BOOKED, COMPLETED, CANCELLED, or NO_SHOW.' });
+  }
+
+  try {
+    const now = new Date();
+    const result = await prisma.$transaction(async (tx) => {
+      const appointment = await tx.appointment.findFirst({
+        where: { id: appointmentId, salonId },
+        select: {
+          id: true,
+          salonId: true,
+          customerId: true,
+          serviceId: true,
+          status: true,
+        },
+      });
+      if (!appointment) {
+        return { error: { code: 404, message: 'Appointment not found.' } };
+      }
+
+      const previousStatus = appointment.status || 'BOOKED';
+      const serviceIdsFromPayload = parseServiceIdsFromAppointmentPayload(req.body?.services);
+      const serviceIds = serviceIdsFromPayload.length ? serviceIdsFromPayload : [appointment.serviceId];
+      const uniqueServiceIds = Array.from(new Set(serviceIds));
+
+      const foundServices = await tx.service.findMany({
+        where: {
+          salonId,
+          id: { in: uniqueServiceIds },
+        },
+        select: { id: true },
+      });
+      if (foundServices.length !== uniqueServiceIds.length) {
+        return { error: { code: 404, message: 'One or more services were not found.' } };
+      }
+
+      const updated = await tx.appointment.update({
+        where: { id: appointmentId },
+        data: { status: nextStatus },
+        include: {
+          service: {
+            select: {
+              id: true,
+              name: true,
+              duration: true,
+              price: true,
+              requiresSpecialist: true,
+            },
+          },
+          staff: {
+            select: {
+              id: true,
+              name: true,
+              title: true,
+            },
+          },
+          customer: {
+            select: {
+              id: true,
+              name: true,
+              phone: true,
+            },
+          },
+        },
+      });
+
+      const events: any[] = [];
+      if (updated.customerId) {
+        if (previousStatus !== 'COMPLETED' && nextStatus === 'COMPLETED') {
+          for (const serviceId of uniqueServiceIds) {
+            const consumeResult = await consumePackageForAppointmentService(tx, {
+              salonId,
+              customerId: updated.customerId,
+              appointmentId,
+              serviceId,
+              now,
+            });
+            events.push(consumeResult);
+          }
+        } else if (previousStatus === 'COMPLETED' && nextStatus !== 'COMPLETED') {
+          for (const serviceId of uniqueServiceIds) {
+            const restoreResult = await restorePackageForAppointmentService(tx, {
+              salonId,
+              customerId: updated.customerId,
+              appointmentId,
+              serviceId,
+              now,
+              reason: `status_${previousStatus}_to_${nextStatus}`,
+            });
+            events.push(restoreResult);
+          }
+        }
+      }
+
+      return {
+        item: updated,
+        packageAutomation: {
+          previousStatus,
+          nextStatus,
+          events,
+        },
+      };
+    });
+
+    if ('error' in result) {
+      return res.status(result.error.code).json({ message: result.error.message });
+    }
+
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('Admin appointment status update error:', error);
     return res.status(500).json({ message: 'Internal server error.' });
   }
 });

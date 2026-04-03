@@ -450,7 +450,8 @@ router.post('/', async (req: any, res: any, next: any) => {
       customerPhone,
       services,
       source,
-      token
+      token,
+      packageSelections
     } = b;
 
     try {
@@ -460,6 +461,17 @@ router.post('/', async (req: any, res: any, next: any) => {
       // Double check date validity
       if (isNaN(currentStartTime.getTime())) {
           return res.status(400).json({ message: 'Geçersiz randevu saati formatı (ISO beklenen).' });
+      }
+
+      const packageByService = new Map<number, number>();
+      if (Array.isArray(packageSelections)) {
+        for (const row of packageSelections) {
+          const serviceId = Number((row || {}).serviceId);
+          const customerPackageId = Number((row || {}).customerPackageId);
+          if (Number.isInteger(serviceId) && serviceId > 0 && Number.isInteger(customerPackageId) && customerPackageId > 0) {
+            packageByService.set(serviceId, customerPackageId);
+          }
+        }
       }
 
       for (const serviceItem of services) {
@@ -504,6 +516,7 @@ router.post('/', async (req: any, res: any, next: any) => {
               return res.status(409).json({ error: 'SLOT_NOT_AVAILABLE', message: `Personel (${staffId}) bu saatte dolu.` });
           }
 
+          const packageHint = packageByService.get(serviceId);
           const appointment = await prisma.appointment.create({
             data: {
               salonId,
@@ -515,7 +528,8 @@ router.post('/', async (req: any, res: any, next: any) => {
               startTime: start,
               endTime: end,
               status: 'BOOKED',
-              source: source === 'SALON' ? 'ADMIN' : 'CUSTOMER'
+              source: source === 'SALON' ? 'ADMIN' : 'CUSTOMER',
+              notes: packageHint ? `package:${packageHint}` : null,
             }
           });
           createdAppointments.push(appointment);

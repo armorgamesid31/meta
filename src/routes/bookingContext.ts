@@ -108,6 +108,18 @@ router.get('/context', async (req: any, res: any) => {
   const isKnownCustomer = Boolean(customer);
 
   let appointments: { id: number; startTime: Date; endTime: Date; status: string }[] = [];
+  let activePackages: Array<{
+    id: number;
+    name: string;
+    expiresAt: Date | null;
+    serviceBalances: Array<{
+      serviceId: number;
+      initialQuota: number;
+      remainingQuota: number;
+      serviceName: string | null;
+    }>;
+  }> = [];
+
   if (customer) {
     const raw = await prisma.appointment.findMany({
       where: {
@@ -125,6 +137,54 @@ router.get('/context', async (req: any, res: any) => {
       endTime: a.endTime,
       status: a.status,
     }));
+
+    const nowForPackages = new Date();
+    await (prisma as any).customerPackage.updateMany({
+      where: {
+        salonId,
+        customerId: customer.id,
+        status: 'ACTIVE',
+        expiresAt: { lt: nowForPackages },
+      },
+      data: { status: 'EXPIRED' },
+    });
+
+    const packages = await (prisma as any).customerPackage.findMany({
+      where: {
+        salonId,
+        customerId: customer.id,
+        status: 'ACTIVE',
+        OR: [{ expiresAt: null }, { expiresAt: { gte: nowForPackages } }],
+      },
+      include: {
+        serviceBalances: {
+          where: { remainingQuota: { gt: 0 } },
+          include: {
+            service: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: [{ expiresAt: 'asc' }, { createdAt: 'asc' }],
+    });
+
+    activePackages = (packages || [])
+      .map((pkg: any) => ({
+        id: pkg.id,
+        name: pkg.name,
+        expiresAt: pkg.expiresAt || null,
+        serviceBalances: (pkg.serviceBalances || []).map((balance: any) => ({
+          serviceId: balance.serviceId,
+          initialQuota: balance.initialQuota,
+          remainingQuota: balance.remainingQuota,
+          serviceName: balance.service?.name || null,
+        })),
+      }))
+      .filter((pkg: any) => pkg.serviceBalances.length > 0);
   }
 
   const customerGender = customer?.gender
@@ -149,6 +209,7 @@ router.get('/context', async (req: any, res: any) => {
     identityLinked,
     identitySessionId: magicLink.identitySessionId,
     appointments,
+    activePackages,
   });
 });
 
