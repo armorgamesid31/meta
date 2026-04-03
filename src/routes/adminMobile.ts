@@ -8,6 +8,14 @@ import { ensureSalonServiceRegions } from '../services/salonRegionSetup.js';
 import { normalizeInstagramIdentity, normalizePhoneDigits } from '../services/identityService.js';
 import { upsertConversationMessageEvent } from '../services/conversationMessageEvents.js';
 import { subscribeConversationStream } from '../services/conversationEventsBus.js';
+import {
+  getDefaultNotificationPolicy,
+  getSalonNotificationPolicy,
+  markHandoverTriggered,
+  notifySameDayAppointmentChange,
+  resolveHandoverAlert,
+  upsertSalonNotificationPolicy,
+} from '../services/notifications.js';
 
 const router = Router();
 
@@ -100,6 +108,24 @@ function asDiscountKind(value: unknown): DiscountKind | null {
 
 function getAppointmentDayKey(date: Date): string {
   return date.toISOString().slice(0, 10);
+}
+
+async function getSalonTimezone(salonId: number): Promise<string> {
+  const rows = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT COALESCE("timezone", 'Europe/Istanbul') AS "timezone" FROM "SalonSettings" WHERE "salonId" = $1 LIMIT 1`,
+    salonId,
+  );
+  const timezone = String(rows?.[0]?.timezone || 'Europe/Istanbul').trim();
+  return timezone || 'Europe/Istanbul';
+}
+
+function asPaymentMethod(value: unknown): 'CASH' | 'CARD' | 'TRANSFER' | 'OTHER' | null {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toUpperCase();
+  if (normalized === 'CASH' || normalized === 'CARD' || normalized === 'TRANSFER' || normalized === 'OTHER') {
+    return normalized as 'CASH' | 'CARD' | 'TRANSFER' | 'OTHER';
+  }
+  return null;
 }
 
 function toRiskLevel(score: number): 'LOW' | 'MEDIUM' | 'HIGH' {
@@ -1572,6 +1598,24 @@ router.post('/appointments', authenticateToken, async (req: any, res: any) => {
       });
     }
 
+    try {
+      const timezone = await getSalonTimezone(salonId);
+      const first = result.appointments[0];
+      if (first) {
+        await notifySameDayAppointmentChange({
+          salonId,
+          event: 'CREATED',
+          appointmentId: first.id,
+          customerName: first.customerName,
+          serviceName: first.service?.name || null,
+          startTime: new Date(first.startTime),
+          timezone,
+        });
+      }
+    } catch (notifyError) {
+      console.error('Appointment create notification error:', notifyError);
+    }
+
     return res.status(201).json({
       item: result.appointments[0],
       items: result.appointments,
@@ -2873,6 +2917,7 @@ router.patch('/appointments/:id/status', authenticateToken, async (req: any, res
 
   const appointmentId = Number(req.params.id);
   const nextStatus = asAppointmentStatus(req.body?.status);
+  const paymentMethod = asPaymentMethod(req.body?.paymentMethod);
   if (!Number.isInteger(appointmentId) || appointmentId <= 0) {
     return res.status(400).json({ message: 'Invalid appointment id.' });
   }
@@ -2891,6 +2936,8 @@ router.patch('/appointments/:id/status', authenticateToken, async (req: any, res
           customerId: true,
           serviceId: true,
           status: true,
+          startTime: true,
+          customerName: true,
         },
       });
       if (!appointment) {
@@ -2915,7 +2962,15 @@ router.patch('/appointments/:id/status', authenticateToken, async (req: any, res
 
       const updated = await tx.appointment.update({
         where: { id: appointmentId },
-        data: { status: nextStatus },
+        data: {
+          status: nextStatus,
+          ...(nextStatus === 'COMPLETED'
+            ? {
+                paymentMethod: paymentMethod || undefined,
+                paymentRecordedAt: paymentMethod ? now : undefined,
+              }
+            : {}),
+        },
         include: {
           service: {
             select: {
@@ -2973,6 +3028,14 @@ router.patch('/appointments/:id/status', authenticateToken, async (req: any, res
 
       return {
         item: updated,
+        _notify: {
+          appointmentId: updated.id,
+          customerName: updated.customerName,
+          serviceName: updated.service?.name || null,
+          startTime: updated.startTime,
+          previousStatus,
+          nextStatus,
+        },
         packageAutomation: {
           previousStatus,
           nextStatus,
@@ -2985,7 +3048,31 @@ router.patch('/appointments/:id/status', authenticateToken, async (req: any, res
       return res.status(result.error.code).json({ message: result.error.message });
     }
 
-    return res.status(200).json(result);
+    try {
+      const timezone = await getSalonTimezone(salonId);
+      const eventType =
+        result._notify.nextStatus === 'CANCELLED'
+          ? 'CANCELLED'
+          : result._notify.previousStatus === result._notify.nextStatus
+            ? 'UPDATED'
+            : 'UPDATED';
+      await notifySameDayAppointmentChange({
+        salonId,
+        event: eventType,
+        appointmentId: result._notify.appointmentId,
+        customerName: result._notify.customerName,
+        serviceName: result._notify.serviceName,
+        startTime: new Date(result._notify.startTime),
+        timezone,
+      });
+    } catch (notifyError) {
+      console.error('Appointment status notification error:', notifyError);
+    }
+
+    return res.status(200).json({
+      item: result.item,
+      packageAutomation: result.packageAutomation,
+    });
   } catch (error) {
     if (isPackageSchemaNotReadyError(error)) {
       return res.status(503).json({
@@ -2994,6 +3081,72 @@ router.patch('/appointments/:id/status', authenticateToken, async (req: any, res
       });
     }
     console.error('Admin appointment status update error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.patch('/appointments/:id/payment', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) return;
+
+  const appointmentId = Number(req.params.id);
+  const paymentMethod = asPaymentMethod(req.body?.paymentMethod);
+
+  if (!Number.isInteger(appointmentId) || appointmentId <= 0) {
+    return res.status(400).json({ message: 'Invalid appointment id.' });
+  }
+  if (!paymentMethod) {
+    return res.status(400).json({ message: 'paymentMethod must be CASH, CARD, TRANSFER or OTHER.' });
+  }
+
+  try {
+    const rows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT "id", "status" FROM "Appointment" WHERE "id" = $1 AND "salonId" = $2 LIMIT 1`,
+      appointmentId,
+      salonId,
+    );
+    if (!rows.length) {
+      return res.status(404).json({ message: 'Appointment not found.' });
+    }
+
+    await prisma.$executeRawUnsafe(
+      `UPDATE "Appointment" SET "paymentMethod" = $1::"PaymentMethod", "paymentRecordedAt" = NOW(), "updatedAt" = NOW() WHERE "id" = $2`,
+      paymentMethod,
+      appointmentId,
+    );
+
+    const updated = await prisma.appointment.findFirst({
+      where: { id: appointmentId, salonId },
+      include: {
+        service: {
+          select: {
+            id: true,
+            name: true,
+            duration: true,
+            price: true,
+            requiresSpecialist: true,
+          },
+        },
+        staff: {
+          select: {
+            id: true,
+            name: true,
+            title: true,
+          },
+        },
+        customer: {
+          select: {
+            id: true,
+            name: true,
+            phone: true,
+          },
+        },
+      },
+    });
+
+    return res.status(200).json({ item: updated });
+  } catch (error) {
+    console.error('Admin appointment payment update error:', error);
     return res.status(500).json({ message: 'Internal server error.' });
   }
 });
@@ -5558,6 +5711,38 @@ router.patch('/automations/:id', authenticateToken, async (req: any, res: any) =
   }
 });
 
+router.get('/notification-settings', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) return;
+
+  try {
+    const policy = await getSalonNotificationPolicy(salonId);
+    return res.status(200).json({ policy });
+  } catch (error) {
+    console.error('Admin notification settings get error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.put('/notification-settings', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) return;
+
+  try {
+    const incoming = req.body || {};
+    const nextPolicy = {
+      ...getDefaultNotificationPolicy(),
+      ...(typeof incoming === 'object' ? incoming : {}),
+    };
+    await upsertSalonNotificationPolicy(salonId, nextPolicy as any);
+    const saved = await getSalonNotificationPolicy(salonId);
+    return res.status(200).json({ policy: saved });
+  } catch (error) {
+    console.error('Admin notification settings update error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
 router.get('/analytics/overview', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
   if (!salonId) {
@@ -6775,6 +6960,12 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
       conversationKey: canonicalConversationKey,
       profileName: latestInbound.customerName || null,
     });
+    await resolveHandoverAlert({
+      salonId,
+      channel: 'INSTAGRAM',
+      conversationKey: canonicalConversationKey,
+      byHumanMessage: true,
+    });
 
     return res.status(200).json({
       item: {
@@ -6955,6 +7146,12 @@ router.post('/conversations/:channel/:conversationKey/handover', authenticateTok
       note: note || 'Human handover requested.',
       profileName: latestInbound.customerName || null,
     });
+    await markHandoverTriggered({
+      salonId,
+      channel,
+      conversationKey: resolvedConversationKey,
+      customerName: latestInbound.customerName || null,
+    });
 
     return res.status(200).json({
       ok: true,
@@ -7057,6 +7254,11 @@ router.post('/conversations/:channel/:conversationKey/resume-auto', authenticate
       conversationKey: resolvedConversationKey,
       note: 'manual_resumed_by_salon',
       profileName: latestInbound.customerName || null,
+    });
+    await resolveHandoverAlert({
+      salonId,
+      channel,
+      conversationKey: resolvedConversationKey,
     });
 
     return res.status(200).json({
@@ -7736,6 +7938,12 @@ router.post('/instagram-inbox/conversations/:conversationKey/reply', authenticat
       conversationKey: canonicalConversationKey,
       profileName: latestInbound.customerName || null,
     });
+    await resolveHandoverAlert({
+      salonId,
+      channel: 'INSTAGRAM',
+      conversationKey: canonicalConversationKey,
+      byHumanMessage: true,
+    });
 
     return res.status(200).json({
       item: {
@@ -7902,6 +8110,12 @@ router.post('/instagram-inbox/conversations/:conversationKey/handover', authenti
       note: note || 'Human handover requested.',
       profileName: latestInbound.customerName || null,
     });
+    await markHandoverTriggered({
+      salonId,
+      channel: 'INSTAGRAM',
+      conversationKey: resolvedConversationKey,
+      customerName: latestInbound.customerName || null,
+    });
 
     return res.status(200).json({
       ok: true,
@@ -7990,6 +8204,11 @@ router.post('/instagram-inbox/conversations/:conversationKey/resume-auto', authe
       conversationKey: resolvedConversationKey,
       note: 'manual_resumed_by_salon',
       profileName: latestInbound.customerName || null,
+    });
+    await resolveHandoverAlert({
+      salonId,
+      channel: 'INSTAGRAM',
+      conversationKey: resolvedConversationKey,
     });
 
     return res.status(200).json({

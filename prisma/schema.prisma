@@ -221,6 +221,8 @@ model Appointment {
   status             AppointmentStatus?           @default(BOOKED)
   source             AppointmentSource?           @default(CUSTOMER)
   notes              String?
+  paymentMethod      PaymentMethod?
+  paymentRecordedAt  DateTime?                    @db.Timestamp(6)
   customerRating     Int?
   customerReview     String?
   customerReviewedAt DateTime?                    @db.Timestamp(6)
@@ -1012,6 +1014,84 @@ model AppointmentPackageConsumption {
   @@index([salonId, customerId], map: "idx_appointment_pkg_consumption_salon_customer")
 }
 
+model PushDeviceToken {
+  id          Int       @id @default(autoincrement())
+  salonId     Int
+  userId      Int
+  platform    String
+  token       String
+  appVersion  String?
+  deviceMeta  Json?
+  isActive    Boolean   @default(true)
+  lastSeenAt  DateTime? @db.Timestamp(6)
+  createdAt   DateTime? @default(now()) @db.Timestamp(6)
+  updatedAt   DateTime? @default(now()) @updatedAt @db.Timestamp(6)
+
+  @@unique([platform, token], map: "uq_push_device_platform_token")
+  @@index([salonId, userId, isActive], map: "idx_push_device_salon_user_active")
+}
+
+model UserNotificationPreference {
+  id           Int       @id @default(autoincrement())
+  salonId      Int
+  userId       Int
+  masterEnabled Boolean  @default(true)
+  eventConfig  Json?
+  createdAt    DateTime? @default(now()) @db.Timestamp(6)
+  updatedAt    DateTime? @default(now()) @updatedAt @db.Timestamp(6)
+
+  @@unique([salonId, userId], map: "uq_user_notification_pref_salon_user")
+}
+
+model AppNotification {
+  id          Int                 @id @default(autoincrement())
+  salonId     Int
+  eventType   NotificationEventType
+  title       String
+  body        String
+  payload     Json?
+  createdAt   DateTime?           @default(now()) @db.Timestamp(6)
+  expiresAt   DateTime?           @db.Timestamp(6)
+
+  @@index([salonId, createdAt], map: "idx_app_notification_salon_created")
+}
+
+model AppNotificationDelivery {
+  id              Int                          @id @default(autoincrement())
+  notificationId  Int
+  salonId         Int
+  userId          Int
+  pushTokenId     Int?
+  channel         NotificationDeliveryChannel
+  status          NotificationDeliveryStatus   @default(PENDING)
+  providerMessageId String?
+  failureReason   String?
+  readAt          DateTime?                    @db.Timestamp(6)
+  createdAt       DateTime?                    @default(now()) @db.Timestamp(6)
+  updatedAt       DateTime?                    @default(now()) @updatedAt @db.Timestamp(6)
+
+  @@index([notificationId], map: "idx_notification_delivery_notification")
+  @@index([salonId, userId, readAt], map: "idx_notification_delivery_user_read")
+}
+
+model HandoverAlertState {
+  id                 Int       @id @default(autoincrement())
+  salonId            Int
+  channel            ChannelType
+  conversationKey    String
+  state              HandoverAlertLifecycleState @default(ACTIVE)
+  repeatCount        Int       @default(0)
+  firstTriggeredAt   DateTime? @db.Timestamp(6)
+  lastTriggeredAt    DateTime? @db.Timestamp(6)
+  lastHumanMessageAt DateTime? @db.Timestamp(6)
+  stoppedAt          DateTime? @db.Timestamp(6)
+  createdAt          DateTime? @default(now()) @db.Timestamp(6)
+  updatedAt          DateTime? @default(now()) @updatedAt @db.Timestamp(6)
+
+  @@unique([salonId, channel, conversationKey], map: "uq_handover_alert_salon_channel_key")
+  @@index([state, updatedAt], map: "idx_handover_alert_state_updated")
+}
+
 enum UserRole {
   OWNER
   STAFF
@@ -1031,6 +1111,13 @@ enum AppointmentStatus {
   CANCELLED
   NO_SHOW
   COMPLETED
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  TRANSFER
+  OTHER
 }
 
 enum PackageScopeType {
@@ -1057,6 +1144,32 @@ enum PackageActionType {
   MANUAL_ADJUST
   SKIPPED_NO_ELIGIBLE_PACKAGE
   SKIPPED_EXPIRED
+}
+
+enum NotificationEventType {
+  HANDOVER_REQUIRED
+  HANDOVER_REMINDER
+  SAME_DAY_APPOINTMENT_CHANGE
+  END_OF_DAY_MISSING_DATA
+  DAILY_MANAGER_REPORT
+}
+
+enum NotificationDeliveryChannel {
+  IN_APP
+  PUSH
+}
+
+enum NotificationDeliveryStatus {
+  PENDING
+  SENT
+  SKIPPED
+  FAILED
+}
+
+enum HandoverAlertLifecycleState {
+  ACTIVE
+  RESOLVED
+  EXPIRED
 }
 
 enum AppointmentSource {

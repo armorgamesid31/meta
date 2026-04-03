@@ -29,6 +29,7 @@ import internalOutboundRoutes from './routes/internalOutbound.js';
 import internalAgentOutboundRoutes from './routes/internalAgentOutbound.js';
 import channelWebhooksRoutes from './routes/channelWebhooks.js';
 import { multiTenantMiddleware } from './middleware/multiTenant.js';
+import { startNotificationJobs } from './services/notifications.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -269,5 +270,6 @@ const PORT = (Number(process.env.PORT) || 3000);
 const HOST = "0.0.0.0";
 app.listen(PORT, HOST, () => {
   console.log(`🚀 Server running on ${HOST}:${PORT}`);
+  startNotificationJobs();
 });
 export default app;

@@ -1,6 +1,7 @@
 import { ChannelType, ConversationAutomationMode } from '@prisma/client';
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
+import { markHandoverTriggered, resolveHandoverAlert } from '../services/notifications.js';
 
 const router = Router();
 
@@ -182,6 +183,21 @@ router.post('/set', async (req: any, res: any) => {
     },
   });
 
+  if (state.mode === ConversationAutomationMode.HUMAN_PENDING || state.mode === ConversationAutomationMode.HUMAN_ACTIVE) {
+    await markHandoverTriggered({
+      salonId,
+      channel: state.channel as ChannelType,
+      conversationKey: state.conversationKey,
+      customerName: state.profileName || null,
+    });
+  } else if (state.mode === ConversationAutomationMode.AUTO || state.mode === ConversationAutomationMode.AUTO_RESUME_PENDING) {
+    await resolveHandoverAlert({
+      salonId,
+      channel: state.channel as ChannelType,
+      conversationKey: state.conversationKey,
+    });
+  }
+
   return res.status(200).json({ ok: true, state });
 });
 
@@ -213,6 +229,12 @@ router.post('/cancel-pending', async (req: any, res: any) => {
       humanPendingSince: null,
       notes: 'pending_cancelled_by_customer',
     },
+  });
+
+  await resolveHandoverAlert({
+    salonId,
+    channel: state.channel as ChannelType,
+    conversationKey: state.conversationKey,
   });
 
   return res.status(200).json({ ok: true, state });
@@ -252,6 +274,13 @@ router.post('/touch-human', async (req: any, res: any) => {
       lastHumanMessageAt: now,
       humanActiveUntil: until,
     },
+  });
+
+  await markHandoverTriggered({
+    salonId,
+    channel: state.channel as ChannelType,
+    conversationKey: state.conversationKey,
+    customerName: state.profileName || null,
   });
 
   return res.status(200).json({ ok: true, state });

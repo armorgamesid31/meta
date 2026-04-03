@@ -7,6 +7,7 @@ import {
   buildFeatureFlags,
   buildSubscription,
 } from '../services/mobileBootstrap.js';
+import { getDefaultNotificationPolicy } from '../services/notifications.js';
 
 const router = Router();
 
@@ -85,11 +86,240 @@ router.get('/bootstrap', authenticateToken, async (req: any, res: any) => {
         slotInterval: settings?.slotInterval ?? null,
         workingDays: settings?.workingDays ?? null,
       },
+      notifications: {
+        defaults: getDefaultNotificationPolicy(),
+      },
     };
 
     return res.status(200).json(payload);
   } catch (error) {
     console.error('Mobile bootstrap error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.post('/push/register', authenticateToken, async (req: any, res: any) => {
+  if (!req.user) return res.status(401).json({ message: 'Unauthorized.' });
+  const salonId = req.user.salonId;
+  const userId = req.user.userId;
+
+  const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
+  const platform = typeof req.body?.platform === 'string' ? req.body.platform.trim().toUpperCase() : '';
+  const appVersion = typeof req.body?.appVersion === 'string' ? req.body.appVersion.trim() : null;
+  const deviceMeta = req.body?.deviceMeta ?? null;
+
+  if (!token) {
+    return res.status(400).json({ message: 'token is required.' });
+  }
+  if (!platform) {
+    return res.status(400).json({ message: 'platform is required.' });
+  }
+
+  try {
+    await prisma.$executeRawUnsafe(
+      `
+        INSERT INTO "PushDeviceToken"
+          ("salonId", "userId", "platform", "token", "appVersion", "deviceMeta", "isActive", "lastSeenAt", "createdAt", "updatedAt")
+        VALUES
+          ($1, $2, $3, $4, $5, $6::jsonb, true, NOW(), NOW(), NOW())
+        ON CONFLICT ("platform", "token")
+        DO UPDATE SET
+          "salonId" = EXCLUDED."salonId",
+          "userId" = EXCLUDED."userId",
+          "appVersion" = EXCLUDED."appVersion",
+          "deviceMeta" = EXCLUDED."deviceMeta",
+          "isActive" = true,
+          "lastSeenAt" = NOW(),
+          "updatedAt" = NOW()
+      `,
+      salonId,
+      userId,
+      platform,
+      token,
+      appVersion,
+      JSON.stringify(deviceMeta || {}),
+    );
+
+    return res.status(200).json({ ok: true });
+  } catch (error) {
+    console.error('Mobile push register error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.post('/push/unregister', authenticateToken, async (req: any, res: any) => {
+  if (!req.user) return res.status(401).json({ message: 'Unauthorized.' });
+  const salonId = req.user.salonId;
+  const userId = req.user.userId;
+
+  const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
+  if (!token) return res.status(400).json({ message: 'token is required.' });
+
+  try {
+    await prisma.$executeRawUnsafe(
+      `
+        UPDATE "PushDeviceToken"
+        SET "isActive" = false, "updatedAt" = NOW()
+        WHERE "salonId" = $1 AND "userId" = $2 AND "token" = $3
+      `,
+      salonId,
+      userId,
+      token,
+    );
+    return res.status(200).json({ ok: true });
+  } catch (error) {
+    console.error('Mobile push unregister error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.get('/notification-preferences', authenticateToken, async (req: any, res: any) => {
+  if (!req.user) return res.status(401).json({ message: 'Unauthorized.' });
+  const salonId = req.user.salonId;
+  const userId = req.user.userId;
+
+  try {
+    const rows = await prisma.$queryRawUnsafe<any[]>(
+      `
+        SELECT "masterEnabled", "eventConfig"
+        FROM "UserNotificationPreference"
+        WHERE "salonId" = $1 AND "userId" = $2
+        LIMIT 1
+      `,
+      salonId,
+      userId,
+    );
+
+    const item = rows[0] || null;
+    return res.status(200).json({
+      preferences: {
+        masterEnabled: item ? item.masterEnabled !== false : true,
+        eventConfig: item?.eventConfig || {},
+      },
+    });
+  } catch (error) {
+    console.error('Mobile notification preferences get error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.put('/notification-preferences', authenticateToken, async (req: any, res: any) => {
+  if (!req.user) return res.status(401).json({ message: 'Unauthorized.' });
+  const salonId = req.user.salonId;
+  const userId = req.user.userId;
+  const masterEnabled = req.body?.masterEnabled !== false;
+  const eventConfig = req.body?.eventConfig ?? {};
+
+  try {
+    await prisma.$executeRawUnsafe(
+      `
+        INSERT INTO "UserNotificationPreference"
+          ("salonId", "userId", "masterEnabled", "eventConfig", "createdAt", "updatedAt")
+        VALUES
+          ($1, $2, $3, $4::jsonb, NOW(), NOW())
+        ON CONFLICT ("salonId", "userId")
+        DO UPDATE SET
+          "masterEnabled" = EXCLUDED."masterEnabled",
+          "eventConfig" = EXCLUDED."eventConfig",
+          "updatedAt" = NOW()
+      `,
+      salonId,
+      userId,
+      Boolean(masterEnabled),
+      JSON.stringify(eventConfig || {}),
+    );
+
+    return res.status(200).json({ ok: true });
+  } catch (error) {
+    console.error('Mobile notification preferences update error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.get('/notifications', authenticateToken, async (req: any, res: any) => {
+  if (!req.user) return res.status(401).json({ message: 'Unauthorized.' });
+  const salonId = req.user.salonId;
+  const userId = req.user.userId;
+  const limit = Math.max(1, Math.min(100, Number(req.query.limit) || 40));
+
+  try {
+    const rows = await prisma.$queryRawUnsafe<any[]>(
+      `
+        SELECT
+          d."id" AS "deliveryId",
+          d."channel",
+          d."status",
+          d."readAt",
+          d."createdAt" AS "deliveryCreatedAt",
+          n."id" AS "notificationId",
+          n."eventType",
+          n."title",
+          n."body",
+          n."payload",
+          n."createdAt"
+        FROM "AppNotificationDelivery" d
+        INNER JOIN "AppNotification" n ON n."id" = d."notificationId"
+        WHERE d."salonId" = $1 AND d."userId" = $2 AND d."channel" = 'IN_APP'::"NotificationDeliveryChannel"
+        ORDER BY d."createdAt" DESC
+        LIMIT $3
+      `,
+      salonId,
+      userId,
+      limit,
+    );
+
+    return res.status(200).json({ items: rows });
+  } catch (error) {
+    console.error('Mobile notifications list error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.post('/notifications/:id/read', authenticateToken, async (req: any, res: any) => {
+  if (!req.user) return res.status(401).json({ message: 'Unauthorized.' });
+  const salonId = req.user.salonId;
+  const userId = req.user.userId;
+  const deliveryId = Number(req.params.id);
+  if (!Number.isInteger(deliveryId) || deliveryId <= 0) {
+    return res.status(400).json({ message: 'Invalid notification id.' });
+  }
+
+  try {
+    await prisma.$executeRawUnsafe(
+      `
+        UPDATE "AppNotificationDelivery"
+        SET "readAt" = COALESCE("readAt", NOW()), "updatedAt" = NOW()
+        WHERE "id" = $1 AND "salonId" = $2 AND "userId" = $3
+      `,
+      deliveryId,
+      salonId,
+      userId,
+    );
+    return res.status(200).json({ ok: true });
+  } catch (error) {
+    console.error('Mobile notification read error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.post('/notifications/read-all', authenticateToken, async (req: any, res: any) => {
+  if (!req.user) return res.status(401).json({ message: 'Unauthorized.' });
+  const salonId = req.user.salonId;
+  const userId = req.user.userId;
+
+  try {
+    await prisma.$executeRawUnsafe(
+      `
+        UPDATE "AppNotificationDelivery"
+        SET "readAt" = COALESCE("readAt", NOW()), "updatedAt" = NOW()
+        WHERE "salonId" = $1 AND "userId" = $2 AND "channel" = 'IN_APP'::"NotificationDeliveryChannel"
+      `,
+      salonId,
+      userId,
+    );
+    return res.status(200).json({ ok: true });
+  } catch (error) {
+    console.error('Mobile notifications read-all error:', error);
     return res.status(500).json({ message: 'Internal server error.' });
   }
 });

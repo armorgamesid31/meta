@@ -6,8 +6,47 @@ import { SlotsEngine } from '../modules/availability/slots-engine.js';
 import { DateNormalizer } from '../modules/availability/normalizer.js';
 import { calculateSmartDuration, ServiceWithCategory } from '../utils/durationCalculator.js';
 import { normalizeInstagramIdentity } from '../services/identityService.js';
+import { notifySameDayAppointmentChange } from '../services/notifications.js';
 
 const router = Router();
+
+type SameDayEvent = 'CREATED' | 'UPDATED' | 'CANCELLED';
+
+async function getSalonTimezone(salonId: number): Promise<string> {
+  try {
+    const setting = await prisma.salonSettings.findUnique({
+      where: { salonId },
+      select: { timezone: true },
+    });
+    return setting?.timezone || 'Europe/Istanbul';
+  } catch {
+    return 'Europe/Istanbul';
+  }
+}
+
+async function emitSameDayChangeBestEffort(input: {
+  salonId: number;
+  event: SameDayEvent;
+  appointmentId: number;
+  customerName: string;
+  serviceName?: string | null;
+  startTime: Date;
+}): Promise<void> {
+  try {
+    const timezone = await getSalonTimezone(input.salonId);
+    await notifySameDayAppointmentChange({
+      salonId: input.salonId,
+      event: input.event,
+      appointmentId: input.appointmentId,
+      customerName: input.customerName,
+      serviceName: input.serviceName || null,
+      startTime: input.startTime,
+      timezone,
+    });
+  } catch (error) {
+    console.error('Failed to emit same-day notification from bookings route:', error);
+  }
+}
 
 interface AuthRequest extends Request {
   user?: {
@@ -126,6 +165,31 @@ router.post("/confirm", authenticateToken, async (req: any, res: any) => {
         return res.status(result.status).json({ message: result.error });
     }
 
+    const serviceIds = Array.from(new Set(result.appointments.map((apt) => Number(apt.serviceId)).filter((id) => Number.isInteger(id) && id > 0)));
+    const services = serviceIds.length
+      ? await prisma.service.findMany({
+          where: { salonId, id: { in: serviceIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+    const serviceNameById = new Map<number, string>();
+    for (const service of services) {
+      serviceNameById.set(Number(service.id), service.name);
+    }
+
+    await Promise.all(
+      result.appointments.map((apt) =>
+        emitSameDayChangeBestEffort({
+          salonId,
+          event: 'CREATED',
+          appointmentId: Number(apt.id),
+          customerName: String(apt.customerName || customerName),
+          serviceName: serviceNameById.get(Number(apt.serviceId)) || null,
+          startTime: new Date(apt.startTime),
+        }),
+      ),
+    );
+
     res.status(201).json({
       message: 'Booking confirmed successfully.',
       appointments: result.appointments.map(apt => ({
@@ -158,7 +222,7 @@ router.post("/cancel", authenticateToken, async (req: any, res: any) => {
   const salonId = req.user.salonId;
 
   try {
-    await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       const bookingRecord = await tx.$queryRaw`
         SELECT * FROM randevular
         WHERE id = ${bookingId}
@@ -167,16 +231,30 @@ router.post("/cancel", authenticateToken, async (req: any, res: any) => {
       ` as any[];
 
       if (bookingRecord.length === 0) {
-        return res.status(404).json({ message: 'Booking not found.' });
+        return { status: 404, body: { message: 'Booking not found.' }, notify: null as null | {
+          appointmentId: number;
+          customerName: string;
+          serviceName: string | null;
+          startTime: Date;
+        } };
       }
 
       const booking = bookingRecord[0];
 
       if (booking.hizmet_durumu === 'iptal') {
-        return res.status(200).json({
-          message: 'Booking is already cancelled.',
-          bookingId
-        });
+        return {
+          status: 200,
+          body: {
+            message: 'Booking is already cancelled.',
+            bookingId,
+          },
+          notify: null as null | {
+            appointmentId: number;
+            customerName: string;
+            serviceName: string | null;
+            startTime: Date;
+          },
+        };
       }
 
       const bookingDate = DateNormalizer.parseDate(booking.tarih);
@@ -184,7 +262,12 @@ router.post("/cancel", authenticateToken, async (req: any, res: any) => {
       const bookingStartTime = DateNormalizer.createDateTime(booking.tarih, bookingTimeMinutes);
 
       if (bookingStartTime <= new Date()) {
-        return res.status(400).json({ message: 'Cannot cancel past bookings.' });
+        return { status: 400, body: { message: 'Cannot cancel past bookings.' }, notify: null as null | {
+          appointmentId: number;
+          customerName: string;
+          serviceName: string | null;
+          startTime: Date;
+        } };
       }
 
       await tx.$executeRaw`
@@ -197,7 +280,14 @@ router.post("/cancel", authenticateToken, async (req: any, res: any) => {
       `;
 
       const appointment = await tx.appointment.findUnique({
-        where: { id: bookingId }
+        where: { id: bookingId },
+        select: {
+          id: true,
+          salonId: true,
+          customerName: true,
+          startTime: true,
+          service: { select: { name: true } },
+        },
       });
 
       if (appointment && appointment.salonId === salonId) {
@@ -218,11 +308,34 @@ router.post("/cancel", authenticateToken, async (req: any, res: any) => {
         AND sure = ${booking.sure}
       `;
 
-      res.status(200).json({
-        message: 'Booking cancelled successfully.',
-        bookingId
-      });
+      return {
+        status: 200,
+        body: {
+          message: 'Booking cancelled successfully.',
+          bookingId,
+        },
+        notify: appointment && appointment.salonId === salonId
+          ? {
+              appointmentId: Number(appointment.id),
+              customerName: appointment.customerName || booking.musteri_adi || 'Müşteri',
+              serviceName: appointment.service?.name || null,
+              startTime: appointment.startTime,
+            }
+          : null,
+      };
     });
+
+    if (result.notify) {
+      await emitSameDayChangeBestEffort({
+        salonId,
+        event: 'CANCELLED',
+        appointmentId: result.notify.appointmentId,
+        customerName: result.notify.customerName,
+        serviceName: result.notify.serviceName,
+        startTime: result.notify.startTime,
+      });
+    }
+    return res.status(result.status).json(result.body);
 
   } catch (error) {
     console.error('Error cancelling booking:', error);
@@ -248,7 +361,7 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
   const salonId = req.user.salonId;
 
   try {
-    await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       const bookingRecord = await tx.$queryRaw`
         SELECT * FROM randevular
         WHERE id = ${bookingId}
@@ -257,17 +370,32 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
       ` as any[];
 
       if (bookingRecord.length === 0) {
-        return res.status(404).json({ message: 'Booking not found.' });
+        return { status: 404, body: { message: 'Booking not found.' }, notify: null as null | {
+          appointmentId: number;
+          customerName: string;
+          serviceName: string | null;
+          startTime: Date;
+        } };
       }
 
       const booking = bookingRecord[0];
 
       if (booking.hizmet_durumu === 'iptal') {
-        return res.status(400).json({ message: 'Cannot reschedule a cancelled booking.' });
+        return { status: 400, body: { message: 'Cannot reschedule a cancelled booking.' }, notify: null as null | {
+          appointmentId: number;
+          customerName: string;
+          serviceName: string | null;
+          startTime: Date;
+        } };
       }
 
       if (booking.hizmet_durumu === 'rescheduling') {
-        return res.status(409).json({ message: 'Booking is currently being rescheduled.' });
+        return { status: 409, body: { message: 'Booking is currently being rescheduled.' }, notify: null as null | {
+          appointmentId: number;
+          customerName: string;
+          serviceName: string | null;
+          startTime: Date;
+        } };
       }
 
       const bookingDate = DateNormalizer.parseDate(booking.tarih);
@@ -275,7 +403,12 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
       const bookingStartTime = DateNormalizer.createDateTime(booking.tarih, bookingTimeMinutes);
 
       if (bookingStartTime <= new Date()) {
-        return res.status(400).json({ message: 'Cannot reschedule past bookings.' });
+        return { status: 400, body: { message: 'Cannot reschedule past bookings.' }, notify: null as null | {
+          appointmentId: number;
+          customerName: string;
+          serviceName: string | null;
+          startTime: Date;
+        } };
       }
 
       await tx.$executeRaw`
@@ -311,7 +444,12 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
           WHERE id = ${bookingId}
           AND salon_id = ${salonId}
         `;
-        return res.status(409).json({ message: 'New slot is not available.' });
+        return { status: 409, body: { message: 'New slot is not available.' }, notify: null as null | {
+          appointmentId: number;
+          customerName: string;
+          serviceName: string | null;
+          startTime: Date;
+        } };
       }
 
       const lockId = `reschedule-${bookingId}-${Date.now()}`;
@@ -333,7 +471,12 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
           WHERE id = ${bookingId}
           AND salon_id = ${salonId}
         `;
-        return res.status(404).json({ message: 'Service not found.' });
+        return { status: 404, body: { message: 'Service not found.' }, notify: null as null | {
+          appointmentId: number;
+          customerName: string;
+          serviceName: string | null;
+          startTime: Date;
+        } };
       }
       const duration = staffService?.duration ?? service.duration;
 
@@ -360,7 +503,12 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
         await tx.$executeRaw`
           DELETE FROM temporary_locks WHERE id = ${lockId}
         `;
-        return res.status(400).json({ message: 'Invalid staff selection for new slot.' });
+        return { status: 400, body: { message: 'Invalid staff selection for new slot.' }, notify: null as null | {
+          appointmentId: number;
+          customerName: string;
+          serviceName: string | null;
+          startTime: Date;
+        } };
       }
 
       const newSlotEnd = new Date(newSlotStart.getTime() + duration * 60 * 1000);
@@ -393,7 +541,13 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
       `;
 
       const oldAppointment = await tx.appointment.findUnique({
-        where: { id: bookingId }
+        where: { id: bookingId },
+        select: {
+          id: true,
+          salonId: true,
+          customerName: true,
+          startTime: true,
+        },
       });
 
       if (oldAppointment && oldAppointment.salonId === salonId) {
@@ -410,18 +564,41 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
         DELETE FROM temporary_locks WHERE id = ${lockId}
       `;
 
-      res.status(200).json({
-        message: 'Booking rescheduled successfully.',
-        oldBookingId: bookingId,
-        newAppointments: newAppointments.map(apt => ({
-          id: apt.id,
-          startTime: apt.startTime,
-          endTime: apt.endTime,
-          staffId: apt.staffId,
-          serviceId: apt.serviceId
-        }))
-      });
+      return {
+        status: 200,
+        body: {
+          message: 'Booking rescheduled successfully.',
+          oldBookingId: bookingId,
+          newAppointments: newAppointments.map(apt => ({
+            id: apt.id,
+            startTime: apt.startTime,
+            endTime: apt.endTime,
+            staffId: apt.staffId,
+            serviceId: apt.serviceId
+          })),
+        },
+        notify: newAppointments.length
+          ? {
+              appointmentId: Number(newAppointments[0].id),
+              customerName: oldAppointment?.customerName || booking.musteri_adi || 'Müşteri',
+              serviceName: service.name,
+              startTime: newSlotStart,
+            }
+          : null,
+      };
     });
+
+    if (result.notify) {
+      await emitSameDayChangeBestEffort({
+        salonId,
+        event: 'UPDATED',
+        appointmentId: result.notify.appointmentId,
+        customerName: result.notify.customerName,
+        serviceName: result.notify.serviceName,
+        startTime: result.notify.startTime,
+      });
+    }
+    return res.status(result.status).json(result.body);
 
   } catch (error) {
     console.error('Error rescheduling booking:', error);
@@ -558,6 +735,31 @@ router.post('/', async (req: any, res: any, next: any) => {
           });
         } catch (_) {}
       }
+
+      const serviceIds = Array.from(new Set(createdAppointments.map((apt) => Number(apt.serviceId)).filter((id) => Number.isInteger(id) && id > 0)));
+      const createdServices = serviceIds.length
+        ? await prisma.service.findMany({
+            where: { salonId, id: { in: serviceIds } },
+            select: { id: true, name: true },
+          })
+        : [];
+      const serviceNameById = new Map<number, string>();
+      for (const service of createdServices) {
+        serviceNameById.set(Number(service.id), service.name);
+      }
+
+      await Promise.all(
+        createdAppointments.map((apt) =>
+          emitSameDayChangeBestEffort({
+            salonId,
+            event: 'CREATED',
+            appointmentId: Number(apt.id),
+            customerName: apt.customerName || customerName.trim(),
+            serviceName: serviceNameById.get(Number(apt.serviceId)) || null,
+            startTime: apt.startTime,
+          }),
+        ),
+      );
 
       return res.status(201).json({
         data: {
@@ -812,6 +1014,31 @@ router.post('/appointments-by-token', async (req: any, res: any) => {
       },
       datetime: appointmentDateTime.toLocaleString('tr-TR')
     });
+
+    const serviceIds = Array.from(new Set(result.map((apt) => Number(apt.serviceId)).filter((id) => Number.isInteger(id) && id > 0)));
+    const createdServices = serviceIds.length
+      ? await prisma.service.findMany({
+          where: { salonId, id: { in: serviceIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+    const serviceNameById = new Map<number, string>();
+    for (const service of createdServices) {
+      serviceNameById.set(Number(service.id), service.name);
+    }
+    const eventType: SameDayEvent = magicLink.type === 'RESCHEDULE' ? 'UPDATED' : 'CREATED';
+    await Promise.all(
+      result.map((apt) =>
+        emitSameDayChangeBestEffort({
+          salonId,
+          event: eventType,
+          appointmentId: Number(apt.id),
+          customerName: apt.customerName || customer.name || 'Müşteri',
+          serviceName: serviceNameById.get(Number(apt.serviceId)) || null,
+          startTime: apt.startTime,
+        }),
+      ),
+    );
 
     res.status(201).json({
       appointmentId: result[0].id,
