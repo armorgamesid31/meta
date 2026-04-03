@@ -86,6 +86,11 @@ function isReschedulableAppointmentStatus(value: unknown): boolean {
   return status === 'BOOKED' || status === 'CONFIRMED';
 }
 
+function isCancelableAppointmentStatus(value: unknown): boolean {
+  const status = String(value || '').trim().toUpperCase();
+  return status === 'BOOKED' || status === 'CONFIRMED' || status === 'UPDATED';
+}
+
 async function resolveMagicTokenCustomer(input: { token: string; salonId: number }) {
   const now = new Date();
   const magicLink = await prisma.magicLink.findUnique({
@@ -584,6 +589,154 @@ router.post('/reschedule-commit', async (req: any, res: any) => {
       console.error('Booking reschedule commit error:', error);
     }
     return res.status(status).json({ message });
+  }
+});
+
+router.post('/cancel-by-token', async (req: any, res: any) => {
+  const salonId = req.salon?.id;
+  if (!salonId) {
+    return res.status(400).json({ message: 'Salon context is required.' });
+  }
+
+  const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
+  const appointmentIds = parseAppointmentIds(req.body?.appointmentIds);
+  if (!token) {
+    return res.status(400).json({ message: 'token is required.' });
+  }
+  if (!appointmentIds.length) {
+    return res.status(400).json({ message: 'appointmentIds must be a non-empty array.' });
+  }
+
+  try {
+    const resolved = await resolveMagicTokenCustomer({ token, salonId });
+    if ('error' in resolved) {
+      return res.status(resolved.code).json({ message: resolved.error });
+    }
+
+    const ownedAppointments = await prisma.appointment.findMany({
+      where: {
+        salonId,
+        customerId: resolved.customerId,
+        id: { in: appointmentIds },
+      },
+      select: {
+        id: true,
+        status: true,
+        startTime: true,
+        customerName: true,
+        service: { select: { name: true } },
+      },
+    });
+    if (ownedAppointments.length !== appointmentIds.length) {
+      return res.status(403).json({ message: 'One or more appointments do not belong to this customer.' });
+    }
+    if (ownedAppointments.some((item) => !isCancelableAppointmentStatus(item.status))) {
+      return res.status(409).json({ message: 'Only BOOKED/CONFIRMED/UPDATED appointments can be cancelled.' });
+    }
+    if (ownedAppointments.some((item) => new Date(item.startTime).getTime() <= Date.now())) {
+      return res.status(409).json({ message: 'Past appointments cannot be cancelled.' });
+    }
+
+    await prisma.appointment.updateMany({
+      where: {
+        salonId,
+        customerId: resolved.customerId,
+        id: { in: appointmentIds },
+      },
+      data: {
+        status: 'CANCELLED',
+        updatedAt: new Date(),
+      },
+    });
+
+    await Promise.all(
+      ownedAppointments.map((apt) =>
+        emitSameDayChangeBestEffort({
+          salonId,
+          event: 'CANCELLED',
+          appointmentId: apt.id,
+          customerName: apt.customerName,
+          serviceName: apt.service?.name || null,
+          startTime: new Date(apt.startTime),
+        }),
+      ),
+    );
+
+    return res.status(200).json({
+      cancelledAppointmentIds: appointmentIds,
+      count: appointmentIds.length,
+    });
+  } catch (error) {
+    console.error('Booking cancel-by-token error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.post('/feedback', async (req: any, res: any) => {
+  const salonId = req.salon?.id;
+  if (!salonId) {
+    return res.status(400).json({ message: 'Salon context is required.' });
+  }
+
+  const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
+  const appointmentId = Number(req.body?.appointmentId);
+  const rating = Number(req.body?.rating);
+  const review = typeof req.body?.review === 'string' ? req.body.review.trim() : '';
+
+  if (!token) {
+    return res.status(400).json({ message: 'token is required.' });
+  }
+  if (!Number.isInteger(appointmentId) || appointmentId <= 0) {
+    return res.status(400).json({ message: 'appointmentId must be a positive integer.' });
+  }
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+    return res.status(400).json({ message: 'rating must be between 1 and 5.' });
+  }
+
+  try {
+    const resolved = await resolveMagicTokenCustomer({ token, salonId });
+    if ('error' in resolved) {
+      return res.status(resolved.code).json({ message: resolved.error });
+    }
+
+    const appointment = await prisma.appointment.findFirst({
+      where: {
+        id: appointmentId,
+        salonId,
+        customerId: resolved.customerId,
+      },
+      select: {
+        id: true,
+        status: true,
+      },
+    });
+
+    if (!appointment) {
+      return res.status(404).json({ message: 'Appointment not found for this customer.' });
+    }
+    if (String(appointment.status || '').toUpperCase() !== 'COMPLETED') {
+      return res.status(409).json({ message: 'Only completed appointments can be reviewed.' });
+    }
+
+    const updated = await prisma.appointment.update({
+      where: { id: appointmentId },
+      data: {
+        customerRating: rating,
+        customerReview: review || null,
+        customerReviewedAt: new Date(),
+      },
+      select: {
+        id: true,
+        customerRating: true,
+        customerReview: true,
+        customerReviewedAt: true,
+      },
+    });
+
+    return res.status(200).json({ item: updated });
+  } catch (error) {
+    console.error('Booking feedback error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
   }
 });
 

@@ -126,9 +126,15 @@ router.get('/context', async (req: any, res: any) => {
     startTime: Date;
     endTime: Date;
     status: string;
+    customerRating: number | null;
+    customerReview: string | null;
+    serviceId: number | null;
     serviceName: string | null;
+    servicePrice: number | null;
     staffName: string | null;
     canUpdate: boolean;
+    canCancel: boolean;
+    canEvaluate: boolean;
     isFuture: boolean;
     groupKey: string;
     rescheduledFromAppointmentId: number | null;
@@ -152,9 +158,13 @@ router.get('/context', async (req: any, res: any) => {
       startTime: Date;
       endTime: Date;
       status: string;
+      customerRating?: number | null;
+      customerReview?: string | null;
       rescheduledFromAppointmentId?: number | null;
       rescheduleBatchId?: string | null;
-      service?: { name: string } | null;
+      service?: { id?: number; name: string; price?: number } | null;
+      serviceId?: number;
+      servicePrice?: number;
       staff?: { name: string } | null;
     }> = [];
 
@@ -170,11 +180,15 @@ router.get('/context', async (req: any, res: any) => {
           startTime: true,
           endTime: true,
           status: true,
+          customerRating: true,
+          customerReview: true,
           rescheduledFromAppointmentId: true,
           rescheduleBatchId: true,
           service: {
             select: {
+              id: true,
               name: true,
+              price: true,
             },
           },
           staff: {
@@ -203,9 +217,13 @@ router.get('/context', async (req: any, res: any) => {
           startTime: true,
           endTime: true,
           status: true,
+          customerRating: true,
+          customerReview: true,
           service: {
             select: {
+              id: true,
               name: true,
+              price: true,
             },
           },
           staff: {
@@ -239,9 +257,15 @@ router.get('/context', async (req: any, res: any) => {
         startTime: item.startTime,
         endTime: item.endTime,
         status: item.status,
+        customerRating: item.customerRating ?? null,
+        customerReview: item.customerReview ?? null,
+        serviceId: item.service?.id || null,
         serviceName: item.service?.name || null,
+        servicePrice: typeof item.service?.price === 'number' ? item.service.price : null,
         staffName: item.staff?.name || null,
         canUpdate: isFuture && ['BOOKED', 'CONFIRMED'].includes(String(item.status || '').toUpperCase()),
+        canCancel: isFuture && ['BOOKED', 'CONFIRMED', 'UPDATED'].includes(String(item.status || '').toUpperCase()),
+        canEvaluate: !isFuture && String(item.status || '').toUpperCase() === 'COMPLETED',
         isFuture,
         groupKey: currentGroupKey,
         rescheduledFromAppointmentId: item.rescheduledFromAppointmentId || null,
