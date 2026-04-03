@@ -9,6 +9,7 @@ import { normalizeInstagramIdentity, normalizePhoneDigits } from '../services/id
 import { upsertConversationMessageEvent } from '../services/conversationMessageEvents.js';
 import { subscribeConversationStream } from '../services/conversationEventsBus.js';
 import {
+  createNotification,
   getDefaultNotificationPolicy,
   getSalonNotificationPolicy,
   markHandoverTriggered,
@@ -20,6 +21,13 @@ import {
   buildAppointmentReschedulePreview,
   commitAppointmentReschedule,
 } from '../services/appointmentReschedule.js';
+import {
+  listCampaignsForSend,
+  previewCampaignPricing,
+  processCompletionCampaignRewards,
+  releaseAppointmentCampaignApplications,
+  shouldAutoSendCampaignType,
+} from '../services/campaignPricing.js';
 
 const router = Router();
 
@@ -210,6 +218,13 @@ function parseCampaignDateInput(value: unknown): Date | null | undefined {
   }
 
   return parsed;
+}
+
+function asCampaignDeliveryMode(value: unknown): 'AUTO' | 'MANUAL' | null {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toUpperCase();
+  if (normalized === 'AUTO' || normalized === 'MANUAL') return normalized;
+  return null;
 }
 
 function toPercentDelta(current: number, previous: number): number {
@@ -3057,6 +3072,7 @@ router.patch('/appointments/:id/status', authenticateToken, async (req: any, res
 
       return {
         item: updated,
+        customerId: updated.customerId || null,
         _notify: {
           appointmentId: updated.id,
           customerName: updated.customerName,
@@ -3075,6 +3091,24 @@ router.patch('/appointments/:id/status', authenticateToken, async (req: any, res
 
     if ('error' in result) {
       return res.status(result.error.code).json({ message: result.error.message });
+    }
+
+    if (result._notify.previousStatus !== 'COMPLETED' && result._notify.nextStatus === 'COMPLETED') {
+      await processCompletionCampaignRewards({
+        salonId,
+        appointmentId: result._notify.appointmentId,
+        customerId: result.customerId || null,
+      });
+    } else if (result._notify.nextStatus === 'CANCELLED' || result._notify.nextStatus === 'NO_SHOW') {
+      await releaseAppointmentCampaignApplications({
+        salonId,
+        appointmentId: result._notify.appointmentId,
+      });
+    } else if (result._notify.previousStatus === 'COMPLETED' && result._notify.nextStatus !== 'COMPLETED') {
+      await releaseAppointmentCampaignApplications({
+        salonId,
+        appointmentId: result._notify.appointmentId,
+      });
     }
 
     try {
@@ -3171,6 +3205,15 @@ router.post('/appointments/reschedule-commit', authenticateToken, async (req: an
       idempotencyKey,
     });
 
+    await Promise.all(
+      committed.previousAppointmentIds.map((id) =>
+        releaseAppointmentCampaignApplications({
+          salonId,
+          appointmentId: Number(id),
+        }),
+      ),
+    );
+
     try {
       const timezone = await getSalonTimezone(salonId);
       for (const appointment of committed.createdAppointments) {
@@ -3230,6 +3273,14 @@ router.patch('/appointments/:id/reschedule', authenticateToken, async (req: any,
       assignments,
       idempotencyKey: null,
     });
+    await Promise.all(
+      committed.previousAppointmentIds.map((id) =>
+        releaseAppointmentCampaignApplications({
+          salonId,
+          appointmentId: Number(id),
+        }),
+      ),
+    );
     const item = committed.createdAppointments[0] || null;
     return res.status(200).json({
       item,
@@ -5625,6 +5676,10 @@ router.post('/campaigns', authenticateToken, async (req: any, res: any) => {
         description: typeof req.body?.description === 'string' ? req.body.description.trim() : null,
         config: req.body?.config ?? null,
         isActive: req.body?.isActive !== undefined ? Boolean(req.body.isActive) : true,
+        priority: Number.isFinite(Number(req.body?.priority)) ? Number(req.body.priority) : 100,
+        deliveryMode: asCampaignDeliveryMode(req.body?.deliveryMode) || (shouldAutoSendCampaignType(type) ? 'AUTO' : 'MANUAL'),
+        maxGlobalUsage: Number.isFinite(Number(req.body?.maxGlobalUsage)) ? Number(req.body.maxGlobalUsage) : null,
+        maxPerCustomer: Number.isFinite(Number(req.body?.maxPerCustomer)) ? Number(req.body.maxPerCustomer) : null,
         startsAt,
         endsAt,
       },
@@ -5707,6 +5762,28 @@ router.patch('/campaigns/:id', authenticateToken, async (req: any, res: any) => 
   if (req.body?.config !== undefined) {
     data.config = req.body.config ?? null;
   }
+  if (req.body?.priority !== undefined) {
+    const priority = Number(req.body.priority);
+    if (!Number.isFinite(priority)) {
+      return res.status(400).json({ message: 'Invalid priority.' });
+    }
+    data.priority = priority;
+  }
+  if (req.body?.deliveryMode !== undefined) {
+    const deliveryMode = asCampaignDeliveryMode(req.body.deliveryMode);
+    if (!deliveryMode) {
+      return res.status(400).json({ message: 'deliveryMode must be AUTO or MANUAL.' });
+    }
+    data.deliveryMode = deliveryMode;
+  }
+  if (req.body?.maxGlobalUsage !== undefined) {
+    const maxGlobalUsage = Number(req.body.maxGlobalUsage);
+    data.maxGlobalUsage = Number.isFinite(maxGlobalUsage) && maxGlobalUsage > 0 ? Math.floor(maxGlobalUsage) : null;
+  }
+  if (req.body?.maxPerCustomer !== undefined) {
+    const maxPerCustomer = Number(req.body.maxPerCustomer);
+    data.maxPerCustomer = Number.isFinite(maxPerCustomer) && maxPerCustomer > 0 ? Math.floor(maxPerCustomer) : null;
+  }
   if (req.body?.isActive !== undefined) {
     data.isActive = Boolean(req.body.isActive);
   }
@@ -5780,6 +5857,118 @@ router.delete('/campaigns/:id', authenticateToken, async (req: any, res: any) =>
     return res.status(204).send();
   } catch (error) {
     console.error('Admin campaign delete error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.post('/campaigns/pricing-preview', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) return;
+
+  const startTime = parseIsoDate(req.body?.startTime || new Date().toISOString());
+  if (!startTime) {
+    return res.status(400).json({ message: 'startTime is required.' });
+  }
+
+  const customerIdRaw = Number(req.body?.customerId);
+  const customerId = Number.isInteger(customerIdRaw) && customerIdRaw > 0 ? customerIdRaw : null;
+  const linesRaw = Array.isArray(req.body?.lines) ? req.body.lines : [];
+  if (!linesRaw.length) {
+    return res.status(400).json({ message: 'lines[] is required.' });
+  }
+
+  try {
+    const lines = linesRaw.map((line: any) => ({
+      serviceId: Number(line?.serviceId),
+      listPrice: Number(line?.listPrice || 0),
+      isPackageCovered: Boolean(line?.isPackageCovered),
+    }));
+    const result = await previewCampaignPricing({
+      salonId,
+      customerId,
+      startTime,
+      lines,
+    });
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('Admin campaign pricing-preview error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.post('/campaigns/:id/publish', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) return;
+
+  const campaignId = Number(req.params.id);
+  if (!Number.isInteger(campaignId) || campaignId <= 0) {
+    return res.status(400).json({ message: 'Invalid campaign id.' });
+  }
+
+  try {
+    const campaign = await prisma.campaign.findFirst({
+      where: { id: campaignId, salonId },
+    });
+    if (!campaign) {
+      return res.status(404).json({ message: 'Campaign not found.' });
+    }
+
+    const updated = await prisma.campaign.update({
+      where: { id: campaignId },
+      data: {
+        isActive: true,
+        publishedAt: new Date(),
+      },
+    });
+
+    return res.status(200).json({ item: updated });
+  } catch (error) {
+    console.error('Admin campaign publish error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.post('/campaigns/:id/send', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) return;
+
+  const campaignId = Number(req.params.id);
+  if (!Number.isInteger(campaignId) || campaignId <= 0) {
+    return res.status(400).json({ message: 'Invalid campaign id.' });
+  }
+
+  try {
+    const campaign = await prisma.campaign.findFirst({
+      where: { id: campaignId, salonId },
+      select: { id: true, name: true, type: true },
+    });
+    if (!campaign) {
+      return res.status(404).json({ message: 'Campaign not found.' });
+    }
+
+    const recipients = await listCampaignsForSend(salonId, campaignId);
+    const recipientUserIds = recipients.map((row) => row.customerId).filter((id) => Number.isInteger(id) && id > 0);
+
+    await createNotification({
+      salonId,
+      eventType: 'CAMPAIGN_MANUAL_SEND',
+      title: `Campaign sent: ${campaign.name}`,
+      body: `${campaign.type} campaign target list prepared (${recipientUserIds.length} customers).`,
+      payload: {
+        campaignId: campaign.id,
+        campaignType: campaign.type,
+        audienceSize: recipientUserIds.length,
+      },
+      recipientUserIds: [req.user?.userId].filter((id: any) => Number.isInteger(id) && id > 0),
+    });
+
+    return res.status(200).json({
+      sent: true,
+      campaignId: campaign.id,
+      audienceSize: recipientUserIds.length,
+    });
+  } catch (error) {
+    console.error('Admin campaign send error:', error);
     return res.status(500).json({ message: 'Internal server error.' });
   }
 });

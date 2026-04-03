@@ -277,7 +277,10 @@ export function mapAdminRouteToPermission(path: string, method: string): string 
   if (normalizedPath.startsWith('/staff')) return 'staff.manage';
   if (normalizedPath.startsWith('/package') || normalizedPath.includes('/packages')) return 'packages.manage';
   if (normalizedPath.startsWith('/inventory')) return 'inventory.manage';
-  if (normalizedPath.startsWith('/campaigns')) return m === 'PATCH' && normalizedPath.includes('/publish') ? 'campaigns.publish' : 'campaigns.manage';
+  if (normalizedPath.startsWith('/campaigns')) {
+    if (normalizedPath.includes('/publish') || normalizedPath.includes('/send')) return 'campaigns.publish';
+    return 'campaigns.manage';
+  }
   if (normalizedPath.startsWith('/automations')) return 'automations.manage';
   if (normalizedPath.startsWith('/blacklist')) return 'blacklist.manage';
   if (normalizedPath.startsWith('/analytics')) return 'analytics.view';

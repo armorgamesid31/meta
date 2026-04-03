@@ -34,6 +34,11 @@ model Salon {
   authSessions        MobileAuthSession[]
   inventoryItems      InventoryItem[]
   campaigns           Campaign[]
+  campaignApplications AppointmentCampaignApplication[]
+  campaignWallets     CustomerCampaignWallet[]
+  campaignEnrollments CustomerCampaignEnrollment[]
+  campaignShareLinks  CampaignShareLink[]
+  campaignAttributions CampaignAttribution[]
   automationRules     AutomationRule[]
   packageTemplates    PackageTemplate[]
   customerPackages    CustomerPackage[]
@@ -189,6 +194,7 @@ model Service {
   packageBalances    CustomerPackageServiceBalance[]
   packageLedgers     PackageLedger[]
   packageConsumptions AppointmentPackageConsumption[]
+  campaignApplications AppointmentCampaignApplication[]
   ServiceStats       ServiceStats[]
   StaffService       StaffService[]
 
@@ -227,6 +233,10 @@ model Appointment {
   notes              String?
   paymentMethod      PaymentMethod?
   paymentRecordedAt  DateTime?                    @db.Timestamp(6)
+  listPrice          Float?
+  discountTotal      Float?
+  finalPrice         Float?
+  campaignSnapshot   Json?
   customerRating     Int?
   customerReview     String?
   customerReviewedAt DateTime?                    @db.Timestamp(6)
@@ -243,6 +253,8 @@ model Appointment {
   customer           Customer?                    @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   messageDispatches  AppointmentMessageDispatch[]
   packageConsumptions AppointmentPackageConsumption[]
+  campaignApplications AppointmentCampaignApplication[]
+  campaignAttributions CampaignAttribution[] @relation("CampaignAttributionFirstAppointment")
   salon              Salon                        @relation(fields: [salonId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   service            Service                      @relation(fields: [serviceId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   staff              Staff                        @relation(fields: [staffId], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -352,6 +364,12 @@ model Customer {
   packages           CustomerPackage[]
   packageLedgers     PackageLedger[]
   packageConsumptions AppointmentPackageConsumption[]
+  campaignApplications AppointmentCampaignApplication[]
+  campaignWallets      CustomerCampaignWallet[]
+  campaignEnrollments  CustomerCampaignEnrollment[]
+  campaignShareLinks   CampaignShareLink[]
+  referrerAttributions CampaignAttribution[] @relation("CampaignAttributionReferrerCustomer")
+  referredAttributions CampaignAttribution[] @relation("CampaignAttributionReferredCustomer")
   identityBindings   IdentityBinding[]
   identitySessions   IdentitySession[]
   salon              Salon                      @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
@@ -563,14 +581,135 @@ model Campaign {
   type        String
   description String?
   config      Json?
+  priority    Int       @default(100)
+  deliveryMode CampaignDeliveryMode @default(MANUAL)
+  maxGlobalUsage Int?
+  maxPerCustomer Int?
   isActive    Boolean   @default(true)
+  publishedAt DateTime? @db.Timestamp(6)
   startsAt    DateTime? @db.Timestamp(6)
   endsAt      DateTime? @db.Timestamp(6)
   createdAt   DateTime? @default(now()) @db.Timestamp(6)
   updatedAt   DateTime? @default(now()) @updatedAt @db.Timestamp(6)
   salon       Salon     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  applications AppointmentCampaignApplication[]
+  wallets     CustomerCampaignWallet[]
+  enrollments CustomerCampaignEnrollment[]
+  shareLinks  CampaignShareLink[]
+  attributions CampaignAttribution[]
 
   @@index([salonId, type, isActive], map: "idx_campaign_salon_type_active")
+  @@index([salonId, priority, isActive], map: "idx_campaign_salon_priority_active")
+}
+
+model AppointmentCampaignApplication {
+  id            Int       @id @default(autoincrement())
+  salonId       Int
+  appointmentId Int
+  customerId    Int?
+  campaignId    Int
+  serviceId     Int?
+  status        CampaignApplicationStatus @default(APPLIED)
+  listPrice     Float
+  discountAmount Float
+  finalPrice    Float
+  metadata      Json?
+  appliedAt     DateTime? @default(now()) @db.Timestamp(6)
+  releasedAt    DateTime? @db.Timestamp(6)
+  createdAt     DateTime? @default(now()) @db.Timestamp(6)
+  updatedAt     DateTime? @default(now()) @updatedAt @db.Timestamp(6)
+  salon         Salon     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  customer      Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  campaign      Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  service       Service?  @relation(fields: [serviceId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([salonId, appointmentId], map: "idx_campaign_app_salon_appointment")
+  @@index([salonId, customerId, campaignId], map: "idx_campaign_app_salon_customer_campaign")
+  @@index([campaignId, status], map: "idx_campaign_app_campaign_status")
+}
+
+model CustomerCampaignWallet {
+  id              Int       @id @default(autoincrement())
+  salonId         Int
+  customerId      Int
+  campaignId      Int
+  balanceAmount   Float     @default(0)
+  consumedAmount  Float     @default(0)
+  expiresAt       DateTime? @db.Timestamp(6)
+  metadata        Json?
+  createdAt       DateTime? @default(now()) @db.Timestamp(6)
+  updatedAt       DateTime? @default(now()) @updatedAt @db.Timestamp(6)
+  salon           Salon     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  customer        Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  campaign        Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([salonId, customerId, campaignId], map: "uq_campaign_wallet_salon_customer_campaign")
+  @@index([salonId, customerId], map: "idx_campaign_wallet_salon_customer")
+}
+
+model CustomerCampaignEnrollment {
+  id            Int       @id @default(autoincrement())
+  salonId       Int
+  customerId    Int
+  campaignId    Int
+  status        CampaignEnrollmentStatus @default(ENROLLED)
+  source        String?
+  metadata      Json?
+  enrolledAt    DateTime? @default(now()) @db.Timestamp(6)
+  createdAt     DateTime? @default(now()) @db.Timestamp(6)
+  updatedAt     DateTime? @default(now()) @updatedAt @db.Timestamp(6)
+  salon         Salon     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  customer      Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  campaign      Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([salonId, customerId, campaignId], map: "uq_campaign_enrollment_salon_customer_campaign")
+  @@index([salonId, status], map: "idx_campaign_enrollment_salon_status")
+}
+
+model CampaignShareLink {
+  id                Int       @id @default(autoincrement())
+  salonId           Int
+  campaignId        Int
+  customerId        Int
+  token             String    @unique(map: "uq_campaign_share_link_token")
+  status            CampaignShareLinkStatus @default(ACTIVE)
+  metadata          Json?
+  lastSharedAt      DateTime? @db.Timestamp(6)
+  expiresAt         DateTime? @db.Timestamp(6)
+  createdAt         DateTime? @default(now()) @db.Timestamp(6)
+  updatedAt         DateTime? @default(now()) @updatedAt @db.Timestamp(6)
+  salon             Salon     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  campaign          Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  customer          Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  attributions      CampaignAttribution[]
+
+  @@unique([salonId, campaignId, customerId], map: "uq_campaign_share_link_salon_campaign_customer")
+  @@index([salonId, status], map: "idx_campaign_share_link_salon_status")
+}
+
+model CampaignAttribution {
+  id                 Int       @id @default(autoincrement())
+  salonId            Int
+  campaignId         Int
+  shareLinkId        Int
+  referrerCustomerId Int
+  referredCustomerId Int?
+  status             CampaignAttributionStatus @default(PENDING)
+  firstAppointmentId Int?
+  completedAt        DateTime? @db.Timestamp(6)
+  metadata           Json?
+  createdAt          DateTime? @default(now()) @db.Timestamp(6)
+  updatedAt          DateTime? @default(now()) @updatedAt @db.Timestamp(6)
+  salon              Salon     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  campaign           Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  shareLink          CampaignShareLink @relation(fields: [shareLinkId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  referrerCustomer   Customer  @relation("CampaignAttributionReferrerCustomer", fields: [referrerCustomerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  referredCustomer   Customer? @relation("CampaignAttributionReferredCustomer", fields: [referredCustomerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  firstAppointment   Appointment? @relation("CampaignAttributionFirstAppointment", fields: [firstAppointmentId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([salonId, campaignId, status], map: "idx_campaign_attr_salon_campaign_status")
+  @@index([shareLinkId], map: "idx_campaign_attr_share_link")
 }
 
 model AutomationRule {
@@ -1220,6 +1359,37 @@ enum NotificationEventType {
   SAME_DAY_APPOINTMENT_CHANGE
   END_OF_DAY_MISSING_DATA
   DAILY_MANAGER_REPORT
+  CAMPAIGN_AUTO_TRIGGER
+  CAMPAIGN_MANUAL_SEND
+}
+
+enum CampaignDeliveryMode {
+  AUTO
+  MANUAL
+}
+
+enum CampaignApplicationStatus {
+  APPLIED
+  RELEASED
+}
+
+enum CampaignEnrollmentStatus {
+  ENROLLED
+  OPTED_OUT
+}
+
+enum CampaignShareLinkStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+}
+
+enum CampaignAttributionStatus {
+  PENDING
+  REGISTERED
+  QUALIFIED
+  REWARDED
+  CANCELLED
 }
 
 enum NotificationDeliveryChannel {

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
+import { getCampaignTeasersForCustomer } from '../services/campaignPricing.js';
 
 const router = Router();
 
@@ -131,6 +132,9 @@ router.get('/context', async (req: any, res: any) => {
     serviceId: number | null;
     serviceName: string | null;
     servicePrice: number | null;
+    listPrice: number | null;
+    discountTotal: number | null;
+    finalPrice: number | null;
     staffName: string | null;
     canUpdate: boolean;
     canCancel: boolean;
@@ -151,6 +155,12 @@ router.get('/context', async (req: any, res: any) => {
       serviceName: string | null;
     }>;
   }> = [];
+  let campaignContext: Awaited<ReturnType<typeof getCampaignTeasersForCustomer>> = {
+    active: [],
+    wallet: [],
+    enrollments: [],
+    shareLinks: [],
+  };
 
   if (customer) {
     let raw: Array<{
@@ -162,6 +172,9 @@ router.get('/context', async (req: any, res: any) => {
       customerReview?: string | null;
       rescheduledFromAppointmentId?: number | null;
       rescheduleBatchId?: string | null;
+      listPrice?: number | null;
+      discountTotal?: number | null;
+      finalPrice?: number | null;
       service?: { id?: number; name: string; price?: number } | null;
       serviceId?: number;
       servicePrice?: number;
@@ -182,6 +195,9 @@ router.get('/context', async (req: any, res: any) => {
           status: true,
           customerRating: true,
           customerReview: true,
+          listPrice: true,
+          discountTotal: true,
+          finalPrice: true,
           rescheduledFromAppointmentId: true,
           rescheduleBatchId: true,
           service: {
@@ -219,6 +235,9 @@ router.get('/context', async (req: any, res: any) => {
           status: true,
           customerRating: true,
           customerReview: true,
+          listPrice: true,
+          discountTotal: true,
+          finalPrice: true,
           service: {
             select: {
               id: true,
@@ -262,6 +281,9 @@ router.get('/context', async (req: any, res: any) => {
         serviceId: item.service?.id || null,
         serviceName: item.service?.name || null,
         servicePrice: typeof item.service?.price === 'number' ? item.service.price : null,
+        listPrice: typeof item.listPrice === 'number' ? item.listPrice : null,
+        discountTotal: typeof item.discountTotal === 'number' ? item.discountTotal : null,
+        finalPrice: typeof item.finalPrice === 'number' ? item.finalPrice : null,
         staffName: item.staff?.name || null,
         canUpdate: isFuture && ['BOOKED', 'CONFIRMED'].includes(String(item.status || '').toUpperCase()),
         canCancel: isFuture && ['BOOKED', 'CONFIRMED', 'UPDATED'].includes(String(item.status || '').toUpperCase()),
@@ -322,6 +344,16 @@ router.get('/context', async (req: any, res: any) => {
         })),
       }))
       .filter((pkg: any) => pkg.serviceBalances.length > 0);
+
+    campaignContext = await getCampaignTeasersForCustomer({
+      salonId,
+      customerId: customer.id,
+    });
+  } else {
+    campaignContext = await getCampaignTeasersForCustomer({
+      salonId,
+      customerId: null,
+    });
   }
 
   const customerGender = customer?.gender
@@ -347,6 +379,10 @@ router.get('/context', async (req: any, res: any) => {
     identitySessionId: magicLink.identitySessionId,
     appointments,
     activePackages,
+    campaigns: campaignContext.active,
+    campaignWallet: campaignContext.wallet,
+    campaignEnrollments: campaignContext.enrollments,
+    campaignShareLinks: campaignContext.shareLinks,
   });
 });
 

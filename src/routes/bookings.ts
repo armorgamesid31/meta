@@ -11,6 +11,14 @@ import {
   buildAppointmentReschedulePreview,
   commitAppointmentReschedule,
 } from '../services/appointmentReschedule.js';
+import {
+  previewCampaignPricing,
+  persistAppointmentCampaignApplication,
+  consumeWalletBalances,
+  upsertReferralEnrollment,
+  registerReferralAttributionFromToken,
+  releaseAppointmentCampaignApplications,
+} from '../services/campaignPricing.js';
 
 const router = Router();
 
@@ -565,6 +573,12 @@ router.post('/reschedule-commit', async (req: any, res: any) => {
     });
 
     await Promise.all(
+      committed.previousAppointmentIds.map((appointmentId) =>
+        releaseAppointmentCampaignApplications({ salonId, appointmentId }),
+      ),
+    );
+
+    await Promise.all(
       committed.createdAppointments.map((apt) =>
         emitSameDayChangeBestEffort({
           salonId,
@@ -648,6 +662,12 @@ router.post('/cancel-by-token', async (req: any, res: any) => {
         updatedAt: new Date(),
       },
     });
+
+    await Promise.all(
+      appointmentIds.map((appointmentId) =>
+        releaseAppointmentCampaignApplications({ salonId, appointmentId }),
+      ),
+    );
 
     await Promise.all(
       ownedAppointments.map((apt) =>
@@ -1030,8 +1050,16 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
               startTime: newSlotStart,
             }
           : null,
+        releasedAppointmentId: Number(bookingId),
       };
     });
+
+    if (result.releasedAppointmentId) {
+      await releaseAppointmentCampaignApplications({
+        salonId,
+        appointmentId: result.releasedAppointmentId,
+      });
+    }
 
     if (result.notify) {
       await emitSameDayChangeBestEffort({
@@ -1048,6 +1076,131 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
   } catch (error) {
     console.error('Error rescheduling booking:', error);
     res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.post('/pricing-preview', async (req: any, res: any) => {
+  const salonId = req.salon?.id;
+  if (!salonId) {
+    return res.status(400).json({ message: 'Missing tenant context.' });
+  }
+
+  const startTime = parseIsoDate(req.body?.startTime || req.body?.datetime || new Date().toISOString());
+  if (!startTime) {
+    return res.status(400).json({ message: 'startTime is required.' });
+  }
+
+  const customerIdRaw = Number(req.body?.customerId);
+  const customerId = Number.isInteger(customerIdRaw) && customerIdRaw > 0 ? customerIdRaw : null;
+  const services = Array.isArray(req.body?.services) ? req.body.services : [];
+  const packageSelections = Array.isArray(req.body?.packageSelections) ? req.body.packageSelections : [];
+  const packageByService = new Set<number>();
+  for (const row of packageSelections) {
+    const serviceId = Number((row || {}).serviceId);
+    if (Number.isInteger(serviceId) && serviceId > 0) packageByService.add(serviceId);
+  }
+
+  const requestedServiceIds = services
+    .map((item: any) => Number(item?.serviceId))
+    .filter((id: number) => Number.isInteger(id) && id > 0);
+  if (!requestedServiceIds.length) {
+    return res.status(400).json({ message: 'services[] is required.' });
+  }
+
+  try {
+    const uniqueServiceIds: number[] = Array.from(new Set<number>(requestedServiceIds));
+    const catalog = await prisma.service.findMany({
+      where: { salonId, id: { in: uniqueServiceIds } },
+      select: { id: true, price: true },
+    });
+    const priceByServiceId = new Map<number, number>();
+    for (const item of catalog) {
+      priceByServiceId.set(Number(item.id), Number(item.price || 0));
+    }
+
+    const lines = requestedServiceIds.map((serviceId) => ({
+      serviceId,
+      listPrice: Math.max(0, Number(priceByServiceId.get(serviceId) || 0)),
+      isPackageCovered: packageByService.has(serviceId),
+    }));
+
+    const pricing = await previewCampaignPricing({
+      salonId,
+      customerId,
+      startTime,
+      lines,
+    });
+
+    return res.status(200).json(pricing);
+  } catch (error) {
+    console.error('Booking pricing-preview error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.post('/referral/enroll', async (req: any, res: any) => {
+  const salonId = req.salon?.id;
+  const token = String(req.body?.token || '').trim();
+  const campaignId = Number(req.body?.campaignId);
+
+  if (!salonId || !token || !Number.isInteger(campaignId) || campaignId <= 0) {
+    return res.status(400).json({ message: 'token and campaignId are required.' });
+  }
+
+  try {
+    const resolved = await resolveMagicTokenCustomer({ token, salonId });
+    if ('error' in resolved) {
+      return res.status(resolved.code).json({ message: resolved.error });
+    }
+
+    const enrollment = await upsertReferralEnrollment({
+      salonId,
+      customerId: resolved.customerId,
+      campaignId,
+    });
+
+    return res.status(200).json({
+      enrollment: {
+        campaignId: enrollment.campaignId,
+        shareToken: enrollment.shareToken,
+      },
+    });
+  } catch (error) {
+    console.error('Booking referral enroll error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.post('/referral/share-link', async (req: any, res: any) => {
+  const salonId = req.salon?.id;
+  const token = String(req.body?.token || '').trim();
+  const campaignId = Number(req.body?.campaignId);
+
+  if (!salonId || !token || !Number.isInteger(campaignId) || campaignId <= 0) {
+    return res.status(400).json({ message: 'token and campaignId are required.' });
+  }
+
+  try {
+    const resolved = await resolveMagicTokenCustomer({ token, salonId });
+    if ('error' in resolved) {
+      return res.status(resolved.code).json({ message: resolved.error });
+    }
+
+    const enrollment = await upsertReferralEnrollment({
+      salonId,
+      customerId: resolved.customerId,
+      campaignId,
+    });
+
+    return res.status(200).json({
+      share: {
+        campaignId,
+        token: enrollment.shareToken,
+      },
+    });
+  } catch (error) {
+    console.error('Booking referral share-link error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
   }
 });
 
@@ -1073,7 +1226,8 @@ router.post('/', async (req: any, res: any, next: any) => {
       services,
       source,
       token,
-      packageSelections
+      packageSelections,
+      referralShareToken,
     } = b;
 
     try {
@@ -1096,6 +1250,24 @@ router.post('/', async (req: any, res: any, next: any) => {
         }
       }
 
+      const requestedServiceIds = services
+        .map((item: any) => Number(item?.serviceId))
+        .filter((id: number) => Number.isInteger(id) && id > 0);
+      const uniqueServiceIds: number[] = Array.from(new Set<number>(requestedServiceIds));
+      const serviceCatalog = uniqueServiceIds.length
+        ? await prisma.service.findMany({
+            where: { salonId, id: { in: uniqueServiceIds } },
+            select: { id: true, price: true, duration: true },
+          })
+        : [];
+      const serviceById = new Map<number, { price: number; duration: number }>();
+      for (const svc of serviceCatalog) {
+        serviceById.set(Number(svc.id), {
+          price: Number(svc.price || 0),
+          duration: Number(svc.duration || 30),
+        });
+      }
+
       const servicesByPerson = new Map<number, any[]>();
       for (const serviceItem of services) {
         const personIndex = Number.isInteger(Number(serviceItem?.personIndex)) && Number(serviceItem.personIndex) > 0
@@ -1107,6 +1279,24 @@ router.post('/', async (req: any, res: any, next: any) => {
       }
 
       const orderedPeople = Array.from(servicesByPerson.entries()).sort((a, b) => a[0] - b[0]);
+      const pricingInputLines = orderedPeople.flatMap(([, personServices]) =>
+        personServices.map((serviceItem: any) => {
+          const serviceId = Number(serviceItem?.serviceId);
+          const catalog = serviceById.get(serviceId);
+          return {
+            serviceId,
+            listPrice: catalog ? catalog.price : 0,
+            isPackageCovered: packageByService.has(serviceId),
+          };
+        }),
+      );
+      const pricingResult = await previewCampaignPricing({
+        salonId,
+        customerId,
+        startTime: currentStartTime,
+        lines: pricingInputLines,
+      });
+      let pricingLineIndex = 0;
 
       for (const [personIndex, personServices] of orderedPeople) {
         let personStartTime = new Date(b.startTime);
@@ -1156,7 +1346,8 @@ router.post('/', async (req: any, res: any, next: any) => {
               }
           }
 
-          const duration = parseInt(serviceItem.duration) || 30;
+          const catalogInfo = serviceById.get(serviceId);
+          const duration = parseInt(serviceItem.duration) || catalogInfo?.duration || 30;
           
           const start = new Date(personStartTime);
           const end = new Date(start.getTime() + duration * 60 * 1000);
@@ -1207,9 +1398,33 @@ router.post('/', async (req: any, res: any, next: any) => {
               preferenceMode: effectiveSpecific ? 'SPECIFIC' : 'ANY',
               preferredStaffId: effectiveSpecific ? (effectivePreferredStaffId || staffId) : null,
               notes: noteParts.join('\n'),
+              listPrice: Number(pricingResult.lines[pricingLineIndex]?.listPrice || catalogInfo?.price || 0),
+              discountTotal: Number(pricingResult.lines[pricingLineIndex]?.discountTotal || 0),
+              finalPrice: Number(pricingResult.lines[pricingLineIndex]?.finalPrice || 0),
+              campaignSnapshot: pricingResult.lines[pricingLineIndex]
+                ? ({
+                    appliedCampaigns: pricingResult.lines[pricingLineIndex].appliedCampaigns,
+                    packageCovered: pricingResult.lines[pricingLineIndex].packageCovered,
+                  } as any)
+                : null,
             }
           });
           createdAppointments.push(appointment);
+          if (pricingResult.lines[pricingLineIndex]) {
+            await persistAppointmentCampaignApplication({
+              salonId,
+              appointmentId: Number(appointment.id),
+              customerId,
+              serviceId,
+              line: pricingResult.lines[pricingLineIndex],
+            });
+            await consumeWalletBalances({
+              salonId,
+              customerId,
+              line: pricingResult.lines[pricingLineIndex],
+            });
+          }
+          pricingLineIndex += 1;
           
           // Next service starts after this one
           // Sequential: next service starts when previous one ends
@@ -1235,6 +1450,18 @@ router.post('/', async (req: any, res: any, next: any) => {
             }
           });
         } catch (_) {}
+      }
+
+      if (referralShareToken && typeof referralShareToken === 'string') {
+        try {
+          await registerReferralAttributionFromToken({
+            salonId,
+            referredCustomerId: customerId,
+            token: referralShareToken,
+          });
+        } catch (error) {
+          console.warn('Referral attribution registration skipped:', error);
+        }
       }
 
       const serviceIds = Array.from(new Set(createdAppointments.map((apt) => Number(apt.serviceId)).filter((id) => Number.isInteger(id) && id > 0)));
@@ -1265,8 +1492,10 @@ router.post('/', async (req: any, res: any, next: any) => {
       return res.status(201).json({
         data: {
             appointments: createdAppointments.map(a => ({ id: a.id })),
-            status: 'BOOKED'
-        }
+            status: 'BOOKED',
+            pricingBreakdown: pricingResult,
+            appliedCampaigns: pricingResult.appliedCampaigns,
+        },
       });
     } catch (error: any) {
       console.error('Booking Error Details:', {
