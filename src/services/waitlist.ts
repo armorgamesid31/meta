@@ -23,6 +23,8 @@ export type WaitlistCreateInput = {
   date: string;
   timeWindowStart: string;
   timeWindowEnd: string;
+  allowNearbyMatches?: boolean;
+  nearbyToleranceMinutes?: number | null;
   groups: PersonGroup[];
   source: 'CUSTOMER' | 'ADMIN';
   customer: WaitlistCustomerInput;
@@ -40,6 +42,8 @@ export type WaitlistListItem = {
   timeWindowStart: string;
   timeWindowEnd: string;
   notes: string | null;
+  allowNearbyMatches: boolean;
+  nearbyToleranceMinutes: number;
   createdAt: string;
   latestOffer: null | {
     id: number;
@@ -171,6 +175,21 @@ function slotMatchesWindow(slot: DisplaySlot, startMinute: number, endMinute: nu
   const slotStart = timeToMinute(slot.startTime);
   const slotEnd = timeToMinute(slot.endTime);
   return slotStart >= startMinute && slotEnd <= endMinute;
+}
+
+function resolveNearbyWindow(
+  startMinute: number,
+  endMinute: number,
+  allowNearbyMatches: boolean,
+  nearbyToleranceMinutes: number,
+): { exactStart: number; exactEnd: number; searchStart: number; searchEnd: number } {
+  const tolerance = allowNearbyMatches ? Math.max(0, Math.floor(nearbyToleranceMinutes || 0)) : 0;
+  return {
+    exactStart: startMinute,
+    exactEnd: endMinute,
+    searchStart: Math.max(0, startMinute - tolerance),
+    searchEnd: Math.min(24 * 60, endMinute + tolerance),
+  };
 }
 
 function slotConflictsWithReserved(slot: DisplaySlot, reservedBlocks: ReservedBlock[]): boolean {
@@ -329,6 +348,8 @@ function serializeEntry(entry: any): WaitlistListItem {
     timeWindowStart: minuteToTime(entry.windowStartMinute),
     timeWindowEnd: minuteToTime(entry.windowEndMinute),
     notes: entry.notes || null,
+    allowNearbyMatches: Boolean(entry.allowNearbyMatches),
+    nearbyToleranceMinutes: Number(entry.nearbyToleranceMinutes || 0),
     createdAt: new Date(entry.createdAt).toISOString(),
     latestOffer: entry.offers?.[0]
       ? {
@@ -362,6 +383,8 @@ export async function createWaitlistEntry(input: WaitlistCreateInput) {
   if (windowStartMinute >= windowEndMinute) {
     throw new Error('invalid_time_window');
   }
+  const allowNearbyMatches = Boolean(input.allowNearbyMatches);
+  const nearbyToleranceMinutes = Math.max(0, Math.min(180, Math.floor(Number(input.nearbyToleranceMinutes ?? 60) || 60)));
 
   const customer = await resolveCustomer({ salonId: input.salonId, customer: input.customer });
   const entry = await prisma.waitlistEntry.create({
@@ -374,6 +397,8 @@ export async function createWaitlistEntry(input: WaitlistCreateInput) {
       requestDate,
       windowStartMinute,
       windowEndMinute,
+      allowNearbyMatches,
+      nearbyToleranceMinutes,
       groups: groups as any,
       preferredStaffIds: groups.flatMap((group) =>
         group.services.flatMap((service: any) => (Array.isArray(service.allowedStaffIds) ? service.allowedStaffIds : [])),
@@ -519,6 +544,12 @@ export async function matchWaitlistForDate(
   for (const entry of entries) {
     const groups = groupsFromUnknown(entry.groups);
     if (!groups.length) continue;
+    const window = resolveNearbyWindow(
+      entry.windowStartMinute,
+      entry.windowEndMinute,
+      Boolean(entry.allowNearbyMatches),
+      Number(entry.nearbyToleranceMinutes || 0),
+    );
 
     const availability = await generateAvailability(
       {
@@ -529,11 +560,21 @@ export async function matchWaitlistForDate(
       { persistSearchContext: true },
     );
 
-    const slot = (availability.displaySlots || []).find(
+    const exactSlot = (availability.displaySlots || []).find(
       (candidate) =>
-        slotMatchesWindow(candidate, entry.windowStartMinute, entry.windowEndMinute) &&
+        slotMatchesWindow(candidate, window.exactStart, window.exactEnd) &&
         !slotConflictsWithReserved(candidate, reservedBlocks),
     );
+    const nearbySlot =
+      exactSlot || !entry.allowNearbyMatches
+        ? null
+        : (availability.displaySlots || []).find(
+            (candidate) =>
+              slotMatchesWindow(candidate, window.searchStart, window.searchEnd) &&
+              !slotMatchesWindow(candidate, window.exactStart, window.exactEnd) &&
+              !slotConflictsWithReserved(candidate, reservedBlocks),
+          );
+    const slot = exactSlot || nearbySlot;
 
     if (!slot) {
       continue;
@@ -603,8 +644,8 @@ export async function matchWaitlistForDate(
         salonId,
         eventType: 'WAITLIST_OFFER_CREATED',
         title: 'Bekleme listesi teklifi gonderildi',
-        body: `${entry.customerName} icin teklif gonderildi.`,
-        payload: { waitlistEntryId: entry.id, offerId: createdOffer.id, offerUrl },
+        body: `${entry.customerName} icin teklif gonderildi.${nearbySlot ? ' Yakın saat toleransı kullanıldı.' : ''}`,
+        payload: { waitlistEntryId: entry.id, offerId: createdOffer.id, offerUrl, matchedNearby: Boolean(nearbySlot) },
       });
     }
   }

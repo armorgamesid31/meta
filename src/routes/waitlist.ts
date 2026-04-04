@@ -22,6 +22,8 @@ router.post('/', async (req: any, res: any) => {
   const customerName = typeof req.body?.customerName === 'string' ? req.body.customerName.trim() : '';
   const customerPhone = typeof req.body?.customerPhone === 'string' ? req.body.customerPhone.trim() : '';
   const notes = typeof req.body?.notes === 'string' ? req.body.notes.trim() : null;
+  const allowNearbyMatches = Boolean(req.body?.allowNearbyMatches);
+  const nearbyToleranceMinutes = Number(req.body?.nearbyToleranceMinutes);
 
   if (!date || !timeWindowStart || !timeWindowEnd || !groups.length || !customerName || !customerPhone) {
     return res.status(400).json({ message: 'date, time window, groups, customerName and customerPhone are required.' });
@@ -33,6 +35,8 @@ router.post('/', async (req: any, res: any) => {
       date,
       timeWindowStart,
       timeWindowEnd,
+      allowNearbyMatches,
+      nearbyToleranceMinutes: Number.isFinite(nearbyToleranceMinutes) ? nearbyToleranceMinutes : 60,
       groups,
       source: 'CUSTOMER',
       customer: {

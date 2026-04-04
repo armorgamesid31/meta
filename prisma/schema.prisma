@@ -1194,6 +1194,8 @@ model WaitlistEntry {
   requestDate       DateTime           @db.Date
   windowStartMinute Int
   windowEndMinute   Int
+  allowNearbyMatches Boolean           @default(false)
+  nearbyToleranceMinutes Int           @default(60)
   groups            Json
   preferredStaffIds Json?
   latestOfferId     Int?
