@@ -1,4 +1,4 @@
-import { ChannelType } from '@prisma/client';
+import { ChannelType, CustomerPhoneVerificationPurpose } from '@prisma/client';
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import {
@@ -7,12 +7,20 @@ import {
   upsertIdentityBinding,
   upsertIdentitySession,
 } from '../services/identityService.js';
+import { validateMobilePhone, normalizeDigitsOnly } from '../services/phoneValidation.js';
+import {
+  createPhoneVerification,
+  resendPhoneVerification,
+  verifyPhoneCode,
+} from '../services/phoneVerification.js';
 
 const router = Router();
 
 interface RegisterRequest {
   fullName: string;
-  phone: string;
+  rawPhone: string;
+  normalizedPhone?: string;
+  countryIso: string;
   gender?: 'male' | 'female' | 'other';
   birthDate?: string;
   acceptMarketing: boolean;
@@ -20,10 +28,7 @@ interface RegisterRequest {
   originPhone?: string;
   instagramId?: string;
   magicToken?: string;
-}
-
-function normalizeDigits(value: string | null | undefined): string {
-  return (value || '').replace(/\D/g, '');
+  confirmDifferentWhatsappNumber?: boolean;
 }
 
 function asChannel(value: unknown): ChannelType | null {
@@ -40,94 +45,224 @@ function asObject(value: unknown): Record<string, any> {
   return value as Record<string, any>;
 }
 
-router.post('/register', async (req: any, res: any) => {
-  const {
-    fullName,
-    phone,
-    gender,
-    birthDate,
-    acceptMarketing,
-    originChannel,
-    originPhone,
-    instagramId,
-    magicToken,
-  } = req.body as RegisterRequest;
-  const salonIdNum = req.salon?.id;
-
-  if (!fullName || !phone || typeof acceptMarketing !== 'boolean' || !salonIdNum) {
-    return res
-      .status(400)
-      .json({ message: 'fullName, phone, and acceptMarketing are required, and must be in a tenant subdomain' });
+async function findOriginProfileName(input: {
+  salonId: number;
+  channel: ChannelType | null;
+  subjectNormalized: string | null;
+  conversationKey: string | null;
+}) {
+  if (input.channel && input.subjectNormalized) {
+    const cached = await prisma.channelProfileCache.findUnique({
+      where: {
+        salonId_channel_subjectNormalized: {
+          salonId: input.salonId,
+          channel: input.channel,
+          subjectNormalized: input.subjectNormalized,
+        },
+      },
+      select: { profileName: true },
+    });
+    if (cached?.profileName?.trim()) return cached.profileName.trim();
   }
 
-  try {
-    const normalizedInputPhone = normalizeDigits(phone.trim());
-    const normalizedOriginPhone = normalizeDigits(originPhone || '');
-    const originChannelTyped = asChannel(originChannel);
-    const isWhatsappOrigin = originChannelTyped === 'WHATSAPP';
-    const isPhoneMatch = Boolean(normalizedInputPhone && normalizedOriginPhone && normalizedInputPhone === normalizedOriginPhone);
-    const shouldVerify = isWhatsappOrigin && isPhoneMatch;
+  if (input.channel && input.conversationKey) {
+    const conversation = await prisma.conversationState.findUnique({
+      where: {
+        salonId_channel_conversationKey: {
+          salonId: input.salonId,
+          channel: input.channel,
+          conversationKey: input.conversationKey,
+        },
+      },
+      select: { profileName: true },
+    });
+    if (conversation?.profileName?.trim()) return conversation.profileName.trim();
+  }
 
-    let resolvedInstagramId = normalizeInstagramIdentity(instagramId || '') || null;
-    let magicLink: {
-      token: string;
-      channel: ChannelType;
-      subjectType: 'PHONE' | 'INSTAGRAM_ID';
-      phone: string;
-      subjectNormalized: string;
-      identitySessionId: string;
-      expiresAt: Date;
-      status: string;
-      context: unknown;
-    } | null = null;
+  return null;
+}
 
-    if (typeof magicToken === 'string' && magicToken.trim()) {
-      const fetched = await prisma.magicLink.findUnique({
-        where: { token: magicToken.trim() },
-        select: {
-          token: true,
-          channel: true,
-          subjectType: true,
-          phone: true,
-          subjectNormalized: true,
-          identitySessionId: true,
-          expiresAt: true,
-          status: true,
-          context: true,
-          salonId: true,
+async function resolveMagicLinkContext(input: { salonId: number; magicToken?: string | null }) {
+  if (typeof input.magicToken !== 'string' || !input.magicToken.trim()) {
+    return { magicLink: null, originProfileName: null };
+  }
+
+  const magicLink = await prisma.magicLink.findUnique({
+    where: { token: input.magicToken.trim() },
+    select: {
+      token: true,
+      channel: true,
+      subjectType: true,
+      phone: true,
+      subjectNormalized: true,
+      identitySessionId: true,
+      expiresAt: true,
+      status: true,
+      context: true,
+      salonId: true,
+      usedByCustomerId: true,
+    },
+  });
+
+  if (!magicLink || magicLink.salonId !== input.salonId || magicLink.expiresAt <= new Date() || magicLink.status !== 'ACTIVE') {
+    return { magicLink: null, originProfileName: null };
+  }
+
+  const context = asObject(magicLink.context);
+  const originProfileName = await findOriginProfileName({
+    salonId: input.salonId,
+    channel: magicLink.channel,
+    subjectNormalized: magicLink.subjectNormalized,
+    conversationKey: typeof context.conversationKey === 'string' ? context.conversationKey : null,
+  });
+
+  return { magicLink, originProfileName };
+}
+
+async function upsertRegisteredCustomer(input: {
+  salonId: number;
+  fullName: string;
+  phoneDigits: string;
+  gender?: 'male' | 'female' | 'other';
+  birthDate?: string;
+  acceptMarketing: boolean;
+  registrationStatus: 'PENDING' | 'VERIFIED';
+  instagramId?: string | null;
+  identity:
+    | {
+        channel: ChannelType;
+        subjectType: 'PHONE' | 'INSTAGRAM_ID';
+        subjectRaw: string;
+        subjectNormalized: string;
+      }
+    | null;
+  magicLink:
+    | {
+        token: string;
+        context: unknown;
+      }
+    | null;
+}) {
+  const birthDateVal = input.birthDate ? new Date(input.birthDate) : null;
+  if (input.birthDate && Number.isNaN(birthDateVal!.getTime())) {
+    throw new Error('birthDate must be a valid ISO date');
+  }
+
+  const genderVal = input.gender && ['male', 'female', 'other'].includes(input.gender) ? input.gender : null;
+  const trimmedName = input.fullName.trim();
+  const resolvedInstagramId = normalizeInstagramIdentity(input.instagramId || '') || null;
+
+  const existing = await prisma.customer.findFirst({
+    where: {
+      phone: input.phoneDigits,
+      salonId: input.salonId,
+    },
+  });
+
+  const customer = existing
+    ? await prisma.customer.update({
+        where: { id: existing.id },
+        data: {
+          ...(trimmedName ? { name: trimmedName } : {}),
+          ...(genderVal ? { gender: genderVal } : {}),
+          ...(birthDateVal ? { birthDate: birthDateVal } : {}),
+          acceptMarketing: input.acceptMarketing,
+          ...(resolvedInstagramId ? { instagram: resolvedInstagramId } : {}),
+          registrationStatus: input.registrationStatus,
+        },
+      })
+    : await prisma.customer.create({
+        data: {
+          name: trimmedName || null,
+          phone: input.phoneDigits,
+          gender: genderVal,
+          birthDate: birthDateVal,
+          acceptMarketing: input.acceptMarketing,
+          salonId: input.salonId,
+          registrationStatus: input.registrationStatus,
+          instagram: resolvedInstagramId,
         },
       });
 
-      if (fetched && fetched.salonId === salonIdNum && fetched.expiresAt > new Date() && fetched.status === 'ACTIVE') {
-        magicLink = fetched;
-        if (!resolvedInstagramId && fetched.subjectType === 'INSTAGRAM_ID') {
-          const fromToken = normalizeInstagramIdentity(fetched.phone);
-          resolvedInstagramId = fromToken || null;
-        }
-      }
-    }
-
-    if (originChannelTyped === 'INSTAGRAM' && !resolvedInstagramId && !magicLink) {
-      return res.status(400).json({
-        message: 'Instagram kimligi dogrulanamadi. Lutfen size gonderilen son baglantiyi kullanin.',
-      });
-    }
-
-    const birthDateVal = birthDate ? new Date(birthDate) : null;
-    if (birthDate && Number.isNaN(birthDateVal!.getTime())) {
-      return res.status(400).json({ message: 'birthDate must be a valid ISO date' });
-    }
-
-    const genderVal = gender && ['male', 'female', 'other'].includes(gender) ? gender : null;
-    const trimmedName = fullName?.trim() || '';
-    const trimmedPhone = phone.trim();
-
-    const existing = await prisma.customer.findFirst({
-      where: {
-        phone: trimmedPhone,
-        salonId: salonIdNum,
+  if (!existing) {
+    await prisma.customerRiskProfile.create({
+      data: {
+        customerId: customer.id,
+        salonId: input.salonId,
+        riskScore: 0,
+        riskLevel: null,
       },
     });
+  }
+
+  if (input.identity) {
+    const context = asObject(input.magicLink?.context);
+    const session = await upsertIdentitySession({
+      salonId: input.salonId,
+      identity: input.identity,
+      conversationKey: typeof context.conversationKey === 'string' ? context.conversationKey : null,
+      canonicalUserId: `customer:${customer.id}`,
+      customerId: customer.id,
+      status: 'LINKED',
+    });
+
+    await upsertIdentityBinding({
+      salonId: input.salonId,
+      channel: input.identity.channel,
+      subjectNormalized: input.identity.subjectNormalized,
+      subjectRaw: input.identity.subjectRaw,
+      customerId: customer.id,
+      sessionId: session.id,
+      source: 'MAGIC_LINK_REGISTER',
+    });
+
+    if (input.magicLink) {
+      const currentContext = asObject(input.magicLink.context);
+      await prisma.magicLink.update({
+        where: { token: input.magicLink.token },
+        data: {
+          usedByCustomerId: customer.id,
+          identitySessionId: session.id,
+          context: {
+            ...currentContext,
+            customerId: customer.id,
+            canonicalUserId: `customer:${customer.id}`,
+          },
+        },
+      });
+    }
+  }
+
+  return { customer, isNew: !existing };
+}
+
+router.post('/register', async (req: any, res: any) => {
+  const body = req.body as RegisterRequest;
+  const salonIdNum = req.salon?.id;
+
+  if (!body.fullName || !body.rawPhone || !body.countryIso || typeof body.acceptMarketing !== 'boolean' || !salonIdNum) {
+    return res.status(400).json({
+      message: 'fullName, rawPhone, countryIso and acceptMarketing are required.',
+    });
+  }
+
+  try {
+    const validatedPhone = validateMobilePhone({
+      rawPhone: body.rawPhone,
+      countryIso: body.countryIso,
+      normalizedPhone: body.normalizedPhone,
+    });
+
+    const originChannelTyped = asChannel(body.originChannel);
+    const { magicLink, originProfileName } = await resolveMagicLinkContext({
+      salonId: salonIdNum,
+      magicToken: body.magicToken,
+    });
+
+    let resolvedInstagramId = normalizeInstagramIdentity(body.instagramId || '') || null;
+    if (!resolvedInstagramId && magicLink?.subjectType === 'INSTAGRAM_ID') {
+      resolvedInstagramId = normalizeInstagramIdentity(magicLink.phone) || null;
+    }
 
     const identity =
       (magicLink
@@ -139,135 +274,209 @@ router.post('/register', async (req: any, res: any) => {
           }
         : resolveIdentity({
             channel: originChannelTyped,
-            phone: isWhatsappOrigin ? originPhone || trimmedPhone : null,
+            phone: originChannelTyped === 'WHATSAPP' ? body.originPhone || validatedPhone.digits : null,
             customerKey: originChannelTyped === 'INSTAGRAM' ? resolvedInstagramId : null,
           })) || null;
 
-    const upsertCustomer = async () => {
-      if (existing) {
-        const updates: Record<string, any> = {};
+    const normalizedOriginPhone = normalizeDigitsOnly(body.originPhone || magicLink?.phone || '');
+    const isWhatsappOrigin = (magicLink?.channel || originChannelTyped) === ChannelType.WHATSAPP;
+    const isInstagramOrigin = (magicLink?.channel || originChannelTyped) === ChannelType.INSTAGRAM;
+    const isPhoneMatch = Boolean(
+      validatedPhone.digits &&
+      normalizedOriginPhone &&
+      validatedPhone.digits === normalizedOriginPhone,
+    );
 
-        if (shouldVerify && existing.registrationStatus !== 'VERIFIED') {
-          updates.registrationStatus = 'VERIFIED';
-        }
-        if (trimmedName && (!existing.name || existing.name.trim().length === 0)) {
-          updates.name = trimmedName;
-        }
-        if (genderVal && !existing.gender) {
-          updates.gender = genderVal;
-        }
-        if (birthDateVal && !existing.birthDate) {
-          updates.birthDate = birthDateVal;
-        }
-        if (typeof acceptMarketing === 'boolean' && existing.acceptMarketing !== acceptMarketing) {
-          updates.acceptMarketing = acceptMarketing;
-        }
-        if (resolvedInstagramId && (!existing.instagram || existing.instagram.trim().length === 0)) {
-          updates.instagram = resolvedInstagramId;
-        }
+    if (isWhatsappOrigin && !isPhoneMatch && !body.confirmDifferentWhatsappNumber) {
+      return res.status(409).json({
+        status: 'requires_whatsapp_confirmation',
+        message: 'WhatsApp numarasiyla farkli bir numara girdiniz.',
+        whatsappPhone: normalizedOriginPhone || null,
+        originProfileName,
+        enteredPhone: validatedPhone.digits,
+      });
+    }
 
-        if (!Object.keys(updates).length) return existing;
-        return prisma.customer.update({
-          where: { id: existing.id },
-          data: updates,
+    if (isInstagramOrigin) {
+      if (!resolvedInstagramId && !magicLink) {
+        return res.status(400).json({
+          message: 'Instagram kimligi dogrulanamadi. Lutfen size gonderilen son baglantiyi kullanin.',
         });
       }
 
-      const customer = await prisma.customer.create({
-        data: {
-          name: trimmedName || null,
-          phone: trimmedPhone,
-          gender: genderVal,
-          birthDate: birthDateVal,
-          acceptMarketing,
-          salonId: salonIdNum,
-          registrationStatus: shouldVerify ? 'VERIFIED' : 'PENDING',
-          instagram: resolvedInstagramId,
-        },
-      });
-
-      await prisma.customerRiskProfile.create({
-        data: {
-          customerId: customer.id,
-          salonId: salonIdNum,
-          riskScore: 0,
-          riskLevel: null,
-        },
-      });
-
-      return customer;
-    };
-
-    const customer = await upsertCustomer();
-
-    if (identity) {
-      const context = asObject(magicLink?.context);
-      const session = await upsertIdentitySession({
-        salonId: salonIdNum,
-        identity,
-        conversationKey: typeof context.conversationKey === 'string' ? context.conversationKey : null,
-        canonicalUserId: `customer:${customer.id}`,
-        customerId: customer.id,
-        status: 'LINKED',
-      });
-
-      await upsertIdentityBinding({
-        salonId: salonIdNum,
-        channel: identity.channel,
-        subjectNormalized: identity.subjectNormalized,
-        subjectRaw: identity.subjectRaw,
-        customerId: customer.id,
-        sessionId: session.id,
-        source: 'MAGIC_LINK_REGISTER',
-      });
-
-      if (!resolvedInstagramId && identity.channel === 'INSTAGRAM') {
-        const normalizedIg = normalizeInstagramIdentity(identity.subjectRaw);
-        if (normalizedIg) {
-          resolvedInstagramId = normalizedIg;
-          await prisma.customer.update({
-            where: { id: customer.id },
-            data: { instagram: normalizedIg },
-          });
-        }
-      }
-
-      if (magicLink) {
-        const currentContext = asObject(magicLink.context);
-        await prisma.magicLink.update({
-          where: { token: magicLink.token },
-          data: {
-            usedByCustomerId: customer.id,
-            identitySessionId: session.id,
-            context: {
-              ...currentContext,
-              customerId: customer.id,
-              canonicalUserId: `customer:${customer.id}`,
+      if (identity) {
+        const existingBinding = await prisma.identityBinding.findUnique({
+          where: {
+            salonId_channel_subjectNormalized: {
+              salonId: salonIdNum,
+              channel: identity.channel,
+              subjectNormalized: identity.subjectNormalized,
             },
           },
+          select: { customerId: true },
         });
+
+        if (existingBinding?.customerId) {
+          const existingCustomer = await prisma.customer.findFirst({
+            where: { id: existingBinding.customerId, salonId: salonIdNum },
+          });
+          if (existingCustomer && existingCustomer.phone === validatedPhone.digits) {
+            return res.status(200).json({
+              status: 'registered',
+              customerId: existingCustomer.id,
+              isNew: false,
+              registrationStatus: existingCustomer.registrationStatus,
+            });
+          }
+        }
       }
+
+      const verification = await createPhoneVerification({
+        salonId: salonIdNum,
+        phone: validatedPhone.digits,
+        countryIso: validatedPhone.countryIso,
+        purpose: CustomerPhoneVerificationPurpose.BOOKING_REGISTER,
+        payload: {
+          fullName: body.fullName,
+          gender: body.gender || null,
+          birthDate: body.birthDate || null,
+          acceptMarketing: body.acceptMarketing,
+          instagramId: resolvedInstagramId,
+          magicToken: body.magicToken || null,
+          originChannel: magicLink?.channel || originChannelTyped,
+          originPhone: body.originPhone || magicLink?.phone || null,
+        },
+      });
+
+      return res.status(202).json({
+        status: 'verification_code_sent',
+        verificationId: verification.id,
+        message: 'Telefon dogrulama kodu WhatsApp uzerinden gonderildi.',
+      });
     }
 
-    return res.status(existing ? 200 : 201).json({
-      customerId: customer.id,
-      isNew: !existing,
-      registrationStatus: customer.registrationStatus,
+    const registered = await upsertRegisteredCustomer({
+      salonId: salonIdNum,
+      fullName: body.fullName,
+      phoneDigits: validatedPhone.digits,
+      gender: body.gender,
+      birthDate: body.birthDate,
+      acceptMarketing: body.acceptMarketing,
+      registrationStatus: isWhatsappOrigin && isPhoneMatch ? 'VERIFIED' : 'PENDING',
+      instagramId: resolvedInstagramId,
+      identity,
+      magicLink: magicLink ? { token: magicLink.token, context: magicLink.context } : null,
     });
-  } catch (error) {
-    const prismaError = error as { code?: string };
-    if (prismaError.code === 'P2002') {
-      const existing = await prisma.customer.findFirst({
-        where: { phone: phone.trim(), salonId: salonIdNum },
-      });
-      if (existing) {
-        return res.status(200).json({
-          customerId: existing.id,
-          isNew: false,
-        });
-      }
+
+    return res.status(registered.isNew ? 201 : 200).json({
+      status: 'registered',
+      customerId: registered.customer.id,
+      isNew: registered.isNew,
+      registrationStatus: registered.customer.registrationStatus,
+    });
+  } catch (error: any) {
+    const message = error?.message || 'Internal server error';
+    const status = /unsupported_country|phone_required|invalid_phone|mobile_phone_required|phone_normalization_mismatch|birthDate/.test(message)
+      ? 400
+      : 500;
+    if (status === 500) {
+      console.error('Customer register error:', error);
     }
-    return res.status(500).json({ message: 'Internal server error' });
+    return res.status(status).json({ message });
+  }
+});
+
+router.post('/verify-phone/request', async (req: any, res: any) => {
+  const salonId = req.salon?.id;
+  const verificationId = typeof req.body?.verificationId === 'string' ? req.body.verificationId.trim() : '';
+  if (!salonId || !verificationId) {
+    return res.status(400).json({ message: 'verificationId is required.' });
+  }
+
+  try {
+    const verification = await resendPhoneVerification({ verificationId, salonId });
+    return res.status(200).json({
+      status: 'verification_code_sent',
+      verificationId: verification.id,
+      message: 'Yeni dogrulama kodu gonderildi.',
+    });
+  } catch (error: any) {
+    const message = error?.message || 'Internal server error';
+    const status = /not_found/.test(message) ? 404 : /not_pending|limit|expired/.test(message) ? 409 : 500;
+    if (status === 500) {
+      console.error('Phone verification resend error:', error);
+    }
+    return res.status(status).json({ message });
+  }
+});
+
+router.post('/verify-phone/confirm', async (req: any, res: any) => {
+  const salonId = req.salon?.id;
+  const verificationId = typeof req.body?.verificationId === 'string' ? req.body.verificationId.trim() : '';
+  const code = typeof req.body?.code === 'string' ? req.body.code.trim() : '';
+  if (!salonId || !verificationId || !code) {
+    return res.status(400).json({ message: 'verificationId and code are required.' });
+  }
+
+  try {
+    const verification = await verifyPhoneCode({ verificationId, salonId, code });
+    const payload = asObject(verification.payload);
+    const { magicLink } = await resolveMagicLinkContext({
+      salonId,
+      magicToken: typeof payload.magicToken === 'string' ? payload.magicToken : null,
+    });
+
+    const originChannelTyped = asChannel(payload.originChannel);
+    const resolvedInstagramId = normalizeInstagramIdentity(String(payload.instagramId || '')) || null;
+    const identity =
+      (magicLink
+        ? {
+            channel: magicLink.channel,
+            subjectType: magicLink.subjectType,
+            subjectRaw: magicLink.phone,
+            subjectNormalized: magicLink.subjectNormalized,
+          }
+        : resolveIdentity({
+            channel: originChannelTyped,
+            phone: originChannelTyped === 'WHATSAPP' ? payload.originPhone as string : null,
+            customerKey: originChannelTyped === 'INSTAGRAM' ? resolvedInstagramId : null,
+          })) || null;
+
+    const registered = await upsertRegisteredCustomer({
+      salonId,
+      fullName: String(payload.fullName || ''),
+      phoneDigits: verification.phone,
+      gender: payload.gender as 'male' | 'female' | 'other' | undefined,
+      birthDate: typeof payload.birthDate === 'string' ? payload.birthDate : undefined,
+      acceptMarketing: Boolean(payload.acceptMarketing),
+      registrationStatus: 'VERIFIED',
+      instagramId: resolvedInstagramId,
+      identity,
+      magicLink: magicLink ? { token: magicLink.token, context: magicLink.context } : null,
+    });
+
+    await prisma.customerPhoneVerification.update({
+      where: { id: verification.id },
+      data: { customerId: registered.customer.id },
+    });
+
+    return res.status(200).json({
+      status: 'registered',
+      customerId: registered.customer.id,
+      isNew: registered.isNew,
+      registrationStatus: registered.customer.registrationStatus,
+    });
+  } catch (error: any) {
+    const message = error?.message || 'Internal server error';
+    const status = /not_found/.test(message)
+      ? 404
+      : /expired|attempt|invalid|not_pending/.test(message)
+        ? 409
+        : 500;
+    if (status === 500) {
+      console.error('Phone verification confirm error:', error);
+    }
+    return res.status(status).json({ message });
   }
 });
 

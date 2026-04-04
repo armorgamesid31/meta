@@ -74,6 +74,19 @@ router.get('/context', async (req: any, res: any) => {
   const originChannel = magicLink.channel;
   const originPhone = magicLink.subjectType === 'PHONE' ? magicLink.phone : null;
   const originInstagramId = magicLink.subjectType === 'INSTAGRAM_ID' ? magicLink.phone : null;
+  const cachedProfile = await prisma.channelProfileCache.findUnique({
+    where: {
+      salonId_channel_subjectNormalized: {
+        salonId,
+        channel: magicLink.channel,
+        subjectNormalized: magicLink.subjectNormalized,
+      },
+    },
+    select: { profileName: true },
+  });
+  const magicContext = asObject(magicLink.context);
+  const conversationProfile = typeof magicContext.profileName === 'string' ? magicContext.profileName.trim() : '';
+  const originProfileName = cachedProfile?.profileName?.trim() || conversationProfile || null;
 
   let linkedCustomerId = magicLink.usedByCustomerId || magicLink.identitySession?.customerId || null;
 
@@ -371,6 +384,8 @@ router.get('/context', async (req: any, res: any) => {
     customerLanguage,
     originChannel,
     originPhone,
+    originDisplayPhone: originPhone,
+    originProfileName,
     originInstagramId,
     salonId,
     salonName: salon.name,

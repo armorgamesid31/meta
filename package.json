@@ -41,6 +41,7 @@
     "framer-motion": "^12.33.0",
     "http-proxy-middleware": "^3.0.5",
     "jsonwebtoken": "^9.0.3",
+    "libphonenumber-js": "^1.12.41",
     "lucide-react": "^0.563.0",
     "pg": "^8.17.2",
     "psql": "^0.0.1",
