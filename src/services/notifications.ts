@@ -1,4 +1,10 @@
 import { prisma } from '../prisma.js';
+import {
+  PushDeliveryStatus,
+  PushProviderSource,
+  getPushProviderStatus,
+  sendPushMessages,
+} from './pushProvider.js';
 
 export type NotificationEventType =
   | 'HANDOVER_REQUIRED'
@@ -10,12 +16,24 @@ export type NotificationEventType =
   | 'CAMPAIGN_MANUAL_SEND';
 
 type DeliveryStatus = 'PENDING' | 'SENT' | 'SKIPPED' | 'FAILED';
+type NotificationRoute = 'instagram-inbox' | 'schedule' | 'analytics' | 'notifications';
 
 type NotificationPolicy = {
   recipients?: Partial<Record<NotificationEventType, string[]>>;
   handoverReminderIntervalMinutes?: number;
   handoverReminderMaxCount?: number;
 };
+
+export interface NotificationDispatchResult {
+  notificationId: number | null;
+  recipientUserIds: number[];
+  inAppDeliveryCount: number;
+  pushDeliveryCount: number;
+  pushDeliverySummary: Record<DeliveryStatus, number>;
+  providerConfigured: boolean;
+  providerSource: PushProviderSource;
+  providerError: string | null;
+}
 
 const DEFAULT_RECIPIENTS: Record<NotificationEventType, string[]> = {
   HANDOVER_REQUIRED: ['OWNER', 'MANAGER', 'RECEPTION'],
@@ -38,8 +56,69 @@ function asObject(value: unknown): Record<string, any> {
   return value as Record<string, any>;
 }
 
-function getEnvHasPushProvider(): boolean {
-  return Boolean(process.env.FCM_SERVICE_ACCOUNT_JSON || process.env.FCM_SERVICE_ACCOUNT_BASE64);
+function resolveNotificationRoute(
+  eventType: NotificationEventType,
+  payload?: Record<string, unknown> | null,
+): NotificationRoute {
+  const candidate = typeof payload?.route === 'string' ? payload.route.trim() : '';
+  if (candidate === 'instagram-inbox' || candidate === 'schedule' || candidate === 'analytics' || candidate === 'notifications') {
+    return candidate;
+  }
+
+  if (eventType === 'HANDOVER_REQUIRED' || eventType === 'HANDOVER_REMINDER') {
+    return 'instagram-inbox';
+  }
+  if (eventType === 'SAME_DAY_APPOINTMENT_CHANGE' || eventType === 'END_OF_DAY_MISSING_DATA') {
+    return 'schedule';
+  }
+  if (eventType === 'DAILY_MANAGER_REPORT') {
+    return 'analytics';
+  }
+  return 'notifications';
+}
+
+function buildNotificationPayload(
+  eventType: NotificationEventType,
+  payload?: Record<string, unknown> | null,
+): Record<string, unknown> {
+  const route = resolveNotificationRoute(eventType, payload);
+  return {
+    ...(payload || {}),
+    eventType,
+    route,
+  };
+}
+
+function summarizePushDeliveries(statuses: DeliveryStatus[]): Record<DeliveryStatus, number> {
+  return statuses.reduce<Record<DeliveryStatus, number>>(
+    (acc, status) => {
+      acc[status] += 1;
+      return acc;
+    },
+    {
+      PENDING: 0,
+      SENT: 0,
+      SKIPPED: 0,
+      FAILED: 0,
+    },
+  );
+}
+
+function getUnavailableProviderState(provider: ReturnType<typeof getPushProviderStatus>): {
+  status: PushDeliveryStatus;
+  reason: string;
+} {
+  if (provider.source === 'NONE') {
+    return {
+      status: 'SKIPPED',
+      reason: 'push_provider_not_configured',
+    };
+  }
+
+  return {
+    status: 'FAILED',
+    reason: provider.error || 'push_provider_initialization_failed',
+  };
 }
 
 export function getDefaultNotificationPolicy(): NotificationPolicy {
@@ -168,13 +247,37 @@ export async function createNotification(input: {
   body: string;
   payload?: Record<string, unknown> | null;
   recipientUserIds?: number[];
-}): Promise<void> {
+}): Promise<NotificationDispatchResult> {
   const recipientIdsRaw = input.recipientUserIds?.length
     ? input.recipientUserIds
     : await getRecipientUserIds(input.salonId, input.eventType);
 
   const recipientUserIds = await getEligibleUserIdsByPreference(input.salonId, recipientIdsRaw, input.eventType);
-  if (!recipientUserIds.length) return;
+  const provider = getPushProviderStatus();
+
+  if (!recipientUserIds.length) {
+    return {
+      notificationId: null,
+      recipientUserIds: [],
+      inAppDeliveryCount: 0,
+      pushDeliveryCount: 0,
+      pushDeliverySummary: summarizePushDeliveries([]),
+      providerConfigured: provider.configured,
+      providerSource: provider.source,
+      providerError: provider.error,
+    };
+  }
+
+  const payload = buildNotificationPayload(input.eventType, input.payload);
+  let notificationId: number | null = null;
+  let inAppDeliveryCount = 0;
+  let pushTargets: Array<{
+    deliveryId: number;
+    tokenId: number;
+    userId: number;
+    token: string;
+    platform: string;
+  }> = [];
 
   await prisma.$transaction(async (tx) => {
     const createdRows = await tx.$queryRawUnsafe<any[]>(
@@ -187,13 +290,13 @@ export async function createNotification(input: {
       input.eventType,
       input.title,
       input.body,
-      JSON.stringify(input.payload || {}),
+      JSON.stringify(payload),
     );
 
-    const notificationId = Number(createdRows?.[0]?.id);
+    notificationId = Number(createdRows?.[0]?.id);
     if (!notificationId) return;
 
-    await tx.$executeRawUnsafe(
+    inAppDeliveryCount = await tx.$executeRawUnsafe(
       `
         INSERT INTO "AppNotificationDelivery" ("notificationId", "salonId", "userId", "channel", "status", "createdAt", "updatedAt")
         SELECT $1, $2, u."id", 'IN_APP'::"NotificationDeliveryChannel", 'SENT'::"NotificationDeliveryStatus", NOW(), NOW()
@@ -205,39 +308,136 @@ export async function createNotification(input: {
       recipientUserIds,
     );
 
-    const tokens = await tx.$queryRawUnsafe<any[]>(
+    const providerState = provider.configured
+      ? { status: 'PENDING' as PushDeliveryStatus, reason: null as string | null }
+      : getUnavailableProviderState(provider);
+
+    pushTargets = await tx.$queryRawUnsafe<any[]>(
       `
-        SELECT t."id", t."userId", t."token", t."platform"
-        FROM "PushDeviceToken" t
-        WHERE t."salonId" = $1
-          AND t."isActive" = true
-          AND t."userId" = ANY($2::int[])
+        WITH tokens AS (
+          SELECT t."id" AS "pushTokenId", t."userId", t."token", t."platform"
+          FROM "PushDeviceToken" t
+          WHERE t."salonId" = $1
+            AND t."isActive" = true
+            AND t."userId" = ANY($2::int[])
+        ),
+        inserted AS (
+          INSERT INTO "AppNotificationDelivery"
+            ("notificationId", "salonId", "userId", "pushTokenId", "channel", "status", "failureReason", "createdAt", "updatedAt")
+          SELECT
+            $3,
+            $1,
+            t."userId",
+            t."pushTokenId",
+            'PUSH'::"NotificationDeliveryChannel",
+            $4::"NotificationDeliveryStatus",
+            $5,
+            NOW(),
+            NOW()
+          FROM tokens t
+          RETURNING "id", "pushTokenId", "userId"
+        )
+        SELECT
+          i."id" AS "deliveryId",
+          i."pushTokenId" AS "tokenId",
+          i."userId",
+          t."token",
+          t."platform"
+        FROM inserted i
+        INNER JOIN tokens t ON t."pushTokenId" = i."pushTokenId"
       `,
       input.salonId,
       recipientUserIds,
+      notificationId,
+      providerState.status,
+      providerState.reason,
+    );
+  });
+
+  if (!notificationId) {
+    return {
+      notificationId: null,
+      recipientUserIds,
+      inAppDeliveryCount,
+      pushDeliveryCount: 0,
+      pushDeliverySummary: summarizePushDeliveries([]),
+      providerConfigured: provider.configured,
+      providerSource: provider.source,
+      providerError: provider.error,
+    };
+  }
+
+  let pushStatuses: DeliveryStatus[] = [];
+
+  if (provider.configured && pushTargets.length > 0) {
+    const sendResult = await sendPushMessages(
+      pushTargets.map((target) => ({
+        deliveryId: Number(target.deliveryId),
+        tokenId: Number(target.tokenId),
+        token: String(target.token),
+        title: input.title,
+        body: input.body,
+        data: {
+          ...payload,
+          notificationId,
+          deliveryId: Number(target.deliveryId),
+          salonId: input.salonId,
+        },
+      })),
     );
 
-    const pushConfigured = getEnvHasPushProvider();
-    const status: DeliveryStatus = pushConfigured ? 'SENT' : 'SKIPPED';
-    const reason = pushConfigured ? null : 'push_provider_not_configured';
+    pushStatuses = sendResult.results.map((item) => item.status as DeliveryStatus);
 
-    for (const token of tokens) {
-      await tx.$executeRawUnsafe(
-        `
-          INSERT INTO "AppNotificationDelivery"
-            ("notificationId", "salonId", "userId", "pushTokenId", "channel", "status", "failureReason", "createdAt", "updatedAt")
-          VALUES
-            ($1, $2, $3, $4, 'PUSH'::"NotificationDeliveryChannel", $5::"NotificationDeliveryStatus", $6, NOW(), NOW())
-        `,
-        notificationId,
-        input.salonId,
-        Number(token.userId),
-        Number(token.id),
-        status,
-        reason,
-      );
-    }
-  });
+    await prisma.$transaction(async (tx) => {
+      for (const result of sendResult.results) {
+        await tx.$executeRawUnsafe(
+          `
+            UPDATE "AppNotificationDelivery"
+            SET
+              "status" = $2::"NotificationDeliveryStatus",
+              "providerMessageId" = $3,
+              "failureReason" = $4,
+              "updatedAt" = NOW()
+            WHERE "id" = $1
+          `,
+          result.deliveryId,
+          result.status,
+          result.providerMessageId,
+          result.failureReason,
+        );
+      }
+
+      const tokenIdsToDeactivate = sendResult.results
+        .filter((item) => item.deactivateToken)
+        .map((item) => item.tokenId)
+        .filter((value, index, array) => array.indexOf(value) === index);
+
+      if (tokenIdsToDeactivate.length > 0) {
+        await tx.$executeRawUnsafe(
+          `
+            UPDATE "PushDeviceToken"
+            SET "isActive" = false, "updatedAt" = NOW()
+            WHERE "id" = ANY($1::int[])
+          `,
+          tokenIdsToDeactivate,
+        );
+      }
+    });
+  } else {
+    const fallbackStatus = provider.configured ? 'PENDING' : getUnavailableProviderState(provider).status;
+    pushStatuses = pushTargets.map(() => fallbackStatus as DeliveryStatus);
+  }
+
+  return {
+    notificationId,
+    recipientUserIds,
+    inAppDeliveryCount,
+    pushDeliveryCount: pushTargets.length,
+    pushDeliverySummary: summarizePushDeliveries(pushStatuses),
+    providerConfigured: provider.configured,
+    providerSource: provider.source,
+    providerError: provider.error,
+  };
 }
 
 export async function markHandoverTriggered(input: {

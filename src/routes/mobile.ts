@@ -7,10 +7,17 @@ import {
   buildFeatureFlags,
   buildSubscription,
 } from '../services/mobileBootstrap.js';
-import { getDefaultNotificationPolicy } from '../services/notifications.js';
+import { createNotification, getDefaultNotificationPolicy } from '../services/notifications.js';
+import { getPushProviderStatus } from '../services/pushProvider.js';
 import { ACCESS_VERSION, ensureSalonAccessSeed, getEffectivePermissionSet } from '../services/accessControl.js';
 
 const router = Router();
+
+function maskPushToken(token: string): string {
+  const normalized = String(token || '').trim();
+  if (!normalized) return '';
+  return normalized.length <= 8 ? normalized : `${normalized.slice(0, 4)}...${normalized.slice(-4)}`;
+}
 
 router.get('/bootstrap', authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
@@ -183,6 +190,91 @@ router.post('/push/unregister', authenticateToken, async (req: any, res: any) =>
   }
 });
 
+router.get('/push/status', authenticateToken, async (req: any, res: any) => {
+  if (!req.user) return res.status(401).json({ message: 'Unauthorized.' });
+  const salonId = req.user.salonId;
+  const userId = req.user.userId;
+  const provider = getPushProviderStatus();
+
+  try {
+    const rows = await prisma.$queryRawUnsafe<any[]>(
+      `
+        SELECT
+          "id",
+          "platform",
+          "token",
+          "appVersion",
+          "deviceMeta",
+          "isActive",
+          "lastSeenAt",
+          "createdAt",
+          "updatedAt"
+        FROM "PushDeviceToken"
+        WHERE "salonId" = $1 AND "userId" = $2
+        ORDER BY COALESCE("lastSeenAt", "createdAt") DESC, "id" DESC
+      `,
+      salonId,
+      userId,
+    );
+
+    const devices = rows.map((row) => ({
+      id: Number(row.id),
+      platform: String(row.platform || ''),
+      tokenMasked: maskPushToken(String(row.token || '')),
+      appVersion: row.appVersion || null,
+      deviceMeta: row.deviceMeta || null,
+      isActive: row.isActive !== false,
+      lastSeenAt: row.lastSeenAt || null,
+      createdAt: row.createdAt || null,
+      updatedAt: row.updatedAt || null,
+    }));
+
+    return res.status(200).json({
+      providerConfigured: provider.configured,
+      providerSource: provider.source,
+      providerError: provider.error,
+      activeDeviceCount: devices.filter((item) => item.isActive).length,
+      devices,
+    });
+  } catch (error) {
+    console.error('Mobile push status error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.post('/push/test', authenticateToken, async (req: any, res: any) => {
+  if (!req.user) return res.status(401).json({ message: 'Unauthorized.' });
+
+  try {
+    const result = await createNotification({
+      salonId: req.user.salonId,
+      eventType: 'DAILY_MANAGER_REPORT',
+      title: 'Kedy test bildirimi',
+      body: 'Push sistemi bu cihaza test mesaji gonderdi.',
+      payload: {
+        route: 'notifications',
+        source: 'manual_push_test',
+        createdAt: new Date().toISOString(),
+      },
+      recipientUserIds: [req.user.userId],
+    });
+
+    return res.status(200).json({
+      ok: true,
+      notificationId: result.notificationId,
+      inAppDeliveryCount: result.inAppDeliveryCount,
+      pushDeliveryCount: result.pushDeliveryCount,
+      pushDeliverySummary: result.pushDeliverySummary,
+      providerConfigured: result.providerConfigured,
+      providerSource: result.providerSource,
+      providerError: result.providerError,
+    });
+  } catch (error) {
+    console.error('Mobile push test error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
 router.get('/notification-preferences', authenticateToken, async (req: any, res: any) => {
   if (!req.user) return res.status(401).json({ message: 'Unauthorized.' });
   const salonId = req.user.salonId;
@@ -297,9 +389,20 @@ router.post('/notifications/:id/read', authenticateToken, async (req: any, res: 
   try {
     await prisma.$executeRawUnsafe(
       `
+        WITH target AS (
+          SELECT "notificationId"
+          FROM "AppNotificationDelivery"
+          WHERE "id" = $1 AND "salonId" = $2 AND "userId" = $3
+          LIMIT 1
+        )
         UPDATE "AppNotificationDelivery"
         SET "readAt" = COALESCE("readAt", NOW()), "updatedAt" = NOW()
-        WHERE "id" = $1 AND "salonId" = $2 AND "userId" = $3
+        WHERE "salonId" = $2
+          AND "userId" = $3
+          AND (
+            "id" = $1
+            OR "notificationId" IN (SELECT "notificationId" FROM target)
+          )
       `,
       deliveryId,
       salonId,
