@@ -1,21 +1,25 @@
 import { prisma } from '../../prisma.js';
-import { 
-  SlotsResponse, 
-  AvailabilityRequest, 
-  IndexedData, 
-  PersonGroup, 
-  StaffServiceRow, 
-  WorkingHoursRow, 
+import {
+  AvailabilityRequest,
   AppointmentRow,
+  CategoryInfo,
+  getGroupServiceIds,
+  IndexedData,
+  PersonGroup,
   ServiceInfo,
-  CategoryInfo
+  SlotsResponse,
+  StaffServiceRow,
+  WorkingHoursRow,
 } from './types.js';
 import { AnchorIterator } from './anchor-iterator.js';
 import { PermutationPruner } from './permutation-pruner.js';
 import { ChainBuilder, ServiceChain } from './chain-builder.js';
 import { MultiPersonAnchor } from './multi-person-anchor.js';
 import { SlotScorer } from './slot-scorer.js';
-import { v4 as uuidv4 } from 'uuid';
+
+export type GenerateSlotsOptions = {
+  persistSearchContext?: boolean;
+};
 
 export class SlotsEngine {
   private anchorIterator = new AnchorIterator();
@@ -23,134 +27,146 @@ export class SlotsEngine {
   private chainBuilder = new ChainBuilder();
   private multiPersonAnchor = new MultiPersonAnchor(this);
   private slotScorer = new SlotScorer();
-  
+
   private readonly MAX_COMBINATIONS = 200;
 
-  async generateSlots(request: AvailabilityRequest): Promise<SlotsResponse> {
+  async generateSlots(
+    request: AvailabilityRequest,
+    options: GenerateSlotsOptions = {},
+  ): Promise<SlotsResponse> {
     const data = await this.batchFetchData(request);
     const date = new Date(request.date);
-    
+
     const startSync = performance.now();
     const synchronized = await this.multiPersonAnchor.synchronizeGroups(
       request,
       date,
       data,
-      this.MAX_COMBINATIONS
+      this.MAX_COMBINATIONS,
     );
-    
-    // Optimize and format
-    const groupSlots = this.slotScorer.optimize(
+
+    const optimized = this.slotScorer.optimize(
       synchronized,
-      request.groups.map(g => g.personId)
+      request.groups.map((group) => group.personId),
     );
 
     const endSync = performance.now();
     const executionTime = endSync - startSync;
 
-    // Requirement: "Log only when executionTime > 1000ms OR combinationsEvaluated > MAX_COMBINATIONS"
-    // Wait, combinationsEvaluated is handled inside MultiPersonAnchor and we only get back the result.
-    // I will add combinationsEvaluated to the response of synchronizeGroups for logging.
-    
     if (executionTime > 1000 || synchronized.length >= this.MAX_COMBINATIONS) {
-      console.warn("AVAILABILITY_METRICS", {
+      console.warn('AVAILABILITY_METRICS', {
         duration: executionTime,
         salonId: request.salonId,
         date: request.date,
         groupCount: request.groups.length,
         combinationsReturned: synchronized.length,
-        maxCombinations: this.MAX_COMBINATIONS
+        maxCombinations: this.MAX_COMBINATIONS,
       });
     }
 
-    // Generate and store lock token (search context)
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes validity
+    if (options.persistSearchContext === false) {
+      return {
+        date: request.date,
+        groups: optimized.groups,
+        displaySlots: optimized.displaySlots,
+      };
+    }
+
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
     const searchContext = await prisma.searchContext.create({
       data: {
         salonId: request.salonId,
-        data: request as any, // Store full request
-        expiresAt
-      }
+        data: request as any,
+        expiresAt,
+      },
     });
-    
+
     return {
       date: request.date,
-      groups: groupSlots,
+      groups: optimized.groups,
+      displaySlots: optimized.displaySlots,
       lockToken: {
         id: searchContext.id,
-        expiresAt
-      }
+        expiresAt,
+      },
     };
   }
 
-  // Public for MultiPersonAnchor to call recursively
   async generateSlotsForGroup(
     group: PersonGroup,
     date: Date,
-    data: IndexedData
+    data: IndexedData,
   ): Promise<ServiceChain[]> {
     const validChains: ServiceChain[] = [];
-    
+
     const permutationsGen = this.permutationPruner.generateValidPermutations(
-      group.services,
-      data
+      getGroupServiceIds(group),
+      data,
     );
-    
+
     const anchorsGen = this.anchorIterator.iterateAnchors(
-      { ...null as any, groups: [group] }, // Minimal request object
+      {
+        salonId: 0,
+        date: date.toISOString().split('T')[0],
+        groups: [group],
+      },
       date,
-      data
+      data,
     );
-    
-    const anchors = [];
+
+    const anchors = [] as Array<{ hour: number; staffId: number }>;
     for await (const anchor of anchorsGen) {
       anchors.push(anchor);
     }
-    
+
     for await (const permutation of permutationsGen) {
       for (const anchor of anchors) {
         const chain = await this.chainBuilder.buildChain(
           permutation,
           anchor,
-          1, // Using default salonId as fallback, but ideally passed or extracted
+          1,
           data,
-          date
+          date,
+          group,
         );
-        
+
         if (chain) {
           validChains.push(chain);
         }
       }
     }
-    
+
     return validChains;
   }
 
   private async batchFetchData(request: AvailabilityRequest): Promise<IndexedData> {
-    const serviceIds = [...new Set(request.groups.flatMap(g => g.services))];
+    const serviceIds = [...new Set(request.groups.flatMap((group) => getGroupServiceIds(group)))];
     const date = new Date(request.date);
-    const startOfDay = new Date(date); startOfDay.setHours(0,0,0,0);
-    const endOfDay = new Date(date); endOfDay.setHours(23,59,59,999);
-    
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+
     const [staffServices, appointments, services, categories, salonSettings] = await Promise.all([
       prisma.staffService.findMany({
-        where: { 
+        where: {
           serviceId: { in: serviceIds },
           Staff: { salonId: request.salonId },
-          isactive: true
+          isactive: true,
         },
         select: {
           staffId: true,
           serviceId: true,
           duration: true,
-          isactive: true
-        }
+          isactive: true,
+        },
       }),
-      
+
       prisma.appointment.findMany({
         where: {
           salonId: request.salonId,
           startTime: { gte: startOfDay, lte: endOfDay },
-          status: { in: ['BOOKED', 'COMPLETED'] }
+          status: { in: ['BOOKED', 'COMPLETED'] },
         },
         select: {
           id: true,
@@ -158,10 +174,10 @@ export class SlotsEngine {
           serviceId: true,
           startTime: true,
           endTime: true,
-          status: true
-        }
+          status: true,
+        },
       }),
-      
+
       prisma.service.findMany({
         where: { id: { in: serviceIds } },
         select: {
@@ -170,108 +186,105 @@ export class SlotsEngine {
           duration: true,
           bufferOverride: true,
           categoryId: true,
-          capacityOverride: true
-        }
+          capacityOverride: true,
+        },
       }),
-      
+
       prisma.serviceCategory.findMany({
-        where: { 
-          salonId: request.salonId
+        where: {
+          salonId: request.salonId,
         },
         select: {
           id: true,
           sequentialRequired: true,
           bufferMinutes: true,
-          capacity: true
-        }
+          capacity: true,
+        },
       }),
 
       prisma.salonSettings.findUnique({
         where: { salonId: request.salonId },
         select: {
           workStartHour: true,
-          workEndHour: true
-        }
-      })
+          workEndHour: true,
+        },
+      }),
     ]);
 
-    const relevantStaffIds = [...new Set(staffServices.map(ss => ss.staffId))];
+    const relevantStaffIds = [...new Set(staffServices.map((row) => row.staffId))];
 
     const workingHours = await prisma.staffWorkingHours.findMany({
-      where: { 
+      where: {
         staffId: { in: relevantStaffIds },
-        dayOfWeek: date.getDay()
+        dayOfWeek: date.getDay(),
       },
       select: {
         staffId: true,
         dayOfWeek: true,
         startHour: true,
-        endHour: true
-      }
+        endHour: true,
+      },
     });
-    
+
     const indexedData: IndexedData = {
       staffServicesByService: new Map<number, StaffServiceRow[]>(),
       workingHoursByStaffAndDay: new Map<string, WorkingHoursRow>(),
       appointmentsByStaffAndDate: new Map<string, AppointmentRow[]>(),
       servicesById: new Map<number, ServiceInfo>(),
-      categoriesById: new Map<number, CategoryInfo>()
+      categoriesById: new Map<number, CategoryInfo>(),
     };
-    
-    for (const ss of staffServices) {
-      if (!indexedData.staffServicesByService.has(ss.serviceId)) {
-        indexedData.staffServicesByService.set(ss.serviceId, []);
-      }
-      indexedData.staffServicesByService.get(ss.serviceId)!.push(ss as StaffServiceRow);
-    }
-    
-    const staffWithHours = new Set<number>();
-    const dayOfWeek = date.getDay();
 
-    for (const wh of workingHours) {
-      if (wh.dayOfWeek !== null) {
-        const key = `${wh.staffId}-${wh.dayOfWeek}`;
-        indexedData.workingHoursByStaffAndDay.set(key, wh as WorkingHoursRow);
-        staffWithHours.add(wh.staffId);
+    for (const staffService of staffServices) {
+      if (!indexedData.staffServicesByService.has(staffService.serviceId)) {
+        indexedData.staffServicesByService.set(staffService.serviceId, []);
+      }
+      indexedData.staffServicesByService.get(staffService.serviceId)!.push(staffService as StaffServiceRow);
+    }
+
+    const dayOfWeek = date.getDay();
+    for (const workingHour of workingHours) {
+      if (workingHour.dayOfWeek !== null) {
+        const key = `${workingHour.staffId}-${workingHour.dayOfWeek}`;
+        indexedData.workingHoursByStaffAndDay.set(key, workingHour as WorkingHoursRow);
       }
     }
 
     if (salonSettings) {
-        for (const staffId of relevantStaffIds) {
-            const key = `${staffId}-${dayOfWeek}`;
-            if (!indexedData.workingHoursByStaffAndDay.has(key)) {
-                indexedData.workingHoursByStaffAndDay.set(key, {
-                    staffId,
-                    dayOfWeek,
-                    startHour: salonSettings.workStartHour,
-                    endHour: salonSettings.workEndHour
-                });
-            }
+      for (const staffId of relevantStaffIds) {
+        const key = `${staffId}-${dayOfWeek}`;
+        if (!indexedData.workingHoursByStaffAndDay.has(key)) {
+          indexedData.workingHoursByStaffAndDay.set(key, {
+            staffId,
+            dayOfWeek,
+            startHour: salonSettings.workStartHour,
+            endHour: salonSettings.workEndHour,
+          });
         }
+      }
     }
-    
-    for (const apt of appointments) {
-      const dateKey = apt.startTime.toISOString().split('T')[0];
-      const key = `${apt.staffId}-${dateKey}`;
+
+    for (const appointment of appointments) {
+      const dateKey = appointment.startTime.toISOString().split('T')[0];
+      const key = `${appointment.staffId}-${dateKey}`;
       if (!indexedData.appointmentsByStaffAndDate.has(key)) {
         indexedData.appointmentsByStaffAndDate.set(key, []);
       }
-      indexedData.appointmentsByStaffAndDate.get(key)!.push(apt as unknown as AppointmentRow);
+      indexedData.appointmentsByStaffAndDate.get(key)!.push(appointment as unknown as AppointmentRow);
     }
-    
-    for (const svc of services) {
-      indexedData.servicesById.set(svc.id, svc);
+
+    for (const service of services) {
+      indexedData.servicesById.set(service.id, service);
     }
-    
-    for (const cat of categories) {
-      indexedData.categoriesById.set(cat.id, {
-        id: cat.id,
-        sequentialRequired: cat.sequentialRequired ?? false,
-        bufferMinutes: cat.bufferMinutes,
-        capacity: cat.capacity ?? 1
+
+    for (const category of categories) {
+      indexedData.categoriesById.set(category.id, {
+        id: category.id,
+        sequentialRequired: category.sequentialRequired ?? false,
+        bufferMinutes: category.bufferMinutes,
+        capacity: category.capacity ?? 1,
       });
     }
-    
+
     return indexedData;
   }
 }

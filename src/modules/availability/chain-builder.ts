@@ -5,7 +5,9 @@ import {
   ServiceInfo, 
   StaffServiceRow,
   AppointmentRow,
-  WorkingHoursRow 
+  WorkingHoursRow,
+  PersonGroup,
+  getAllowedStaffIdsForService,
 } from './types.js';
 
 export type ServiceChain = {
@@ -25,7 +27,8 @@ export class ChainBuilder {
     anchor: { hour: number; staffId: number },
     salonId: number,
     data: IndexedData,
-    date: Date
+    date: Date,
+    group?: PersonGroup
   ): Promise<ServiceChain | null> {
     let currentTime = anchor.hour;
     const chainBlocks: {
@@ -66,7 +69,7 @@ export class ChainBuilder {
 
       if (isFirstBlock) {
         // Try to assign the anchor staff
-        if (this.canStaffPerformBlock(anchor.staffId, block, data)) {
+        if (this.canStaffPerformBlock(anchor.staffId, block, data, group)) {
            if (await this.validateBlockPlacement(block, currentTime, anchor.staffId, salonId, data, date)) {
              assignedStaffId = anchor.staffId;
            }
@@ -77,7 +80,7 @@ export class ChainBuilder {
         const prevStaffId = chainBlocks[i-1].staffId;
         
         // Try previous staff first
-        if (this.canStaffPerformBlock(prevStaffId, block, data)) {
+        if (this.canStaffPerformBlock(prevStaffId, block, data, group)) {
            if (await this.validateBlockPlacement(block, currentTime, prevStaffId, salonId, data, date)) {
              assignedStaffId = prevStaffId;
            }
@@ -85,7 +88,7 @@ export class ChainBuilder {
         
         // If not, try other capable staff
         if (!assignedStaffId) {
-           const capableStaff = this.findCapableStaffForBlock(block, data);
+           const capableStaff = this.findCapableStaffForBlock(block, data, group);
            for (const staffId of capableStaff) {
              if (staffId === prevStaffId) continue; // Already tried
              if (await this.validateBlockPlacement(block, currentTime, staffId, salonId, data, date)) {
@@ -125,10 +128,14 @@ export class ChainBuilder {
     };
   }
 
-  private canStaffPerformBlock(staffId: number, block: ChainBlock, data: IndexedData): boolean {
+  private canStaffPerformBlock(staffId: number, block: ChainBlock, data: IndexedData, group?: PersonGroup): boolean {
     // For sequential block, staff must perform ALL services
     // For individual block, staff must perform THE service
     for (const service of block.services) {
+      const allowedStaffIds = group ? getAllowedStaffIdsForService(group, service.id) : null;
+      if (allowedStaffIds && !allowedStaffIds.includes(staffId)) {
+        return false;
+      }
       const staffServices = data.staffServicesByService.get(service.id) || [];
       if (!staffServices.some(ss => ss.staffId === staffId)) {
         return false;
@@ -137,7 +144,7 @@ export class ChainBuilder {
     return true;
   }
 
-  private findCapableStaffForBlock(block: ChainBlock, data: IndexedData): number[] {
+  private findCapableStaffForBlock(block: ChainBlock, data: IndexedData, group?: PersonGroup): number[] {
     const serviceIds = block.services.map(s => s.id);
     // Find staff who can perform ALL services in the block
     const staffSets = serviceIds.map(serviceId => {
@@ -158,7 +165,12 @@ export class ChainBuilder {
         }
     }
     
-    return Array.from(intersection);
+    return Array.from(intersection).filter((staffId) =>
+      block.services.every((service) => {
+        const allowedStaffIds = group ? getAllowedStaffIdsForService(group, service.id) : null;
+        return !allowedStaffIds || allowedStaffIds.includes(staffId);
+      }),
+    );
   }
 
   private async validateBlockPlacement(

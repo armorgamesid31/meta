@@ -21,6 +21,7 @@ import {
   buildAppointmentReschedulePreview,
   commitAppointmentReschedule,
 } from '../services/appointmentReschedule.js';
+import { buildRescheduleOptions } from '../services/appointmentRescheduleOptions.js';
 import {
   listCampaignsForSend,
   previewCampaignPricing,
@@ -3173,6 +3174,35 @@ router.post('/appointments/reschedule-preview', authenticateToken, async (req: a
     return res.status(200).json(preview);
   } catch (error) {
     console.error('Admin appointment reschedule preview error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.post('/appointments/reschedule-options', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) return;
+
+  const appointmentIds = parseAppointmentIds(req.body?.appointmentIds);
+  const date = typeof req.body?.date === 'string' ? req.body.date.trim() : '';
+  const assignments = parseRescheduleAssignments(req.body?.assignments);
+
+  if (!appointmentIds.length) {
+    return res.status(400).json({ message: 'appointmentIds must be a non-empty array.' });
+  }
+  if (!date) {
+    return res.status(400).json({ message: 'date is required as YYYY-MM-DD.' });
+  }
+
+  try {
+    const options = await buildRescheduleOptions({
+      salonId,
+      appointmentIds,
+      date,
+      assignments,
+    });
+    return res.status(200).json(options);
+  } catch (error) {
+    console.error('Admin appointment reschedule options error:', error);
     return res.status(500).json({ message: 'Internal server error.' });
   }
 });

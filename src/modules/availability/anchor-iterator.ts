@@ -1,5 +1,5 @@
 import { prisma } from '../../prisma.js';
-import { AvailabilityRequest, IndexedData, WorkingHoursRow } from './types.js';
+import { AvailabilityRequest, IndexedData, getAllowedStaffIdsForService, getGroupServiceIds, WorkingHoursRow } from './types.js';
 
 export type TimeSlot = {
   hour: number; // minutes from midnight
@@ -16,14 +16,19 @@ export class AnchorIterator {
   ): AsyncGenerator<TimeSlot> {
     let anchorCount = 0;
     const dayOfWeek = date.getDay();
-    const serviceIds = request.groups.flatMap(g => g.services);
+    const serviceIds = request.groups.flatMap((group) => getGroupServiceIds(group));
 
     // Get relevant staff IDs based on requested services
     const relevantStaffIds = new Set<number>();
-    for (const serviceId of serviceIds) {
-      const staffServices = data.staffServicesByService.get(serviceId) || [];
-      for (const ss of staffServices) {
-        relevantStaffIds.add(ss.staffId);
+    for (const group of request.groups) {
+      for (const serviceId of getGroupServiceIds(group)) {
+        const allowedStaffIds = getAllowedStaffIdsForService(group, serviceId);
+        const staffServices = data.staffServicesByService.get(serviceId) || [];
+        for (const ss of staffServices) {
+          if (!allowedStaffIds || allowedStaffIds.includes(ss.staffId)) {
+            relevantStaffIds.add(ss.staffId);
+          }
+        }
       }
     }
 

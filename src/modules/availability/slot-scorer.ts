@@ -1,98 +1,136 @@
 import { ServiceChain } from './chain-builder.js';
-import { GroupSlots, Slot, ServiceSlot } from './types.js';
+import { DisplaySlot, GroupSlots, Slot, ServiceSlot } from './types.js';
 
 export type SynchronizedSlot = {
   slots: ServiceChain[];
   parallelScore: number;
 };
 
-export type OptimizedSlot = {
-  startTime: number;
-  endTime: number;
-  chains: ServiceChain[];
-};
-
 export class SlotScorer {
+  private readonly DISPLAY_CLUSTER_MINUTES = 15;
+
   optimize(
     synchronized: SynchronizedSlot[],
-    personIds: string[]
-  ): GroupSlots[] {
-    // Group by start time to find the best combination for each start time
+    personIds: string[],
+  ): { groups: GroupSlots[]; displaySlots: DisplaySlot[] } {
     const groupedByStart = new Map<number, SynchronizedSlot[]>();
 
     for (const sync of synchronized) {
-      // Use the start time of the first person (anchor) as the key
-      // Or maybe the earliest start time across all people?
-      // Let's use the anchor (first person) start time as the primary grouping key
-      // since that's how we iterate.
-      // Actually, for the UI, we want to show slots based on when the *booking* starts.
-      // Usually that's the earliest start time.
       if (sync.slots.length === 0) continue;
-
-      const earliestStart = Math.min(...sync.slots.map(s => s.startTime));
-      
+      const earliestStart = Math.min(...sync.slots.map((slot) => slot.startTime));
       if (!groupedByStart.has(earliestStart)) {
         groupedByStart.set(earliestStart, []);
       }
       groupedByStart.get(earliestStart)!.push(sync);
     }
 
-    const resultSlots: Slot[][] = Array(personIds.length).fill([]).map(() => []);
-    
-    // For each start time, pick the BEST combination
-    const sortedStartTimes = Array.from(groupedByStart.keys()).sort((a, b) => a - b);
+    const exactBestSlots = Array.from(groupedByStart.entries())
+      .sort((a, b) => a[0] - b[0])
+      .map(([, candidates]) => this.selectBestCombination(candidates));
 
-    for (const startTime of sortedStartTimes) {
-      const candidates = groupedByStart.get(startTime)!;
-      const best = this.selectBestCombination(candidates);
-
-      // Add to result
-      for (let i = 0; i < personIds.length; i++) {
-        const chain = best.slots[i];
+    const resultSlots: Slot[][] = Array.from({ length: personIds.length }, () => []);
+    for (const best of exactBestSlots) {
+      for (let index = 0; index < personIds.length; index += 1) {
+        const chain = best.slots[index];
         if (chain) {
-          resultSlots[i].push(this.chainToSlot(chain));
+          resultSlots[index].push(this.chainToSlot(chain));
         }
       }
     }
-    
-    // Construct final GroupSlots
-    return personIds.map((personId, index) => ({
-      personId,
-      slots: resultSlots[index]
-    }));
+
+    const displaySlots = this.buildDisplaySlots(exactBestSlots, personIds);
+
+    return {
+      groups: personIds.map((personId, index) => ({
+        personId,
+        slots: resultSlots[index],
+      })),
+      displaySlots,
+    };
+  }
+
+  private buildDisplaySlots(bestSlots: SynchronizedSlot[], personIds: string[]): DisplaySlot[] {
+    const sorted = [...bestSlots].sort(
+      (a, b) => Math.min(...a.slots.map((slot) => slot.startTime)) - Math.min(...b.slots.map((slot) => slot.startTime)),
+    );
+    const clusters: SynchronizedSlot[][] = [];
+
+    for (const candidate of sorted) {
+      const candidateStart = Math.min(...candidate.slots.map((slot) => slot.startTime));
+      const currentCluster = clusters[clusters.length - 1];
+      if (!currentCluster || !currentCluster.length) {
+        clusters.push([candidate]);
+        continue;
+      }
+
+      const clusterStart = Math.min(...currentCluster[0].slots.map((slot) => slot.startTime));
+      if (candidateStart <= clusterStart + this.DISPLAY_CLUSTER_MINUTES) {
+        currentCluster.push(candidate);
+        continue;
+      }
+
+      clusters.push([candidate]);
+    }
+
+    return clusters.map((cluster) => this.syncToDisplaySlot(this.selectBestCombination(cluster), personIds));
+  }
+
+  private syncToDisplaySlot(sync: SynchronizedSlot, personIds: string[]): DisplaySlot {
+    const personSlots = sync.slots.map((chain, index) => {
+      const slot = this.chainToSlot(chain);
+      return {
+        personId: personIds[index],
+        slotKey: slot.slotKey,
+        startTime: slot.startTime,
+        endTime: slot.endTime,
+        staffId: slot.staffId,
+        serviceSequence: slot.serviceSequence,
+      };
+    });
+
+    const startTimes = personSlots.map((slot) => this.parseMinutes(slot.startTime));
+    const endTimes = personSlots.map((slot) => this.parseMinutes(slot.endTime));
+    const earliestStart = Math.min(...startTimes);
+    const latestEnd = Math.max(...endTimes);
+    const displayStart = this.minutesToTime(earliestStart);
+    const displayEnd = this.minutesToTime(latestEnd);
+
+    return {
+      displayKey: personSlots.map((slot) => `${slot.personId}:${slot.slotKey}`).join('|'),
+      label: displayStart,
+      startTime: displayStart,
+      endTime: displayEnd,
+      personSlots,
+    };
   }
 
   private selectBestCombination(candidates: SynchronizedSlot[]): SynchronizedSlot {
-    return candidates.sort((a, b) => {
+    return [...candidates].sort((a, b) => {
       const personCount = a.slots.length;
-      
+
       if (personCount >= 2) {
-        // 1. Parallelism (higher is better)
         const parallelDiff = b.parallelScore - a.parallelScore;
         if (Math.abs(parallelDiff) > 0.01) return parallelDiff;
       }
-      
-      // 2. Total Duration (shorter is better)
+
       const durationA = this.calculateTotalDuration(a.slots);
       const durationB = this.calculateTotalDuration(b.slots);
       const durationDiff = durationA - durationB;
       if (durationDiff !== 0) return durationDiff;
-      
-      // 3. Staff Changes (fewer is better)
+
       const changesA = this.countTotalStaffChanges(a.slots);
       const changesB = this.countTotalStaffChanges(b.slots);
       const staffDiff = changesA - changesB;
       if (staffDiff !== 0) return staffDiff;
-      
-      // 4. Deterministic tie-break (start time of first person)
+
       return a.slots[0].startTime - b.slots[0].startTime;
     })[0];
   }
 
   private calculateTotalDuration(chains: ServiceChain[]): number {
     if (chains.length === 0) return 0;
-    const start = Math.min(...chains.map(c => c.startTime));
-    const end = Math.max(...chains.map(c => c.endTime));
+    const start = Math.min(...chains.map((chain) => chain.startTime));
+    const end = Math.max(...chains.map((chain) => chain.endTime));
     return end - start;
   }
 
@@ -102,42 +140,59 @@ export class SlotScorer {
 
   private countChainStaffChanges(chain: ServiceChain): number {
     let changes = 0;
-    for (let i = 1; i < chain.blocks.length; i++) {
-      if (chain.blocks[i].staffId !== chain.blocks[i - 1].staffId) {
-        changes++;
+    for (let index = 1; index < chain.blocks.length; index += 1) {
+      if (chain.blocks[index].staffId !== chain.blocks[index - 1].staffId) {
+        changes += 1;
       }
     }
     return changes;
   }
 
   private chainToSlot(chain: ServiceChain): Slot {
-    const startHour = Math.floor(chain.startTime / 60).toString().padStart(2, '0');
-    const startMin = (chain.startTime % 60).toString().padStart(2, '0');
-    
-    const endHour = Math.floor(chain.endTime / 60).toString().padStart(2, '0');
-    const endMin = (chain.endTime % 60).toString().padStart(2, '0');
-    
+    const serviceSequence: ServiceSlot[] = [];
+
+    for (const block of chain.blocks) {
+      let cursor = block.startTime;
+      for (const service of block.block.services) {
+        const start = cursor;
+        const end = cursor + service.duration;
+        serviceSequence.push({
+          serviceId: service.id,
+          start: this.minutesToTime(start),
+          end: this.minutesToTime(end),
+          staffId: block.staffId,
+        });
+        cursor = end;
+      }
+    }
+
+    const slotKey = chain.blocks
+      .map((block) => {
+        const serviceIds = block.block.services.map((service) => service.id).join(',');
+        return `${block.staffId}:${block.startTime}-${block.endTime}:${serviceIds}`;
+      })
+      .join('|');
+
     return {
-      startTime: `${startHour}:${startMin}`,
-      endTime: `${endHour}:${endMin}`,
-      staffId: chain.blocks[0].staffId, // Main staff is usually the first one
-      serviceSequence: chain.blocks.flatMap(b => 
-        b.block.services.map(s => {
-          // Note: Start/End times for individual services within a block need calculation
-          // if we want precise per-service times. 
-          // For now, let's simplify or if needed, calculate them.
-          // The block has a startTime and duration.
-          // Services within a sequential block run back-to-back.
-          return {
-             serviceId: s.id,
-             start: "00:00", // Placeholder - precise calculation requires iterating services in block
-             end: "00:00"
-          };
-        })
-      ).map((s, idx, arr) => {
-          // Let's refine the times. We need to iterate blocks and services properly.
-          return s;
-      }) 
+      slotKey,
+      startTime: this.minutesToTime(chain.startTime),
+      endTime: this.minutesToTime(chain.endTime),
+      staffId: chain.blocks[0]?.staffId || 0,
+      serviceSequence,
     };
+  }
+
+  private minutesToTime(minutes: number): string {
+    const safeMinutes = Math.max(0, minutes);
+    const hour = Math.floor(safeMinutes / 60)
+      .toString()
+      .padStart(2, '0');
+    const minute = (safeMinutes % 60).toString().padStart(2, '0');
+    return `${hour}:${minute}`;
+  }
+
+  private parseMinutes(timeValue: string): number {
+    const [hours, minutes] = timeValue.split(':').map((value) => Number(value));
+    return (hours || 0) * 60 + (minutes || 0);
   }
 }

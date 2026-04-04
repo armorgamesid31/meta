@@ -1,8 +1,13 @@
 // Core types for the new availability engine
 
+export type GroupServiceSelection = {
+  serviceId: number;
+  allowedStaffIds: number[] | null;
+};
+
 export type PersonGroup = {
   personId: string;
-  services: number[]; // Service IDs in UI order
+  services: Array<number | GroupServiceSelection>; // Service IDs in UI order
 };
 
 export type AvailabilityRequest = {
@@ -26,6 +31,7 @@ export type DatesResponse = {
 export type SlotsResponse = {
   date: string;
   groups: GroupSlots[];
+  displaySlots: DisplaySlot[];
   lockToken?: LockToken;
 };
 
@@ -35,6 +41,7 @@ export type GroupSlots = {
 };
 
 export type Slot = {
+  slotKey: string;
   startTime: string; // HH:mm
   endTime: string; // HH:mm
   staffId: number;
@@ -45,6 +52,24 @@ export type ServiceSlot = {
   serviceId: number;
   start: string; // HH:mm
   end: string; // HH:mm
+  staffId: number;
+};
+
+export type DisplayPersonSlot = {
+  personId: string;
+  slotKey: string;
+  startTime: string;
+  endTime: string;
+  staffId: number;
+  serviceSequence: ServiceSlot[];
+};
+
+export type DisplaySlot = {
+  displayKey: string;
+  label: string;
+  startTime: string;
+  endTime: string;
+  personSlots: DisplayPersonSlot[];
 };
 
 export type LockToken = {
@@ -152,3 +177,41 @@ export type LegacyLockRecord = {
   expires_at: string;
   created_at: string;
 };
+
+export function getGroupServiceSelections(group: PersonGroup): GroupServiceSelection[] {
+  return (group.services || [])
+    .map((selection) => {
+      if (typeof selection === 'number') {
+        return { serviceId: selection, allowedStaffIds: null };
+      }
+
+      if (!selection || !Number.isInteger(Number(selection.serviceId))) {
+        return null;
+      }
+
+      const allowedStaffIds = Array.isArray(selection.allowedStaffIds)
+        ? selection.allowedStaffIds
+            .map((value) => Number(value))
+            .filter((value, index, list) => Number.isInteger(value) && value > 0 && list.indexOf(value) === index)
+        : null;
+
+      return {
+        serviceId: Number(selection.serviceId),
+        allowedStaffIds: allowedStaffIds && allowedStaffIds.length ? allowedStaffIds : null,
+      };
+    })
+    .filter((selection): selection is GroupServiceSelection => Boolean(selection));
+}
+
+export function getGroupServiceIds(group: PersonGroup): number[] {
+  return getGroupServiceSelections(group).map((selection) => selection.serviceId);
+}
+
+export function getAllowedStaffIdsForService(group: PersonGroup, serviceId: number): number[] | null {
+  const matching = getGroupServiceSelections(group)
+    .filter((selection) => selection.serviceId === serviceId)
+    .flatMap((selection) => selection.allowedStaffIds || []);
+
+  if (!matching.length) return null;
+  return Array.from(new Set(matching));
+}

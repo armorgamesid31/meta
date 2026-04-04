@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
-import { AvailabilityEngine } from '../modules/availability/engine.js';
 import { v4 as uuidv4 } from 'uuid';
+import { buildSingleServiceGroups, generateAvailability } from '../services/availabilityService.js';
 
 const router = Router();
 
@@ -142,9 +142,11 @@ router.get("/:token/availability", async (req: any, res: any) => {
   const { token } = req.params as any;
   const tokenStr = Array.isArray(token) ? token[0] : token;
   const { date } = req.query as any;
+  const serviceId = Number(req.query?.serviceId);
+  const peopleCount = Number(req.query?.peopleCount || 1);
 
-  if (!date || typeof date !== 'string') {
-    return res.status(400).json({ message: 'Date parameter is required.' });
+  if (!date || typeof date !== 'string' || !Number.isInteger(serviceId) || serviceId <= 0) {
+    return res.status(400).json({ message: 'date and serviceId parameters are required.' });
   }
 
   const session = await prisma.bookingSession.findUnique({
@@ -164,17 +166,14 @@ router.get("/:token/availability", async (req: any, res: any) => {
     return res.status(410).json({ message: 'Session has been completed.' });
   }
 
-  // Use availability engine
-  const engine = new AvailabilityEngine();
-  const availabilityResult = await engine.calculateAvailability({
-    date: new Date(date),
-    serviceId: 1, // Default service - could be made configurable
-    peopleCount: 1, // Default people count
-    salonId: session.salonId
+  const availabilityResult = await generateAvailability({
+    salonId: session.salonId,
+    date,
+    groups: buildSingleServiceGroups(serviceId, Number.isInteger(peopleCount) && peopleCount > 0 ? peopleCount : 1),
   });
 
   res.json({
-    slots: availabilityResult.slots,
+    slots: availabilityResult.displaySlots.map((slot) => slot.label),
     lockToken: availabilityResult.lockToken
   });
 });

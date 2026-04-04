@@ -4,13 +4,21 @@ import { authenticateToken } from '../middleware/auth.js';
 import { AvailabilityEngine } from '../modules/availability/engine.js';
 import { SlotsEngine } from '../modules/availability/slots-engine.js';
 import { DateNormalizer } from '../modules/availability/normalizer.js';
+import type { PersonGroup } from '../modules/availability/types.js';
 import { calculateSmartDuration, ServiceWithCategory } from '../utils/durationCalculator.js';
 import { normalizeInstagramIdentity } from '../services/identityService.js';
 import { notifySameDayAppointmentChange } from '../services/notifications.js';
 import {
+  generateAvailability,
+  generateAvailabilityAlternatives,
+  matchSelectedDisplaySlots,
+  parseSelectedPersonSlots,
+} from '../services/availabilityService.js';
+import {
   buildAppointmentReschedulePreview,
   commitAppointmentReschedule,
 } from '../services/appointmentReschedule.js';
+import { buildRescheduleOptions } from '../services/appointmentRescheduleOptions.js';
 import {
   previewCampaignPricing,
   persistAppointmentCampaignApplication,
@@ -83,6 +91,53 @@ function parseRescheduleAssignments(input: unknown): Record<number, number> {
   return map;
 }
 
+function parsePositiveIdArray(input: unknown): number[] {
+  if (!Array.isArray(input)) return [];
+  return input
+    .map((value) => Number(value))
+    .filter((value, index, list) => Number.isInteger(value) && value > 0 && list.indexOf(value) === index);
+}
+
+function buildPublicAvailabilityGroups(services: any[]): PersonGroup[] {
+  const servicesByPerson = new Map<number, any[]>();
+
+  for (const service of Array.isArray(services) ? services : []) {
+    const personIndex =
+      Number.isInteger(Number(service?.personIndex)) && Number(service.personIndex) > 0
+        ? Number(service.personIndex)
+        : 1;
+    const list = servicesByPerson.get(personIndex) || [];
+    list.push(service);
+    servicesByPerson.set(personIndex, list);
+  }
+
+  return Array.from(servicesByPerson.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([personIndex, personServices]) => ({
+      personId: `p${personIndex}`,
+      services: personServices
+        .map((service) => {
+          const serviceId = Number(service?.serviceId);
+          if (!Number.isInteger(serviceId) || serviceId <= 0) return null;
+          const allowedStaffIds = parsePositiveIdArray(service?.staffOptionIds);
+          return {
+            serviceId,
+            allowedStaffIds: allowedStaffIds.length ? allowedStaffIds : null,
+          };
+        })
+        .filter(Boolean) as Array<{ serviceId: number; allowedStaffIds: number[] | null }>,
+    }))
+    .filter((group) => group.services.length > 0);
+}
+
+function buildSlotUnavailableBody(message: string, alternatives: Awaited<ReturnType<typeof generateAvailabilityAlternatives>>) {
+  return {
+    code: 'SLOT_NOT_AVAILABLE',
+    message,
+    alternatives,
+  };
+}
+
 function parseIsoDate(value: unknown): Date | null {
   if (typeof value !== 'string') return null;
   const parsed = new Date(value);
@@ -153,6 +208,320 @@ async function resolveMagicTokenCustomer(input: { token: string; salonId: number
   return { customerId: customer.id, customerPhone: customer.phone };
 }
 
+async function createExactSlotBooking(input: {
+  salonId: number;
+  customerId: number;
+  customerName: string;
+  customerPhone: string;
+  services: any[];
+  source: 'CUSTOMER' | 'SALON';
+  token?: string | null;
+  packageSelections?: any[];
+  referralShareToken?: string | null;
+  availabilityLockToken: string;
+  selectedSlots: ReturnType<typeof parseSelectedPersonSlots>;
+}): Promise<{ status: number; body: any }> {
+  const searchContext = await prisma.searchContext.findUnique({
+    where: { id: input.availabilityLockToken },
+  });
+
+  if (!searchContext) {
+    return { status: 404, body: { message: 'Availability selection not found.' } };
+  }
+  if (searchContext.expiresAt < new Date()) {
+    return { status: 410, body: { message: 'Availability selection has expired.' } };
+  }
+  if (searchContext.salonId !== input.salonId) {
+    return { status: 403, body: { message: 'Salon mismatch.' } };
+  }
+
+  const availabilityRequest = searchContext.data as any;
+  const availabilityResult = await generateAvailability(availabilityRequest, { persistSearchContext: false });
+  const matchedDisplaySlot = matchSelectedDisplaySlots(availabilityResult, input.selectedSlots);
+
+  if (!matchedDisplaySlot) {
+    const alternatives = await generateAvailabilityAlternatives({
+      salonId: input.salonId,
+      request: availabilityRequest,
+      preferredDate: availabilityRequest.date,
+    });
+    return {
+      status: 409,
+      body: buildSlotUnavailableBody('Selected slot is no longer available.', alternatives),
+    };
+  }
+
+  const packageByService = new Map<number, number>();
+  for (const row of Array.isArray(input.packageSelections) ? input.packageSelections : []) {
+    const serviceId = Number((row || {}).serviceId);
+    const customerPackageId = Number((row || {}).customerPackageId);
+    if (Number.isInteger(serviceId) && serviceId > 0 && Number.isInteger(customerPackageId) && customerPackageId > 0) {
+      packageByService.set(serviceId, customerPackageId);
+    }
+  }
+
+  const requestedServiceIds = input.services
+    .map((item: any) => Number(item?.serviceId))
+    .filter((id: number) => Number.isInteger(id) && id > 0);
+  const uniqueServiceIds = Array.from(new Set<number>(requestedServiceIds));
+  const serviceCatalog = uniqueServiceIds.length
+    ? await prisma.service.findMany({
+        where: { salonId: input.salonId, id: { in: uniqueServiceIds } },
+        select: { id: true, price: true, duration: true, name: true },
+      })
+    : [];
+  const serviceById = new Map<number, { price: number; duration: number; name: string }>();
+  for (const service of serviceCatalog) {
+    serviceById.set(Number(service.id), {
+      price: Number(service.price || 0),
+      duration: Number(service.duration || 30),
+      name: service.name,
+    });
+  }
+
+  const servicesByPerson = new Map<number, any[]>();
+  for (const service of input.services) {
+    const personIndex =
+      Number.isInteger(Number(service?.personIndex)) && Number(service.personIndex) > 0
+        ? Number(service.personIndex)
+        : 1;
+    const list = servicesByPerson.get(personIndex) || [];
+    list.push(service);
+    servicesByPerson.set(personIndex, list);
+  }
+  const orderedPeople = Array.from(servicesByPerson.entries()).sort((a, b) => a[0] - b[0]);
+
+  const earliestSelectedStart = matchedDisplaySlot.personSlots.reduce((earliest, slot) => {
+    const candidate = new Date(`${availabilityRequest.date}T${slot.startTime}:00`).getTime();
+    return candidate < earliest ? candidate : earliest;
+  }, Number.MAX_SAFE_INTEGER);
+
+  const pricingInputLines = orderedPeople.flatMap(([, personServices]) =>
+    personServices.map((serviceItem: any) => {
+      const serviceId = Number(serviceItem?.serviceId);
+      const catalog = serviceById.get(serviceId);
+      return {
+        serviceId,
+        listPrice: catalog ? catalog.price : 0,
+        isPackageCovered: packageByService.has(serviceId),
+      };
+    }),
+  );
+  const pricingResult = await previewCampaignPricing({
+    salonId: input.salonId,
+    customerId: input.customerId,
+    startTime: new Date(earliestSelectedStart),
+    lines: pricingInputLines,
+  });
+
+  let txResult: any[];
+  try {
+    txResult = await prisma.$transaction(
+      async (tx) => {
+      const currentSearchContext = await tx.searchContext.findUnique({
+        where: { id: input.availabilityLockToken },
+      });
+
+      if (!currentSearchContext || currentSearchContext.expiresAt < new Date()) {
+        throw new Error('Availability selection has expired.');
+      }
+
+      const createdAppointments = [] as any[];
+      let pricingLineIndex = 0;
+
+      for (const [personIndex, personServices] of orderedPeople) {
+        const selectedPersonSlot = matchedDisplaySlot.personSlots.find((slot) => slot.personId === `p${personIndex}`);
+        if (!selectedPersonSlot) {
+          throw new Error('Selected availability no longer matches requested people.');
+        }
+        if (selectedPersonSlot.serviceSequence.length !== personServices.length) {
+          throw new Error('Selected availability no longer matches requested services.');
+        }
+
+        for (let serviceIndex = 0; serviceIndex < personServices.length; serviceIndex += 1) {
+          const serviceItem = personServices[serviceIndex];
+          const sequenceItem = selectedPersonSlot.serviceSequence[serviceIndex];
+          const serviceId = Number(serviceItem?.serviceId);
+
+          if (!Number.isInteger(serviceId) || serviceId <= 0 || sequenceItem.serviceId !== serviceId) {
+            throw new Error('Selected availability no longer matches requested services.');
+          }
+
+          const start = new Date(`${availabilityRequest.date}T${sequenceItem.start}:00`);
+          const end = new Date(`${availabilityRequest.date}T${sequenceItem.end}:00`);
+          const staffId = Number(sequenceItem.staffId);
+
+          const conflicting = await tx.appointment.findFirst({
+            where: {
+              salonId: input.salonId,
+              staffId,
+              startTime: { lt: end },
+              endTime: { gt: start },
+              status: 'BOOKED',
+            },
+            select: { id: true },
+          });
+
+          if (conflicting) {
+            throw { code: 'SLOT_NOT_AVAILABLE', message: `Staff ${staffId} is busy at the selected time.` };
+          }
+
+          const requestedPreferenceMode =
+            String(serviceItem?.staffPreference?.mode || '').trim().toUpperCase() === 'SPECIFIC' ? 'SPECIFIC' : 'ANY';
+          const requestedPreferredStaffId = Number(serviceItem?.staffPreference?.preferredStaffId);
+          const packageHint = packageByService.get(serviceId);
+          const effectiveSpecific = requestedPreferenceMode === 'SPECIFIC' || Boolean(serviceItem?.staffId);
+          const effectivePreferredStaffId =
+            Number.isInteger(requestedPreferredStaffId) && requestedPreferredStaffId > 0
+              ? requestedPreferredStaffId
+              : effectiveSpecific
+                ? staffId
+                : null;
+          const staffPreferenceNote = effectiveSpecific
+            ? `[BOOK_PREF:SPECIFIC:${effectivePreferredStaffId || staffId}]`
+            : '[BOOK_PREF:ANY]';
+          const noteParts = [staffPreferenceNote, `[PERSON:${personIndex}]`];
+          if (packageHint) {
+            noteParts.push(`package:${packageHint}`);
+          }
+
+          const catalogInfo = serviceById.get(serviceId);
+          const appointment = await tx.appointment.create({
+            data: {
+              salonId: input.salonId,
+              customerId: input.customerId,
+              customerName: input.customerName.trim(),
+              customerPhone: input.customerPhone.trim(),
+              staffId,
+              serviceId,
+              startTime: start,
+              endTime: end,
+              status: 'BOOKED',
+              source: input.source === 'SALON' ? 'ADMIN' : 'CUSTOMER',
+              preferenceMode: effectiveSpecific ? 'SPECIFIC' : 'ANY',
+              preferredStaffId: effectiveSpecific ? (effectivePreferredStaffId || staffId) : null,
+              notes: noteParts.join('\n'),
+              listPrice: Number(pricingResult.lines[pricingLineIndex]?.listPrice || catalogInfo?.price || 0),
+              discountTotal: Number(pricingResult.lines[pricingLineIndex]?.discountTotal || 0),
+              finalPrice: Number(pricingResult.lines[pricingLineIndex]?.finalPrice || 0),
+              campaignSnapshot: pricingResult.lines[pricingLineIndex]
+                ? ({
+                    appliedCampaigns: pricingResult.lines[pricingLineIndex].appliedCampaigns,
+                    packageCovered: pricingResult.lines[pricingLineIndex].packageCovered,
+                  } as any)
+                : null,
+            },
+          });
+
+          createdAppointments.push(appointment);
+          if (pricingResult.lines[pricingLineIndex]) {
+            await persistAppointmentCampaignApplication({
+              salonId: input.salonId,
+              appointmentId: Number(appointment.id),
+              customerId: input.customerId,
+              serviceId,
+              line: pricingResult.lines[pricingLineIndex],
+            });
+            await consumeWalletBalances({
+              salonId: input.salonId,
+              customerId: input.customerId,
+              line: pricingResult.lines[pricingLineIndex],
+            });
+          }
+          pricingLineIndex += 1;
+        }
+      }
+
+      await tx.searchContext.delete({
+        where: { id: input.availabilityLockToken },
+      });
+
+      return createdAppointments;
+      },
+      { isolationLevel: 'Serializable' },
+    );
+  } catch (error: any) {
+    if (error?.code === 'SLOT_NOT_AVAILABLE') {
+      const alternatives = await generateAvailabilityAlternatives({
+        salonId: input.salonId,
+        request: availabilityRequest,
+        preferredDate: availabilityRequest.date,
+      });
+      return {
+        status: 409,
+        body: buildSlotUnavailableBody(error.message || 'Selected slot is no longer available.', alternatives),
+      };
+    }
+    throw error;
+  }
+
+  if (input.token && typeof input.token === 'string') {
+    try {
+      await prisma.magicLink.updateMany({
+        where: {
+          token: input.token,
+          salonId: input.salonId,
+          usedAt: null,
+          status: 'ACTIVE',
+        },
+        data: {
+          usedAt: new Date(),
+          status: 'USED',
+        },
+      });
+    } catch (_) {}
+  }
+
+  if (input.referralShareToken && typeof input.referralShareToken === 'string') {
+    try {
+      await registerReferralAttributionFromToken({
+        salonId: input.salonId,
+        referredCustomerId: input.customerId,
+        token: input.referralShareToken,
+      });
+    } catch (error) {
+      console.warn('Referral attribution registration skipped:', error);
+    }
+  }
+
+  const serviceIds = Array.from(new Set(txResult.map((appointment) => Number(appointment.serviceId)).filter((id) => Number.isInteger(id) && id > 0)));
+  const createdServices = serviceIds.length
+    ? await prisma.service.findMany({
+        where: { salonId: input.salonId, id: { in: serviceIds } },
+        select: { id: true, name: true },
+      })
+    : [];
+  const serviceNameById = new Map<number, string>();
+  for (const service of createdServices) {
+    serviceNameById.set(Number(service.id), service.name);
+  }
+
+  await Promise.all(
+    txResult.map((appointment) =>
+      emitSameDayChangeBestEffort({
+        salonId: input.salonId,
+        event: 'CREATED',
+        appointmentId: Number(appointment.id),
+        customerName: appointment.customerName || input.customerName.trim(),
+        serviceName: serviceNameById.get(Number(appointment.serviceId)) || null,
+        startTime: appointment.startTime,
+      }),
+    ),
+  );
+
+  return {
+    status: 201,
+    body: {
+      data: {
+        appointments: txResult.map((appointment) => ({ id: appointment.id })),
+        status: 'BOOKED',
+        pricingBreakdown: pricingResult,
+        appliedCampaigns: pricingResult.appliedCampaigns,
+      },
+    },
+  };
+}
+
 interface AuthRequest extends Request {
   user?: {
     userId: number;
@@ -217,7 +586,7 @@ router.post("/confirm", authenticateToken, async (req: any, res: any) => {
       }
 
       const engine = new SlotsEngine();
-      const availabilityResult = await engine.generateSlots(searchContext.data as any);
+      const availabilityResult = await engine.generateSlots(searchContext.data as any, { persistSearchContext: false });
 
       for (const reqApt of requestedAppointments) {
           const group = availabilityResult.groups.find(g => g.personId === reqApt.personId);
@@ -507,6 +876,69 @@ router.post('/reschedule-preview', async (req: any, res: any) => {
     return res.status(200).json(preview);
   } catch (error) {
     console.error('Booking reschedule preview error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.post('/reschedule-options', async (req: any, res: any) => {
+  const salonId = req.salon?.id;
+  if (!salonId) {
+    return res.status(400).json({ message: 'Salon context is required.' });
+  }
+
+  const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
+  const appointmentIds = parseAppointmentIds(req.body?.appointmentIds);
+  const date = typeof req.body?.date === 'string' ? req.body.date.trim() : '';
+  const assignments = parseRescheduleAssignments(req.body?.assignments);
+
+  if (!token) {
+    return res.status(400).json({ message: 'token is required.' });
+  }
+  if (!appointmentIds.length) {
+    return res.status(400).json({ message: 'appointmentIds must be a non-empty array.' });
+  }
+  if (!date) {
+    return res.status(400).json({ message: 'date is required as YYYY-MM-DD.' });
+  }
+
+  try {
+    const resolved = await resolveMagicTokenCustomer({ token, salonId });
+    if ('error' in resolved) {
+      return res.status(resolved.code).json({ message: resolved.error });
+    }
+
+    const ownedAppointments = await prisma.appointment.findMany({
+      where: {
+        salonId,
+        customerId: resolved.customerId,
+        id: { in: appointmentIds },
+      },
+      select: {
+        id: true,
+        status: true,
+        startTime: true,
+      },
+    });
+    if (ownedAppointments.length !== appointmentIds.length) {
+      return res.status(403).json({ message: 'One or more appointments do not belong to this customer.' });
+    }
+    if (ownedAppointments.some((item) => !isReschedulableAppointmentStatus(item.status))) {
+      return res.status(409).json({ message: 'Only BOOKED/CONFIRMED appointments can be updated.' });
+    }
+    if (ownedAppointments.some((item) => new Date(item.startTime).getTime() <= Date.now())) {
+      return res.status(409).json({ message: 'Past appointments cannot be updated.' });
+    }
+
+    const options = await buildRescheduleOptions({
+      salonId,
+      appointmentIds,
+      date,
+      assignments,
+    });
+
+    return res.status(200).json(options);
+  } catch (error) {
+    console.error('Booking reschedule options error:', error);
     return res.status(500).json({ message: 'Internal server error.' });
   }
 });
@@ -1237,6 +1669,29 @@ router.post('/', async (req: any, res: any, next: any) => {
       // Double check date validity
       if (isNaN(currentStartTime.getTime())) {
           return res.status(400).json({ message: 'Geçersiz randevu saati formatı (ISO beklenen).' });
+      }
+
+      const availabilityLockToken =
+        typeof b.availabilityLockToken === 'string' && b.availabilityLockToken.trim()
+          ? b.availabilityLockToken.trim()
+          : '';
+      const selectedSlots = parseSelectedPersonSlots(b.selectedSlots);
+
+      if (availabilityLockToken && selectedSlots.length) {
+        const exactResult = await createExactSlotBooking({
+          salonId,
+          customerId,
+          customerName,
+          customerPhone,
+          services,
+          source,
+          token: typeof token === 'string' ? token : null,
+          packageSelections,
+          referralShareToken: typeof referralShareToken === 'string' ? referralShareToken : null,
+          availabilityLockToken,
+          selectedSlots,
+        });
+        return res.status(exactResult.status).json(exactResult.body);
       }
 
       const packageByService = new Map<number, number>();
