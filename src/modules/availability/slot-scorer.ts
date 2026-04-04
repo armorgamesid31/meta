@@ -50,29 +50,20 @@ export class SlotScorer {
   }
 
   private buildDisplaySlots(bestSlots: SynchronizedSlot[], personIds: string[]): DisplaySlot[] {
-    const sorted = [...bestSlots].sort(
-      (a, b) => Math.min(...a.slots.map((slot) => slot.startTime)) - Math.min(...b.slots.map((slot) => slot.startTime)),
-    );
-    const clusters: SynchronizedSlot[][] = [];
+    const bucketed = new Map<number, SynchronizedSlot[]>();
 
-    for (const candidate of sorted) {
+    for (const candidate of bestSlots) {
       const candidateStart = Math.min(...candidate.slots.map((slot) => slot.startTime));
-      const currentCluster = clusters[clusters.length - 1];
-      if (!currentCluster || !currentCluster.length) {
-        clusters.push([candidate]);
-        continue;
+      const bucketStart = Math.floor(candidateStart / this.DISPLAY_CLUSTER_MINUTES) * this.DISPLAY_CLUSTER_MINUTES;
+      if (!bucketed.has(bucketStart)) {
+        bucketed.set(bucketStart, []);
       }
-
-      const clusterStart = Math.min(...currentCluster[0].slots.map((slot) => slot.startTime));
-      if (candidateStart <= clusterStart + this.DISPLAY_CLUSTER_MINUTES) {
-        currentCluster.push(candidate);
-        continue;
-      }
-
-      clusters.push([candidate]);
+      bucketed.get(bucketStart)!.push(candidate);
     }
 
-    return clusters.map((cluster) => this.syncToDisplaySlot(this.selectBestCombination(cluster), personIds));
+    return Array.from(bucketed.entries())
+      .sort((a, b) => a[0] - b[0])
+      .map(([, cluster]) => this.syncToDisplaySlot(this.selectBestCombination(cluster), personIds));
   }
 
   private syncToDisplaySlot(sync: SynchronizedSlot, personIds: string[]): DisplaySlot {
