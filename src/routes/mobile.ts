@@ -245,22 +245,63 @@ router.get('/push/status', authenticateToken, async (req: any, res: any) => {
 router.post('/push/test', authenticateToken, async (req: any, res: any) => {
   if (!req.user) return res.status(401).json({ message: 'Unauthorized.' });
 
-  try {
-    const result = await createNotification({
+  const rawDelaySeconds = Number(req.body?.delaySeconds);
+  const delaySeconds =
+    Number.isFinite(rawDelaySeconds) && rawDelaySeconds > 0
+      ? Math.min(Math.floor(rawDelaySeconds), 60)
+      : 0;
+
+  const sendTestNotification = () =>
+    createNotification({
       salonId: req.user.salonId,
       eventType: 'DAILY_MANAGER_REPORT',
-      title: 'Kedy test bildirimi',
-      body: 'Push sistemi bu cihaza test mesaji gonderdi.',
+      title: delaySeconds > 0 ? 'Kedy gecikmeli test bildirimi' : 'Kedy test bildirimi',
+      body:
+        delaySeconds > 0
+          ? `Push sistemi bu cihaza ${delaySeconds} saniye sonra test mesaji gonderdi.`
+          : 'Push sistemi bu cihaza test mesaji gonderdi.',
       payload: {
         route: 'notifications',
-        source: 'manual_push_test',
+        source: delaySeconds > 0 ? 'manual_delayed_push_test' : 'manual_push_test',
         createdAt: new Date().toISOString(),
+        delaySeconds,
       },
       recipientUserIds: [req.user.userId],
     });
 
+  try {
+    if (delaySeconds > 0) {
+      setTimeout(() => {
+        sendTestNotification().catch((error) => {
+          console.error('Mobile delayed push test error:', error);
+        });
+      }, delaySeconds * 1000);
+
+      return res.status(200).json({
+        ok: true,
+        scheduled: true,
+        delaySeconds,
+        notificationId: null,
+        inAppDeliveryCount: 0,
+        pushDeliveryCount: 0,
+        pushDeliverySummary: {
+          PENDING: 0,
+          SENT: 0,
+          SKIPPED: 0,
+          FAILED: 0,
+        },
+        providerConfigured: getPushProviderStatus().configured,
+        providerSource: getPushProviderStatus().source,
+        providerError: getPushProviderStatus().error,
+      });
+    }
+
+    const result = await sendTestNotification();
+
     return res.status(200).json({
       ok: true,
+      scheduled: false,
+      delaySeconds: 0,
       notificationId: result.notificationId,
       inAppDeliveryCount: result.inAppDeliveryCount,
       pushDeliveryCount: result.pushDeliveryCount,
