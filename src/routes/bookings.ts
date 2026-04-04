@@ -19,6 +19,7 @@ import {
   commitAppointmentReschedule,
 } from '../services/appointmentReschedule.js';
 import { buildRescheduleOptions } from '../services/appointmentRescheduleOptions.js';
+import { matchWaitlistForDate } from '../services/waitlist.js';
 import {
   previewCampaignPricing,
   persistAppointmentCampaignApplication,
@@ -808,6 +809,7 @@ router.post("/cancel", authenticateToken, async (req: any, res: any) => {
         serviceName: result.notify.serviceName,
         startTime: result.notify.startTime,
       });
+      await matchWaitlistForDate(salonId, result.notify.startTime.toISOString().slice(0, 10)).catch(() => undefined);
     }
     return res.status(result.status).json(result.body);
 
@@ -1022,6 +1024,11 @@ router.post('/reschedule-commit', async (req: any, res: any) => {
         }),
       ),
     );
+    await Promise.all(
+      ownedAppointments.map((apt) =>
+        matchWaitlistForDate(salonId, new Date(apt.startTime).toISOString().slice(0, 10)).catch(() => undefined),
+      ),
+    );
 
     return res.status(200).json({
       batchId: committed.batchId,
@@ -1111,6 +1118,11 @@ router.post('/cancel-by-token', async (req: any, res: any) => {
           serviceName: apt.service?.name || null,
           startTime: new Date(apt.startTime),
         }),
+      ),
+    );
+    await Promise.all(
+      ownedAppointments.map((apt) =>
+        matchWaitlistForDate(salonId, new Date(apt.startTime).toISOString().slice(0, 10)).catch(() => undefined),
       ),
     );
 

@@ -23,6 +23,13 @@ import {
 } from '../services/appointmentReschedule.js';
 import { buildRescheduleOptions } from '../services/appointmentRescheduleOptions.js';
 import {
+  cancelWaitlistEntry,
+  createManualWaitlistOffer,
+  createWaitlistEntry,
+  listWaitlistEntries,
+  matchWaitlistForDate,
+} from '../services/waitlist.js';
+import {
   listCampaignsForSend,
   previewCampaignPricing,
   processCompletionCampaignRewards,
@@ -164,6 +171,35 @@ function parseRescheduleAssignments(input: unknown): Record<number, number> {
     }
   }
   return map;
+}
+
+function parseWaitlistGroups(input: unknown): Array<{ personId: string; services: Array<{ serviceId: number; allowedStaffIds: number[] | null }> }> {
+  const rows = Array.isArray(input) ? input : [];
+  return rows
+    .map((row, index) => {
+      const item = row && typeof row === 'object' ? (row as any) : {};
+      const personId = typeof item.personId === 'string' && item.personId.trim() ? item.personId.trim() : `p${index + 1}`;
+      const services = Array.isArray(item.services)
+        ? item.services
+            .map((service: any) => {
+              const serviceId = Number(service?.serviceId);
+              if (!Number.isInteger(serviceId) || serviceId <= 0) return null;
+              const allowedStaffIds = Array.isArray(service?.allowedStaffIds)
+                ? service.allowedStaffIds
+                    .map((id: any) => Number(id))
+                    .filter((id: number, idx: number, list: number[]) => Number.isInteger(id) && id > 0 && list.indexOf(id) === idx)
+                : null;
+              return {
+                serviceId,
+                allowedStaffIds: allowedStaffIds && allowedStaffIds.length ? allowedStaffIds : null,
+              };
+            })
+            .filter(Boolean)
+        : [];
+      if (!services.length) return null;
+      return { personId, services };
+    })
+    .filter(Boolean) as Array<{ personId: string; services: Array<{ serviceId: number; allowedStaffIds: number[] | null }> }>;
 }
 
 function toRiskLevel(score: number): 'LOW' | 'MEDIUM' | 'HIGH' {
@@ -3133,6 +3169,12 @@ router.patch('/appointments/:id/status', authenticateToken, async (req: any, res
       console.error('Appointment status notification error:', notifyError);
     }
 
+    if (result._notify.nextStatus === 'CANCELLED') {
+      await matchWaitlistForDate(salonId, getAppointmentDayKey(new Date(result._notify.startTime))).catch((waitlistError) => {
+        console.error('Admin appointment status waitlist match error:', waitlistError);
+      });
+    }
+
     return res.status(200).json({
       item: result.item,
       packageAutomation: result.packageAutomation,
@@ -3227,6 +3269,17 @@ router.post('/appointments/reschedule-commit', authenticateToken, async (req: an
   }
 
   try {
+    const previousAppointments = await prisma.appointment.findMany({
+      where: {
+        salonId,
+        id: { in: appointmentIds },
+      },
+      select: {
+        id: true,
+        startTime: true,
+      },
+    });
+
     const committed = await commitAppointmentReschedule({
       salonId,
       appointmentIds,
@@ -3260,6 +3313,23 @@ router.post('/appointments/reschedule-commit', authenticateToken, async (req: an
     } catch (notifyError) {
       console.error('Appointment reschedule commit notification error:', notifyError);
     }
+
+    const previousDays = Array.from(
+      new Set(
+        committed.previousAppointmentIds
+          .map((id) => Number(id))
+          .map((id) => previousAppointments.find((appointment) => appointment.id === id))
+          .filter(Boolean)
+          .map((appointment) => getAppointmentDayKey(new Date((appointment as any).startTime))),
+      ),
+    );
+    await Promise.all(
+      previousDays.map((day) =>
+        matchWaitlistForDate(salonId, day).catch((waitlistError) => {
+          console.error('Admin appointment reschedule waitlist match error:', waitlistError);
+        }),
+      ),
+    );
 
     return res.status(200).json({
       batchId: committed.batchId,
@@ -3322,6 +3392,127 @@ router.patch('/appointments/:id/reschedule', authenticateToken, async (req: any,
     const status = /manual specialist selection|no eligible|only booked|not found/i.test(message) ? 409 : 500;
     if (status === 500) {
       console.error('Admin appointment reschedule legacy endpoint error:', error);
+    }
+    return res.status(status).json({ message });
+  }
+});
+
+router.get('/waitlist', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) return;
+
+  const date = typeof req.query?.date === 'string' ? req.query.date.trim() : '';
+  if (!date) {
+    return res.status(400).json({ message: 'date is required as YYYY-MM-DD.' });
+  }
+
+  try {
+    const items = await listWaitlistEntries({ salonId, date });
+    return res.status(200).json({ items });
+  } catch (error) {
+    console.error('Admin waitlist list error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.post('/waitlist', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) return;
+
+  const date = typeof req.body?.date === 'string' ? req.body.date.trim() : '';
+  const timeWindowStart = typeof req.body?.timeWindowStart === 'string' ? req.body.timeWindowStart.trim() : '';
+  const timeWindowEnd = typeof req.body?.timeWindowEnd === 'string' ? req.body.timeWindowEnd.trim() : '';
+  const groups = parseWaitlistGroups(req.body?.groups);
+  const customerId = Number(req.body?.customerId);
+  const customerName = typeof req.body?.customerName === 'string' ? req.body.customerName.trim() : '';
+  const customerPhone = typeof req.body?.customerPhone === 'string' ? req.body.customerPhone.trim() : '';
+  const notes = typeof req.body?.notes === 'string' ? req.body.notes.trim() : null;
+
+  if (!date || !timeWindowStart || !timeWindowEnd || !groups.length || !customerName || !customerPhone) {
+    return res.status(400).json({ message: 'date, time window, groups, customerName and customerPhone are required.' });
+  }
+
+  try {
+    const item = await createWaitlistEntry({
+      salonId,
+      date,
+      timeWindowStart,
+      timeWindowEnd,
+      groups: groups as any,
+      source: 'ADMIN',
+      customer: {
+        customerId: Number.isInteger(customerId) && customerId > 0 ? customerId : null,
+        customerName,
+        customerPhone,
+      },
+      notes,
+    });
+    return res.status(201).json({ item });
+  } catch (error: any) {
+    const message = error?.message || 'Internal server error.';
+    const status = /required|invalid/i.test(message) ? 400 : 500;
+    if (status === 500) {
+      console.error('Admin waitlist create error:', error);
+    }
+    return res.status(status).json({ message });
+  }
+});
+
+router.post('/waitlist/match', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) return;
+  const date = typeof req.body?.date === 'string' ? req.body.date.trim() : '';
+  if (!date) {
+    return res.status(400).json({ message: 'date is required as YYYY-MM-DD.' });
+  }
+
+  try {
+    await matchWaitlistForDate(salonId, date);
+    const items = await listWaitlistEntries({ salonId, date });
+    return res.status(200).json({ items });
+  } catch (error) {
+    console.error('Admin waitlist match error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.post('/waitlist/:id/offer', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) return;
+  const entryId = Number(req.params.id);
+  if (!Number.isInteger(entryId) || entryId <= 0) {
+    return res.status(400).json({ message: 'Invalid waitlist id.' });
+  }
+
+  try {
+    const item = await createManualWaitlistOffer({ salonId, entryId });
+    return res.status(200).json({ item });
+  } catch (error: any) {
+    const message = error?.message || 'Internal server error.';
+    const status = /not_found/.test(message) ? 404 : 500;
+    if (status === 500) {
+      console.error('Admin waitlist manual offer error:', error);
+    }
+    return res.status(status).json({ message });
+  }
+});
+
+router.post('/waitlist/:id/cancel', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) return;
+  const entryId = Number(req.params.id);
+  if (!Number.isInteger(entryId) || entryId <= 0) {
+    return res.status(400).json({ message: 'Invalid waitlist id.' });
+  }
+
+  try {
+    await cancelWaitlistEntry({ salonId, entryId });
+    return res.status(200).json({ ok: true });
+  } catch (error: any) {
+    const message = error?.message || 'Internal server error.';
+    const status = /not_found/.test(message) ? 404 : 500;
+    if (status === 500) {
+      console.error('Admin waitlist cancel error:', error);
     }
     return res.status(status).json({ message });
   }
