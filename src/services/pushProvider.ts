@@ -2,6 +2,9 @@ import { App, ServiceAccount, cert, getApp, getApps, initializeApp } from 'fireb
 import { getMessaging, Message } from 'firebase-admin/messaging';
 
 export const ANDROID_PUSH_CHANNEL_ID = 'kedy_general_notifications';
+export const ANDROID_PUSH_CHANNEL_APPOINTMENT_ID = 'kedy_appointment_notifications';
+export const ANDROID_PUSH_CHANNEL_BOOKING_CHANGE_ID = 'kedy_booking_change_notifications';
+export const ANDROID_PUSH_CHANNEL_REPORT_ID = 'kedy_report_notifications';
 export const ANDROID_PUSH_ICON_NAME = 'ic_stat_kedy_notification';
 
 export type PushProviderSource = 'BASE64' | 'JSON' | 'NONE';
@@ -20,6 +23,7 @@ export interface PushMessageInput {
   title: string;
   body: string;
   data: Record<string, unknown>;
+  androidChannelId?: string;
 }
 
 export interface PushSendResult {
@@ -197,6 +201,13 @@ function shouldDeactivateToken(error: unknown): boolean {
   return PERMANENT_TOKEN_ERRORS.has(code);
 }
 
+function resolveAndroidSound(channelId: string): string {
+  if (channelId === ANDROID_PUSH_CHANNEL_APPOINTMENT_ID) return 'new_appointment';
+  if (channelId === ANDROID_PUSH_CHANNEL_BOOKING_CHANGE_ID) return 'booking_changed_canceled';
+  if (channelId === ANDROID_PUSH_CHANNEL_REPORT_ID) return 'report';
+  return 'default';
+}
+
 export function getPushProviderStatus(): PushProviderStatus {
   return getFirebaseApp().status;
 }
@@ -238,22 +249,25 @@ export async function sendPushMessages(inputs: PushMessageInput[]): Promise<{
   const results: PushSendResult[] = [];
 
   for (const chunk of chunkItems(inputs, 500)) {
-    const messages: Message[] = chunk.map((input) => ({
-      token: input.token,
-      notification: {
-        title: input.title,
-        body: input.body,
-      },
-      data: toDataPayload(input.data),
-      android: {
-        priority: 'high',
+    const messages: Message[] = chunk.map((input) => {
+      const channelId = input.androidChannelId || ANDROID_PUSH_CHANNEL_ID;
+      return {
+        token: input.token,
         notification: {
-          channelId: ANDROID_PUSH_CHANNEL_ID,
-          icon: ANDROID_PUSH_ICON_NAME,
-          sound: 'default',
+          title: input.title,
+          body: input.body,
         },
-      },
-    }));
+        data: toDataPayload(input.data),
+        android: {
+          priority: 'high',
+          notification: {
+            channelId,
+            icon: ANDROID_PUSH_ICON_NAME,
+            sound: resolveAndroidSound(channelId),
+          },
+        },
+      };
+    });
 
     try {
       const batchResponse = await messaging.sendEach(messages);

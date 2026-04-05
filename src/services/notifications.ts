@@ -1,5 +1,9 @@
 import { prisma } from '../prisma.js';
 import {
+  ANDROID_PUSH_CHANNEL_APPOINTMENT_ID,
+  ANDROID_PUSH_CHANNEL_BOOKING_CHANGE_ID,
+  ANDROID_PUSH_CHANNEL_ID,
+  ANDROID_PUSH_CHANNEL_REPORT_ID,
   PushDeliveryStatus,
   PushProviderSource,
   getPushProviderStatus,
@@ -95,6 +99,33 @@ function buildNotificationPayload(
     eventType,
     route,
   };
+}
+
+function resolveAndroidChannelId(
+  eventType: NotificationEventType,
+  payload?: Record<string, unknown> | null,
+): string {
+  if (eventType === 'DAILY_MANAGER_REPORT') {
+    return ANDROID_PUSH_CHANNEL_REPORT_ID;
+  }
+
+  if (eventType === 'SAME_DAY_APPOINTMENT_CHANGE') {
+    const event = typeof payload?.event === 'string' ? payload.event.toUpperCase() : '';
+    if (event === 'CREATED') {
+      return ANDROID_PUSH_CHANNEL_APPOINTMENT_ID;
+    }
+    return ANDROID_PUSH_CHANNEL_BOOKING_CHANGE_ID;
+  }
+
+  if (eventType === 'WAITLIST_OFFER_ACCEPTED') {
+    return ANDROID_PUSH_CHANNEL_APPOINTMENT_ID;
+  }
+
+  if (eventType === 'WAITLIST_OFFER_CREATED' || eventType === 'WAITLIST_OFFER_EXPIRED' || eventType === 'WAITLIST_MATCH_FOUND') {
+    return ANDROID_PUSH_CHANNEL_BOOKING_CHANGE_ID;
+  }
+
+  return ANDROID_PUSH_CHANNEL_ID;
 }
 
 function summarizePushDeliveries(statuses: DeliveryStatus[]): Record<DeliveryStatus, number> {
@@ -277,6 +308,7 @@ export async function createNotification(input: {
   }
 
   const payload = buildNotificationPayload(input.eventType, input.payload);
+  const androidChannelId = resolveAndroidChannelId(input.eventType, payload);
   let notificationId: number | null = null;
   let inAppDeliveryCount = 0;
   let pushTargets: Array<{
@@ -390,7 +422,9 @@ export async function createNotification(input: {
           notificationId,
           deliveryId: Number(target.deliveryId),
           salonId: input.salonId,
+          androidChannelId,
         },
+        androidChannelId,
       })),
     );
 
