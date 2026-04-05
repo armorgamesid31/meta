@@ -250,21 +250,76 @@ router.post('/push/test', authenticateToken, async (req: any, res: any) => {
     Number.isFinite(rawDelaySeconds) && rawDelaySeconds > 0
       ? Math.min(Math.floor(rawDelaySeconds), 60)
       : 0;
+  const scenarioRaw = typeof req.body?.scenario === 'string' ? req.body.scenario.trim().toUpperCase() : '';
+  const scenario = scenarioRaw || 'GENERAL';
+
+  const testConfigByScenario: Record<
+    string,
+    {
+      eventType:
+        | 'HANDOVER_REQUIRED'
+        | 'HANDOVER_REMINDER'
+        | 'SAME_DAY_APPOINTMENT_CHANGE'
+        | 'END_OF_DAY_MISSING_DATA'
+        | 'DAILY_MANAGER_REPORT';
+      title: string;
+      body: string;
+      route: 'instagram-inbox' | 'schedule' | 'analytics' | 'notifications';
+      payloadExtras?: Record<string, unknown>;
+    }
+  > = {
+    GENERAL: {
+      eventType: 'DAILY_MANAGER_REPORT',
+      title: 'Kedy test bildirimi',
+      body: 'Push sistemi bu cihaza test mesaji gonderdi.',
+      route: 'notifications',
+    },
+    APPOINTMENT_NEW: {
+      eventType: 'SAME_DAY_APPOINTMENT_CHANGE',
+      title: 'Yeni randevu test bildirimi',
+      body: 'Yeni randevu sesi test edildi.',
+      route: 'schedule',
+      payloadExtras: { event: 'CREATED' },
+    },
+    BOOKING_CHANGE: {
+      eventType: 'SAME_DAY_APPOINTMENT_CHANGE',
+      title: 'Randevu degisikligi test bildirimi',
+      body: 'Randevu degisiklik sesi test edildi.',
+      route: 'schedule',
+      payloadExtras: { event: 'UPDATED' },
+    },
+    REPORT: {
+      eventType: 'DAILY_MANAGER_REPORT',
+      title: 'Gunluk rapor test bildirimi',
+      body: 'Rapor sesi test edildi.',
+      route: 'analytics',
+    },
+    HANDOVER: {
+      eventType: 'HANDOVER_REQUIRED',
+      title: 'Handover test bildirimi',
+      body: 'Handover sesi test edildi.',
+      route: 'instagram-inbox',
+    },
+  };
+
+  const selectedConfig = testConfigByScenario[scenario] || testConfigByScenario.GENERAL;
 
   const sendTestNotification = () =>
     createNotification({
       salonId: req.user.salonId,
-      eventType: 'DAILY_MANAGER_REPORT',
-      title: delaySeconds > 0 ? 'Kedy gecikmeli test bildirimi' : 'Kedy test bildirimi',
+      eventType: selectedConfig.eventType,
+      title: delaySeconds > 0 ? `${selectedConfig.title} (gecikmeli)` : selectedConfig.title,
       body:
         delaySeconds > 0
-          ? `Push sistemi bu cihaza ${delaySeconds} saniye sonra test mesaji gonderdi.`
-          : 'Push sistemi bu cihaza test mesaji gonderdi.',
+          ? `${selectedConfig.body} Bildirim ${delaySeconds} saniye gecikmeli gonderildi.`
+          : selectedConfig.body,
       payload: {
-        route: 'notifications',
+        route: selectedConfig.route,
         source: delaySeconds > 0 ? 'manual_delayed_push_test' : 'manual_push_test',
         createdAt: new Date().toISOString(),
         delaySeconds,
+        scenario,
+        ...(selectedConfig.payloadExtras || {}),
       },
       recipientUserIds: [req.user.userId],
     });
@@ -281,6 +336,7 @@ router.post('/push/test', authenticateToken, async (req: any, res: any) => {
         ok: true,
         scheduled: true,
         delaySeconds,
+        scenario,
         notificationId: null,
         inAppDeliveryCount: 0,
         pushDeliveryCount: 0,
@@ -302,6 +358,7 @@ router.post('/push/test', authenticateToken, async (req: any, res: any) => {
       ok: true,
       scheduled: false,
       delaySeconds: 0,
+      scenario,
       notificationId: result.notificationId,
       inAppDeliveryCount: result.inAppDeliveryCount,
       pushDeliveryCount: result.pushDeliveryCount,
