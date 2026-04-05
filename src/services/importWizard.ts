@@ -14,6 +14,10 @@ import { normalizeDigitsOnly } from './phoneValidation.js';
 
 const PRESIGN_TTL_SECONDS = Math.max(60, Number(process.env.IMPORTS_PRESIGN_TTL_SECONDS || 900));
 const IMPORT_RETENTION_DAYS = Math.max(1, Number(process.env.IMPORTS_RETENTION_DAYS || 30));
+const IMPORTS_OCR_WEBHOOK_URL = (process.env.IMPORTS_OCR_WEBHOOK_URL || '').trim();
+const IMPORTS_OCR_WEBHOOK_TIMEOUT_MS = Math.max(3000, Number(process.env.IMPORTS_OCR_WEBHOOK_TIMEOUT_MS || 15000));
+const IMPORTS_OCR_AUTO_TRIGGER = (process.env.IMPORTS_OCR_AUTO_TRIGGER || 'true').trim().toLowerCase() !== 'false';
+const N8N_SHARED_INTERNAL_KEY = (process.env.N8N_INTERNAL_API_KEY || process.env.INTERNAL_API_KEY || '').trim();
 const IMPORTS_PUBLIC_BASE_URL = (
   process.env.IMPORTS_PUBLIC_BASE_URL ||
   process.env.IMPORTS_R2_PUBLIC_BASE_URL ||
@@ -160,6 +164,50 @@ function buildObjectKey(input: { salonId: number; batchId: string; fileName: str
 
 function buildPublicUrl(objectKey: string) {
   return `${IMPORTS_PUBLIC_BASE_URL.replace(/\/+$/, '')}/${objectKey}`;
+}
+
+async function triggerImportOcrWebhook(input: {
+  batchId: string;
+  sourceFileId: number;
+  fileUrl: string | null;
+  objectKey: string | null;
+  sourceType: ImportSourceType;
+}) {
+  if (!IMPORTS_OCR_AUTO_TRIGGER) {
+    return { triggered: false, reason: 'ocr_auto_trigger_disabled' as const };
+  }
+  if (!IMPORTS_OCR_WEBHOOK_URL) {
+    return { triggered: false, reason: 'ocr_webhook_url_missing' as const };
+  }
+  if (!input.fileUrl) {
+    return { triggered: false, reason: 'file_url_missing' as const };
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), IMPORTS_OCR_WEBHOOK_TIMEOUT_MS);
+  try {
+    const response = await fetch(IMPORTS_OCR_WEBHOOK_URL, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...(N8N_SHARED_INTERNAL_KEY ? { 'x-internal-api-key': N8N_SHARED_INTERNAL_KEY } : {}),
+      },
+      body: JSON.stringify({
+        batchId: input.batchId,
+        sourceFileId: input.sourceFileId,
+        fileUrl: input.fileUrl,
+        objectKey: input.objectKey,
+        sourceType: input.sourceType,
+      }),
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new Error(`ocr_webhook_http_${response.status}`);
+    }
+    return { triggered: true };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function objectBodyToBuffer(body: any): Promise<Buffer> {
@@ -791,6 +839,37 @@ export async function completeImportSourceFile(input: {
   });
 
   if (file.sourceType === 'PDF' || file.sourceType === 'IMAGE') {
+    try {
+      const webhookResult = await triggerImportOcrWebhook({
+        batchId: input.batchId,
+        sourceFileId: file.id,
+        fileUrl: input.publicUrl || file.publicUrl,
+        objectKey: input.objectKey || file.objectKey,
+        sourceType: file.sourceType,
+      });
+      if (!webhookResult.triggered) {
+        await prisma.importSourceFile.update({
+          where: { id: file.id },
+          data: {
+            extractionError: String(webhookResult.reason),
+          },
+        });
+      } else {
+        await prisma.importSourceFile.update({
+          where: { id: file.id },
+          data: { extractionError: null },
+        });
+      }
+    } catch (error: any) {
+      const reason = error instanceof Error ? error.message.slice(0, 500) : 'ocr_webhook_trigger_failed';
+      await prisma.importSourceFile.update({
+        where: { id: file.id },
+        data: {
+          extractionError: reason,
+        },
+      });
+    }
+
     await refreshBatchStatus(input.batchId);
     return { fileId: file.id, status: 'WAITING_OCR', parsedRowCount: 0, queuedForOcr: true, warnings: [] as string[] };
   }
