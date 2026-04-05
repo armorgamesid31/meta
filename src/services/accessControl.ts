@@ -35,6 +35,7 @@ export const PERMISSION_CATALOG: PermissionSeed[] = [
   { key: 'notifications.policy.manage', module: 'notifications', description: 'Manage notification role matrix', isCritical: true },
   { key: 'website.manage', module: 'website', description: 'Manage website content' },
   { key: 'meta_direct.manage', module: 'integrations', description: 'Manage Meta Direct integration' },
+  { key: 'imports.manage', module: 'imports', description: 'Manage data import wizard and commit jobs' },
   { key: 'access.roles.manage', module: 'access', description: 'Manage role permission matrix', isCritical: true },
   { key: 'access.users.manage', module: 'access', description: 'Manage team users and roles', isCritical: true },
   { key: 'access.permission_overrides.edit', module: 'access', description: 'Edit user permission overrides', isCritical: true },
@@ -64,6 +65,7 @@ const DEFAULT_ROLE_PERMISSIONS: Record<FixedRole, string[]> = {
     'notifications.preferences.manage',
     'website.manage',
     'meta_direct.manage',
+    'imports.manage',
   ],
   RECEPTION: [
     'dashboard.view',
@@ -286,6 +288,7 @@ export function mapAdminRouteToPermission(path: string, method: string): string 
   if (normalizedPath.startsWith('/analytics')) return 'analytics.view';
   if (normalizedPath.startsWith('/website')) return 'website.manage';
   if (normalizedPath.startsWith('/meta-direct')) return 'meta_direct.manage';
+  if (normalizedPath.startsWith('/imports')) return 'imports.manage';
   if (normalizedPath.startsWith('/setup')) return 'website.manage';
   return 'dashboard.view';
 }

@@ -70,6 +70,12 @@ model Salon {
   ServiceCategory     ServiceCategory[]
   contentItems        ContentItem[]
   staff               Staff[]
+  importBatches       ImportBatch[]
+  importSourceFiles   ImportSourceFile[]
+  importRows          ImportRow[]
+  importConflicts     ImportConflict[]
+  importDecisions     ImportMappingDecision[]
+  importCommitRuns    ImportCommitRun[]
 
   @@index([citySlug, districtSlug], map: "idx_salon_city_district_slug")
 }
@@ -120,6 +126,10 @@ model SalonUser {
   authSessions           MobileAuthSession[]
   publishedContentValues ContentLocaleValue[]
   salon                  Salon                @relation(fields: [salonId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  createdImportBatches   ImportBatch[]        @relation("ImportBatchCreatedBy")
+  resolvedImportConflicts ImportConflict[]    @relation("ImportConflictResolvedBy")
+  importMappingDecisions ImportMappingDecision[]
+  triggeredImportCommits ImportCommitRun[]    @relation("ImportCommitTriggeredBy")
 }
 
 model MobileAuthSession {
@@ -1270,6 +1280,146 @@ model WaitlistOffer {
   @@index([waitlistEntryId, createdAt], map: "idx_waitlist_offer_entry_created")
 }
 
+model ImportBatch {
+  id              String            @id @default(cuid())
+  salonId         Int
+  createdByUserId Int
+  status          ImportBatchStatus @default(UPLOADING)
+  summary         Json?
+  startedAt       DateTime?         @db.Timestamp(6)
+  completedAt     DateTime?         @db.Timestamp(6)
+  createdAt       DateTime?         @default(now()) @db.Timestamp(6)
+  updatedAt       DateTime?         @default(now()) @updatedAt @db.Timestamp(6)
+  salon           Salon             @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  createdBy       SalonUser         @relation("ImportBatchCreatedBy", fields: [createdByUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  files           ImportSourceFile[]
+  rows            ImportRow[]
+  conflicts       ImportConflict[]
+  decisions       ImportMappingDecision[]
+  commitRuns      ImportCommitRun[]
+
+  @@index([salonId, status, createdAt], map: "idx_import_batch_salon_status_created")
+}
+
+model ImportSourceFile {
+  id               Int                    @id @default(autoincrement())
+  batchId          String
+  salonId          Int
+  sourceType       ImportSourceType
+  status           ImportSourceFileStatus @default(PENDING_UPLOAD)
+  originalFileName String
+  mimeType         String?
+  sizeBytes        Int?
+  objectKey        String?
+  publicUrl        String?
+  extractionError  String?
+  uploadedAt       DateTime?              @db.Timestamp(6)
+  parsedAt         DateTime?              @db.Timestamp(6)
+  createdAt        DateTime?              @default(now()) @db.Timestamp(6)
+  updatedAt        DateTime?              @default(now()) @updatedAt @db.Timestamp(6)
+  batch            ImportBatch            @relation(fields: [batchId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  salon            Salon                  @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  rows             ImportRow[]
+
+  @@index([batchId, status], map: "idx_import_source_file_batch_status")
+}
+
+model ImportRow {
+  id                    Int             @id @default(autoincrement())
+  batchId               String
+  sourceFileId          Int
+  salonId               Int
+  rowIndex              Int
+  sourceRowHash         String
+  rowStatus             ImportRowStatus @default(EXTRACTED)
+  rawData               Json
+  normalizedData        Json
+  customerName          String?
+  customerPhoneRaw      String?
+  customerPhoneNormalized String?
+  appointmentDate       DateTime?       @db.Date
+  startMinute           Int?
+  endMinute             Int?
+  durationMinutes       Int?
+  serviceNameRaw        String?
+  staffNameRaw          String?
+  priceRaw              Float?
+  notesRaw              String?
+  confidence            Float?
+  matchedCustomerId     Int?
+  matchedServiceId      Int?
+  matchedStaffId        Int?
+  importedAppointmentId Int?
+  failureReason         String?
+  createdAt             DateTime?       @default(now()) @db.Timestamp(6)
+  updatedAt             DateTime?       @default(now()) @updatedAt @db.Timestamp(6)
+  batch                 ImportBatch     @relation(fields: [batchId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  sourceFile            ImportSourceFile @relation(fields: [sourceFileId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  salon                 Salon           @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  conflicts             ImportConflict[]
+  decisions             ImportMappingDecision[]
+
+  @@unique([batchId, sourceRowHash], map: "uq_import_row_batch_hash")
+  @@index([batchId, rowStatus], map: "idx_import_row_batch_status")
+}
+
+model ImportConflict {
+  id               Int                  @id @default(autoincrement())
+  batchId          String
+  rowId            Int?
+  salonId          Int
+  type             ImportConflictType
+  status           ImportConflictStatus @default(OPEN)
+  message          String
+  payload          Json?
+  resolvedByUserId Int?
+  resolvedAt       DateTime?            @db.Timestamp(6)
+  createdAt        DateTime?            @default(now()) @db.Timestamp(6)
+  updatedAt        DateTime?            @default(now()) @updatedAt @db.Timestamp(6)
+  batch            ImportBatch          @relation(fields: [batchId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  row              ImportRow?           @relation(fields: [rowId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  salon            Salon                @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  resolvedBy       SalonUser?           @relation("ImportConflictResolvedBy", fields: [resolvedByUserId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([batchId, status, type], map: "idx_import_conflict_batch_status_type")
+}
+
+model ImportMappingDecision {
+  id             Int      @id @default(autoincrement())
+  batchId        String
+  rowId          Int?
+  salonId        Int
+  userId         Int
+  decisionType   String
+  decisionKey    String
+  decisionValue  Json
+  createdAt      DateTime? @default(now()) @db.Timestamp(6)
+  batch          ImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  row            ImportRow? @relation(fields: [rowId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  salon          Salon @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user           SalonUser @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([batchId, rowId, createdAt], map: "idx_import_decision_batch_row_created")
+}
+
+model ImportCommitRun {
+  id                 Int                @id @default(autoincrement())
+  batchId            String
+  salonId            Int
+  triggeredByUserId  Int
+  status             ImportCommitStatus @default(RUNNING)
+  summary            Json?
+  startedAt          DateTime?          @default(now()) @db.Timestamp(6)
+  completedAt        DateTime?          @db.Timestamp(6)
+  createdAt          DateTime?          @default(now()) @db.Timestamp(6)
+  updatedAt          DateTime?          @default(now()) @updatedAt @db.Timestamp(6)
+  batch              ImportBatch        @relation(fields: [batchId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  salon              Salon              @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  triggeredBy        SalonUser          @relation("ImportCommitTriggeredBy", fields: [triggeredByUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([batchId, status, createdAt], map: "idx_import_commit_batch_status_created")
+}
+
 model UserNotificationPreference {
   id           Int       @id @default(autoincrement())
   salonId      Int
@@ -1495,6 +1645,63 @@ enum NotificationDeliveryStatus {
   PENDING
   SENT
   SKIPPED
+  FAILED
+}
+
+enum ImportBatchStatus {
+  UPLOADING
+  PARSING
+  NEEDS_REVIEW
+  READY_TO_COMMIT
+  COMMITTING
+  COMPLETED
+  FAILED
+}
+
+enum ImportSourceType {
+  CSV
+  EXCEL
+  PDF
+  IMAGE
+}
+
+enum ImportSourceFileStatus {
+  PENDING_UPLOAD
+  PARSING
+  WAITING_OCR
+  PARSED
+  FAILED_EXTRACTION
+}
+
+enum ImportRowStatus {
+  EXTRACTED
+  READY
+  CONFLICT
+  SKIPPED
+  IMPORTED
+  FAILED
+}
+
+enum ImportConflictType {
+  MISSING_PHONE
+  INVALID_PHONE
+  SERVICE_UNMATCHED
+  STAFF_UNMATCHED
+  APPOINTMENT_OVERLAP
+  OUT_OF_RANGE_DATE
+  VALIDATION_ERROR
+}
+
+enum ImportConflictStatus {
+  OPEN
+  RESOLVED
+  IGNORED
+}
+
+enum ImportCommitStatus {
+  RUNNING
+  COMPLETED
+  PARTIAL_FAILED
   FAILED
 }
 

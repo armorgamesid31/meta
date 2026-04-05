@@ -15,6 +15,7 @@ import availabilityRoutes from './routes/availability.js';
 import authRoutes from './routes/auth.js';
 import adminMobileRoutes from './routes/adminMobile.js';
 import adminAccessRoutes from './routes/adminAccess.js';
+import adminImportsRoutes from './routes/adminImports.js';
 import adminContentRoutes from './routes/adminContent.js';
 import mobileRoutes from './routes/mobile.js';
 import customerRoutes from './routes/customers.js';
@@ -29,12 +30,15 @@ import internalMagicLinkRoutes from './routes/internalMagicLink.js';
 import internalConversationStateRoutes from './routes/internalConversationState.js';
 import internalOutboundRoutes from './routes/internalOutbound.js';
 import internalAgentOutboundRoutes from './routes/internalAgentOutbound.js';
+import internalImportsRoutes from './routes/internalImports.js';
 import channelWebhooksRoutes from './routes/channelWebhooks.js';
 import { multiTenantMiddleware } from './middleware/multiTenant.js';
 import { authenticateToken } from './middleware/auth.js';
 import { requireAdminRoutePermission } from './middleware/access.js';
+import { requirePermissionKey } from './middleware/access.js';
 import { ensurePermissionCatalog } from './services/accessControl.js';
 import { startNotificationJobs } from './services/notifications.js';
+import { startImportRetentionJob } from './services/importWizard.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -161,6 +165,7 @@ app.use('/api/internal/magic-link', internalMagicLinkRoutes);
 app.use('/api/internal/conversation-state', internalConversationStateRoutes);
 app.use('/api/internal/outbound', internalOutboundRoutes);
 app.use('/api/internal/agent-outbound', internalAgentOutboundRoutes);
+app.use('/api/internal/imports', internalImportsRoutes);
 app.use('/api/webhooks', channelWebhooksRoutes);
 
 // Apply tenant middleware to ALL other API routes
@@ -170,6 +175,7 @@ app.use('/auth', authRoutes);
 app.use('/api/mobile', mobileRoutes);
 app.use('/api/admin/content', adminContentRoutes);
 app.use('/api/admin/access', adminAccessRoutes);
+app.use('/api/admin/imports', authenticateToken, requirePermissionKey('imports.manage'), adminImportsRoutes);
 app.use('/api/admin', authenticateToken, requireAdminRoutePermission, adminMobileRoutes);
 app.use('/api/content', contentRoutes);
 app.use('/api/internal/service-translations', internalServiceTranslationsRoutes);
@@ -281,5 +287,6 @@ app.listen(PORT, HOST, () => {
     console.error('Access permission catalog bootstrap warning:', error);
   });
   startNotificationJobs();
+  startImportRetentionJob();
 });
 export default app;
