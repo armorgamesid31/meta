@@ -576,6 +576,19 @@ export async function notifySameDayAppointmentChange(input: {
   startTime: Date;
   timezone?: string | null;
 }): Promise<void> {
+  const appointment = await prisma.appointment.findFirst({
+    where: {
+      id: input.appointmentId,
+      salonId: input.salonId,
+    },
+    select: {
+      source: true,
+    },
+  });
+  if (appointment?.source === 'IMPORT') {
+    return;
+  }
+
   const tz = input.timezone || 'Europe/Istanbul';
   const now = new Date();
 
@@ -788,6 +801,7 @@ export async function runDailyNotificationSweep(): Promise<void> {
                 SUM(CASE WHEN a."status" = 'COMPLETED' AND a."paymentMethod" IS NULL THEN 1 ELSE 0 END) AS "missingPaymentCount"
               FROM "Appointment" a
               WHERE a."salonId" = $1
+                AND COALESCE(a."source", 'CUSTOMER') <> 'IMPORT'
                 AND DATE((a."startTime" AT TIME ZONE $2)) = DATE((NOW() AT TIME ZONE $2))
             `,
             salonId,
@@ -823,6 +837,7 @@ export async function runDailyNotificationSweep(): Promise<void> {
               FROM "Appointment" a
               LEFT JOIN "Service" s ON s."id" = a."serviceId"
               WHERE a."salonId" = $1
+                AND COALESCE(a."source", 'CUSTOMER') <> 'IMPORT'
                 AND DATE((a."startTime" AT TIME ZONE $2)) = DATE((NOW() AT TIME ZONE $2))
             `,
             salonId,

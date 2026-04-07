@@ -12,9 +12,16 @@ import type { ImportConflictType, ImportRowStatus, ImportSourceType } from '@pri
 import { prisma } from '../prisma.js';
 import { normalizeDigitsOnly } from './phoneValidation.js';
 
+const prismaAny = prisma as any;
+
 const PRESIGN_TTL_SECONDS = Math.max(60, Number(process.env.IMPORTS_PRESIGN_TTL_SECONDS || 900));
 const IMPORT_RETENTION_DAYS = Math.max(1, Number(process.env.IMPORTS_RETENTION_DAYS || 30));
 const IMPORTS_OCR_WEBHOOK_URL = (process.env.IMPORTS_OCR_WEBHOOK_URL || '').trim();
+const IMPORTS_OCR_BENCHMARK_WEBHOOK_URL = (
+  process.env.IMPORTS_OCR_BENCHMARK_WEBHOOK_URL ||
+  process.env.IMPORTS_OCR_WEBHOOK_URL ||
+  ''
+).trim();
 const IMPORTS_OCR_WEBHOOK_TIMEOUT_MS = Math.max(3000, Number(process.env.IMPORTS_OCR_WEBHOOK_TIMEOUT_MS || 15000));
 const IMPORTS_OCR_AUTO_TRIGGER = (process.env.IMPORTS_OCR_AUTO_TRIGGER || 'true').trim().toLowerCase() !== 'false';
 const N8N_SHARED_INTERNAL_KEY = (process.env.N8N_INTERNAL_API_KEY || process.env.INTERNAL_API_KEY || '').trim();
@@ -30,6 +37,16 @@ const R2_ACCESS_KEY_ID = (process.env.IMPORTS_R2_ACCESS_KEY_ID || '').trim();
 const R2_SECRET_ACCESS_KEY = (process.env.IMPORTS_R2_SECRET_ACCESS_KEY || '').trim();
 const R2_REGION = (process.env.IMPORTS_R2_REGION || 'auto').trim();
 
+const DEFAULT_IMPORT_AI_CONFIG = {
+  ocrProvider: 'google-vision',
+  ocrModel: 'DOCUMENT_TEXT_DETECTION',
+  llmProvider: 'openrouter',
+  llmModel: 'openai/gpt-4o-mini',
+  promptVersion: 'prod-v1',
+  promptLabel: 'Production Prompt',
+  outputContractVersion: 'rows-v1',
+} as const;
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 let r2ClientSingleton: S3Client | null | undefined;
 let retentionTimer: NodeJS.Timeout | null = null;
@@ -39,6 +56,38 @@ type ParsedInputRow = {
   sourceType: ImportSourceType;
   raw: Record<string, unknown>;
   confidence: number | null;
+};
+
+type ImportAiConfigSnapshot = {
+  id: number | null;
+  ocrProvider: string;
+  ocrModel: string | null;
+  llmProvider: string;
+  llmModel: string;
+  promptVersion: string;
+  promptLabel: string | null;
+  outputContractVersion: string;
+  notesJson?: Record<string, unknown> | null;
+};
+
+type ImportExtractionCandidateInput = {
+  provider?: unknown;
+  model?: unknown;
+  promptVersion?: unknown;
+  promptLabel?: unknown;
+  rawOutputText?: unknown;
+  parsedRows?: unknown;
+  scoreTotal?: unknown;
+  scoreBreakdown?: unknown;
+  isSelected?: unknown;
+};
+
+type ImportExtractionAuditInput = {
+  ocrProvider?: unknown;
+  ocrModel?: unknown;
+  ocrRawText?: unknown;
+  activeConfigSnapshot?: unknown;
+  metrics?: unknown;
 };
 
 type NormalizedImportRow = {
@@ -105,6 +154,127 @@ function normalizeNameKey(value: string | null | undefined): string {
     .trim();
 }
 
+function coerceRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function normalizeImportAiConfigSnapshot(value: unknown): ImportAiConfigSnapshot {
+  const record = coerceRecord(value);
+  return {
+    id: Number.isInteger(Number(record?.id)) ? Number(record?.id) : null,
+    ocrProvider: normalizeText(record?.ocrProvider) || DEFAULT_IMPORT_AI_CONFIG.ocrProvider,
+    ocrModel: normalizeText(record?.ocrModel) || DEFAULT_IMPORT_AI_CONFIG.ocrModel,
+    llmProvider: normalizeText(record?.llmProvider) || DEFAULT_IMPORT_AI_CONFIG.llmProvider,
+    llmModel: normalizeText(record?.llmModel) || DEFAULT_IMPORT_AI_CONFIG.llmModel,
+    promptVersion: normalizeText(record?.promptVersion) || DEFAULT_IMPORT_AI_CONFIG.promptVersion,
+    promptLabel: normalizeText(record?.promptLabel) || DEFAULT_IMPORT_AI_CONFIG.promptLabel,
+    outputContractVersion:
+      normalizeText(record?.outputContractVersion) || DEFAULT_IMPORT_AI_CONFIG.outputContractVersion,
+    notesJson: coerceRecord(record?.notesJson),
+  };
+}
+
+async function getActiveImportAiConfigSnapshot(): Promise<ImportAiConfigSnapshot> {
+  const active = await prismaAny.importAiConfig.findFirst({
+    where: { isActive: true },
+    orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+    select: {
+      id: true,
+      ocrProvider: true,
+      ocrModel: true,
+      llmProvider: true,
+      llmModel: true,
+      promptVersion: true,
+      promptLabel: true,
+      outputContractVersion: true,
+      notesJson: true,
+    },
+  });
+  return normalizeImportAiConfigSnapshot(active);
+}
+
+function normalizeExtractionMode(value: unknown): 'PRODUCTION' | 'BENCHMARK' {
+  return normalizeText(value).toUpperCase() === 'BENCHMARK' ? 'BENCHMARK' : 'PRODUCTION';
+}
+
+function countHallucinatedServices(rawText: string, rows: Array<Record<string, unknown>>): number {
+  const rawKey = normalizeNameKey(rawText);
+  if (!rawKey) return 0;
+  const expected = [
+    ['kalici oje', ['kalici oje', 'kal oje', 'kal je', 'kalicioje']],
+    ['tum vucut lazer', ['tum vucut lazer', 'tv', 'tum v', 'tv lazer']],
+    ['kas alimi', ['kas', 'kas-', 'kash', 'kas alimi']],
+    ['lazer', ['lazer', 'lezer', 'lover', 'lace']],
+    ['agda', ['agda', 'hagda']],
+    ['pedikur', ['pedikur']],
+    ['manikur', ['manikur']],
+    ['jel guclendirme', ['jel guclendirme']],
+  ] as const;
+  let penalty = 0;
+  for (const row of rows) {
+    const servicesRaw = normalizeNameKey(String(row.servicesNormalized || row.serviceNameRaw || ''));
+    if (!servicesRaw) continue;
+    for (const [canonical, aliases] of expected) {
+      if (!servicesRaw.includes(canonical)) continue;
+      const seen = aliases.some((alias) => rawKey.includes(alias));
+      if (!seen) penalty += 1;
+    }
+  }
+  return penalty;
+}
+
+function scoreExtractionCandidate(input: {
+  rawOutputText: string;
+  parsedRows: Array<Record<string, unknown>>;
+  ocrRawText: string;
+}): { total: number; breakdown: Record<string, number> } {
+  const outputText = normalizeText(input.rawOutputText);
+  const rows = Array.isArray(input.parsedRows) ? input.parsedRows : [];
+  const ocrLines = normalizeText(input.ocrRawText)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const outputLines = outputText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const headerOk =
+    outputLines.length > 0 && outputLines[0] === 'date|time|customer_name_raw|services_normalized|phone_raw|note_raw';
+  const bodyLines = Math.max(0, outputLines.length - (headerOk ? 1 : 0));
+  const rowCount = rows.length;
+  const lineDelta = Math.abs(bodyLines - rowCount);
+  const malformedTimes = rows.filter((row) => {
+    const value = normalizeText(row.startTime ?? row.time);
+    return value && !/^\d{2}:\d{2}$/.test(value);
+  }).length;
+  const invalidDates = rows.filter((row) => {
+    const value = normalizeText(row.appointmentDate ?? row.date);
+    return value && !/^\d{2}\.\d{2}\.\d{4}$/.test(value) && !/^\d{4}-\d{2}-\d{2}$/.test(value);
+  }).length;
+  const phoneMismatch = rows.filter((row) => {
+    const phone = normalizeDigitsOnly(String((row.customerPhoneRaw ?? row.phoneRaw) || ''));
+    return Boolean(phone) && !normalizeDigitsOnly(input.ocrRawText).includes(phone);
+  }).length;
+  const hallucinatedServices = countHallucinatedServices(input.ocrRawText, rows);
+  const noteLeakage = rows.filter((row) => {
+    const services = normalizeNameKey(String(row.servicesNormalized || ''));
+    return /(hatirlat|geldi|iptal|odedi|ödedi|aransin)/.test(services);
+  }).length;
+
+  const breakdown = {
+    format: headerOk ? 25 : 0,
+    rowCount: Math.max(0, 20 - lineDelta * 4),
+    timeFidelity: Math.max(0, 15 - malformedTimes * 4),
+    dateFidelity: Math.max(0, 10 - invalidDates * 3),
+    phoneFidelity: Math.max(0, 10 - phoneMismatch * 3),
+    hallucinationPenalty: Math.max(0, 10 - hallucinatedServices * 2),
+    noteSeparation: Math.max(0, 10 - noteLeakage * 4),
+  };
+  return { total: Object.values(breakdown).reduce((sum, value) => sum + value, 0), breakdown };
+}
+
 function inferSourceType(input: { fileName: string; mimeType?: string | null }): ImportSourceType {
   const name = input.fileName.toLowerCase();
   const mime = normalizeText(input.mimeType).toLowerCase();
@@ -166,17 +336,19 @@ function buildPublicUrl(objectKey: string) {
   return `${IMPORTS_PUBLIC_BASE_URL.replace(/\/+$/, '')}/${objectKey}`;
 }
 
-async function triggerImportOcrWebhook(input: {
+async function triggerImportWebhook(input: {
   batchId: string;
   sourceFileId: number;
   fileUrl: string | null;
   objectKey: string | null;
   sourceType: ImportSourceType;
+  webhookUrl: string;
+  mode: 'PRODUCTION' | 'BENCHMARK';
 }) {
   if (!IMPORTS_OCR_AUTO_TRIGGER) {
     return { triggered: false, reason: 'ocr_auto_trigger_disabled' as const };
   }
-  if (!IMPORTS_OCR_WEBHOOK_URL) {
+  if (!input.webhookUrl) {
     return { triggered: false, reason: 'ocr_webhook_url_missing' as const };
   }
   if (!input.fileUrl) {
@@ -186,7 +358,8 @@ async function triggerImportOcrWebhook(input: {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), IMPORTS_OCR_WEBHOOK_TIMEOUT_MS);
   try {
-    const response = await fetch(IMPORTS_OCR_WEBHOOK_URL, {
+    const activeConfigSnapshot = await getActiveImportAiConfigSnapshot();
+    const response = await fetch(input.webhookUrl, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -198,6 +371,8 @@ async function triggerImportOcrWebhook(input: {
         fileUrl: input.fileUrl,
         objectKey: input.objectKey,
         sourceType: input.sourceType,
+        mode: input.mode,
+        aiConfig: activeConfigSnapshot,
       }),
       signal: controller.signal,
     });
@@ -208,6 +383,20 @@ async function triggerImportOcrWebhook(input: {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function triggerImportOcrWebhook(input: {
+  batchId: string;
+  sourceFileId: number;
+  fileUrl: string | null;
+  objectKey: string | null;
+  sourceType: ImportSourceType;
+}) {
+  return triggerImportWebhook({
+    ...input,
+    webhookUrl: IMPORTS_OCR_WEBHOOK_URL,
+    mode: 'PRODUCTION',
+  });
 }
 
 async function objectBodyToBuffer(body: any): Promise<Buffer> {
@@ -363,7 +552,7 @@ function hashRow(batchId: string, sourceType: ImportSourceType, rowIndex: number
     .digest('hex');
 }
 
-async function buildAutoMaps(salonId: number, parsedRows: ParsedInputRow[]) {
+async function buildAutoMaps(salonId: number, _parsedRows: ParsedInputRow[]) {
   const [services, staff] = await Promise.all([
     prisma.service.findMany({
       where: { salonId },
@@ -387,27 +576,7 @@ async function buildAutoMaps(salonId: number, parsedRows: ParsedInputRow[]) {
     if (key && !staffMap.has(key)) staffMap.set(key, item.id);
   }
 
-  const candidatePhones = new Set<string>();
-  for (const row of parsedRows) {
-    const phone = normalizeDigitsOnly(String(pickByAliases(row.raw, 'customerPhoneRaw') || ''));
-    if (!phone) continue;
-    candidatePhones.add(phone);
-    candidatePhones.add(`+${phone}`);
-  }
-
-  const customers = candidatePhones.size
-    ? await prisma.customer.findMany({
-        where: { salonId, phone: { in: Array.from(candidatePhones) } },
-        select: { id: true, phone: true },
-      })
-    : [];
-  const customerMap = new Map<string, number>();
-  for (const customer of customers) {
-    const key = normalizeDigitsOnly(customer.phone);
-    if (key && !customerMap.has(key)) customerMap.set(key, customer.id);
-  }
-
-  return { serviceMap, staffMap, customerMap };
+  return { serviceMap, staffMap };
 }
 
 function normalizeRows(input: {
@@ -415,7 +584,6 @@ function normalizeRows(input: {
   parsedRows: ParsedInputRow[];
   serviceMap: Map<string, number>;
   staffMap: Map<string, number>;
-  customerMap: Map<string, number>;
 }): NormalizedImportRow[] {
   const earliestAllowed = Date.now() - 365 * DAY_MS;
   return input.parsedRows.map((row) => {
@@ -446,12 +614,12 @@ function normalizeRows(input: {
     const confidence = Number.isFinite(confidenceNum) ? confidenceNum : row.confidence;
     const serviceId = serviceNameRaw ? input.serviceMap.get(normalizeNameKey(serviceNameRaw)) || null : null;
     const staffId = staffNameRaw ? input.staffMap.get(normalizeNameKey(staffNameRaw)) || null : null;
-    const customerId = customerPhoneNormalized ? input.customerMap.get(customerPhoneNormalized) || null : null;
     const appointmentDate = dateKey ? new Date(`${dateKey}T00:00:00.000Z`) : null;
+    const warnings: string[] = [];
 
     const conflicts: NormalizedImportRow['conflicts'] = [];
     if (!customerPhoneNormalized) {
-      conflicts.push({ type: 'MISSING_PHONE', message: 'Customer phone is missing.' });
+      warnings.push('CUSTOMER_PHONE_MISSING');
     } else if (customerPhoneNormalized.length < 8 || customerPhoneNormalized.length > 15) {
       conflicts.push({ type: 'INVALID_PHONE', message: 'Customer phone is invalid.' });
     }
@@ -485,6 +653,7 @@ function normalizeRows(input: {
       priceRaw,
       notesRaw,
       confidence,
+      warnings,
     };
     const rowStatus: ImportRowStatus = conflicts.length ? 'CONFLICT' : 'READY';
 
@@ -505,7 +674,7 @@ function normalizeRows(input: {
       priceRaw,
       notesRaw,
       confidence,
-      matchedCustomerId: customerId,
+      matchedCustomerId: null,
       matchedServiceId: serviceId,
       matchedStaffId: staffId,
       rowStatus,
@@ -885,7 +1054,6 @@ export async function completeImportSourceFile(input: {
     parsedRows: parsed.rows,
     serviceMap: maps.serviceMap,
     staffMap: maps.staffMap,
-    customerMap: maps.customerMap,
   });
 
   await replaceRowsForFile({
@@ -915,10 +1083,44 @@ export async function completeImportSourceFile(input: {
   };
 }
 
+export async function triggerImportBenchmarkForFile(input: {
+  salonId: number;
+  batchId: string;
+  sourceFileId: number;
+}) {
+  const file = await prisma.importSourceFile.findFirst({
+    where: { id: input.sourceFileId, batchId: input.batchId, salonId: input.salonId },
+    select: { id: true, sourceType: true, objectKey: true, publicUrl: true },
+  });
+  if (!file) throw new Error('source_file_not_found');
+  if (!['PDF', 'IMAGE'].includes(file.sourceType)) {
+    throw new Error('benchmark_requires_ocr_source');
+  }
+
+  const result = await triggerImportWebhook({
+    batchId: input.batchId,
+    sourceFileId: file.id,
+    fileUrl: file.publicUrl,
+    objectKey: file.objectKey,
+    sourceType: file.sourceType,
+    webhookUrl: IMPORTS_OCR_BENCHMARK_WEBHOOK_URL,
+    mode: 'BENCHMARK',
+  });
+
+  if (!result.triggered) {
+    throw new Error(String(result.reason));
+  }
+
+  return { ok: true, queued: true };
+}
+
 export async function processImportOcrCallback(input: {
   batchId: string;
   sourceFileId: number;
   extractionError?: string | null;
+  mode?: string | null;
+  audit?: ImportExtractionAuditInput | null;
+  candidates?: ImportExtractionCandidateInput[];
   rows?: Array<Record<string, unknown>>;
 }) {
   const file = await prisma.importSourceFile.findFirst({
@@ -927,55 +1129,197 @@ export async function processImportOcrCallback(input: {
   });
   if (!file) throw new Error('source_file_not_found');
 
+  const mode = normalizeExtractionMode(input.mode);
+  const auditRecord = coerceRecord(input.audit) || {};
+  const activeConfigSnapshot = normalizeImportAiConfigSnapshot(auditRecord.activeConfigSnapshot);
+  const ocrProvider = normalizeText(auditRecord.ocrProvider) || activeConfigSnapshot.ocrProvider;
+  const ocrModel = normalizeText(auditRecord.ocrModel) || activeConfigSnapshot.ocrModel;
+  const ocrRawText = normalizeText(auditRecord.ocrRawText);
+  const metricsJson = coerceRecord(auditRecord.metrics);
+
+  const extractionRun = await prismaAny.importExtractionRun.create({
+    data: {
+      batchId: input.batchId,
+      sourceFileId: file.id,
+      salonId: file.salonId,
+      mode,
+      status: 'RUNNING',
+      ocrProvider,
+      ocrModel,
+      ocrRawText: ocrRawText || null,
+      activeConfigSnapshot: activeConfigSnapshot as any,
+      metricsJson: metricsJson as any,
+      error: null,
+      startedAt: new Date(),
+    },
+    select: { id: true },
+  });
+
   if (input.extractionError) {
-    await prisma.importSourceFile.update({
-      where: { id: file.id },
-      data: { status: 'FAILED_EXTRACTION', extractionError: input.extractionError.slice(0, 800) },
+    if (mode === 'PRODUCTION') {
+      await prisma.importSourceFile.update({
+        where: { id: file.id },
+        data: { status: 'FAILED_EXTRACTION', extractionError: input.extractionError.slice(0, 800) },
+      });
+      await refreshBatchStatus(input.batchId);
+    }
+    await prismaAny.importExtractionRun.update({
+      where: { id: extractionRun.id },
+      data: {
+        status: 'FAILED',
+        error: input.extractionError.slice(0, 800),
+        completedAt: new Date(),
+      },
     });
-    await refreshBatchStatus(input.batchId);
-    return { ok: false, parsedRowCount: 0 };
+    return { ok: false, parsedRowCount: 0, extractionRunId: extractionRun.id };
   }
 
-  const parsedRows: ParsedInputRow[] = (Array.isArray(input.rows) ? input.rows : []).map((raw, idx) => ({
+  const callbackRows = Array.isArray(input.rows) ? input.rows : [];
+  const candidateInputs = Array.isArray(input.candidates) ? input.candidates : [];
+  const normalizedCandidates = candidateInputs.map((candidate) => {
+    const parsedRows = Array.isArray(candidate.parsedRows)
+      ? candidate.parsedRows.filter((row): row is Record<string, unknown> => Boolean(row && typeof row === 'object' && !Array.isArray(row)))
+      : [];
+    const scoring = scoreExtractionCandidate({
+      rawOutputText: normalizeText(candidate.rawOutputText),
+      parsedRows,
+      ocrRawText,
+    });
+    const scoreTotalRaw = Number(candidate.scoreTotal);
+    return {
+      provider: normalizeText(candidate.provider) || activeConfigSnapshot.llmProvider,
+      model: normalizeText(candidate.model) || activeConfigSnapshot.llmModel,
+      promptVersion: normalizeText(candidate.promptVersion) || activeConfigSnapshot.promptVersion,
+      promptLabel: normalizeText(candidate.promptLabel) || activeConfigSnapshot.promptLabel,
+      rawOutputText: normalizeText(candidate.rawOutputText) || null,
+      parsedRows,
+      scoreTotal: Number.isFinite(scoreTotalRaw) ? scoreTotalRaw : scoring.total,
+      scoreBreakdown: coerceRecord(candidate.scoreBreakdown) || scoring.breakdown,
+      explicitSelected: candidate.isSelected === true,
+    };
+  });
+
+  if (normalizedCandidates.length === 0 && callbackRows.length > 0) {
+    const scoring = scoreExtractionCandidate({
+      rawOutputText: normalizeText((auditRecord as Record<string, unknown>)?.rawOutputText),
+      parsedRows: callbackRows,
+      ocrRawText,
+    });
+    normalizedCandidates.push({
+      provider: activeConfigSnapshot.llmProvider,
+      model: activeConfigSnapshot.llmModel,
+      promptVersion: activeConfigSnapshot.promptVersion,
+      promptLabel: activeConfigSnapshot.promptLabel,
+      rawOutputText: normalizeText((auditRecord as Record<string, unknown>)?.rawOutputText) || null,
+      parsedRows: callbackRows,
+      scoreTotal: scoring.total,
+      scoreBreakdown: scoring.breakdown,
+      explicitSelected: mode === 'PRODUCTION',
+    });
+  }
+
+  let selectedCandidateIndex = normalizedCandidates.findIndex((candidate) => candidate.explicitSelected);
+  if (selectedCandidateIndex < 0 && normalizedCandidates.length > 0) {
+    selectedCandidateIndex = normalizedCandidates
+      .map((candidate, index) => ({ index, score: candidate.scoreTotal }))
+      .sort((a, b) => b.score - a.score)[0]!.index;
+  }
+
+  let selectedCandidateId: number | null = null;
+  for (let index = 0; index < normalizedCandidates.length; index += 1) {
+    const candidate = normalizedCandidates[index];
+    const created = await prismaAny.importExtractionCandidate.create({
+      data: {
+        extractionRunId: extractionRun.id,
+        provider: candidate.provider,
+        model: candidate.model,
+        promptVersion: candidate.promptVersion,
+        promptLabel: candidate.promptLabel || null,
+        rawOutputText: candidate.rawOutputText,
+        parsedRowsJson: candidate.parsedRows as any,
+        scoreTotal: candidate.scoreTotal,
+        scoreBreakdownJson: candidate.scoreBreakdown as any,
+        isSelected: index === selectedCandidateIndex,
+      },
+      select: { id: true },
+    });
+    if (index === selectedCandidateIndex) {
+      selectedCandidateId = created.id;
+    }
+  }
+
+  const finalRows =
+    mode === 'PRODUCTION'
+      ? selectedCandidateIndex >= 0
+        ? normalizedCandidates[selectedCandidateIndex]?.parsedRows || []
+        : callbackRows
+      : [];
+
+  const parsedRows: ParsedInputRow[] = finalRows.map((raw, idx) => ({
     rowIndex: Number(raw?.rowIndex) > 0 ? Number(raw.rowIndex) : idx + 1,
     sourceType: file.sourceType,
     raw,
     confidence: Number.isFinite(Number(raw?.confidence)) ? Number(raw.confidence) : null,
   }));
 
-  const maps = await buildAutoMaps(file.salonId, parsedRows);
-  const normalized = normalizeRows({
-    batchId: input.batchId,
-    parsedRows,
-    serviceMap: maps.serviceMap,
-    staffMap: maps.staffMap,
-    customerMap: maps.customerMap,
-  });
-  await replaceRowsForFile({
-    batchId: input.batchId,
-    salonId: file.salonId,
-    sourceFileId: file.id,
-    rows: normalized,
-  });
+  let parsedRowCount = 0;
+  if (mode === 'PRODUCTION') {
+    const maps = await buildAutoMaps(file.salonId, parsedRows);
+    const normalized = normalizeRows({
+      batchId: input.batchId,
+      parsedRows,
+      serviceMap: maps.serviceMap,
+      staffMap: maps.staffMap,
+    });
+    await replaceRowsForFile({
+      batchId: input.batchId,
+      salonId: file.salonId,
+      sourceFileId: file.id,
+      rows: normalized,
+    });
 
-  await prisma.importSourceFile.update({
-    where: { id: file.id },
+    await prisma.importSourceFile.update({
+      where: { id: file.id },
+      data: {
+        status: 'PARSED',
+        parsedAt: new Date(),
+        extractionError: null,
+      },
+    });
+    await refreshBatchStatus(input.batchId);
+    parsedRowCount = normalized.length;
+  }
+
+  await prismaAny.importExtractionRun.update({
+    where: { id: extractionRun.id },
     data: {
-      status: 'PARSED',
-      parsedAt: new Date(),
-      extractionError: null,
+      status: 'COMPLETED',
+      selectedCandidateId,
+      completedAt: new Date(),
+      metricsJson: {
+        ...(metricsJson || {}),
+        callbackRowCount: callbackRows.length,
+        parsedRowCount,
+        candidateCount: normalizedCandidates.length,
+      } as any,
     },
   });
-  await refreshBatchStatus(input.batchId);
-  return { ok: true, parsedRowCount: normalized.length };
+
+  return {
+    ok: true,
+    parsedRowCount,
+    extractionRunId: extractionRun.id,
+    candidateCount: normalizedCandidates.length,
+  };
 }
 
 export async function getImportBatchState(input: { salonId: number; batchId: string }) {
-  const batch = await prisma.importBatch.findFirst({
+  const batch = await prismaAny.importBatch.findFirst({
     where: { id: input.batchId, salonId: input.salonId },
     include: {
       files: { orderBy: { id: 'asc' } },
       commitRuns: { orderBy: { id: 'desc' }, take: 5 },
+      extractionRuns: { orderBy: { id: 'desc' }, take: 10 },
     },
   });
   if (!batch) throw new Error('batch_not_found');
@@ -984,7 +1328,7 @@ export async function getImportBatchState(input: { salonId: number; batchId: str
 
 export async function getImportPreview(input: { salonId: number; batchId: string; limitRows?: number }) {
   const take = Math.max(20, Math.min(500, Number(input.limitRows) || 200));
-  const [batch, rows, conflicts, services, staff] = await Promise.all([
+  const [batch, rows, conflicts, services, staff, extractionRuns] = await Promise.all([
     prisma.importBatch.findFirst({
       where: { id: input.batchId, salonId: input.salonId },
       select: { id: true, status: true, summary: true, createdAt: true, updatedAt: true },
@@ -1032,9 +1376,165 @@ export async function getImportPreview(input: { salonId: number; batchId: string
       select: { id: true, name: true, title: true },
       orderBy: { name: 'asc' },
     }),
+    prismaAny.importExtractionRun.findMany({
+      where: { batchId: input.batchId, salonId: input.salonId },
+      orderBy: [{ id: 'desc' }],
+      take: 20,
+      include: {
+        candidates: {
+          orderBy: [{ scoreTotal: 'desc' }, { id: 'asc' }],
+          take: 50,
+        },
+      },
+    }),
   ]);
   if (!batch) throw new Error('batch_not_found');
-  return { batch, rows, conflicts, mappingOptions: { services, staff } };
+  return { batch, rows, conflicts, mappingOptions: { services, staff }, extractionRuns };
+}
+
+export async function getImportAiConfig() {
+  const [activeConfig, recentConfigs] = await Promise.all([
+    prismaAny.importAiConfig.findFirst({
+      where: { isActive: true },
+      orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+    }),
+    prismaAny.importAiConfig.findMany({
+      orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+      take: 20,
+    }),
+  ]);
+  return { activeConfig, recentConfigs };
+}
+
+export async function upsertImportAiConfig(input: {
+  userId: number;
+  ocrProvider: string;
+  ocrModel?: string | null;
+  llmProvider: string;
+  llmModel: string;
+  promptVersion: string;
+  promptLabel?: string | null;
+  outputContractVersion: string;
+  notesJson?: Record<string, unknown> | null;
+}) {
+  return prisma.$transaction(async (tx) => {
+        await (tx as any).importAiConfig.updateMany({
+      where: { isActive: true },
+      data: { isActive: false },
+    });
+        return (tx as any).importAiConfig.create({
+      data: {
+        ocrProvider: normalizeText(input.ocrProvider) || DEFAULT_IMPORT_AI_CONFIG.ocrProvider,
+        ocrModel: normalizeText(input.ocrModel) || DEFAULT_IMPORT_AI_CONFIG.ocrModel,
+        llmProvider: normalizeText(input.llmProvider) || DEFAULT_IMPORT_AI_CONFIG.llmProvider,
+        llmModel: normalizeText(input.llmModel) || DEFAULT_IMPORT_AI_CONFIG.llmModel,
+        promptVersion: normalizeText(input.promptVersion) || DEFAULT_IMPORT_AI_CONFIG.promptVersion,
+        promptLabel: normalizeText(input.promptLabel) || null,
+        outputContractVersion:
+          normalizeText(input.outputContractVersion) || DEFAULT_IMPORT_AI_CONFIG.outputContractVersion,
+        isActive: true,
+        notesJson: (input.notesJson || null) as any,
+        activatedByUserId: input.userId,
+      },
+    });
+  });
+}
+
+export async function getImportBenchmarkRuns(input: { salonId: number; batchId: string; sourceFileId: number }) {
+  const file = await prisma.importSourceFile.findFirst({
+    where: { id: input.sourceFileId, batchId: input.batchId, salonId: input.salonId },
+    select: { id: true },
+  });
+  if (!file) throw new Error('source_file_not_found');
+
+  return prismaAny.importExtractionRun.findMany({
+    where: {
+      batchId: input.batchId,
+      sourceFileId: input.sourceFileId,
+      salonId: input.salonId,
+      mode: 'BENCHMARK',
+    },
+    orderBy: [{ id: 'desc' }],
+    include: {
+      candidates: {
+        orderBy: [{ scoreTotal: 'desc' }, { id: 'asc' }],
+      },
+    },
+  });
+}
+
+export async function selectImportBenchmarkCandidate(input: {
+  salonId: number;
+  userId: number;
+  candidateId: number;
+  activateConfig?: boolean;
+}) {
+  const candidate = await prismaAny.importExtractionCandidate.findFirst({
+    where: {
+      id: input.candidateId,
+      extractionRun: {
+        salonId: input.salonId,
+      },
+    },
+    include: {
+      extractionRun: true,
+    },
+  });
+  if (!candidate) throw new Error('candidate_not_found');
+
+  await prisma.$transaction(async (tx) => {
+    await (tx as any).importExtractionCandidate.updateMany({
+      where: { extractionRunId: candidate.extractionRunId },
+      data: { isSelected: false },
+    });
+    await (tx as any).importExtractionCandidate.update({
+      where: { id: candidate.id },
+      data: {
+        isSelected: true,
+        reviewedByUserId: input.userId,
+        reviewedAt: new Date(),
+      },
+    });
+    await (tx as any).importExtractionRun.update({
+      where: { id: candidate.extractionRunId },
+      data: {
+        selectedCandidateId: candidate.id,
+        completedAt: candidate.extractionRun.completedAt || new Date(),
+      },
+    });
+
+    if (input.activateConfig !== false) {
+      const snapshot = normalizeImportAiConfigSnapshot(candidate.extractionRun.activeConfigSnapshot);
+      await (tx as any).importAiConfig.updateMany({
+        where: { isActive: true },
+        data: { isActive: false },
+      });
+      await (tx as any).importAiConfig.create({
+        data: {
+          ocrProvider: snapshot.ocrProvider,
+          ocrModel: snapshot.ocrModel,
+          llmProvider: candidate.provider,
+          llmModel: candidate.model,
+          promptVersion: candidate.promptVersion,
+          promptLabel: candidate.promptLabel,
+          outputContractVersion: snapshot.outputContractVersion,
+          isActive: true,
+          notesJson: {
+            benchmarkCandidateId: candidate.id,
+            benchmarkExtractionRunId: candidate.extractionRunId,
+          } as any,
+          activatedByUserId: input.userId,
+        },
+      });
+    }
+  });
+
+  return {
+    ok: true,
+    candidateId: candidate.id,
+    extractionRunId: candidate.extractionRunId,
+    activatedConfig: input.activateConfig !== false,
+  };
 }
 
 export async function saveImportMappingDecisions(input: {
@@ -1100,7 +1600,7 @@ export async function saveImportMappingDecisions(input: {
 
   const rows = await prisma.importRow.findMany({
     where: { batchId: input.batchId, salonId: input.salonId },
-    select: { id: true, matchedServiceId: true, matchedStaffId: true, customerPhoneNormalized: true },
+    select: { id: true, matchedServiceId: true, matchedStaffId: true },
   });
 
   for (const row of rows) {
@@ -1109,7 +1609,6 @@ export async function saveImportMappingDecisions(input: {
     });
     const isReady =
       openConflicts === 0 &&
-      Boolean(row.customerPhoneNormalized) &&
       Boolean(row.matchedServiceId) &&
       Boolean(row.matchedStaffId);
     await prisma.importRow.update({
@@ -1125,8 +1624,6 @@ export async function saveImportMappingDecisions(input: {
 async function ensureServiceForRow(salonId: number, row: {
   matchedServiceId: number | null;
   serviceNameRaw: string | null;
-  durationMinutes: number | null;
-  priceRaw: number | null;
 }) {
   if (row.matchedServiceId) return row.matchedServiceId;
   if (!row.serviceNameRaw) return null;
@@ -1135,20 +1632,7 @@ async function ensureServiceForRow(salonId: number, row: {
     where: { salonId, name: { equals: row.serviceNameRaw, mode: 'insensitive' } },
     select: { id: true },
   });
-  if (existing) return existing.id;
-
-  const created = await prisma.service.create({
-    data: {
-      salonId,
-      name: row.serviceNameRaw.trim(),
-      isActive: true,
-      requiresSpecialist: true,
-      duration: Math.max(5, Math.min(600, row.durationMinutes || 30)),
-      price: Number.isFinite(row.priceRaw || NaN) ? Number(row.priceRaw) : 0,
-    },
-    select: { id: true },
-  });
-  return created.id;
+  return existing?.id || null;
 }
 
 async function ensureStaffForRow(salonId: number, row: {
@@ -1162,16 +1646,7 @@ async function ensureStaffForRow(salonId: number, row: {
     where: { salonId, name: { equals: row.staffNameRaw, mode: 'insensitive' } },
     select: { id: true },
   });
-  if (existing) return existing.id;
-
-  const created = await prisma.staff.create({
-    data: {
-      salonId,
-      name: row.staffNameRaw.trim(),
-    },
-    select: { id: true },
-  });
-  return created.id;
+  return existing?.id || null;
 }
 
 async function ensureStaffService(staffId: number, serviceId: number, duration: number, price: number) {
@@ -1206,44 +1681,6 @@ async function ensureStaffService(staffId: number, serviceId: number, duration: 
       price: normalizedPrice,
     },
   });
-}
-
-async function ensureCustomer(salonId: number, phoneDigits: string, name: string | null) {
-  const existing = await prisma.customer.findFirst({
-    where: { salonId, phone: { in: [phoneDigits, `+${phoneDigits}`] } },
-    select: { id: true, name: true, phone: true, gender: true },
-  });
-  if (existing) {
-    if (!existing.name && name) {
-      return prisma.customer.update({
-        where: { id: existing.id },
-        data: { name },
-        select: { id: true, name: true, phone: true, gender: true },
-      });
-    }
-    return existing;
-  }
-
-  const created = await prisma.customer.create({
-    data: {
-      salonId,
-      phone: phoneDigits,
-      name: name || null,
-      registrationStatus: 'PENDING',
-      acceptMarketing: false,
-    },
-    select: { id: true, name: true, phone: true, gender: true },
-  });
-  await prisma.customerRiskProfile
-    .create({
-      data: {
-        salonId,
-        customerId: created.id,
-        riskScore: 0,
-      },
-    })
-    .catch(() => undefined);
-  return created;
 }
 
 export async function commitImportBatch(input: {
@@ -1294,8 +1731,8 @@ export async function commitImportBatch(input: {
     if (unresolved > 0) throw new Error('open_conflicts_remaining');
 
     const rows = await prisma.importRow.findMany({
-      where: { batchId: input.batchId, salonId: input.salonId, rowStatus: { in: ['READY', 'CONFLICT'] } },
-      orderBy: [{ rowStatus: 'asc' }, { id: 'asc' }],
+      where: { batchId: input.batchId, salonId: input.salonId, rowStatus: 'READY' },
+      orderBy: [{ id: 'asc' }],
     });
 
     let imported = 0;
@@ -1308,7 +1745,7 @@ export async function commitImportBatch(input: {
         const serviceId = await ensureServiceForRow(input.salonId, row);
         const staffId = await ensureStaffForRow(input.salonId, row);
 
-        if (!row.customerPhoneNormalized || !serviceId || !staffId) {
+        if (!serviceId || !staffId) {
           await prisma.importRow.update({
             where: { id: row.id },
             data: {
@@ -1325,7 +1762,7 @@ export async function commitImportBatch(input: {
               salonId: input.salonId,
               type: 'VALIDATION_ERROR',
               status: 'OPEN',
-              message: 'Row requires service, staff and valid phone.',
+              message: 'Row requires mapped service and staff.',
             },
           });
           conflicts += 1;
@@ -1396,21 +1833,20 @@ export async function commitImportBatch(input: {
           continue;
         }
 
-        const customer = await ensureCustomer(input.salonId, row.customerPhoneNormalized, row.customerName);
         const appointment = await prisma.appointment.create({
           data: {
             salonId: input.salonId,
-            customerId: customer.id,
-            customerName: row.customerName || customer.name || 'Misafir',
-            customerPhone: customer.phone,
+            customerId: null,
+            customerName: row.customerName || 'Misafir',
+            customerPhone: row.customerPhoneNormalized || '',
             serviceId,
             staffId,
             startTime,
             endTime,
             status: startTime.getTime() < Date.now() ? 'COMPLETED' : 'BOOKED',
-            source: 'ADMIN',
-            notes: row.notesRaw || null,
-            gender: customer.gender || 'female',
+            source: 'IMPORT' as any,
+            notes: null,
+            gender: 'female',
             listPrice: service.price,
             finalPrice: Number.isFinite(row.priceRaw || NaN) ? Number(row.priceRaw) : service.price,
           },
@@ -1421,7 +1857,7 @@ export async function commitImportBatch(input: {
           where: { id: row.id },
           data: {
             rowStatus: 'IMPORTED',
-            matchedCustomerId: customer.id,
+            matchedCustomerId: null,
             matchedServiceId: serviceId,
             matchedStaffId: staffId,
             importedAppointmentId: appointment.id,

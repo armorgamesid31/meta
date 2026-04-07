@@ -8,74 +8,75 @@ datasource db {
 }
 
 model Salon {
-  id                  Int                          @id @default(autoincrement())
-  name                String
-  address             String?
-  logoUrl             String?
-  chakraPluginId      String?
-  chakraPhoneNumberId String?
-  city                String?
-  citySlug            String?
-  district            String?
-  districtSlug        String?
-  countryCode         String?
-  tagline             String?
-  about               String?
-  heroImageUrl        String?
-  instagramUrl        String?
-  whatsappPhone       String?
-  bookingMode         BookingMode?                 @default(INTERNAL)
-  createdAt           DateTime?                    @default(now()) @db.Timestamp(6)
-  updatedAt           DateTime?                    @default(now()) @updatedAt @db.Timestamp(6)
-  slug                String?                      @unique(map: "salon_slug_unique")
-  appointments        Appointment[]
-  customers           Customer[]
-  galleryImages       SalonGalleryImage[]
-  authSessions        MobileAuthSession[]
-  inventoryItems      InventoryItem[]
-  campaigns           Campaign[]
+  id                   Int                              @id @default(autoincrement())
+  name                 String
+  address              String?
+  logoUrl              String?
+  chakraPluginId       String?
+  chakraPhoneNumberId  String?
+  city                 String?
+  citySlug             String?
+  district             String?
+  districtSlug         String?
+  countryCode          String?
+  tagline              String?
+  about                String?
+  heroImageUrl         String?
+  instagramUrl         String?
+  whatsappPhone        String?
+  bookingMode          BookingMode?                     @default(INTERNAL)
+  createdAt            DateTime?                        @default(now()) @db.Timestamp(6)
+  updatedAt            DateTime?                        @default(now()) @updatedAt @db.Timestamp(6)
+  slug                 String?                          @unique(map: "salon_slug_unique")
+  appointments         Appointment[]
+  customers            Customer[]
+  galleryImages        SalonGalleryImage[]
+  authSessions         MobileAuthSession[]
+  inventoryItems       InventoryItem[]
+  campaigns            Campaign[]
   campaignApplications AppointmentCampaignApplication[]
-  campaignWallets     CustomerCampaignWallet[]
-  campaignEnrollments CustomerCampaignEnrollment[]
-  campaignShareLinks  CampaignShareLink[]
+  campaignWallets      CustomerCampaignWallet[]
+  campaignEnrollments  CustomerCampaignEnrollment[]
+  campaignShareLinks   CampaignShareLink[]
   campaignAttributions CampaignAttribution[]
-  automationRules     AutomationRule[]
-  packageTemplates    PackageTemplate[]
-  customerPackages    CustomerPackage[]
-  packageLedgers      PackageLedger[]
-  packageConsumptions AppointmentPackageConsumption[]
-  analyticsPresets    AnalyticsPreset[]
-  aiAgentSettings     SalonAiAgentSettings?
-  blacklistEntries    BlacklistEntry[]
-  settings            SalonSettings?
-  waitlistEntries     WaitlistEntry[]
-  waitlistOffers      WaitlistOffer[]
-  testimonials        SalonTestimonial[]
-  messageDispatches   AppointmentMessageDispatch[]
-  messageTemplates    SalonMessageTemplate[]
-  channelBindings     SalonChannelBinding[]
-  inboundMessages     InboundMessageQueue[]
-  conversationEvents  ConversationMessageEvent[]
-  conversationStates  ConversationState[]
-  outboundMessages    OutboundMessageTrace[]
-  channelProfiles     ChannelProfileCache[]
-  magicLinks          MagicLink[]
-  identitySessions    IdentitySession[]
-  identityBindings    IdentityBinding[]
-  phoneVerifications  CustomerPhoneVerification[]
-  users               SalonUser[]
-  services            Service[]
-  serviceGroups       ServiceGroup[]
-  serviceRegions      ServiceRegion[]
-  ServiceCategory     ServiceCategory[]
-  contentItems        ContentItem[]
-  staff               Staff[]
-  importBatches       ImportBatch[]
-  importSourceFiles   ImportSourceFile[]
-  importRows          ImportRow[]
-  importConflicts     ImportConflict[]
-  importDecisions     ImportMappingDecision[]
-  importCommitRuns    ImportCommitRun[]
+  automationRules      AutomationRule[]
+  packageTemplates     PackageTemplate[]
+  customerPackages     CustomerPackage[]
+  packageLedgers       PackageLedger[]
+  packageConsumptions  AppointmentPackageConsumption[]
+  analyticsPresets     AnalyticsPreset[]
+  aiAgentSettings      SalonAiAgentSettings?
+  blacklistEntries     BlacklistEntry[]
+  settings             SalonSettings?
+  waitlistEntries      WaitlistEntry[]
+  waitlistOffers       WaitlistOffer[]
+  testimonials         SalonTestimonial[]
+  messageDispatches    AppointmentMessageDispatch[]
+  messageTemplates     SalonMessageTemplate[]
+  channelBindings      SalonChannelBinding[]
+  inboundMessages      InboundMessageQueue[]
+  conversationEvents   ConversationMessageEvent[]
+  conversationStates   ConversationState[]
+  outboundMessages     OutboundMessageTrace[]
+  channelProfiles      ChannelProfileCache[]
+  magicLinks           MagicLink[]
+  identitySessions     IdentitySession[]
+  identityBindings     IdentityBinding[]
+  phoneVerifications   CustomerPhoneVerification[]
+  users                SalonUser[]
+  services             Service[]
+  serviceGroups        ServiceGroup[]
+  serviceRegions       ServiceRegion[]
+  ServiceCategory      ServiceCategory[]
+  contentItems         ContentItem[]
+  staff                Staff[]
+  importBatches        ImportBatch[]
+  importSourceFiles    ImportSourceFile[]
+  importRows           ImportRow[]
+  importConflicts      ImportConflict[]
+  importDecisions      ImportMappingDecision[]
+  importCommitRuns     ImportCommitRun[]
+  importExtractionRuns ImportExtractionRun[]
 
   @@index([citySlug, districtSlug], map: "idx_salon_city_district_slug")
 }
@@ -112,24 +113,26 @@ model SalonAiAgentSettings {
 }
 
 model SalonUser {
-  id                     Int                  @id @default(autoincrement())
-  email                  String
-  displayName            String?
-  passwordHash           String
-  role                   String
-  isActive               Boolean              @default(true)
-  passwordResetRequired  Boolean              @default(false)
-  lastLoginAt            DateTime?            @db.Timestamp(6)
-  createdAt              DateTime?            @default(now()) @db.Timestamp(6)
-  updatedAt              DateTime?            @default(now()) @updatedAt @db.Timestamp(6)
-  salonId                Int
-  authSessions           MobileAuthSession[]
-  publishedContentValues ContentLocaleValue[]
-  salon                  Salon                @relation(fields: [salonId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  createdImportBatches   ImportBatch[]        @relation("ImportBatchCreatedBy")
-  resolvedImportConflicts ImportConflict[]    @relation("ImportConflictResolvedBy")
-  importMappingDecisions ImportMappingDecision[]
-  triggeredImportCommits ImportCommitRun[]    @relation("ImportCommitTriggeredBy")
+  id                                 Int                         @id @default(autoincrement())
+  email                              String
+  displayName                        String?
+  passwordHash                       String
+  role                               String
+  isActive                           Boolean                     @default(true)
+  passwordResetRequired              Boolean                     @default(false)
+  lastLoginAt                        DateTime?                   @db.Timestamp(6)
+  createdAt                          DateTime?                   @default(now()) @db.Timestamp(6)
+  updatedAt                          DateTime?                   @default(now()) @updatedAt @db.Timestamp(6)
+  salonId                            Int
+  authSessions                       MobileAuthSession[]
+  publishedContentValues             ContentLocaleValue[]
+  salon                              Salon                       @relation(fields: [salonId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  createdImportBatches               ImportBatch[]               @relation("ImportBatchCreatedBy")
+  resolvedImportConflicts            ImportConflict[]            @relation("ImportConflictResolvedBy")
+  importMappingDecisions             ImportMappingDecision[]
+  triggeredImportCommits             ImportCommitRun[]           @relation("ImportCommitTriggeredBy")
+  activatedImportAiConfigs           ImportAiConfig[]            @relation("ImportAiConfigActivatedBy")
+  reviewedImportExtractionCandidates ImportExtractionCandidate[] @relation("ImportExtractionCandidateReviewedBy")
 }
 
 model MobileAuthSession {
@@ -179,37 +182,37 @@ model Leave {
 }
 
 model Service {
-  id                 Int                  @id @default(autoincrement())
-  name               String
-  description        String?
-  isActive           Boolean?             @default(true)
-  price              Float
-  duration           Int
-  createdAt          DateTime?            @default(now()) @db.Timestamp(6)
-  updatedAt          DateTime?            @default(now()) @updatedAt @db.Timestamp(6)
-  salonId            Int
-  category           String?
-  requiresSpecialist Boolean?             @default(false)
-  categoryId         Int?
-  regionId           Int?
-  serviceGroupId     Int?
-  capacityOverride   Int?
-  sequentialOverride Boolean?
-  bufferOverride     Int?
-  appointments       Appointment[]
-  ServiceCategory    ServiceCategory?     @relation(fields: [categoryId], references: [id], onUpdate: NoAction)
-  ServiceRegion      ServiceRegion?       @relation(fields: [regionId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  serviceGroup       ServiceGroup?        @relation(fields: [serviceGroupId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  salon              Salon                @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  ServiceGender      ServiceGender[]
-  translations       ServiceTranslation[]
-  templateServices   PackageTemplateService[]
-  packageBalances    CustomerPackageServiceBalance[]
-  packageLedgers     PackageLedger[]
-  packageConsumptions AppointmentPackageConsumption[]
+  id                   Int                              @id @default(autoincrement())
+  name                 String
+  description          String?
+  isActive             Boolean?                         @default(true)
+  price                Float
+  duration             Int
+  createdAt            DateTime?                        @default(now()) @db.Timestamp(6)
+  updatedAt            DateTime?                        @default(now()) @updatedAt @db.Timestamp(6)
+  salonId              Int
+  category             String?
+  requiresSpecialist   Boolean?                         @default(false)
+  categoryId           Int?
+  regionId             Int?
+  serviceGroupId       Int?
+  capacityOverride     Int?
+  sequentialOverride   Boolean?
+  bufferOverride       Int?
+  appointments         Appointment[]
+  ServiceCategory      ServiceCategory?                 @relation(fields: [categoryId], references: [id], onUpdate: NoAction)
+  ServiceRegion        ServiceRegion?                   @relation(fields: [regionId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  serviceGroup         ServiceGroup?                    @relation(fields: [serviceGroupId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  salon                Salon                            @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  ServiceGender        ServiceGender[]
+  translations         ServiceTranslation[]
+  templateServices     PackageTemplateService[]
+  packageBalances      CustomerPackageServiceBalance[]
+  packageLedgers       PackageLedger[]
+  packageConsumptions  AppointmentPackageConsumption[]
   campaignApplications AppointmentCampaignApplication[]
-  ServiceStats       ServiceStats[]
-  StaffService       StaffService[]
+  ServiceStats         ServiceStats[]
+  StaffService         StaffService[]
 
   @@unique([name, salonId])
 }
@@ -235,42 +238,42 @@ model ServiceGroup {
 }
 
 model Appointment {
-  id                 Int                          @id @default(autoincrement())
-  customerName       String
-  customerPhone      String
-  customerId         Int?
-  startTime          DateTime                     @db.Timestamp(6)
-  endTime            DateTime                     @db.Timestamp(6)
-  status             AppointmentStatus?           @default(BOOKED)
-  source             AppointmentSource?           @default(CUSTOMER)
-  notes              String?
-  paymentMethod      PaymentMethod?
-  paymentRecordedAt  DateTime?                    @db.Timestamp(6)
-  listPrice          Float?
-  discountTotal      Float?
-  finalPrice         Float?
-  campaignSnapshot   Json?
-  customerRating     Int?
-  customerReview     String?
-  customerReviewedAt DateTime?                    @db.Timestamp(6)
-  preferenceMode     AppointmentPreferenceMode?   @default(ANY)
-  preferredStaffId   Int?
+  id                           Int                              @id @default(autoincrement())
+  customerName                 String
+  customerPhone                String
+  customerId                   Int?
+  startTime                    DateTime                         @db.Timestamp(6)
+  endTime                      DateTime                         @db.Timestamp(6)
+  status                       AppointmentStatus?               @default(BOOKED)
+  source                       AppointmentSource?               @default(CUSTOMER)
+  notes                        String?
+  paymentMethod                PaymentMethod?
+  paymentRecordedAt            DateTime?                        @db.Timestamp(6)
+  listPrice                    Float?
+  discountTotal                Float?
+  finalPrice                   Float?
+  campaignSnapshot             Json?
+  customerRating               Int?
+  customerReview               String?
+  customerReviewedAt           DateTime?                        @db.Timestamp(6)
+  preferenceMode               AppointmentPreferenceMode?       @default(ANY)
+  preferredStaffId             Int?
   rescheduledFromAppointmentId Int?
-  rescheduleBatchId  String?
-  createdAt          DateTime?                    @default(now()) @db.Timestamp(6)
-  updatedAt          DateTime?                    @default(now()) @updatedAt @db.Timestamp(6)
-  salonId            Int
-  staffId            Int
-  serviceId          Int
-  gender             CustomerGender               @default(female)
-  customer           Customer?                    @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  messageDispatches  AppointmentMessageDispatch[]
-  packageConsumptions AppointmentPackageConsumption[]
-  campaignApplications AppointmentCampaignApplication[]
-  campaignAttributions CampaignAttribution[] @relation("CampaignAttributionFirstAppointment")
-  salon              Salon                        @relation(fields: [salonId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  service            Service                      @relation(fields: [serviceId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  staff              Staff                        @relation(fields: [staffId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  rescheduleBatchId            String?
+  createdAt                    DateTime?                        @default(now()) @db.Timestamp(6)
+  updatedAt                    DateTime?                        @default(now()) @updatedAt @db.Timestamp(6)
+  salonId                      Int
+  staffId                      Int
+  serviceId                    Int
+  gender                       CustomerGender                   @default(female)
+  customer                     Customer?                        @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  messageDispatches            AppointmentMessageDispatch[]
+  packageConsumptions          AppointmentPackageConsumption[]
+  campaignApplications         AppointmentCampaignApplication[]
+  campaignAttributions         CampaignAttribution[]            @relation("CampaignAttributionFirstAppointment")
+  salon                        Salon                            @relation(fields: [salonId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  service                      Service                          @relation(fields: [serviceId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  staff                        Staff                            @relation(fields: [staffId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([salonId, startTime], map: "idx_appointment_salon_start")
   @@index([salonId, status, startTime], map: "idx_appointment_salon_status_start")
@@ -362,33 +365,33 @@ model IdentityBinding {
 }
 
 model Customer {
-  id                 Int                        @id @default(autoincrement())
-  name               String?
-  phone              String
-  instagram          String?
-  createdAt          DateTime?                  @default(now()) @db.Timestamp(6)
-  updatedAt          DateTime?                  @default(now()) @updatedAt @db.Timestamp(6)
-  salonId            Int
-  gender             CustomerGender?
-  birthDate          DateTime?                  @db.Date
-  acceptMarketing    Boolean?                   @default(false)
-  registrationStatus CustomerRegistrationStatus @default(VERIFIED)
-  appointments       Appointment[]
-  packages           CustomerPackage[]
-  packageLedgers     PackageLedger[]
-  packageConsumptions AppointmentPackageConsumption[]
+  id                   Int                              @id @default(autoincrement())
+  name                 String?
+  phone                String
+  instagram            String?
+  createdAt            DateTime?                        @default(now()) @db.Timestamp(6)
+  updatedAt            DateTime?                        @default(now()) @updatedAt @db.Timestamp(6)
+  salonId              Int
+  gender               CustomerGender?
+  birthDate            DateTime?                        @db.Date
+  acceptMarketing      Boolean?                         @default(false)
+  registrationStatus   CustomerRegistrationStatus       @default(VERIFIED)
+  appointments         Appointment[]
+  packages             CustomerPackage[]
+  packageLedgers       PackageLedger[]
+  packageConsumptions  AppointmentPackageConsumption[]
   campaignApplications AppointmentCampaignApplication[]
   campaignWallets      CustomerCampaignWallet[]
   campaignEnrollments  CustomerCampaignEnrollment[]
   campaignShareLinks   CampaignShareLink[]
-  referrerAttributions CampaignAttribution[] @relation("CampaignAttributionReferrerCustomer")
-  referredAttributions CampaignAttribution[] @relation("CampaignAttributionReferredCustomer")
-  identityBindings   IdentityBinding[]
-  identitySessions   IdentitySession[]
-  salon              Salon                      @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  usedMagicLinks     MagicLink[]                @relation("MagicLinkUsedByCustomer")
-  waitlistEntries    WaitlistEntry[]
-  phoneVerifications CustomerPhoneVerification[]
+  referrerAttributions CampaignAttribution[]            @relation("CampaignAttributionReferrerCustomer")
+  referredAttributions CampaignAttribution[]            @relation("CampaignAttributionReferredCustomer")
+  identityBindings     IdentityBinding[]
+  identitySessions     IdentitySession[]
+  salon                Salon                            @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  usedMagicLinks       MagicLink[]                      @relation("MagicLinkUsedByCustomer")
+  waitlistEntries      WaitlistEntry[]
+  phoneVerifications   CustomerPhoneVerification[]
 
   @@unique([phone, salonId])
   @@index([salonId, createdAt], map: "idx_customer_salon_created")
@@ -590,54 +593,54 @@ model InventoryMovement {
 }
 
 model Campaign {
-  id          Int       @id @default(autoincrement())
-  salonId     Int
-  name        String
-  type        String
-  description String?
-  config      Json?
-  priority    Int       @default(100)
-  deliveryMode CampaignDeliveryMode @default(MANUAL)
+  id             Int                              @id @default(autoincrement())
+  salonId        Int
+  name           String
+  type           String
+  description    String?
+  config         Json?
+  priority       Int                              @default(100)
+  deliveryMode   CampaignDeliveryMode             @default(MANUAL)
   maxGlobalUsage Int?
   maxPerCustomer Int?
-  isActive    Boolean   @default(true)
-  publishedAt DateTime? @db.Timestamp(6)
-  startsAt    DateTime? @db.Timestamp(6)
-  endsAt      DateTime? @db.Timestamp(6)
-  createdAt   DateTime? @default(now()) @db.Timestamp(6)
-  updatedAt   DateTime? @default(now()) @updatedAt @db.Timestamp(6)
-  salon       Salon     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  applications AppointmentCampaignApplication[]
-  wallets     CustomerCampaignWallet[]
-  enrollments CustomerCampaignEnrollment[]
-  shareLinks  CampaignShareLink[]
-  attributions CampaignAttribution[]
+  isActive       Boolean                          @default(true)
+  publishedAt    DateTime?                        @db.Timestamp(6)
+  startsAt       DateTime?                        @db.Timestamp(6)
+  endsAt         DateTime?                        @db.Timestamp(6)
+  createdAt      DateTime?                        @default(now()) @db.Timestamp(6)
+  updatedAt      DateTime?                        @default(now()) @updatedAt @db.Timestamp(6)
+  salon          Salon                            @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  applications   AppointmentCampaignApplication[]
+  wallets        CustomerCampaignWallet[]
+  enrollments    CustomerCampaignEnrollment[]
+  shareLinks     CampaignShareLink[]
+  attributions   CampaignAttribution[]
 
   @@index([salonId, type, isActive], map: "idx_campaign_salon_type_active")
   @@index([salonId, priority, isActive], map: "idx_campaign_salon_priority_active")
 }
 
 model AppointmentCampaignApplication {
-  id            Int       @id @default(autoincrement())
-  salonId       Int
-  appointmentId Int
-  customerId    Int?
-  campaignId    Int
-  serviceId     Int?
-  status        CampaignApplicationStatus @default(APPLIED)
-  listPrice     Float
+  id             Int                       @id @default(autoincrement())
+  salonId        Int
+  appointmentId  Int
+  customerId     Int?
+  campaignId     Int
+  serviceId      Int?
+  status         CampaignApplicationStatus @default(APPLIED)
+  listPrice      Float
   discountAmount Float
-  finalPrice    Float
-  metadata      Json?
-  appliedAt     DateTime? @default(now()) @db.Timestamp(6)
-  releasedAt    DateTime? @db.Timestamp(6)
-  createdAt     DateTime? @default(now()) @db.Timestamp(6)
-  updatedAt     DateTime? @default(now()) @updatedAt @db.Timestamp(6)
-  salon         Salon     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  customer      Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  campaign      Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  service       Service?  @relation(fields: [serviceId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  finalPrice     Float
+  metadata       Json?
+  appliedAt      DateTime?                 @default(now()) @db.Timestamp(6)
+  releasedAt     DateTime?                 @db.Timestamp(6)
+  createdAt      DateTime?                 @default(now()) @db.Timestamp(6)
+  updatedAt      DateTime?                 @default(now()) @updatedAt @db.Timestamp(6)
+  salon          Salon                     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  appointment    Appointment               @relation(fields: [appointmentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  customer       Customer?                 @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  campaign       Campaign                  @relation(fields: [campaignId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  service        Service?                  @relation(fields: [serviceId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([salonId, appointmentId], map: "idx_campaign_app_salon_appointment")
   @@index([salonId, customerId, campaignId], map: "idx_campaign_app_salon_customer_campaign")
@@ -645,66 +648,66 @@ model AppointmentCampaignApplication {
 }
 
 model CustomerCampaignWallet {
-  id              Int       @id @default(autoincrement())
-  salonId         Int
-  customerId      Int
-  campaignId      Int
-  balanceAmount   Float     @default(0)
-  consumedAmount  Float     @default(0)
-  expiresAt       DateTime? @db.Timestamp(6)
-  metadata        Json?
-  createdAt       DateTime? @default(now()) @db.Timestamp(6)
-  updatedAt       DateTime? @default(now()) @updatedAt @db.Timestamp(6)
-  salon           Salon     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  customer        Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  campaign        Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id             Int       @id @default(autoincrement())
+  salonId        Int
+  customerId     Int
+  campaignId     Int
+  balanceAmount  Float     @default(0)
+  consumedAmount Float     @default(0)
+  expiresAt      DateTime? @db.Timestamp(6)
+  metadata       Json?
+  createdAt      DateTime? @default(now()) @db.Timestamp(6)
+  updatedAt      DateTime? @default(now()) @updatedAt @db.Timestamp(6)
+  salon          Salon     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  customer       Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  campaign       Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([salonId, customerId, campaignId], map: "uq_campaign_wallet_salon_customer_campaign")
   @@index([salonId, customerId], map: "idx_campaign_wallet_salon_customer")
 }
 
 model CustomerCampaignEnrollment {
-  id            Int       @id @default(autoincrement())
-  salonId       Int
-  customerId    Int
-  campaignId    Int
-  status        CampaignEnrollmentStatus @default(ENROLLED)
-  source        String?
-  metadata      Json?
-  enrolledAt    DateTime? @default(now()) @db.Timestamp(6)
-  createdAt     DateTime? @default(now()) @db.Timestamp(6)
-  updatedAt     DateTime? @default(now()) @updatedAt @db.Timestamp(6)
-  salon         Salon     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  customer      Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  campaign      Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id         Int                      @id @default(autoincrement())
+  salonId    Int
+  customerId Int
+  campaignId Int
+  status     CampaignEnrollmentStatus @default(ENROLLED)
+  source     String?
+  metadata   Json?
+  enrolledAt DateTime?                @default(now()) @db.Timestamp(6)
+  createdAt  DateTime?                @default(now()) @db.Timestamp(6)
+  updatedAt  DateTime?                @default(now()) @updatedAt @db.Timestamp(6)
+  salon      Salon                    @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  customer   Customer                 @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  campaign   Campaign                 @relation(fields: [campaignId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([salonId, customerId, campaignId], map: "uq_campaign_enrollment_salon_customer_campaign")
   @@index([salonId, status], map: "idx_campaign_enrollment_salon_status")
 }
 
 model CampaignShareLink {
-  id                Int       @id @default(autoincrement())
-  salonId           Int
-  campaignId        Int
-  customerId        Int
-  token             String    @unique(map: "uq_campaign_share_link_token")
-  status            CampaignShareLinkStatus @default(ACTIVE)
-  metadata          Json?
-  lastSharedAt      DateTime? @db.Timestamp(6)
-  expiresAt         DateTime? @db.Timestamp(6)
-  createdAt         DateTime? @default(now()) @db.Timestamp(6)
-  updatedAt         DateTime? @default(now()) @updatedAt @db.Timestamp(6)
-  salon             Salon     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  campaign          Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  customer          Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  attributions      CampaignAttribution[]
+  id           Int                     @id @default(autoincrement())
+  salonId      Int
+  campaignId   Int
+  customerId   Int
+  token        String                  @unique(map: "uq_campaign_share_link_token")
+  status       CampaignShareLinkStatus @default(ACTIVE)
+  metadata     Json?
+  lastSharedAt DateTime?               @db.Timestamp(6)
+  expiresAt    DateTime?               @db.Timestamp(6)
+  createdAt    DateTime?               @default(now()) @db.Timestamp(6)
+  updatedAt    DateTime?               @default(now()) @updatedAt @db.Timestamp(6)
+  salon        Salon                   @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  campaign     Campaign                @relation(fields: [campaignId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  customer     Customer                @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  attributions CampaignAttribution[]
 
   @@unique([salonId, campaignId, customerId], map: "uq_campaign_share_link_salon_campaign_customer")
   @@index([salonId, status], map: "idx_campaign_share_link_salon_status")
 }
 
 model CampaignAttribution {
-  id                 Int       @id @default(autoincrement())
+  id                 Int                       @id @default(autoincrement())
   salonId            Int
   campaignId         Int
   shareLinkId        Int
@@ -712,16 +715,16 @@ model CampaignAttribution {
   referredCustomerId Int?
   status             CampaignAttributionStatus @default(PENDING)
   firstAppointmentId Int?
-  completedAt        DateTime? @db.Timestamp(6)
+  completedAt        DateTime?                 @db.Timestamp(6)
   metadata           Json?
-  createdAt          DateTime? @default(now()) @db.Timestamp(6)
-  updatedAt          DateTime? @default(now()) @updatedAt @db.Timestamp(6)
-  salon              Salon     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  campaign           Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  shareLink          CampaignShareLink @relation(fields: [shareLinkId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  referrerCustomer   Customer  @relation("CampaignAttributionReferrerCustomer", fields: [referrerCustomerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  referredCustomer   Customer? @relation("CampaignAttributionReferredCustomer", fields: [referredCustomerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  firstAppointment   Appointment? @relation("CampaignAttributionFirstAppointment", fields: [firstAppointmentId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  createdAt          DateTime?                 @default(now()) @db.Timestamp(6)
+  updatedAt          DateTime?                 @default(now()) @updatedAt @db.Timestamp(6)
+  salon              Salon                     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  campaign           Campaign                  @relation(fields: [campaignId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  shareLink          CampaignShareLink         @relation(fields: [shareLinkId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  referrerCustomer   Customer                  @relation("CampaignAttributionReferrerCustomer", fields: [referrerCustomerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  referredCustomer   Customer?                 @relation("CampaignAttributionReferredCustomer", fields: [referredCustomerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  firstAppointment   Appointment?              @relation("CampaignAttributionFirstAppointment", fields: [firstAppointmentId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([salonId, campaignId, status], map: "idx_campaign_attr_salon_campaign_status")
   @@index([shareLinkId], map: "idx_campaign_attr_share_link")
@@ -1063,95 +1066,95 @@ model StaffServiceCustomSlot {
 }
 
 model PackageTemplate {
-  id          Int                   @id @default(autoincrement())
-  salonId     Int
-  name        String
-  scopeType   PackageScopeType      @default(SINGLE_SERVICE)
-  isActive    Boolean               @default(true)
-  price       Float?
-  validityDays Int?
-  notes       String?
-  createdAt   DateTime?             @default(now()) @db.Timestamp(6)
-  updatedAt   DateTime?             @default(now()) @updatedAt @db.Timestamp(6)
-  salon       Salon                 @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  services    PackageTemplateService[]
+  id               Int                      @id @default(autoincrement())
+  salonId          Int
+  name             String
+  scopeType        PackageScopeType         @default(SINGLE_SERVICE)
+  isActive         Boolean                  @default(true)
+  price            Float?
+  validityDays     Int?
+  notes            String?
+  createdAt        DateTime?                @default(now()) @db.Timestamp(6)
+  updatedAt        DateTime?                @default(now()) @updatedAt @db.Timestamp(6)
+  salon            Salon                    @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  services         PackageTemplateService[]
   customerPackages CustomerPackage[]
 
-  @@index([salonId, isActive], map: "idx_pkg_template_salon_active")
   @@unique([salonId, name], map: "uq_pkg_template_salon_name")
+  @@index([salonId, isActive], map: "idx_pkg_template_salon_active")
 }
 
 model PackageTemplateService {
-  id               Int             @id @default(autoincrement())
+  id                Int             @id @default(autoincrement())
   packageTemplateId Int
-  serviceId        Int
-  initialQuota     Int
-  createdAt        DateTime?       @default(now()) @db.Timestamp(6)
-  packageTemplate  PackageTemplate @relation(fields: [packageTemplateId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  service          Service         @relation(fields: [serviceId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  serviceId         Int
+  initialQuota      Int
+  createdAt         DateTime?       @default(now()) @db.Timestamp(6)
+  packageTemplate   PackageTemplate @relation(fields: [packageTemplateId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  service           Service         @relation(fields: [serviceId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([packageTemplateId, serviceId], map: "uq_pkg_template_service")
   @@index([serviceId], map: "idx_pkg_template_service_service")
 }
 
 model CustomerPackage {
-  id               Int                 @id @default(autoincrement())
-  salonId          Int
-  customerId       Int
+  id                Int                             @id @default(autoincrement())
+  salonId           Int
+  customerId        Int
   packageTemplateId Int?
-  sourceType       PackageSourceType
-  scopeType        PackageScopeType    @default(SINGLE_SERVICE)
-  status           CustomerPackageStatus @default(ACTIVE)
-  name             String
-  startsAt         DateTime?           @db.Timestamp(6)
-  expiresAt        DateTime?           @db.Timestamp(6)
-  price            Float?
-  notes            String?
-  createdAt        DateTime?           @default(now()) @db.Timestamp(6)
-  updatedAt        DateTime?           @default(now()) @updatedAt @db.Timestamp(6)
-  customer         Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  salon            Salon               @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  template         PackageTemplate?    @relation(fields: [packageTemplateId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  serviceBalances  CustomerPackageServiceBalance[]
-  ledgers          PackageLedger[]
-  consumptions     AppointmentPackageConsumption[]
+  sourceType        PackageSourceType
+  scopeType         PackageScopeType                @default(SINGLE_SERVICE)
+  status            CustomerPackageStatus           @default(ACTIVE)
+  name              String
+  startsAt          DateTime?                       @db.Timestamp(6)
+  expiresAt         DateTime?                       @db.Timestamp(6)
+  price             Float?
+  notes             String?
+  createdAt         DateTime?                       @default(now()) @db.Timestamp(6)
+  updatedAt         DateTime?                       @default(now()) @updatedAt @db.Timestamp(6)
+  customer          Customer                        @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  salon             Salon                           @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  template          PackageTemplate?                @relation(fields: [packageTemplateId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  serviceBalances   CustomerPackageServiceBalance[]
+  ledgers           PackageLedger[]
+  consumptions      AppointmentPackageConsumption[]
 
   @@index([salonId, customerId, status], map: "idx_customer_pkg_salon_customer_status")
   @@index([salonId, expiresAt], map: "idx_customer_pkg_salon_expires")
 }
 
 model CustomerPackageServiceBalance {
-  id              Int             @id @default(autoincrement())
+  id                Int             @id @default(autoincrement())
   customerPackageId Int
-  serviceId       Int
-  initialQuota    Int
-  remainingQuota  Int
-  createdAt       DateTime?       @default(now()) @db.Timestamp(6)
-  updatedAt       DateTime?       @default(now()) @updatedAt @db.Timestamp(6)
-  customerPackage CustomerPackage @relation(fields: [customerPackageId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  service         Service         @relation(fields: [serviceId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  serviceId         Int
+  initialQuota      Int
+  remainingQuota    Int
+  createdAt         DateTime?       @default(now()) @db.Timestamp(6)
+  updatedAt         DateTime?       @default(now()) @updatedAt @db.Timestamp(6)
+  customerPackage   CustomerPackage @relation(fields: [customerPackageId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  service           Service         @relation(fields: [serviceId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([customerPackageId, serviceId], map: "uq_customer_pkg_balance")
   @@index([serviceId], map: "idx_customer_pkg_balance_service")
 }
 
 model PackageLedger {
-  id               Int               @id @default(autoincrement())
-  salonId          Int
-  customerId       Int
+  id                Int               @id @default(autoincrement())
+  salonId           Int
+  customerId        Int
   customerPackageId Int?
-  serviceId        Int?
-  appointmentId    Int?
-  actionType       PackageActionType
-  delta            Int
-  balanceAfter     Int?
-  reason           String?
-  metadata         Json?
-  createdAt        DateTime?         @default(now()) @db.Timestamp(6)
-  customer         Customer           @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  customerPackage  CustomerPackage?   @relation(fields: [customerPackageId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  salon            Salon              @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  service          Service?           @relation(fields: [serviceId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  serviceId         Int?
+  appointmentId     Int?
+  actionType        PackageActionType
+  delta             Int
+  balanceAfter      Int?
+  reason            String?
+  metadata          Json?
+  createdAt         DateTime?         @default(now()) @db.Timestamp(6)
+  customer          Customer          @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  customerPackage   CustomerPackage?  @relation(fields: [customerPackageId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  salon             Salon             @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  service           Service?          @relation(fields: [serviceId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([salonId, customerId, createdAt], map: "idx_pkg_ledger_salon_customer_created")
   @@index([customerPackageId, createdAt], map: "idx_pkg_ledger_customer_pkg_created")
@@ -1159,144 +1162,145 @@ model PackageLedger {
 }
 
 model AppointmentPackageConsumption {
-  id               Int             @id @default(autoincrement())
-  salonId          Int
-  appointmentId    Int
-  customerId       Int
+  id                Int             @id @default(autoincrement())
+  salonId           Int
+  appointmentId     Int
+  customerId        Int
   customerPackageId Int
-  serviceId        Int
-  consumed         Int             @default(1)
-  restoredAt       DateTime?       @db.Timestamp(6)
-  createdAt        DateTime?       @default(now()) @db.Timestamp(6)
-  appointment      Appointment     @relation(fields: [appointmentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  customer         Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  customerPackage  CustomerPackage @relation(fields: [customerPackageId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  salon            Salon           @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  service          Service         @relation(fields: [serviceId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  serviceId         Int
+  consumed          Int             @default(1)
+  restoredAt        DateTime?       @db.Timestamp(6)
+  createdAt         DateTime?       @default(now()) @db.Timestamp(6)
+  appointment       Appointment     @relation(fields: [appointmentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  customer          Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  customerPackage   CustomerPackage @relation(fields: [customerPackageId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  salon             Salon           @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  service           Service         @relation(fields: [serviceId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([appointmentId, serviceId], map: "uq_appointment_pkg_consumption")
   @@index([salonId, customerId], map: "idx_appointment_pkg_consumption_salon_customer")
 }
 
 model PushDeviceToken {
-  id          Int       @id @default(autoincrement())
-  salonId     Int
-  userId      Int
-  platform    String
-  token       String
-  appVersion  String?
-  deviceMeta  Json?
-  isActive    Boolean   @default(true)
-  lastSeenAt  DateTime? @db.Timestamp(6)
-  createdAt   DateTime? @default(now()) @db.Timestamp(6)
-  updatedAt   DateTime? @default(now()) @updatedAt @db.Timestamp(6)
+  id         Int       @id @default(autoincrement())
+  salonId    Int
+  userId     Int
+  platform   String
+  token      String
+  appVersion String?
+  deviceMeta Json?
+  isActive   Boolean   @default(true)
+  lastSeenAt DateTime? @db.Timestamp(6)
+  createdAt  DateTime? @default(now()) @db.Timestamp(6)
+  updatedAt  DateTime? @default(now()) @updatedAt @db.Timestamp(6)
 
   @@unique([platform, token], map: "uq_push_device_platform_token")
   @@index([salonId, userId, isActive], map: "idx_push_device_salon_user_active")
 }
 
 model CustomerPhoneVerification {
-  id            String                          @id @default(uuid())
-  salonId       Int
-  customerId    Int?
-  purpose       CustomerPhoneVerificationPurpose
-  deliveryChannel ChannelType                   @default(WHATSAPP)
-  countryIso    String
-  phone         String
-  status        CustomerPhoneVerificationStatus @default(PENDING)
-  codeHash      String
-  payload       Json
-  sendCount     Int                             @default(1)
-  attemptCount  Int                             @default(0)
-  maxAttempts   Int                             @default(5)
-  expiresAt     DateTime                        @db.Timestamp(6)
-  lastSentAt    DateTime?                       @db.Timestamp(6)
-  lastAttemptAt DateTime?                       @db.Timestamp(6)
-  verifiedAt    DateTime?                       @db.Timestamp(6)
-  consumedAt    DateTime?                       @db.Timestamp(6)
-  createdAt     DateTime?                       @default(now()) @db.Timestamp(6)
-  updatedAt     DateTime?                       @default(now()) @updatedAt @db.Timestamp(6)
-  customer      Customer?                       @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  salon         Salon                           @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id              String                           @id @default(uuid())
+  salonId         Int
+  customerId      Int?
+  purpose         CustomerPhoneVerificationPurpose
+  deliveryChannel ChannelType                      @default(WHATSAPP)
+  countryIso      String
+  phone           String
+  status          CustomerPhoneVerificationStatus  @default(PENDING)
+  codeHash        String
+  payload         Json
+  sendCount       Int                              @default(1)
+  attemptCount    Int                              @default(0)
+  maxAttempts     Int                              @default(5)
+  expiresAt       DateTime                         @db.Timestamp(6)
+  lastSentAt      DateTime?                        @db.Timestamp(6)
+  lastAttemptAt   DateTime?                        @db.Timestamp(6)
+  verifiedAt      DateTime?                        @db.Timestamp(6)
+  consumedAt      DateTime?                        @db.Timestamp(6)
+  createdAt       DateTime?                        @default(now()) @db.Timestamp(6)
+  updatedAt       DateTime?                        @default(now()) @updatedAt @db.Timestamp(6)
+  customer        Customer?                        @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  salon           Salon                            @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([salonId, phone, status, expiresAt], map: "idx_customer_phone_verification_phone_status")
   @@index([customerId, salonId], map: "idx_customer_phone_verification_customer_salon")
 }
 
 model WaitlistEntry {
-  id                Int                @id @default(autoincrement())
-  salonId           Int
-  customerId        Int?
-  customerName      String
-  customerPhone     String
-  source            WaitlistEntrySource
-  status            WaitlistEntryStatus @default(PENDING)
-  requestDate       DateTime           @db.Date
-  windowStartMinute Int
-  windowEndMinute   Int
-  allowNearbyMatches Boolean           @default(false)
-  nearbyToleranceMinutes Int           @default(60)
-  groups            Json
-  preferredStaffIds Json?
-  latestOfferId     Int?
-  latestMatchedAt   DateTime?          @db.Timestamp(6)
-  closedAt          DateTime?          @db.Timestamp(6)
-  notes             String?
-  createdAt         DateTime?          @default(now()) @db.Timestamp(6)
-  updatedAt         DateTime?          @default(now()) @updatedAt @db.Timestamp(6)
-  customer          Customer?          @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  salon             Salon              @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  offers            WaitlistOffer[]
+  id                     Int                 @id @default(autoincrement())
+  salonId                Int
+  customerId             Int?
+  customerName           String
+  customerPhone          String
+  source                 WaitlistEntrySource
+  status                 WaitlistEntryStatus @default(PENDING)
+  requestDate            DateTime            @db.Date
+  windowStartMinute      Int
+  windowEndMinute        Int
+  allowNearbyMatches     Boolean             @default(false)
+  nearbyToleranceMinutes Int                 @default(60)
+  groups                 Json
+  preferredStaffIds      Json?
+  latestOfferId          Int?
+  latestMatchedAt        DateTime?           @db.Timestamp(6)
+  closedAt               DateTime?           @db.Timestamp(6)
+  notes                  String?
+  createdAt              DateTime?           @default(now()) @db.Timestamp(6)
+  updatedAt              DateTime?           @default(now()) @updatedAt @db.Timestamp(6)
+  customer               Customer?           @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  salon                  Salon               @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  offers                 WaitlistOffer[]
 
   @@index([salonId, requestDate, status, createdAt], map: "idx_waitlist_entry_day_status_created")
   @@index([customerId, salonId], map: "idx_waitlist_entry_customer_salon")
 }
 
 model WaitlistOffer {
-  id                Int                 @id @default(autoincrement())
+  id                Int                  @id @default(autoincrement())
   waitlistEntryId   Int
   salonId           Int
-  token             String              @unique(map: "uq_waitlist_offer_token")
+  token             String               @unique(map: "uq_waitlist_offer_token")
   channel           WaitlistOfferChannel
-  status            WaitlistOfferStatus @default(PENDING)
-  slotDate          DateTime            @db.Date
+  status            WaitlistOfferStatus  @default(PENDING)
+  slotDate          DateTime             @db.Date
   slotStartMinute   Int
   slotEndMinute     Int
   slotPayload       Json
   offerUrl          String?
   providerMessageId String?
   failureReason     String?
-  expiresAt         DateTime            @db.Timestamp(6)
-  sentAt            DateTime?           @db.Timestamp(6)
-  acceptedAt        DateTime?           @db.Timestamp(6)
-  rejectedAt        DateTime?           @db.Timestamp(6)
-  failedAt          DateTime?           @db.Timestamp(6)
-  createdAt         DateTime?           @default(now()) @db.Timestamp(6)
-  updatedAt         DateTime?           @default(now()) @updatedAt @db.Timestamp(6)
-  salon             Salon               @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  waitlistEntry     WaitlistEntry       @relation(fields: [waitlistEntryId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  expiresAt         DateTime             @db.Timestamp(6)
+  sentAt            DateTime?            @db.Timestamp(6)
+  acceptedAt        DateTime?            @db.Timestamp(6)
+  rejectedAt        DateTime?            @db.Timestamp(6)
+  failedAt          DateTime?            @db.Timestamp(6)
+  createdAt         DateTime?            @default(now()) @db.Timestamp(6)
+  updatedAt         DateTime?            @default(now()) @updatedAt @db.Timestamp(6)
+  salon             Salon                @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  waitlistEntry     WaitlistEntry        @relation(fields: [waitlistEntryId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([salonId, slotDate, status, expiresAt], map: "idx_waitlist_offer_day_status_exp")
   @@index([waitlistEntryId, createdAt], map: "idx_waitlist_offer_entry_created")
 }
 
 model ImportBatch {
-  id              String            @id @default(cuid())
+  id              String                  @id @default(cuid())
   salonId         Int
   createdByUserId Int
-  status          ImportBatchStatus @default(UPLOADING)
+  status          ImportBatchStatus       @default(UPLOADING)
   summary         Json?
-  startedAt       DateTime?         @db.Timestamp(6)
-  completedAt     DateTime?         @db.Timestamp(6)
-  createdAt       DateTime?         @default(now()) @db.Timestamp(6)
-  updatedAt       DateTime?         @default(now()) @updatedAt @db.Timestamp(6)
-  salon           Salon             @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  createdBy       SalonUser         @relation("ImportBatchCreatedBy", fields: [createdByUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  startedAt       DateTime?               @db.Timestamp(6)
+  completedAt     DateTime?               @db.Timestamp(6)
+  createdAt       DateTime?               @default(now()) @db.Timestamp(6)
+  updatedAt       DateTime?               @default(now()) @updatedAt @db.Timestamp(6)
+  salon           Salon                   @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  createdBy       SalonUser               @relation("ImportBatchCreatedBy", fields: [createdByUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   files           ImportSourceFile[]
   rows            ImportRow[]
   conflicts       ImportConflict[]
   decisions       ImportMappingDecision[]
   commitRuns      ImportCommitRun[]
+  extractionRuns  ImportExtractionRun[]
 
   @@index([salonId, status, createdAt], map: "idx_import_batch_salon_status_created")
 }
@@ -1320,44 +1324,45 @@ model ImportSourceFile {
   batch            ImportBatch            @relation(fields: [batchId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   salon            Salon                  @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   rows             ImportRow[]
+  extractionRuns   ImportExtractionRun[]
 
   @@index([batchId, status], map: "idx_import_source_file_batch_status")
 }
 
 model ImportRow {
-  id                    Int             @id @default(autoincrement())
-  batchId               String
-  sourceFileId          Int
-  salonId               Int
-  rowIndex              Int
-  sourceRowHash         String
-  rowStatus             ImportRowStatus @default(EXTRACTED)
-  rawData               Json
-  normalizedData        Json
-  customerName          String?
-  customerPhoneRaw      String?
+  id                      Int                     @id @default(autoincrement())
+  batchId                 String
+  sourceFileId            Int
+  salonId                 Int
+  rowIndex                Int
+  sourceRowHash           String
+  rowStatus               ImportRowStatus         @default(EXTRACTED)
+  rawData                 Json
+  normalizedData          Json
+  customerName            String?
+  customerPhoneRaw        String?
   customerPhoneNormalized String?
-  appointmentDate       DateTime?       @db.Date
-  startMinute           Int?
-  endMinute             Int?
-  durationMinutes       Int?
-  serviceNameRaw        String?
-  staffNameRaw          String?
-  priceRaw              Float?
-  notesRaw              String?
-  confidence            Float?
-  matchedCustomerId     Int?
-  matchedServiceId      Int?
-  matchedStaffId        Int?
-  importedAppointmentId Int?
-  failureReason         String?
-  createdAt             DateTime?       @default(now()) @db.Timestamp(6)
-  updatedAt             DateTime?       @default(now()) @updatedAt @db.Timestamp(6)
-  batch                 ImportBatch     @relation(fields: [batchId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  sourceFile            ImportSourceFile @relation(fields: [sourceFileId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  salon                 Salon           @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  conflicts             ImportConflict[]
-  decisions             ImportMappingDecision[]
+  appointmentDate         DateTime?               @db.Date
+  startMinute             Int?
+  endMinute               Int?
+  durationMinutes         Int?
+  serviceNameRaw          String?
+  staffNameRaw            String?
+  priceRaw                Float?
+  notesRaw                String?
+  confidence              Float?
+  matchedCustomerId       Int?
+  matchedServiceId        Int?
+  matchedStaffId          Int?
+  importedAppointmentId   Int?
+  failureReason           String?
+  createdAt               DateTime?               @default(now()) @db.Timestamp(6)
+  updatedAt               DateTime?               @default(now()) @updatedAt @db.Timestamp(6)
+  batch                   ImportBatch             @relation(fields: [batchId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  sourceFile              ImportSourceFile        @relation(fields: [sourceFileId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  salon                   Salon                   @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  conflicts               ImportConflict[]
+  decisions               ImportMappingDecision[]
 
   @@unique([batchId, sourceRowHash], map: "uq_import_row_batch_hash")
   @@index([batchId, rowStatus], map: "idx_import_row_batch_status")
@@ -1385,97 +1390,165 @@ model ImportConflict {
 }
 
 model ImportMappingDecision {
-  id             Int      @id @default(autoincrement())
-  batchId        String
-  rowId          Int?
-  salonId        Int
-  userId         Int
-  decisionType   String
-  decisionKey    String
-  decisionValue  Json
-  createdAt      DateTime? @default(now()) @db.Timestamp(6)
-  batch          ImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  row            ImportRow? @relation(fields: [rowId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  salon          Salon @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  user           SalonUser @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  id            Int         @id @default(autoincrement())
+  batchId       String
+  rowId         Int?
+  salonId       Int
+  userId        Int
+  decisionType  String
+  decisionKey   String
+  decisionValue Json
+  createdAt     DateTime?   @default(now()) @db.Timestamp(6)
+  batch         ImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  row           ImportRow?  @relation(fields: [rowId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  salon         Salon       @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user          SalonUser   @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([batchId, rowId, createdAt], map: "idx_import_decision_batch_row_created")
 }
 
 model ImportCommitRun {
-  id                 Int                @id @default(autoincrement())
-  batchId            String
-  salonId            Int
-  triggeredByUserId  Int
-  status             ImportCommitStatus @default(RUNNING)
-  summary            Json?
-  startedAt          DateTime?          @default(now()) @db.Timestamp(6)
-  completedAt        DateTime?          @db.Timestamp(6)
-  createdAt          DateTime?          @default(now()) @db.Timestamp(6)
-  updatedAt          DateTime?          @default(now()) @updatedAt @db.Timestamp(6)
-  batch              ImportBatch        @relation(fields: [batchId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  salon              Salon              @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  triggeredBy        SalonUser          @relation("ImportCommitTriggeredBy", fields: [triggeredByUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  id                Int                @id @default(autoincrement())
+  batchId           String
+  salonId           Int
+  triggeredByUserId Int
+  status            ImportCommitStatus @default(RUNNING)
+  summary           Json?
+  startedAt         DateTime?          @default(now()) @db.Timestamp(6)
+  completedAt       DateTime?          @db.Timestamp(6)
+  createdAt         DateTime?          @default(now()) @db.Timestamp(6)
+  updatedAt         DateTime?          @default(now()) @updatedAt @db.Timestamp(6)
+  batch             ImportBatch        @relation(fields: [batchId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  salon             Salon              @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  triggeredBy       SalonUser          @relation("ImportCommitTriggeredBy", fields: [triggeredByUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([batchId, status, createdAt], map: "idx_import_commit_batch_status_created")
 }
 
+model ImportExtractionRun {
+  id                   Int                         @id @default(autoincrement())
+  batchId              String
+  sourceFileId         Int
+  salonId              Int
+  mode                 ImportExtractionMode        @default(PRODUCTION)
+  status               ImportExtractionRunStatus   @default(RUNNING)
+  ocrProvider          String
+  ocrModel             String?
+  ocrRawText           String?
+  activeConfigSnapshot Json?
+  selectedCandidateId  Int?
+  error                String?
+  metricsJson          Json?
+  startedAt            DateTime?                   @default(now()) @db.Timestamp(6)
+  completedAt          DateTime?                   @db.Timestamp(6)
+  createdAt            DateTime?                   @default(now()) @db.Timestamp(6)
+  updatedAt            DateTime?                   @default(now()) @updatedAt @db.Timestamp(6)
+  batch                ImportBatch                 @relation(fields: [batchId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  sourceFile           ImportSourceFile            @relation(fields: [sourceFileId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  salon                Salon                       @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  candidates           ImportExtractionCandidate[]
+
+  @@index([batchId, sourceFileId, createdAt], map: "idx_import_extraction_run_file_created")
+  @@index([status, mode, createdAt], map: "idx_import_extraction_run_status_mode_created")
+}
+
+model ImportExtractionCandidate {
+  id                 Int                 @id @default(autoincrement())
+  extractionRunId    Int
+  provider           String
+  model              String
+  promptVersion      String
+  promptLabel        String?
+  rawOutputText      String?
+  parsedRowsJson     Json?
+  scoreTotal         Float?
+  scoreBreakdownJson Json?
+  isSelected         Boolean             @default(false)
+  reviewedByUserId   Int?
+  reviewedAt         DateTime?           @db.Timestamp(6)
+  createdAt          DateTime?           @default(now()) @db.Timestamp(6)
+  updatedAt          DateTime?           @default(now()) @updatedAt @db.Timestamp(6)
+  extractionRun      ImportExtractionRun @relation(fields: [extractionRunId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  reviewedBy         SalonUser?          @relation("ImportExtractionCandidateReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([extractionRunId, isSelected, scoreTotal], map: "idx_import_extraction_candidate_run_selected_score")
+}
+
+model ImportAiConfig {
+  id                    Int        @id @default(autoincrement())
+  ocrProvider           String
+  ocrModel              String?
+  llmProvider           String
+  llmModel              String
+  promptVersion         String
+  promptLabel           String?
+  outputContractVersion String
+  isActive              Boolean    @default(false)
+  notesJson             Json?
+  activatedByUserId     Int?
+  createdAt             DateTime?  @default(now()) @db.Timestamp(6)
+  updatedAt             DateTime?  @default(now()) @updatedAt @db.Timestamp(6)
+  activatedBy           SalonUser? @relation("ImportAiConfigActivatedBy", fields: [activatedByUserId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([isActive, updatedAt], map: "idx_import_ai_config_active_updated")
+}
+
 model UserNotificationPreference {
-  id           Int       @id @default(autoincrement())
-  salonId      Int
-  userId       Int
-  masterEnabled Boolean  @default(true)
-  eventConfig  Json?
-  createdAt    DateTime? @default(now()) @db.Timestamp(6)
-  updatedAt    DateTime? @default(now()) @updatedAt @db.Timestamp(6)
+  id            Int       @id @default(autoincrement())
+  salonId       Int
+  userId        Int
+  masterEnabled Boolean   @default(true)
+  eventConfig   Json?
+  createdAt     DateTime? @default(now()) @db.Timestamp(6)
+  updatedAt     DateTime? @default(now()) @updatedAt @db.Timestamp(6)
 
   @@unique([salonId, userId], map: "uq_user_notification_pref_salon_user")
 }
 
 model AppNotification {
-  id          Int                 @id @default(autoincrement())
-  salonId     Int
-  eventType   NotificationEventType
-  title       String
-  body        String
-  payload     Json?
-  createdAt   DateTime?           @default(now()) @db.Timestamp(6)
-  expiresAt   DateTime?           @db.Timestamp(6)
+  id        Int                   @id @default(autoincrement())
+  salonId   Int
+  eventType NotificationEventType
+  title     String
+  body      String
+  payload   Json?
+  createdAt DateTime?             @default(now()) @db.Timestamp(6)
+  expiresAt DateTime?             @db.Timestamp(6)
 
   @@index([salonId, createdAt], map: "idx_app_notification_salon_created")
 }
 
 model AppNotificationDelivery {
-  id              Int                          @id @default(autoincrement())
-  notificationId  Int
-  salonId         Int
-  userId          Int
-  pushTokenId     Int?
-  channel         NotificationDeliveryChannel
-  status          NotificationDeliveryStatus   @default(PENDING)
+  id                Int                         @id @default(autoincrement())
+  notificationId    Int
+  salonId           Int
+  userId            Int
+  pushTokenId       Int?
+  channel           NotificationDeliveryChannel
+  status            NotificationDeliveryStatus  @default(PENDING)
   providerMessageId String?
-  failureReason   String?
-  readAt          DateTime?                    @db.Timestamp(6)
-  createdAt       DateTime?                    @default(now()) @db.Timestamp(6)
-  updatedAt       DateTime?                    @default(now()) @updatedAt @db.Timestamp(6)
+  failureReason     String?
+  readAt            DateTime?                   @db.Timestamp(6)
+  createdAt         DateTime?                   @default(now()) @db.Timestamp(6)
+  updatedAt         DateTime?                   @default(now()) @updatedAt @db.Timestamp(6)
 
   @@index([notificationId], map: "idx_notification_delivery_notification")
   @@index([salonId, userId, readAt], map: "idx_notification_delivery_user_read")
 }
 
 model HandoverAlertState {
-  id                 Int       @id @default(autoincrement())
+  id                 Int                         @id @default(autoincrement())
   salonId            Int
   channel            ChannelType
   conversationKey    String
   state              HandoverAlertLifecycleState @default(ACTIVE)
-  repeatCount        Int       @default(0)
-  firstTriggeredAt   DateTime? @db.Timestamp(6)
-  lastTriggeredAt    DateTime? @db.Timestamp(6)
-  lastHumanMessageAt DateTime? @db.Timestamp(6)
-  stoppedAt          DateTime? @db.Timestamp(6)
-  createdAt          DateTime? @default(now()) @db.Timestamp(6)
-  updatedAt          DateTime? @default(now()) @updatedAt @db.Timestamp(6)
+  repeatCount        Int                         @default(0)
+  firstTriggeredAt   DateTime?                   @db.Timestamp(6)
+  lastTriggeredAt    DateTime?                   @db.Timestamp(6)
+  lastHumanMessageAt DateTime?                   @db.Timestamp(6)
+  stoppedAt          DateTime?                   @db.Timestamp(6)
+  createdAt          DateTime?                   @default(now()) @db.Timestamp(6)
+  updatedAt          DateTime?                   @default(now()) @updatedAt @db.Timestamp(6)
 
   @@unique([salonId, channel, conversationKey], map: "uq_handover_alert_salon_channel_key")
   @@index([state, updatedAt], map: "idx_handover_alert_state_updated")
@@ -1705,6 +1778,17 @@ enum ImportCommitStatus {
   FAILED
 }
 
+enum ImportExtractionMode {
+  PRODUCTION
+  BENCHMARK
+}
+
+enum ImportExtractionRunStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
 enum WaitlistEntrySource {
   CUSTOMER
   ADMIN
@@ -1743,6 +1827,7 @@ enum AppointmentSource {
   CUSTOMER
   ADMIN
   AUTOMATION
+  IMPORT
 }
 
 enum AppointmentMessageEventType {

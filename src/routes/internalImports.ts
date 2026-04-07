@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { processImportOcrCallback } from '../services/importWizard.js';
+import { getImportAiConfig, processImportOcrCallback } from '../services/importWizard.js';
 
 const router = Router();
 
@@ -18,6 +18,9 @@ router.post('/:batchId/ocr-callback', async (req: any, res: any) => {
   const batchId = typeof req.params?.batchId === 'string' ? req.params.batchId.trim() : '';
   const sourceFileId = Number(req.body?.sourceFileId || req.body?.fileId);
   const extractionError = typeof req.body?.error === 'string' ? req.body.error.trim() : null;
+  const mode = typeof req.body?.mode === 'string' ? req.body.mode.trim() : null;
+  const audit = req.body?.audit && typeof req.body.audit === 'object' ? req.body.audit : null;
+  const candidates = Array.isArray(req.body?.candidates) ? req.body.candidates : [];
   const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
 
   if (!batchId || !Number.isInteger(sourceFileId) || sourceFileId <= 0) {
@@ -29,6 +32,9 @@ router.post('/:batchId/ocr-callback', async (req: any, res: any) => {
       batchId,
       sourceFileId,
       extractionError,
+      mode,
+      audit,
+      candidates,
       rows,
     });
     return res.status(200).json(result);
@@ -38,6 +44,20 @@ router.post('/:batchId/ocr-callback', async (req: any, res: any) => {
       return res.status(404).json({ message: 'Source file not found.' });
     }
     console.error('Internal import OCR callback error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.get('/ai-config/active', async (req: any, res: any) => {
+  if (!isInternalAuthorized(req)) {
+    return res.status(401).json({ message: 'Unauthorized.' });
+  }
+
+  try {
+    const result = await getImportAiConfig();
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('Internal import ai config get error:', error);
     return res.status(500).json({ message: 'Internal server error.' });
   }
 });

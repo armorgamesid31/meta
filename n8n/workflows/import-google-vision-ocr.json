@@ -1,13 +1,7 @@
 {
-  "name": "Kedy Import OCR (Google Vision)",
+  "name": "Kedy Import OCR (Google Vision + OpenRouter)",
   "nodes": [
     {
-      "parameters": {
-        "httpMethod": "POST",
-        "path": "import-ocr",
-        "responseMode": "responseNode",
-        "options": {}
-      },
       "id": "webhook-trigger",
       "name": "Webhook Trigger",
       "type": "n8n-nodes-base.webhook",
@@ -16,24 +10,38 @@
         -1120,
         -120
       ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "import-ocr",
+        "responseMode": "responseNode",
+        "options": {}
+      },
       "webhookId": "kedy-import-ocr"
     },
     {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ { \"ok\": true, \"received\": true } }}",
-        "options": {}
-      },
       "id": "webhook-response",
       "name": "Webhook Response",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
       "position": [
-        680,
+        720,
         -120
-      ]
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"ok\": true, \"received\": true } }}",
+        "options": {}
+      }
     },
     {
+      "id": "prepare-input",
+      "name": "Prepare Input",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -920,
+        -120
+      ],
       "parameters": {
         "assignments": {
           "assignments": [
@@ -54,21 +62,45 @@
               "name": "fileUrl",
               "value": "={{ $json.body.fileUrl || $json.fileUrl }}",
               "type": "string"
+            },
+            {
+              "id": "objectKey",
+              "name": "objectKey",
+              "value": "={{ $json.body.objectKey || $json.objectKey || \"\" }}",
+              "type": "string"
+            },
+            {
+              "id": "sourceType",
+              "name": "sourceType",
+              "value": "={{ $json.body.sourceType || $json.sourceType || \"\" }}",
+              "type": "string"
+            },
+            {
+              "id": "mode",
+              "name": "mode",
+              "value": "={{ $json.body.mode || $json.mode || \"PRODUCTION\" }}",
+              "type": "string"
+            },
+            {
+              "id": "aiConfig",
+              "name": "aiConfig",
+              "value": "={{ $json.body.aiConfig || $json.aiConfig || {} }}",
+              "type": "object"
             }
           ]
         },
         "options": {}
-      },
-      "id": "prepare-input",
-      "name": "Prepare Input",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.4,
-      "position": [
-        -900,
-        -120
-      ]
+      }
     },
     {
+      "id": "download-file",
+      "name": "Download File",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -720,
+        -120
+      ],
       "parameters": {
         "url": "={{ $json.fileUrl }}",
         "sendHeaders": true,
@@ -83,30 +115,30 @@
             }
           }
         }
-      },
-      "id": "download-file",
-      "name": "Download File",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        -700,
-        -120
-      ]
+      }
     },
     {
-      "parameters": {
-        "jsCode": "const prep = $item(0).$node[\"Prepare Input\"].json;\nconst item = $input.first();\nconst b64 = item.binary?.fileData?.data;\nif (!b64) {\n  return [{ json: { batchId: prep.batchId, sourceFileId: prep.sourceFileId, error: 'file_binary_missing', rows: [] } }];\n}\nreturn [{ json: { batchId: prep.batchId, sourceFileId: prep.sourceFileId, base64Content: b64 } }];"
-      },
       "id": "build-vision-payload",
       "name": "Build Vision Payload",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -500,
+        -520,
         -120
-      ]
+      ],
+      "parameters": {
+        "jsCode": "const prep = $item(0).$node[\"Prepare Input\"].json;\nconst item = $input.first();\nconst b64 = item.binary?.fileData?.data;\nif (!b64) { return [{ json: { batchId: prep.batchId, sourceFileId: prep.sourceFileId, error: \"file_binary_missing\", rows: [], aiConfig: prep.aiConfig || {}, mode: prep.mode || \"PRODUCTION\" } }]; }\nreturn [{ json: { batchId: prep.batchId, sourceFileId: prep.sourceFileId, fileUrl: prep.fileUrl, objectKey: prep.objectKey || null, sourceType: prep.sourceType || null, mode: prep.mode || \"PRODUCTION\", aiConfig: prep.aiConfig || {}, base64Content: b64 } }];"
+      }
     },
     {
+      "id": "vision-ocr",
+      "name": "Vision OCR",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -320,
+        -120
+      ],
       "parameters": {
         "method": "POST",
         "url": "https://vision.googleapis.com/v1/images:annotate",
@@ -117,35 +149,48 @@
         "jsonBody": "={{ { requests: [ { image: { content: $json.base64Content }, features: [ { type: 'DOCUMENT_TEXT_DETECTION' } ] } ] } }}",
         "options": {}
       },
-      "id": "vision-ocr",
-      "name": "Vision OCR",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.3,
-      "position": [
-        -300,
-        -120
-      ],
       "credentials": {
         "googleApi": {
-          "id": "REPLACE_WITH_YOUR_GOOGLE_CREDENTIAL_ID",
-          "name": "Google Service Account"
+          "id": "Lq2VAAoQdGOgiMaf",
+          "name": "Google Service Account account"
         }
       }
     },
     {
-      "parameters": {
-        "jsCode": "const prep = $item(0).$node[\"Prepare Input\"].json;\nconst response = $input.first().json;\n\nlet error = null;\nlet rows = [];\n\ntry {\n  const apiError = response.responses?.[0]?.error;\n  if (apiError) {\n    error = apiError.message || 'vision_api_error';\n  } else {\n    const text = (response.responses?.[0]?.fullTextAnnotation?.text || '').trim();\n    if (!text) {\n      error = 'ocr_empty_text';\n    } else {\n      const lines = text.split('\\n').map((l) => l.trim()).filter(Boolean);\n      rows = lines.map((line, index) => ({\n        rowIndex: index + 1,\n        notesRaw: line,\n        confidence: 0.5\n      }));\n    }\n  }\n} catch (e) {\n  error = e.message || 'ocr_parse_exception';\n}\n\nreturn [{ json: { batchId: prep.batchId, sourceFileId: prep.sourceFileId, rows, error } }];"
-      },
-      "id": "normalize-rows",
-      "name": "Normalize Rows",
+      "id": "extract-ocr-text",
+      "name": "Extract OCR Text",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -100,
+        -120,
         -120
-      ]
+      ],
+      "parameters": {
+        "jsCode": "const prep = $item(0).$node[\"Prepare Input\"].json;\nconst response = $input.first().json;\nlet error = null;\nlet ocrRawText = \"\";\ntry {\n  const apiError = response.responses?.[0]?.error;\n  if (apiError) { error = apiError.message || \"vision_api_error\"; }\n  else { ocrRawText = (response.responses?.[0]?.fullTextAnnotation?.text || response.responses?.[0]?.textAnnotations?.[0]?.description || \"\").trim(); if (!ocrRawText) error = \"ocr_empty_text\"; }\n} catch (err) { error = err?.message || \"ocr_parse_exception\"; }\nreturn [{ json: { batchId: prep.batchId, sourceFileId: prep.sourceFileId, fileUrl: prep.fileUrl, objectKey: prep.objectKey || null, sourceType: prep.sourceType || null, mode: prep.mode || \"PRODUCTION\", aiConfig: prep.aiConfig || {}, ocrRawText, error } }];"
+      }
     },
     {
+      "id": "run-production-llm",
+      "name": "Run Production LLM",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        80,
+        -120
+      ],
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst activeConfig = input.aiConfig && typeof input.aiConfig === \"object\" ? input.aiConfig : {};\nconst selectedPromptVersion = (typeof activeConfig.promptVersion === \"string\" && activeConfig.promptVersion.trim()) || \"prod-v1\";\nconst promptEntry = PROMPT_LIBRARY[selectedPromptVersion] || PROMPT_LIBRARY[\"prod-v1\"];\nconst selectedModel = (typeof activeConfig.llmModel === \"string\" && activeConfig.llmModel.trim()) || \"openai/gpt-4o-mini\";\nconst startedAt = Date.now();\n\nconst PROMPT_LIBRARY = {\n  \"prod-v1\": {\n    \"label\": \"Balanced Extractor\",\n    \"systemPrompt\": \"Sen deterministik bir OCR randevu ayrıştırıcısısın. Sadece geçerli JSON üret. Şema tam olarak {\\\"rows\\\":[...]} olmalı. Her row alanları: rowIndex, customerName, customerPhoneRaw, appointmentDate, startTime, endTime, durationMinutes, serviceNameRaw, staffNameRaw, priceRaw, notesRaw, confidence. Türkçe karakterleri koru. Müşteri ismini okunabilir olacak şekilde düzeltebilirsin ama emin değilsen OCR haline yakın kal. Hizmet adlarını mantıklı biçimde normalize et. Kalıcı Oje, Tüm Vücut Lazer, Kaş Alımı, Lazer, Ağda, Pedikür, Manikür, Jel Güçlendirme gibi normalize et. Hatırlat, geldi, iptal, ödedi, aransın gibi notları notesRaw alanına taşı. Birden fazla hizmet varsa virgülle ayır. Saatleri HH:MM formatına çevir. Personel adı açıkça yoksa staffNameRaw null olsun. Satır uydurma, komşu satırdan hizmet taşıma, telefon uydurma yapma.\"\n  },\n  \"prod-v2\": {\n    \"label\": \"Conservative Extractor\",\n    \"systemPrompt\": \"Sen çok konservatif çalışan bir OCR randevu ayrıştırıcısısın. Sadece JSON üret: {\\\"rows\\\":[...]}. Emin olmadığın hiçbir değeri tahmin etme; null bırak. Hizmeti yalnızca güçlü sinyal varsa normalize et. TV lazer = Tüm Vücut Lazer. kaş, kas, kaş- = Kaş Alımı. kal je, kalıcı oje = Kalıcı Oje. ağda varyasyonları = Ağda. lazer, lezer, lover, lace = Lazer. pedikur = Pedikür. manikur = Manikür. jel güçlendirme varyasyonlarını Jel Güçlendirme yap. Hatırlat ve benzeri notlar notesRaw alanına gitmeli. serviceNameRaw alanına not veya kişi unvanı koyma. Çıktıda sadece geçerli JSON olsun.\"\n  },\n  \"prod-v3\": {\n    \"label\": \"Line Grouping Extractor\",\n    \"systemPrompt\": \"Sen el yazısı salon defterlerinden randevu çıkaran bir ayrıştırıcısın. Önce zamanı tespit et, sonra o zamanın altındaki yakın OCR parçalarını aynı randevuda grupla. Sonraki saat başladığında yeni randevu başlar. Çıktı sadece JSON olmalı: {\\\"rows\\\":[...]}. customerName müşterinin adı olmalı. serviceNameRaw hizmetlerin Türkçe normalize edilmiş gösterimi olmalı. staffNameRaw yalnızca gerçekten yazıyorsa dolu olmalı. Telefonu görüldüğü gibi koru; sadece bariz boşluk gürültüsünü temizleyebilirsin. Saat formatını HH:MM yap. Kaş ile ilgili ifadeleri Kaş Alımı, TV lazeri Tüm Vücut Lazer olarak normalize et. Birden fazla hizmeti virgülle ayır. Notları notesRaw alanına taşı. Hiçbir açıklama ekleme.\"\n  },\n  \"prod-v4\": {\n    \"label\": \"Turkish Fidelity Extractor\",\n    \"systemPrompt\": \"Sen Türkiye salonları için optimize edilmiş bir OCR post-processor modelisin. Türkçe karakterleri koru: Ç, Ğ, İ, Ö, Ş, Ü ve küçük halleri. Çıktı yalnızca JSON olacak: {\\\"rows\\\":[...]}. Her randevu satırı için müşteri adı, telefon, tarih, saat, hizmet, not alanlarını çıkar. E2gi gibi OCR hatalarını Ezgi gibi okuyorsan düzeltebilirsin; ancak emin değilsen olduğu gibi bırak. Hanım, bey, hnm gibi unvanları customerName içinde tutabilirsin, serviceNameRaw içine taşıma. Demet hanım gibi isimlerde hanım kelimesini hizmet gibi yorumlama. TV lazeri tek hizmet olarak Tüm Vücut Lazer yap; ayrıca ekstra Lazer ekleme. Hatırlat gibi operasyon notlarını notesRaw alanına koy. JSON dışında tek karakter bile üretme.\"\n  },\n  \"prod-v5\": {\n    \"label\": \"Strict JSON Extractor\",\n    \"systemPrompt\": \"Deterministik çalış. Yalnızca geçerli JSON üret: {\\\"rows\\\":[...]}. Her row alanı şu sırayla bulunmalı: rowIndex, customerName, customerPhoneRaw, appointmentDate, startTime, endTime, durationMinutes, serviceNameRaw, staffNameRaw, priceRaw, notesRaw, confidence. Boş alanlara null yaz. Telefon uydurma yok, saat uydurma yok, satır uydurma yok. Tek bir randevuyu başka randevu ile birleştirme. Service normalization sözlüğü: Kalıcı Oje, Tüm Vücut Lazer, Kaş Alımı, Lazer, Ağda, Pedikür, Manikür, Jel Güçlendirme. NotesRaw için örnek notlar: hatırlat, geldi, iptal, ödedi, aransın. Türkçe karakterleri koru. JSON dışında hiçbir şey yazma.\"\n  }\n};\nfunction t(v){return typeof v==='string'?v.trim():''}\nfunction nt(v){const x=t(v);return x||null}\nfunction nTime(v){const x=t(v);if(!x)return null;let m=x.match(/^(\\d{1,2})[:.](\\d{2})$/);if(m){const h=+m[1],mm=+m[2];if(h>=0&&h<=23&&mm>=0&&mm<=59)return String(h).padStart(2,'0')+':'+String(mm).padStart(2,'0')}m=x.match(/^(\\d{2})(\\d{2})$/);if(m){const h=+m[1],mm=+m[2];if(h>=0&&h<=23&&mm>=0&&mm<=59)return String(h).padStart(2,'0')+':'+String(mm).padStart(2,'0')}return null}\nfunction nDate(v){const x=t(v);if(!x)return null;let m=x.match(/^(\\d{1,2})[./-](\\d{1,2})[./-](\\d{2,4})$/);if(m){let y=+m[3];if(y<100)y+=2000;return String(m[1]).padStart(2,'0')+'.'+String(m[2]).padStart(2,'0')+'.'+String(y).padStart(4,'0')}if(/^(\\d{4})-(\\d{2})-(\\d{2})$/.test(x))return x;return null}\nfunction nNum(v){if(v===null||v===undefined||v==='')return null;const n=Number(String(v).replace(',', '.'));return Number.isFinite(n)?n:null}\nfunction content(j){const m=j?.choices?.[0]?.message?.content;if(typeof m==='string')return m.trim();if(Array.isArray(m))return m.map((p)=>typeof p==='string'?p:(p&&typeof p.text==='string'?p.text:'')).join('\\n').trim();return ''}\nfunction extractJson(raw){const s=t(raw);if(!s)throw new Error('llm_empty_output');try{return JSON.parse(s)}catch(e){const fence=String.fromCharCode(96).repeat(3);const fenced=s.match(new RegExp(fence+'(?:json)?\\\\s*([\\\\s\\\\S]*?)'+fence,'i'));if(fenced)return JSON.parse(fenced[1].trim());const a=s.indexOf('{');const b=s.lastIndexOf('}');if(a!==-1&&b>a)return JSON.parse(s.slice(a,b+1));throw e}}\nfunction normRows(payload){const rows=Array.isArray(payload)?payload:(Array.isArray(payload?.rows)?payload.rows:[]);return rows.map((r,i)=>({rowIndex:Number(r?.rowIndex)>0?Number(r.rowIndex):i+1,customerName:nt(r?.customerName),customerPhoneRaw:nt(r?.customerPhoneRaw),appointmentDate:nDate(r?.appointmentDate||r?.date),startTime:nTime(r?.startTime||r?.time),endTime:nTime(r?.endTime),durationMinutes:nNum(r?.durationMinutes),serviceNameRaw:nt(r?.serviceNameRaw||r?.servicesNormalized||r?.service),staffNameRaw:nt(r?.staffNameRaw||r?.staff),priceRaw:nNum(r?.priceRaw),notesRaw:nt(r?.notesRaw||r?.note),confidence:(()=>{const v=Number(r?.confidence);if(!Number.isFinite(v))return 0.5;return Math.max(0,Math.min(1,v))})()})).filter((r)=>r.appointmentDate||r.startTime||r.customerName||r.serviceNameRaw||r.notesRaw)}\nfunction userPrompt(ocrRawText){return ['Aşağıdaki OCR metnini verilen JSON şemasına göre ayrıştır.','Sadece JSON üret.','OCR METNI:',ocrRawText].join('\\n\\n')}\nasync function callOpenRouter(input){const apiKey=String(process.env.OPENROUTER_API_KEY||'').trim();if(!apiKey)throw new Error('openrouter_api_key_missing');const res=await fetch('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+apiKey,'http-referer':String(process.env.OPENROUTER_REFERER||'https://app.berkai.shop'),'x-title':'Kedy Import OCR'},body:JSON.stringify({model:input.model,temperature:0,max_tokens:4000,messages:[{role:'system',content:input.systemPrompt},{role:'user',content:userPrompt(input.ocrRawText)}]})});const txt=await res.text();let json=null;try{json=txt?JSON.parse(txt):null}catch(e){json=null}if(!res.ok)throw new Error('openrouter_http_'+res.status+':'+(json?.error?.message||txt||'request_failed'));const rawOutputText=content(json);const parsedRows=normRows(extractJson(rawOutputText));return {provider:'openrouter',model:input.model,rawOutputText,parsedRows}}\n\nif (input.error) { return [{ json: { ...input, rows: [], candidates: [], audit: { ocrProvider: \"google-vision\", ocrModel: \"DOCUMENT_TEXT_DETECTION\", ocrRawText: input.ocrRawText || \"\", activeConfigSnapshot: activeConfig, metrics: { durationMs: Date.now() - startedAt, candidateCount: 0 } } } }]; }\ntry {\n  const result = await callOpenRouter({ model: selectedModel, systemPrompt: promptEntry.systemPrompt, ocrRawText: input.ocrRawText || \"\" });\n  const promptLabel = (typeof activeConfig.promptLabel === \"string\" && activeConfig.promptLabel.trim()) || promptEntry.label;\n  const candidate = { provider: result.provider, model: result.model, promptVersion: selectedPromptVersion, promptLabel, rawOutputText: result.rawOutputText, parsedRows: result.parsedRows, isSelected: true };\n  return [{ json: { ...input, rows: result.parsedRows, candidates: [candidate], audit: { ocrProvider: \"google-vision\", ocrModel: \"DOCUMENT_TEXT_DETECTION\", ocrRawText: input.ocrRawText || \"\", activeConfigSnapshot: { ...activeConfig, promptVersion: selectedPromptVersion, promptLabel, llmProvider: result.provider, llmModel: result.model }, rawOutputText: result.rawOutputText, metrics: { durationMs: Date.now() - startedAt, candidateCount: 1, rowCount: result.parsedRows.length } }, error: null } }];\n} catch (err) {\n  return [{ json: { ...input, rows: [], candidates: [], audit: { ocrProvider: \"google-vision\", ocrModel: \"DOCUMENT_TEXT_DETECTION\", ocrRawText: input.ocrRawText || \"\", activeConfigSnapshot: { ...activeConfig, promptVersion: selectedPromptVersion, promptLabel: promptEntry.label, llmProvider: \"openrouter\", llmModel: selectedModel }, metrics: { durationMs: Date.now() - startedAt, candidateCount: 0 } }, error: err?.message || \"llm_request_failed\" } }];\n}"
+      }
+    },
+    {
+      "id": "has-error",
+      "name": "Has Error?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        320,
+        -120
+      ],
       "parameters": {
         "conditions": {
           "options": {
@@ -155,7 +200,7 @@
           },
           "conditions": [
             {
-              "id": "has-error-condition",
+              "id": "has-error-err",
               "leftValue": "={{ $json.error }}",
               "rightValue": "",
               "operator": {
@@ -167,69 +212,61 @@
           "combinator": "and"
         },
         "options": {}
-      },
-      "id": "has-error",
-      "name": "Has Error?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
-      "position": [
-        100,
-        -120
-      ]
+      }
     },
     {
-      "parameters": {
-        "method": "POST",
-        "url": "={{ ($env.BACKEND_BASE_URL || 'https://app.berkai.shop') + '/api/internal/imports/' + $json.batchId + '/ocr-callback' }}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "x-internal-api-key",
-              "value": "={{ $env.INTERNAL_API_KEY }}"
-            }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ { sourceFileId: $json.sourceFileId, rows: $json.rows } }}",
-        "options": {}
-      },
       "id": "callback-success",
       "name": "Callback Success",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        360,
+        540,
         -240
-      ]
-    },
-    {
+      ],
       "parameters": {
         "method": "POST",
-        "url": "={{ ($env.BACKEND_BASE_URL || 'https://app.berkai.shop') + '/api/internal/imports/' + $json.batchId + '/ocr-callback' }}",
+        "url": "={{ ($env.IMPORTS_INTERNAL_BASE_URL || 'https://app.berkai.shop') + '/api/internal/imports/' + $json.batchId + '/ocr-callback' }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
             {
               "name": "x-internal-api-key",
-              "value": "={{ $env.INTERNAL_API_KEY }}"
+              "value": "={{ $env.N8N_INTERNAL_API_KEY || $env.INTERNAL_API_KEY || '' }}"
             }
           ]
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { sourceFileId: $json.sourceFileId, error: $json.error } }}",
+        "jsonBody": "={{ { mode: $json.mode || 'PRODUCTION', sourceFileId: $json.sourceFileId, rows: $json.rows || [], candidates: $json.candidates || [], audit: $json.audit || null } }}",
         "options": {}
-      },
+      }
+    },
+    {
       "id": "callback-error",
       "name": "Callback Error",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        360,
+        540,
         0
-      ]
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.IMPORTS_INTERNAL_BASE_URL || 'https://app.berkai.shop') + '/api/internal/imports/' + $json.batchId + '/ocr-callback' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-internal-api-key",
+              "value": "={{ $env.N8N_INTERNAL_API_KEY || $env.INTERNAL_API_KEY || '' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { mode: $json.mode || 'PRODUCTION', sourceFileId: $json.sourceFileId, error: $json.error, audit: $json.audit || null, candidates: $json.candidates || [] } }}",
+        "options": {}
+      }
     }
   ],
   "connections": {
@@ -281,14 +318,25 @@
       "main": [
         [
           {
-            "node": "Normalize Rows",
+            "node": "Extract OCR Text",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Normalize Rows": {
+    "Extract OCR Text": {
+      "main": [
+        [
+          {
+            "node": "Run Production LLM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Production LLM": {
       "main": [
         [
           {
