@@ -4,10 +4,15 @@ import {
   completeImportSourceFile,
   createImportBatch,
   createImportFilePresign,
+  getImportAiConfig,
   getImportBatchState,
+  getImportBenchmarkRuns,
   getImportPreview,
   getImportReport,
   saveImportMappingDecisions,
+  selectImportBenchmarkCandidate,
+  triggerImportBenchmarkForFile,
+  upsertImportAiConfig,
 } from '../services/importWizard.js';
 
 const router = Router();
@@ -25,6 +30,42 @@ function getAuth(req: any, res: any): { salonId: number; userId: number } | null
 function asTrimmed(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
+
+router.get('/ai-config', async (req: any, res: any) => {
+  const auth = getAuth(req, res);
+  if (!auth) return;
+
+  try {
+    const result = await getImportAiConfig();
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('Admin import ai config get error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.put('/ai-config', async (req: any, res: any) => {
+  const auth = getAuth(req, res);
+  if (!auth) return;
+
+  try {
+    const config = await upsertImportAiConfig({
+      userId: auth.userId,
+      ocrProvider: asTrimmed(req.body?.ocrProvider),
+      ocrModel: asTrimmed(req.body?.ocrModel) || null,
+      llmProvider: asTrimmed(req.body?.llmProvider),
+      llmModel: asTrimmed(req.body?.llmModel),
+      promptVersion: asTrimmed(req.body?.promptVersion),
+      promptLabel: asTrimmed(req.body?.promptLabel) || null,
+      outputContractVersion: asTrimmed(req.body?.outputContractVersion),
+      notesJson: req.body?.notesJson || null,
+    });
+    return res.status(200).json({ config });
+  } catch (error) {
+    console.error('Admin import ai config put error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
 
 router.post('/', async (req: any, res: any) => {
   const auth = getAuth(req, res);
@@ -165,6 +206,88 @@ router.get('/:batchId/preview', async (req: any, res: any) => {
       return res.status(404).json({ message: 'Import batch not found.' });
     }
     console.error('Admin import preview error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.get('/:batchId/files/:fileId/benchmark', async (req: any, res: any) => {
+  const auth = getAuth(req, res);
+  if (!auth) return;
+
+  const batchId = asTrimmed(req.params.batchId);
+  const fileId = Number(req.params.fileId);
+  if (!batchId || !Number.isInteger(fileId) || fileId <= 0) {
+    return res.status(400).json({ message: 'batchId and valid fileId are required.' });
+  }
+
+  try {
+    const runs = await getImportBenchmarkRuns({
+      salonId: auth.salonId,
+      batchId,
+      sourceFileId: fileId,
+    });
+    return res.status(200).json({ runs });
+  } catch (error: any) {
+    if (/source_file_not_found/.test(error?.message || '')) {
+      return res.status(404).json({ message: 'Source file not found.' });
+    }
+    console.error('Admin import benchmark runs error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.post('/:batchId/files/:fileId/benchmark/trigger', async (req: any, res: any) => {
+  const auth = getAuth(req, res);
+  if (!auth) return;
+
+  const batchId = asTrimmed(req.params.batchId);
+  const fileId = Number(req.params.fileId);
+  if (!batchId || !Number.isInteger(fileId) || fileId <= 0) {
+    return res.status(400).json({ message: 'batchId and valid fileId are required.' });
+  }
+
+  try {
+    const result = await triggerImportBenchmarkForFile({
+      salonId: auth.salonId,
+      batchId,
+      sourceFileId: fileId,
+    });
+    return res.status(200).json(result);
+  } catch (error: any) {
+    const message = error?.message || 'Internal server error.';
+    if (/source_file_not_found/.test(message)) {
+      return res.status(404).json({ message: 'Source file not found.' });
+    }
+    if (/benchmark_requires_ocr_source/.test(message)) {
+      return res.status(409).json({ message: 'Benchmark OCR is only available for image/pdf files.' });
+    }
+    console.error('Admin import benchmark trigger error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.post('/benchmark/candidates/:candidateId/select', async (req: any, res: any) => {
+  const auth = getAuth(req, res);
+  if (!auth) return;
+
+  const candidateId = Number(req.params.candidateId);
+  if (!Number.isInteger(candidateId) || candidateId <= 0) {
+    return res.status(400).json({ message: 'Valid candidateId is required.' });
+  }
+
+  try {
+    const result = await selectImportBenchmarkCandidate({
+      salonId: auth.salonId,
+      userId: auth.userId,
+      candidateId,
+      activateConfig: req.body?.activateConfig !== false,
+    });
+    return res.status(200).json(result);
+  } catch (error: any) {
+    if (/candidate_not_found/.test(error?.message || '')) {
+      return res.status(404).json({ message: 'Benchmark candidate not found.' });
+    }
+    console.error('Admin import benchmark candidate select error:', error);
     return res.status(500).json({ message: 'Internal server error.' });
   }
 });

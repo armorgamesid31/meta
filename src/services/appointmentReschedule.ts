@@ -488,7 +488,12 @@ export async function commitAppointmentReschedule(params: RescheduleCommitParams
         effectivePreferenceMode === 'SPECIFIC'
           ? item.selectedStaffId
           : null;
-      const safeSource: AppointmentSource = oldAppointment.source === 'CUSTOMER' ? 'CUSTOMER' : 'ADMIN';
+      const safeSource: AppointmentSource =
+        oldAppointment.source === 'CUSTOMER'
+          ? 'CUSTOMER'
+          : oldAppointment.source === 'IMPORT'
+            ? ('IMPORT' as AppointmentSource)
+            : 'ADMIN';
 
       const created = (await tx.appointment.create({
         data: {
