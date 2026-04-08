@@ -75,7 +75,7 @@
             {
               "id": "benchmarkReferenceText",
               "name": "benchmarkReferenceText",
-              "value": "={{ $json.body.benchmarkReferenceText || $json.body.referenceText || $json.body.aiConfig?.benchmarkReferenceText || $json.body.aiConfig?.notesJson?.benchmarkReferenceText || $json.body.aiConfig?.notesJson?.referenceText || $json.benchmarkReferenceText || $json.referenceText || $json.aiConfig?.benchmarkReferenceText || $json.aiConfig?.notesJson?.benchmarkReferenceText || $json.aiConfig?.notesJson?.referenceText || \"\" }}",
+              "value": "={{ \"15.11.2025 /n cumartesi /n 10:00 Sinem Kalıcı Oje (539-363-94-76) /n 11:30 Songül Hanım Lazer TV (Kaş-) /n 12:00 Nihal Ezgi Arslan Jel Güçlendirme (05380558462) /n 14:00 Neslihan Hanım Pedikür (5312683382) /n 15:00 Gülşah Hanım TV Lazer 16:00 Aydan Pedikür - Manikür - Ağda 16:00 Demet Hanım TV Lazer (hatırlat) /n 18:30 Sümeyye Hanım TV Lazer + Kaş\" }}",
               "type": "string"
             }
           ]
