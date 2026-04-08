@@ -82,6 +82,15 @@ type ImportExtractionCandidateInput = {
   isSelected?: unknown;
 };
 
+type NormalizedEvalRow = {
+  rowKey: string;
+  appointmentDate: string | null;
+  startTime: string | null;
+  customerNameKey: string | null;
+  services: string[];
+  noteTokens: string[];
+};
+
 type ImportExtractionAuditInput = {
   ocrProvider?: unknown;
   ocrModel?: unknown;
@@ -224,54 +233,277 @@ function countHallucinatedServices(rawText: string, rows: Array<Record<string, u
   return penalty;
 }
 
+function normalizeTextKey(value: unknown): string {
+  return normalizeText(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function normalizeDateLoose(value: unknown): string | null {
+  const text = normalizeText(value);
+  if (!text) return null;
+  const dmy = text.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/);
+  if (dmy) {
+    const dd = Number(dmy[1]);
+    const mm = Number(dmy[2]);
+    let yyyy = Number(dmy[3]);
+    if (yyyy < 100) yyyy += 2000;
+    if (dd < 1 || dd > 31 || mm < 1 || mm > 12) return null;
+    return `${String(dd).padStart(2, '0')}.${String(mm).padStart(2, '0')}.${String(yyyy).padStart(4, '0')}`;
+  }
+  const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) return `${iso[3]}.${iso[2]}.${iso[1]}`;
+  return null;
+}
+
+function normalizeTimeLoose(value: unknown): string | null {
+  const text = normalizeText(value);
+  if (!text) return null;
+  const hhmm = text.match(/^(\d{1,2})[:.](\d{2})$/);
+  if (hhmm) {
+    const h = Number(hhmm[1]);
+    const m = Number(hhmm[2]);
+    if (h >= 0 && h <= 23 && m >= 0 && m <= 59) return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  }
+  const compact = text.match(/^(\d{2})(\d{2})$/);
+  if (compact) {
+    const h = Number(compact[1]);
+    const m = Number(compact[2]);
+    if (h >= 0 && h <= 23 && m >= 0 && m <= 59) return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  }
+  return null;
+}
+
+function tokenizeServices(value: unknown): string[] {
+  const key = normalizeTextKey(value);
+  if (!key) return [];
+  const found = new Set<string>();
+  if (/(tum vucut lazer|tv lazer|tv|t v)/.test(key)) found.add('tum vucut lazer');
+  if (/(kas alimi|kas|kos)/.test(key)) found.add('kas alimi');
+  if (/(kalici oje|kal oje|kal je)/.test(key)) found.add('kalici oje');
+  if (/jel guclendirme/.test(key)) found.add('jel guclendirme');
+  if (/pedikur/.test(key)) found.add('pedikur');
+  if (/manikur/.test(key)) found.add('manikur');
+  if (/agda/.test(key)) found.add('agda');
+  return Array.from(found);
+}
+
+function tokenizeNotes(value: unknown): string[] {
+  const key = normalizeTextKey(value);
+  if (!key) return [];
+  const out = new Set<string>();
+  if (/hatirlat/.test(key)) out.add('hatirlat');
+  if (/geldi/.test(key)) out.add('geldi');
+  if (/iptal/.test(key)) out.add('iptal');
+  if (/(odedi|odeme|odendi)/.test(key)) out.add('odedi');
+  if (/aransin/.test(key)) out.add('aransin');
+  return Array.from(out);
+}
+
+function buildRowKey(date: string | null, time: string | null, ordinalByTime: number): string {
+  return `${date || '-'}|${time || '-'}|${ordinalByTime}`;
+}
+
+function rowsFromStructuredOutput(rows: Array<Record<string, unknown>>): NormalizedEvalRow[] {
+  const timeCounters = new Map<string, number>();
+  const out: NormalizedEvalRow[] = [];
+  for (const row of rows) {
+    const appointmentDate = normalizeDateLoose(row.appointmentDate ?? row.date ?? null);
+    const startTime = normalizeTimeLoose(row.startTime ?? row.time ?? row.hour ?? null);
+    const counterKey = startTime || '-';
+    const ordinal = (timeCounters.get(counterKey) || 0) + 1;
+    timeCounters.set(counterKey, ordinal);
+    out.push({
+      rowKey: buildRowKey(appointmentDate, startTime, ordinal),
+      appointmentDate,
+      startTime,
+      customerNameKey: normalizeTextKey(row.customerName ?? row.name ?? row.customer ?? null) || null,
+      services: tokenizeServices(row.serviceNameRaw ?? row.servicesNormalized ?? row.service ?? null),
+      noteTokens: tokenizeNotes(row.notesRaw ?? row.note ?? row.notes ?? null),
+    });
+  }
+  return out;
+}
+
+function splitByTimeSegments(rawLine: string): Array<{ time: string | null; rest: string }> {
+  const line = rawLine.trim();
+  if (!line) return [];
+  const normalized = line.replace(/(\d{2})\.(\d{2})(?=\s|$)/g, '$1:$2');
+  const matches = [...normalized.matchAll(/(?:^|\s)(\d{1,2}:\d{2}|\d{4})(?=\s|$)/g)];
+  if (matches.length === 0) return [{ time: null, rest: normalized.trim() }];
+  const out: Array<{ time: string | null; rest: string }> = [];
+  for (let i = 0; i < matches.length; i += 1) {
+    const m = matches[i]!;
+    const token = m[1] || '';
+    const start = m.index ?? 0;
+    const tokenStart = start + m[0].length - token.length;
+    const end = i + 1 < matches.length ? (matches[i + 1]!.index ?? normalized.length) : normalized.length;
+    const rest = normalized.slice(tokenStart + token.length, end).trim();
+    out.push({ time: normalizeTimeLoose(token), rest });
+  }
+  return out;
+}
+
+function rowsFromReferenceLikeText(rawText: string): NormalizedEvalRow[] {
+  const text = rawText.replace(/\/n/gi, '\n');
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const out: NormalizedEvalRow[] = [];
+  let activeDate: string | null = null;
+  const timeCounters = new Map<string, number>();
+  for (const line of lines) {
+    const dateInLine = normalizeDateLoose(line);
+    if (dateInLine) {
+      activeDate = dateInLine;
+      continue;
+    }
+    const segments = splitByTimeSegments(line);
+    for (const segment of segments) {
+      if (!segment.time) continue;
+      const ordinal = (timeCounters.get(segment.time) || 0) + 1;
+      timeCounters.set(segment.time, ordinal);
+      const customerName = segment.rest
+        .replace(/\(?\+?\d[\d\s\-()]{8,}\)?/g, ' ')
+        .replace(/(tum vucut lazer|tv lazer|tv|kas|kos|kalici oje|kal je|pedikur|manikur|agda|jel guclendirme)/gi, ' ')
+        .replace(/(hatirlat|geldi|iptal|odedi|aransin)/gi, ' ')
+        .replace(/[+\-]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      out.push({
+        rowKey: buildRowKey(activeDate, segment.time, ordinal),
+        appointmentDate: activeDate,
+        startTime: segment.time,
+        customerNameKey: normalizeTextKey(customerName) || null,
+        services: tokenizeServices(segment.rest),
+        noteTokens: tokenizeNotes(segment.rest),
+      });
+    }
+  }
+  return out;
+}
+
+function compareRows(
+  referenceRows: NormalizedEvalRow[],
+  targetRows: NormalizedEvalRow[],
+): { totalFieldChecks: number; errorCount: number; rowCoverage: number } {
+  const targetMap = new Map<string, NormalizedEvalRow>();
+  for (const row of targetRows) targetMap.set(row.rowKey, row);
+
+  let totalFieldChecks = 0;
+  let errorCount = 0;
+  let rowMatched = 0;
+
+  for (const ref of referenceRows) {
+    const got = targetMap.get(ref.rowKey);
+    if (got) rowMatched += 1;
+    if (ref.customerNameKey) {
+      totalFieldChecks += 1;
+      if (!got?.customerNameKey || got.customerNameKey !== ref.customerNameKey) errorCount += 1;
+    }
+    if (ref.services.length > 0) {
+      totalFieldChecks += 1;
+      const gotSet = new Set(got?.services || []);
+      if (!ref.services.every((service) => gotSet.has(service))) errorCount += 1;
+    }
+    if (ref.noteTokens.length > 0) {
+      totalFieldChecks += 1;
+      const gotSet = new Set(got?.noteTokens || []);
+      if (!ref.noteTokens.every((token) => gotSet.has(token))) errorCount += 1;
+    }
+  }
+  return {
+    totalFieldChecks,
+    errorCount,
+    rowCoverage: referenceRows.length > 0 ? rowMatched / referenceRows.length : 0,
+  };
+}
+
+function extractBenchmarkReferenceText(auditRecord: Record<string, unknown>): string {
+  const direct = normalizeText(auditRecord.benchmarkReferenceText);
+  if (direct) return direct;
+  const metrics = coerceRecord(auditRecord.metrics);
+  const metricsText = normalizeText(metrics?.benchmarkReferenceText || metrics?.referenceText);
+  if (metricsText) return metricsText;
+  const activeConfig = coerceRecord(auditRecord.activeConfigSnapshot);
+  const activeText = normalizeText(activeConfig?.benchmarkReferenceText);
+  if (activeText) return activeText;
+  const notesJson = coerceRecord(activeConfig?.notesJson);
+  return normalizeText(notesJson?.benchmarkReferenceText || notesJson?.referenceText);
+}
+
+function pickBenchmarkReferenceText(input: {
+  explicitBenchmarkReferenceText?: unknown;
+  explicitReferenceText?: unknown;
+  auditRecord: Record<string, unknown>;
+}): string {
+  const explicitBenchmark = normalizeText(input.explicitBenchmarkReferenceText);
+  if (explicitBenchmark) return explicitBenchmark;
+  const explicitLegacy = normalizeText(input.explicitReferenceText);
+  if (explicitLegacy) return explicitLegacy;
+  return extractBenchmarkReferenceText(input.auditRecord);
+}
+
 function scoreExtractionCandidate(input: {
   rawOutputText: string;
   parsedRows: Array<Record<string, unknown>>;
   ocrRawText: string;
+  benchmarkReferenceText?: string;
 }): { total: number; breakdown: Record<string, number> } {
   const outputText = normalizeText(input.rawOutputText);
   const rows = Array.isArray(input.parsedRows) ? input.parsedRows : [];
-  const ocrLines = normalizeText(input.ocrRawText)
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-  const outputLines = outputText
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  const headerOk =
-    outputLines.length > 0 && outputLines[0] === 'date|time|customer_name_raw|services_normalized|phone_raw|note_raw';
-  const bodyLines = Math.max(0, outputLines.length - (headerOk ? 1 : 0));
-  const rowCount = rows.length;
-  const lineDelta = Math.abs(bodyLines - rowCount);
   const malformedTimes = rows.filter((row) => {
     const value = normalizeText(row.startTime ?? row.time);
-    return value && !/^\d{2}:\d{2}$/.test(value);
+    return value && !normalizeTimeLoose(value);
   }).length;
   const invalidDates = rows.filter((row) => {
     const value = normalizeText(row.appointmentDate ?? row.date);
-    return value && !/^\d{2}\.\d{2}\.\d{4}$/.test(value) && !/^\d{4}-\d{2}-\d{2}$/.test(value);
-  }).length;
-  const phoneMismatch = rows.filter((row) => {
-    const phone = normalizeDigitsOnly(String((row.customerPhoneRaw ?? row.phoneRaw) || ''));
-    return Boolean(phone) && !normalizeDigitsOnly(input.ocrRawText).includes(phone);
+    return value && !normalizeDateLoose(value);
   }).length;
   const hallucinatedServices = countHallucinatedServices(input.ocrRawText, rows);
   const noteLeakage = rows.filter((row) => {
-    const services = normalizeNameKey(String(row.servicesNormalized || ''));
+    const services = normalizeNameKey(String(row.servicesNormalized || row.serviceNameRaw || ''));
     return /(hatirlat|geldi|iptal|odedi|ödedi|aransin)/.test(services);
   }).length;
+  const benchmarkReferenceText = normalizeText(input.benchmarkReferenceText);
+  let breakdown: Record<string, number>;
 
-  const breakdown = {
-    format: headerOk ? 25 : 0,
-    rowCount: Math.max(0, 20 - lineDelta * 4),
-    timeFidelity: Math.max(0, 15 - malformedTimes * 4),
-    dateFidelity: Math.max(0, 10 - invalidDates * 3),
-    phoneFidelity: Math.max(0, 10 - phoneMismatch * 3),
-    hallucinationPenalty: Math.max(0, 10 - hallucinatedServices * 2),
-    noteSeparation: Math.max(0, 10 - noteLeakage * 4),
-  };
+  if (benchmarkReferenceText) {
+    const referenceRows = rowsFromReferenceLikeText(benchmarkReferenceText);
+    const ocrRows = rowsFromReferenceLikeText(input.ocrRawText);
+    const llmRows = rowsFromStructuredOutput(rows);
+    const baseline = compareRows(referenceRows, ocrRows);
+    const candidate = compareRows(referenceRows, llmRows);
+    const accuracyPercent =
+      candidate.totalFieldChecks > 0 ? ((candidate.totalFieldChecks - candidate.errorCount) / candidate.totalFieldChecks) * 100 : 0;
+    const correctionRate =
+      baseline.errorCount > 0 ? ((baseline.errorCount - candidate.errorCount) / baseline.errorCount) * 100 : 0;
+    breakdown = {
+      schemaValidity: Math.max(0, 20 - malformedTimes * 4 - invalidDates * 3),
+      referenceAccuracy: Math.max(0, Math.min(50, (accuracyPercent / 100) * 50)),
+      errorRecovery: Math.max(0, Math.min(25, (Math.max(0, correctionRate) / 100) * 25)),
+      rowCoverage: Math.max(0, Math.min(5, candidate.rowCoverage * 5)),
+      hallucinationGuard: Math.max(0, 5 - hallucinatedServices),
+      ocrErrorCount: baseline.errorCount,
+      llmErrorCount: candidate.errorCount,
+      correctedErrorCount: Math.max(0, baseline.errorCount - candidate.errorCount),
+      correctionRatePercent: Math.max(0, correctionRate),
+      accuracyPercent: Math.max(0, accuracyPercent),
+    };
+  } else {
+    breakdown = {
+      schemaValidity: Math.max(0, 30 - malformedTimes * 5 - invalidDates * 4),
+      rowPresence: Math.min(20, rows.length * 3),
+      outputPresence: outputText ? 10 : 0,
+      hallucinationGuard: Math.max(0, 25 - hallucinatedServices * 3),
+      noteSeparation: Math.max(0, 15 - noteLeakage * 4),
+    };
+  }
   return { total: Object.values(breakdown).reduce((sum, value) => sum + value, 0), breakdown };
 }
 
@@ -344,6 +576,7 @@ async function triggerImportWebhook(input: {
   sourceType: ImportSourceType;
   webhookUrl: string;
   mode: 'PRODUCTION' | 'BENCHMARK';
+  benchmarkReferenceText?: string | null;
 }) {
   if (!IMPORTS_OCR_AUTO_TRIGGER) {
     return { triggered: false, reason: 'ocr_auto_trigger_disabled' as const };
@@ -359,6 +592,16 @@ async function triggerImportWebhook(input: {
   const timeout = setTimeout(() => controller.abort(), IMPORTS_OCR_WEBHOOK_TIMEOUT_MS);
   try {
     const activeConfigSnapshot = await getActiveImportAiConfigSnapshot();
+    const notesJson = asObject(activeConfigSnapshot.notesJson);
+    const defaultReferenceText =
+      normalizeText(notesJson.benchmarkReferenceText) || normalizeText(notesJson.referenceText) || null;
+    const effectiveReferenceText =
+      input.mode === 'BENCHMARK' ? normalizeText(input.benchmarkReferenceText) || defaultReferenceText : null;
+    const enrichedConfig = {
+      ...activeConfigSnapshot,
+      notesJson: effectiveReferenceText ? { ...notesJson, benchmarkReferenceText: effectiveReferenceText } : notesJson,
+      ...(effectiveReferenceText ? { benchmarkReferenceText: effectiveReferenceText } : {}),
+    };
     const response = await fetch(input.webhookUrl, {
       method: 'POST',
       headers: {
@@ -372,7 +615,8 @@ async function triggerImportWebhook(input: {
         objectKey: input.objectKey,
         sourceType: input.sourceType,
         mode: input.mode,
-        aiConfig: activeConfigSnapshot,
+        benchmarkReferenceText: effectiveReferenceText,
+        aiConfig: enrichedConfig,
       }),
       signal: controller.signal,
     });
@@ -1087,6 +1331,7 @@ export async function triggerImportBenchmarkForFile(input: {
   salonId: number;
   batchId: string;
   sourceFileId: number;
+  benchmarkReferenceText?: string | null;
 }) {
   const file = await prisma.importSourceFile.findFirst({
     where: { id: input.sourceFileId, batchId: input.batchId, salonId: input.salonId },
@@ -1105,6 +1350,7 @@ export async function triggerImportBenchmarkForFile(input: {
     sourceType: file.sourceType,
     webhookUrl: IMPORTS_OCR_BENCHMARK_WEBHOOK_URL,
     mode: 'BENCHMARK',
+    benchmarkReferenceText: normalizeText(input.benchmarkReferenceText) || null,
   });
 
   if (!result.triggered) {
@@ -1119,6 +1365,8 @@ export async function processImportOcrCallback(input: {
   sourceFileId: number;
   extractionError?: string | null;
   mode?: string | null;
+  benchmarkReferenceText?: string | null;
+  referenceText?: string | null;
   audit?: ImportExtractionAuditInput | null;
   candidates?: ImportExtractionCandidateInput[];
   rows?: Array<Record<string, unknown>>;
@@ -1131,6 +1379,11 @@ export async function processImportOcrCallback(input: {
 
   const mode = normalizeExtractionMode(input.mode);
   const auditRecord = coerceRecord(input.audit) || {};
+  const benchmarkReferenceText = pickBenchmarkReferenceText({
+    explicitBenchmarkReferenceText: input.benchmarkReferenceText,
+    explicitReferenceText: input.referenceText,
+    auditRecord,
+  });
   const activeConfigSnapshot = normalizeImportAiConfigSnapshot(auditRecord.activeConfigSnapshot);
   const ocrProvider = normalizeText(auditRecord.ocrProvider) || activeConfigSnapshot.ocrProvider;
   const ocrModel = normalizeText(auditRecord.ocrModel) || activeConfigSnapshot.ocrModel;
@@ -1184,8 +1437,8 @@ export async function processImportOcrCallback(input: {
       rawOutputText: normalizeText(candidate.rawOutputText),
       parsedRows,
       ocrRawText,
+      benchmarkReferenceText,
     });
-    const scoreTotalRaw = Number(candidate.scoreTotal);
     return {
       provider: normalizeText(candidate.provider) || activeConfigSnapshot.llmProvider,
       model: normalizeText(candidate.model) || activeConfigSnapshot.llmModel,
@@ -1193,8 +1446,8 @@ export async function processImportOcrCallback(input: {
       promptLabel: normalizeText(candidate.promptLabel) || activeConfigSnapshot.promptLabel,
       rawOutputText: normalizeText(candidate.rawOutputText) || null,
       parsedRows,
-      scoreTotal: Number.isFinite(scoreTotalRaw) ? scoreTotalRaw : scoring.total,
-      scoreBreakdown: coerceRecord(candidate.scoreBreakdown) || scoring.breakdown,
+      scoreTotal: scoring.total,
+      scoreBreakdown: scoring.breakdown,
       explicitSelected: candidate.isSelected === true,
     };
   });
@@ -1204,6 +1457,7 @@ export async function processImportOcrCallback(input: {
       rawOutputText: normalizeText((auditRecord as Record<string, unknown>)?.rawOutputText),
       parsedRows: callbackRows,
       ocrRawText,
+      benchmarkReferenceText,
     });
     normalizedCandidates.push({
       provider: activeConfigSnapshot.llmProvider,

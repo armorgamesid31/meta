@@ -12,11 +12,11 @@
       ],
       "parameters": {
         "httpMethod": "POST",
-        "path": "import-ocr-benchmark",
+        "path": "import-ocr",
         "responseMode": "responseNode",
         "options": {}
       },
-      "webhookId": "kedy-import-ocr-benchmark"
+      "webhookId": "kedy-import-ocr"
     },
     {
       "id": "prepare-input",
@@ -71,6 +71,12 @@
               "name": "aiConfig",
               "value": "={{ $json.body.aiConfig || $json.aiConfig || {} }}",
               "type": "object"
+            },
+            {
+              "id": "benchmarkReferenceText",
+              "name": "benchmarkReferenceText",
+              "value": "={{ $json.body.benchmarkReferenceText || $json.body.referenceText || $json.body.aiConfig?.benchmarkReferenceText || $json.body.aiConfig?.notesJson?.benchmarkReferenceText || $json.body.aiConfig?.notesJson?.referenceText || $json.benchmarkReferenceText || $json.referenceText || $json.aiConfig?.benchmarkReferenceText || $json.aiConfig?.notesJson?.benchmarkReferenceText || $json.aiConfig?.notesJson?.referenceText || \"\" }}",
+              "type": "string"
             }
           ]
         },
@@ -113,7 +119,7 @@
         -120
       ],
       "parameters": {
-        "jsCode": "const ocrResponse = $input.first().json;\nlet extractedText = \"\";\nlet error = null;\ntry {\n  const apiError = ocrResponse.responses?.[0]?.error;\n  if (apiError) {\n    error = apiError.message || \"vision_api_error\";\n  } else {\n    extractedText = (ocrResponse.responses?.[0]?.fullTextAnnotation?.text || ocrResponse.responses?.[0]?.textAnnotations?.[0]?.description || \"\").trim();\n    if (!extractedText) error = \"ocr_empty_text\";\n  }\n} catch (e) {\n  error = e?.message || \"ocr_parse_exception\";\n}\nconst prep = $(\"Prepare Input\").first().json;\nreturn [{ json: { batchId: prep.batchId, sourceFileId: prep.sourceFileId, fileUrl: prep.fileUrl, objectKey: prep.objectKey || null, sourceType: prep.sourceType || null, mode: prep.mode || \"BENCHMARK\", aiConfig: prep.aiConfig || {}, text: extractedText, error } }];"
+        "jsCode": "const ocrResponse = $input.first().json;\nlet extractedText = \"\";\nlet error = null;\ntry {\n  const apiError = ocrResponse.responses?.[0]?.error;\n  if (apiError) {\n    error = apiError.message || \"vision_api_error\";\n  } else {\n    extractedText = (ocrResponse.responses?.[0]?.fullTextAnnotation?.text || ocrResponse.responses?.[0]?.textAnnotations?.[0]?.description || \"\").trim();\n    if (!extractedText) error = \"ocr_empty_text\";\n  }\n} catch (e) {\n  error = e?.message || \"ocr_parse_exception\";\n}\nconst prep = $(\"Prepare Input\").first().json;\nreturn [{ json: { batchId: prep.batchId, sourceFileId: prep.sourceFileId, fileUrl: prep.fileUrl, objectKey: prep.objectKey || null, sourceType: prep.sourceType || null, mode: prep.mode || \"BENCHMARK\", aiConfig: prep.aiConfig || {}, benchmarkReferenceText: prep.benchmarkReferenceText || \"\", text: extractedText, error } }];"
       }
     },
     {
@@ -183,590 +189,22 @@
               "name": "aiConfig",
               "value": "={{ $json.aiConfig || {} }}",
               "type": "object"
+            },
+            {
+              "id": "benchmarkReferenceText",
+              "name": "benchmarkReferenceText",
+              "value": "={{ $json.benchmarkReferenceText || \"\" }}",
+              "type": "string"
+            },
+            {
+              "id": "promptLibrary",
+              "name": "promptLibrary",
+              "value": "={{ {\"pipe-v1\":\"Sen salon randevu OCR normalizer'ısın. Hedefin yüksek doğruluklu normalizasyon; uydurma yasak. Cikti yalnizca JSON ve kokte {\\\"rows\\\":[...]} olacak. Telefon numaralarini tamamen ignore et. Hizmet normalizasyonu: TV/tv/tv lazer/tv laser/tv lace/tv lover => Tum Vucut Lazer; kas/kas-/kos => Kas Alimi; kalici oje/kal je => Kalici Oje; jel guclendirme => Jel Guclendirme; pedikur => Pedikur; manikur => Manikur; agda => Agda. Unvanlari (Hanim/Bey/Hnm) customerName icinde koru. Operasyon notlarini (hatirlat, geldi, iptal, odedi, aransin) notesRaw alanina tasi. Emin degilsen null birak.\",\"pipe-v2\":\"Sen kanit esikli bir normalizersin. Cikti yalnizca JSON ve kokte {\\\"rows\\\":[...]}. Sadece metinde acik kanit olan alanlari doldur; digerlerini null birak. Telefonlari tumden ignore et. Tarih/saatte zayif kanit varsa zorlamadan null birak. Hizmet adlarini yalnizca guclu eslesmeyle normalize et: TV lazer=>Tum Vucut Lazer, kas/kos=>Kas Alimi, kalici oje=>Kalici Oje, jel guclendirme=>Jel Guclendirme, pedikur=>Pedikur, manikur=>Manikur, agda=>Agda. Notlar service alanina kacmasin; notesRaw'a yaz. JSON disinda hicbir sey yazma.\",\"pipe-v3\":\"Sen once segmentasyon yapan bir normalizersin. Cikti yalnizca JSON ve kokte {\\\"rows\\\":[...]}. Adim 1: metinden saatleri cikar ve satirlari saate gore bol. Ayni saatte farkli musteri varsa mutlaka ayri satir uret. Adim 2: her satiri normalize et. Telefonlari ignore et. Saat formatini mumkunse HH:MM yap. Hizmet mapping: TV lazer=>Tum Vucut Lazer; kas/kos=>Kas Alimi; kalici oje=>Kalici Oje; jel guclendirme=>Jel Guclendirme; pedikur=>Pedikur; manikur=>Manikur; agda=>Agda. Notlari notesRaw'a tasi.\",\"pipe-v4\":\"Sen Turkce sadakat odakli OCR normalizersin. Cikti yalnizca JSON ve kokte {\\\"rows\\\":[...]}. Turkce karakterleri koru, OCR duzeltmesini sadece yuksek eminlikte yap (orn: E2gi=>Ezgi, harm=>Hanim, kos=>Kas, lace/lover=>Lazer, 16.00/1600=>16:00). Telefonlari ignore et. Unvanlar customerName icinde kalsin. Operasyon notlari notesRaw'a gitsin, serviceNameRaw'a karismasin. Ayni saatte birden fazla musteri varsa ayri satir uret. Uydurma yok; emin degilsen null.\",\"pipe-v5\":\"Sen hizmet normalizasyonunda uzman bir asistansin. Cikti yalnizca JSON ve kokte {\\\"rows\\\":[...]}. Her randevuda serviceNameRaw alanini once dogru normalize et: TV/tv/tv lazer/tv lace/tv lover=>Tum Vucut Lazer; kas/kos/kas-=>Kas Alimi; kal je/kalici oje=>Kalici Oje; jel guclendirme=>Jel Guclendirme; pedikur=>Pedikur; manikur=>Manikur; agda=>Agda. Ayni satirda coklu hizmet varsa serviceNameRaw'da virgul ile birlestir. Telefonlari ignore et. Notlari notesRaw'a tasi. JSON disinda metin yazma.\",\"pipe-v6\":\"Sen not ayristirma odakli normalizersin. Cikti yalnizca JSON ve kokte {\\\"rows\\\":[...]}. Hizmet, musteri ve saat bilgisi ile operasyonel notlari kesin olarak ayir. \\\"hatirlat\\\", \\\"geldi\\\", \\\"iptal\\\", \\\"odedi\\\", \\\"aransin\\\" gibi ifadeler notesRaw'a yazilmali; serviceNameRaw veya customerName'a kacmamalidir. Telefonlari tamamen ignore et. Hizmet adlarini normalize et. Belirsiz alanlari null birak. Ayni saatte farkli musteri varsa ayri satir uret.\",\"pipe-v7\":\"Sen cakisma cozucu bir normalizersin. Cikti yalnizca JSON ve kokte {\\\"rows\\\":[...]}. Bir satirda birden fazla kisi/hizmet/saat adayi varsa en tutarli ayrimi yap: farkli kisi sinyali varsa satirlari ayir, tek kisi sinyali varsa birlestirme. Telefonlari ignore et. Hizmet mapping kurallarini uygula. Tarih/saat/customer/service arasinda celiski varsa en guclu kanita gore doldur, digerlerini null birak. Operasyonel metni notesRaw'a tasi.\",\"pipe-v8\":\"Sen satir satir rekonstruksiyon yapan bir normalizersin. Cikti yalnizca JSON ve kokte {\\\"rows\\\":[...]}. Defter metnini satir mantigiyla yeniden kur: her saat gecisi yeni aday satirdir; saat yoksa bir onceki baglami dikkatle kullan. Ayni saatte farkli musteri adlari varsa ayri satirlar olustur. Telefonlari ignore et. Hizmetleri normalize et. Uydurma yapma; emin degilsen null. Notlari notesRaw'a tasi.\",\"pipe-v9\":\"Sen kalite kapisi olan bir normalizersin. Cikti yalnizca JSON ve kokte {\\\"rows\\\":[...]}. Uretmeden once ic denetim uygula: (1) JSON gecerli mi, (2) ayni saatte farkli musteriler ayrildi mi, (3) telefonlar ignore edildi mi, (4) notlar notesRaw'a tasindi mi, (5) hizmetler normalize edildi mi. Bu denetimi ciktiya yazma, sadece duzeltilmis final JSON'u ver. Belirsiz alanlari null birak.\",\"pipe-v10\":\"Sen dusuk halusinasyon modunda calisan normalizersin. Cikti yalnizca JSON ve kokte {\\\"rows\\\":[...]}. Metinde yoksa asla yeni kisi, yeni saat, yeni hizmet uretme. Telefonlari ignore et. Hizmet mappingini uygula fakat yalnizca kanitli eslesmelerde. Ayni saatte iki farkli isim geciyorsa iki satir yaz. Unvanlar customerName icinde kalmali. Operasyonel ifadeler notesRaw'a gitmeli. Cok belirsiz durumda bos satir uretme; null kullan.\"} }}",
+              "type": "object"
             }
           ]
         },
         "options": {}
-      }
-    },
-    {
-      "id": "model-gpt4omini",
-      "name": "Model - GPT-4o Mini",
-      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
-      "typeVersion": 1,
-      "position": [
-        -360,
-        -1200
-      ],
-      "parameters": {
-        "model": "openai/gpt-4o-mini",
-        "options": {
-          "temperature": 0
-        }
-      },
-      "credentials": {
-        "openRouterApi": {
-          "id": "x4oJ9U04K1AOxKsx",
-          "name": "OpenRouter account"
-        }
-      }
-    },
-    {
-      "id": "merge-gpt4omini",
-      "name": "Merge - GPT-4o Mini",
-      "type": "n8n-nodes-base.merge",
-      "typeVersion": 3.2,
-      "position": [
-        120,
-        -880
-      ],
-      "parameters": {
-        "numberInputs": 5
-      }
-    },
-    {
-      "id": "chain-gpt4omini-pipe-v1",
-      "name": "Chain 1 - GPT-4o Mini / S?k? T?rk?e Pipe",
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.8,
-      "position": [
-        -360,
-        -1040
-      ],
-      "parameters": {
-        "promptType": "define",
-        "text": "={{ $json.text }}",
-        "messages": {
-          "messageValues": [
-            {
-              "message": "Sen deterministik bir salon randevu OCR normalizer'?s?n. Sadece ge?erli JSON ?ret. ?ema tam olarak {\"rows\":[...]} olmal?. Her row alanlar?: rowIndex, customerName, customerPhoneRaw, appointmentDate, startTime, endTime, durationMinutes, serviceNameRaw, staffNameRaw, priceRaw, notesRaw, confidence. OCR metnindeki g?r?lt?y? temizle, m??teri ad?n? okunabilir hale getir ama emin olmad???n yerde uydurma yapma. Hizmetleri yaln?zca g??l? sinyal varsa normalize et: Kal?c? Oje, T?m V?cut Lazer, Ka? Al?m?, Lazer, A?da, Pedik?r, Manik?r, Jel G??lendirme. Hat?rlat, geldi, iptal, ?dedi, arans?n gibi operasyon notlar?n? notesRaw alan?na ta??. Saatleri m?mk?nse HH:MM format?na ?evir. Birden fazla hizmet varsa virg?lle ay?r. JSON d???nda hi?bir ?ey yazma."
-            }
-          ]
-        },
-        "batching": {}
-      }
-    },
-    {
-      "id": "chain-gpt4omini-pipe-v2",
-      "name": "Chain 2 - GPT-4o Mini / Konservatif Pipe",
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.8,
-      "position": [
-        -360,
-        -960
-      ],
-      "parameters": {
-        "promptType": "define",
-        "text": "={{ $json.text }}",
-        "messages": {
-          "messageValues": [
-            {
-              "message": "Sen ?ok konservatif ?al??an bir OCR randevu ayr??t?r?c?s?s?n. Sadece JSON ?ret: {\"rows\":[...]}. Emin olmad???n hi?bir de?eri tahmin etme; null b?rak. M??teri ad? ile hizmeti kar??t?rma. Hizmeti yaln?zca g??l? kan?t varsa normalize et. TV lazer = T?m V?cut Lazer. ka?, kas, ka?- = Ka? Al?m?. kal je, kal?c? oje = Kal?c? Oje. a?da varyasyonlar? = A?da. lazer, lezer, lace gibi varyasyonlar = Lazer. pedikur = Pedik?r. manikur = Manik?r. jel g??lendirme varyasyonlar?n? Jel G??lendirme yap. Hat?rlat ve benzeri notlar notesRaw alan?na gitmeli. Unvanlar? ve notlar? serviceNameRaw alan?na koyma. JSON d???nda hi?bir ?ey ?retme."
-            }
-          ]
-        },
-        "batching": {}
-      }
-    },
-    {
-      "id": "chain-gpt4omini-pipe-v3",
-      "name": "Chain 3 - GPT-4o Mini / Saat Bazl? Gruplama",
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.8,
-      "position": [
-        -360,
-        -880
-      ],
-      "parameters": {
-        "promptType": "define",
-        "text": "={{ $json.text }}",
-        "messages": {
-          "messageValues": [
-            {
-              "message": "Sen el yaz?s? salon defterlerinden randevu ??karan bir ayr??t?r?c?s?n. ?nce zaman? tespit et, sonra o zaman?n ?evresindeki yak?n OCR par?alar?n? ayn? randevuda grupla. Sonraki saat ba?lad???nda yeni randevu ba?lat. ??kt? sadece JSON olmal?: {\"rows\":[...]}. customerName m??teri ad? olmal?. serviceNameRaw hizmetlerin normalize edilmi? T?rk?e g?sterimi olmal?. staffNameRaw yaln?zca ger?ekten yaz?yorsa dolu olmal?. Telefonu g?r?ld??? gibi koru; yaln?zca bariz bo?luk ve ay?r?c? g?r?lt?s?n? temizleyebilirsin. Saat format?n? m?mk?nse HH:MM yap. Ka? ile ilgili ifadeleri Ka? Al?m?, TV lazeri T?m V?cut Lazer olarak normalize et. Notlar? notesRaw alan?na ta??. A??klama ekleme, sadece JSON yaz."
-            }
-          ]
-        },
-        "batching": {}
-      }
-    },
-    {
-      "id": "chain-gpt4omini-pipe-v4",
-      "name": "Chain 4 - GPT-4o Mini / T?rk?e Sadakat",
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.8,
-      "position": [
-        -360,
-        -800
-      ],
-      "parameters": {
-        "promptType": "define",
-        "text": "={{ $json.text }}",
-        "messages": {
-          "messageValues": [
-            {
-              "message": "Sen T?rkiye salonlar? i?in optimize edilmi? bir OCR post-processor modelisin. T?rk?e karakterleri koru: ?, ?, ?, ?, ?, ? ve k???k halleri. ??kt? yaln?zca JSON olacak: {\"rows\":[...]}. M??teri ad?, telefon, tarih, saat, hizmet ve not alanlar?n? ??karmaya ?al??. E2gi gibi OCR hatalar?n? Ezgi olarak g?venle okuyabiliyorsan d?zeltebilirsin; emin de?ilsen oldu?u gibi b?rak. Han?m, bey, hnm gibi unvanlar? customerName i?inde tutabilirsin, serviceNameRaw i?ine ta??ma. Demet han?m gibi ifadelerde han?m kelimesini hizmet gibi yorumlama. TV lazeri tek hizmet olarak T?m V?cut Lazer yap; ayr?ca ekstra Lazer ekleme. Hat?rlat gibi operasyon notlar?n? notesRaw alan?na koy. JSON d???nda tek karakter bile ?retme."
-            }
-          ]
-        },
-        "batching": {}
-      }
-    },
-    {
-      "id": "chain-gpt4omini-pipe-v5",
-      "name": "Chain 5 - GPT-4o Mini / Format Polisi",
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.8,
-      "position": [
-        -360,
-        -720
-      ],
-      "parameters": {
-        "promptType": "define",
-        "text": "={{ $json.text }}",
-        "messages": {
-          "messageValues": [
-            {
-              "message": "Deterministik ?al??. Yaln?zca ge?erli JSON ?ret: {\"rows\":[...]}. Her row alan? ?u s?rayla bulunmal?: rowIndex, customerName, customerPhoneRaw, appointmentDate, startTime, endTime, durationMinutes, serviceNameRaw, staffNameRaw, priceRaw, notesRaw, confidence. Bo? alanlara null yaz. Telefon uydurma yok, saat uydurma yok, sat?r uydurma yok. Tek bir randevuyu ba?ka randevu ile birle?tirme. Service normalization s?zl???: Kal?c? Oje, T?m V?cut Lazer, Ka? Al?m?, Lazer, A?da, Pedik?r, Manik?r, Jel G??lendirme. notesRaw i?in ?rnek notlar: hat?rlat, geldi, iptal, ?dedi, arans?n. T?rk?e karakterleri koru. JSON d???nda hi?bir ?ey yazma."
-            }
-          ]
-        },
-        "batching": {}
-      }
-    },
-    {
-      "id": "model-geminiflash",
-      "name": "Model - Gemini 2.5 Flash",
-      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
-      "typeVersion": 1,
-      "position": [
-        -360,
-        -800
-      ],
-      "parameters": {
-        "model": "google/gemini-2.5-flash",
-        "options": {
-          "temperature": 0
-        }
-      },
-      "credentials": {
-        "openRouterApi": {
-          "id": "x4oJ9U04K1AOxKsx",
-          "name": "OpenRouter account"
-        }
-      }
-    },
-    {
-      "id": "merge-geminiflash",
-      "name": "Merge - Gemini 2.5 Flash",
-      "type": "n8n-nodes-base.merge",
-      "typeVersion": 3.2,
-      "position": [
-        120,
-        -480
-      ],
-      "parameters": {
-        "numberInputs": 5
-      }
-    },
-    {
-      "id": "chain-geminiflash-pipe-v1",
-      "name": "Chain 6 - Gemini 2.5 Flash / S?k? T?rk?e Pipe",
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.8,
-      "position": [
-        -360,
-        -640
-      ],
-      "parameters": {
-        "promptType": "define",
-        "text": "={{ $json.text }}",
-        "messages": {
-          "messageValues": [
-            {
-              "message": "Sen deterministik bir salon randevu OCR normalizer'?s?n. Sadece ge?erli JSON ?ret. ?ema tam olarak {\"rows\":[...]} olmal?. Her row alanlar?: rowIndex, customerName, customerPhoneRaw, appointmentDate, startTime, endTime, durationMinutes, serviceNameRaw, staffNameRaw, priceRaw, notesRaw, confidence. OCR metnindeki g?r?lt?y? temizle, m??teri ad?n? okunabilir hale getir ama emin olmad???n yerde uydurma yapma. Hizmetleri yaln?zca g??l? sinyal varsa normalize et: Kal?c? Oje, T?m V?cut Lazer, Ka? Al?m?, Lazer, A?da, Pedik?r, Manik?r, Jel G??lendirme. Hat?rlat, geldi, iptal, ?dedi, arans?n gibi operasyon notlar?n? notesRaw alan?na ta??. Saatleri m?mk?nse HH:MM format?na ?evir. Birden fazla hizmet varsa virg?lle ay?r. JSON d???nda hi?bir ?ey yazma."
-            }
-          ]
-        },
-        "batching": {}
-      }
-    },
-    {
-      "id": "chain-geminiflash-pipe-v2",
-      "name": "Chain 7 - Gemini 2.5 Flash / Konservatif Pipe",
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.8,
-      "position": [
-        -360,
-        -560
-      ],
-      "parameters": {
-        "promptType": "define",
-        "text": "={{ $json.text }}",
-        "messages": {
-          "messageValues": [
-            {
-              "message": "Sen ?ok konservatif ?al??an bir OCR randevu ayr??t?r?c?s?s?n. Sadece JSON ?ret: {\"rows\":[...]}. Emin olmad???n hi?bir de?eri tahmin etme; null b?rak. M??teri ad? ile hizmeti kar??t?rma. Hizmeti yaln?zca g??l? kan?t varsa normalize et. TV lazer = T?m V?cut Lazer. ka?, kas, ka?- = Ka? Al?m?. kal je, kal?c? oje = Kal?c? Oje. a?da varyasyonlar? = A?da. lazer, lezer, lace gibi varyasyonlar = Lazer. pedikur = Pedik?r. manikur = Manik?r. jel g??lendirme varyasyonlar?n? Jel G??lendirme yap. Hat?rlat ve benzeri notlar notesRaw alan?na gitmeli. Unvanlar? ve notlar? serviceNameRaw alan?na koyma. JSON d???nda hi?bir ?ey ?retme."
-            }
-          ]
-        },
-        "batching": {}
-      }
-    },
-    {
-      "id": "chain-geminiflash-pipe-v3",
-      "name": "Chain 8 - Gemini 2.5 Flash / Saat Bazl? Gruplama",
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.8,
-      "position": [
-        -360,
-        -480
-      ],
-      "parameters": {
-        "promptType": "define",
-        "text": "={{ $json.text }}",
-        "messages": {
-          "messageValues": [
-            {
-              "message": "Sen el yaz?s? salon defterlerinden randevu ??karan bir ayr??t?r?c?s?n. ?nce zaman? tespit et, sonra o zaman?n ?evresindeki yak?n OCR par?alar?n? ayn? randevuda grupla. Sonraki saat ba?lad???nda yeni randevu ba?lat. ??kt? sadece JSON olmal?: {\"rows\":[...]}. customerName m??teri ad? olmal?. serviceNameRaw hizmetlerin normalize edilmi? T?rk?e g?sterimi olmal?. staffNameRaw yaln?zca ger?ekten yaz?yorsa dolu olmal?. Telefonu g?r?ld??? gibi koru; yaln?zca bariz bo?luk ve ay?r?c? g?r?lt?s?n? temizleyebilirsin. Saat format?n? m?mk?nse HH:MM yap. Ka? ile ilgili ifadeleri Ka? Al?m?, TV lazeri T?m V?cut Lazer olarak normalize et. Notlar? notesRaw alan?na ta??. A??klama ekleme, sadece JSON yaz."
-            }
-          ]
-        },
-        "batching": {}
-      }
-    },
-    {
-      "id": "chain-geminiflash-pipe-v4",
-      "name": "Chain 9 - Gemini 2.5 Flash / T?rk?e Sadakat",
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.8,
-      "position": [
-        -360,
-        -400
-      ],
-      "parameters": {
-        "promptType": "define",
-        "text": "={{ $json.text }}",
-        "messages": {
-          "messageValues": [
-            {
-              "message": "Sen T?rkiye salonlar? i?in optimize edilmi? bir OCR post-processor modelisin. T?rk?e karakterleri koru: ?, ?, ?, ?, ?, ? ve k???k halleri. ??kt? yaln?zca JSON olacak: {\"rows\":[...]}. M??teri ad?, telefon, tarih, saat, hizmet ve not alanlar?n? ??karmaya ?al??. E2gi gibi OCR hatalar?n? Ezgi olarak g?venle okuyabiliyorsan d?zeltebilirsin; emin de?ilsen oldu?u gibi b?rak. Han?m, bey, hnm gibi unvanlar? customerName i?inde tutabilirsin, serviceNameRaw i?ine ta??ma. Demet han?m gibi ifadelerde han?m kelimesini hizmet gibi yorumlama. TV lazeri tek hizmet olarak T?m V?cut Lazer yap; ayr?ca ekstra Lazer ekleme. Hat?rlat gibi operasyon notlar?n? notesRaw alan?na koy. JSON d???nda tek karakter bile ?retme."
-            }
-          ]
-        },
-        "batching": {}
-      }
-    },
-    {
-      "id": "chain-geminiflash-pipe-v5",
-      "name": "Chain 10 - Gemini 2.5 Flash / Format Polisi",
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.8,
-      "position": [
-        -360,
-        -320
-      ],
-      "parameters": {
-        "promptType": "define",
-        "text": "={{ $json.text }}",
-        "messages": {
-          "messageValues": [
-            {
-              "message": "Deterministik ?al??. Yaln?zca ge?erli JSON ?ret: {\"rows\":[...]}. Her row alan? ?u s?rayla bulunmal?: rowIndex, customerName, customerPhoneRaw, appointmentDate, startTime, endTime, durationMinutes, serviceNameRaw, staffNameRaw, priceRaw, notesRaw, confidence. Bo? alanlara null yaz. Telefon uydurma yok, saat uydurma yok, sat?r uydurma yok. Tek bir randevuyu ba?ka randevu ile birle?tirme. Service normalization s?zl???: Kal?c? Oje, T?m V?cut Lazer, Ka? Al?m?, Lazer, A?da, Pedik?r, Manik?r, Jel G??lendirme. notesRaw i?in ?rnek notlar: hat?rlat, geldi, iptal, ?dedi, arans?n. T?rk?e karakterleri koru. JSON d???nda hi?bir ?ey yazma."
-            }
-          ]
-        },
-        "batching": {}
-      }
-    },
-    {
-      "id": "model-geminilite",
-      "name": "Model - Gemini 2.5 Flash Lite",
-      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
-      "typeVersion": 1,
-      "position": [
-        -360,
-        -400
-      ],
-      "parameters": {
-        "model": "google/gemini-2.5-flash-lite",
-        "options": {
-          "temperature": 0
-        }
-      },
-      "credentials": {
-        "openRouterApi": {
-          "id": "x4oJ9U04K1AOxKsx",
-          "name": "OpenRouter account"
-        }
-      }
-    },
-    {
-      "id": "merge-geminilite",
-      "name": "Merge - Gemini 2.5 Flash Lite",
-      "type": "n8n-nodes-base.merge",
-      "typeVersion": 3.2,
-      "position": [
-        120,
-        -80
-      ],
-      "parameters": {
-        "numberInputs": 5
-      }
-    },
-    {
-      "id": "chain-geminilite-pipe-v1",
-      "name": "Chain 11 - Gemini 2.5 Flash Lite / S?k? T?rk?e Pipe",
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.8,
-      "position": [
-        -360,
-        -240
-      ],
-      "parameters": {
-        "promptType": "define",
-        "text": "={{ $json.text }}",
-        "messages": {
-          "messageValues": [
-            {
-              "message": "Sen deterministik bir salon randevu OCR normalizer'?s?n. Sadece ge?erli JSON ?ret. ?ema tam olarak {\"rows\":[...]} olmal?. Her row alanlar?: rowIndex, customerName, customerPhoneRaw, appointmentDate, startTime, endTime, durationMinutes, serviceNameRaw, staffNameRaw, priceRaw, notesRaw, confidence. OCR metnindeki g?r?lt?y? temizle, m??teri ad?n? okunabilir hale getir ama emin olmad???n yerde uydurma yapma. Hizmetleri yaln?zca g??l? sinyal varsa normalize et: Kal?c? Oje, T?m V?cut Lazer, Ka? Al?m?, Lazer, A?da, Pedik?r, Manik?r, Jel G??lendirme. Hat?rlat, geldi, iptal, ?dedi, arans?n gibi operasyon notlar?n? notesRaw alan?na ta??. Saatleri m?mk?nse HH:MM format?na ?evir. Birden fazla hizmet varsa virg?lle ay?r. JSON d???nda hi?bir ?ey yazma."
-            }
-          ]
-        },
-        "batching": {}
-      }
-    },
-    {
-      "id": "chain-geminilite-pipe-v2",
-      "name": "Chain 12 - Gemini 2.5 Flash Lite / Konservatif Pipe",
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.8,
-      "position": [
-        -360,
-        -160
-      ],
-      "parameters": {
-        "promptType": "define",
-        "text": "={{ $json.text }}",
-        "messages": {
-          "messageValues": [
-            {
-              "message": "Sen ?ok konservatif ?al??an bir OCR randevu ayr??t?r?c?s?s?n. Sadece JSON ?ret: {\"rows\":[...]}. Emin olmad???n hi?bir de?eri tahmin etme; null b?rak. M??teri ad? ile hizmeti kar??t?rma. Hizmeti yaln?zca g??l? kan?t varsa normalize et. TV lazer = T?m V?cut Lazer. ka?, kas, ka?- = Ka? Al?m?. kal je, kal?c? oje = Kal?c? Oje. a?da varyasyonlar? = A?da. lazer, lezer, lace gibi varyasyonlar = Lazer. pedikur = Pedik?r. manikur = Manik?r. jel g??lendirme varyasyonlar?n? Jel G??lendirme yap. Hat?rlat ve benzeri notlar notesRaw alan?na gitmeli. Unvanlar? ve notlar? serviceNameRaw alan?na koyma. JSON d???nda hi?bir ?ey ?retme."
-            }
-          ]
-        },
-        "batching": {}
-      }
-    },
-    {
-      "id": "chain-geminilite-pipe-v3",
-      "name": "Chain 13 - Gemini 2.5 Flash Lite / Saat Bazl? Gruplama",
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.8,
-      "position": [
-        -360,
-        -80
-      ],
-      "parameters": {
-        "promptType": "define",
-        "text": "={{ $json.text }}",
-        "messages": {
-          "messageValues": [
-            {
-              "message": "Sen el yaz?s? salon defterlerinden randevu ??karan bir ayr??t?r?c?s?n. ?nce zaman? tespit et, sonra o zaman?n ?evresindeki yak?n OCR par?alar?n? ayn? randevuda grupla. Sonraki saat ba?lad???nda yeni randevu ba?lat. ??kt? sadece JSON olmal?: {\"rows\":[...]}. customerName m??teri ad? olmal?. serviceNameRaw hizmetlerin normalize edilmi? T?rk?e g?sterimi olmal?. staffNameRaw yaln?zca ger?ekten yaz?yorsa dolu olmal?. Telefonu g?r?ld??? gibi koru; yaln?zca bariz bo?luk ve ay?r?c? g?r?lt?s?n? temizleyebilirsin. Saat format?n? m?mk?nse HH:MM yap. Ka? ile ilgili ifadeleri Ka? Al?m?, TV lazeri T?m V?cut Lazer olarak normalize et. Notlar? notesRaw alan?na ta??. A??klama ekleme, sadece JSON yaz."
-            }
-          ]
-        },
-        "batching": {}
-      }
-    },
-    {
-      "id": "chain-geminilite-pipe-v4",
-      "name": "Chain 14 - Gemini 2.5 Flash Lite / T?rk?e Sadakat",
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.8,
-      "position": [
-        -360,
-        0
-      ],
-      "parameters": {
-        "promptType": "define",
-        "text": "={{ $json.text }}",
-        "messages": {
-          "messageValues": [
-            {
-              "message": "Sen T?rkiye salonlar? i?in optimize edilmi? bir OCR post-processor modelisin. T?rk?e karakterleri koru: ?, ?, ?, ?, ?, ? ve k???k halleri. ??kt? yaln?zca JSON olacak: {\"rows\":[...]}. M??teri ad?, telefon, tarih, saat, hizmet ve not alanlar?n? ??karmaya ?al??. E2gi gibi OCR hatalar?n? Ezgi olarak g?venle okuyabiliyorsan d?zeltebilirsin; emin de?ilsen oldu?u gibi b?rak. Han?m, bey, hnm gibi unvanlar? customerName i?inde tutabilirsin, serviceNameRaw i?ine ta??ma. Demet han?m gibi ifadelerde han?m kelimesini hizmet gibi yorumlama. TV lazeri tek hizmet olarak T?m V?cut Lazer yap; ayr?ca ekstra Lazer ekleme. Hat?rlat gibi operasyon notlar?n? notesRaw alan?na koy. JSON d???nda tek karakter bile ?retme."
-            }
-          ]
-        },
-        "batching": {}
-      }
-    },
-    {
-      "id": "chain-geminilite-pipe-v5",
-      "name": "Chain 15 - Gemini 2.5 Flash Lite / Format Polisi",
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.8,
-      "position": [
-        -360,
-        80
-      ],
-      "parameters": {
-        "promptType": "define",
-        "text": "={{ $json.text }}",
-        "messages": {
-          "messageValues": [
-            {
-              "message": "Deterministik ?al??. Yaln?zca ge?erli JSON ?ret: {\"rows\":[...]}. Her row alan? ?u s?rayla bulunmal?: rowIndex, customerName, customerPhoneRaw, appointmentDate, startTime, endTime, durationMinutes, serviceNameRaw, staffNameRaw, priceRaw, notesRaw, confidence. Bo? alanlara null yaz. Telefon uydurma yok, saat uydurma yok, sat?r uydurma yok. Tek bir randevuyu ba?ka randevu ile birle?tirme. Service normalization s?zl???: Kal?c? Oje, T?m V?cut Lazer, Ka? Al?m?, Lazer, A?da, Pedik?r, Manik?r, Jel G??lendirme. notesRaw i?in ?rnek notlar: hat?rlat, geldi, iptal, ?dedi, arans?n. T?rk?e karakterleri koru. JSON d???nda hi?bir ?ey yazma."
-            }
-          ]
-        },
-        "batching": {}
-      }
-    },
-    {
-      "id": "model-deepseek",
-      "name": "Model - DeepSeek V3.2",
-      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
-      "typeVersion": 1,
-      "position": [
-        -360,
-        0
-      ],
-      "parameters": {
-        "model": "deepseek/deepseek-v3.2",
-        "options": {
-          "temperature": 0
-        }
-      },
-      "credentials": {
-        "openRouterApi": {
-          "id": "x4oJ9U04K1AOxKsx",
-          "name": "OpenRouter account"
-        }
-      }
-    },
-    {
-      "id": "merge-deepseek",
-      "name": "Merge - DeepSeek V3.2",
-      "type": "n8n-nodes-base.merge",
-      "typeVersion": 3.2,
-      "position": [
-        120,
-        320
-      ],
-      "parameters": {
-        "numberInputs": 5
-      }
-    },
-    {
-      "id": "chain-deepseek-pipe-v1",
-      "name": "Chain 16 - DeepSeek V3.2 / S?k? T?rk?e Pipe",
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.8,
-      "position": [
-        -360,
-        160
-      ],
-      "parameters": {
-        "promptType": "define",
-        "text": "={{ $json.text }}",
-        "messages": {
-          "messageValues": [
-            {
-              "message": "Sen deterministik bir salon randevu OCR normalizer'?s?n. Sadece ge?erli JSON ?ret. ?ema tam olarak {\"rows\":[...]} olmal?. Her row alanlar?: rowIndex, customerName, customerPhoneRaw, appointmentDate, startTime, endTime, durationMinutes, serviceNameRaw, staffNameRaw, priceRaw, notesRaw, confidence. OCR metnindeki g?r?lt?y? temizle, m??teri ad?n? okunabilir hale getir ama emin olmad???n yerde uydurma yapma. Hizmetleri yaln?zca g??l? sinyal varsa normalize et: Kal?c? Oje, T?m V?cut Lazer, Ka? Al?m?, Lazer, A?da, Pedik?r, Manik?r, Jel G??lendirme. Hat?rlat, geldi, iptal, ?dedi, arans?n gibi operasyon notlar?n? notesRaw alan?na ta??. Saatleri m?mk?nse HH:MM format?na ?evir. Birden fazla hizmet varsa virg?lle ay?r. JSON d???nda hi?bir ?ey yazma."
-            }
-          ]
-        },
-        "batching": {}
-      }
-    },
-    {
-      "id": "chain-deepseek-pipe-v2",
-      "name": "Chain 17 - DeepSeek V3.2 / Konservatif Pipe",
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.8,
-      "position": [
-        -360,
-        240
-      ],
-      "parameters": {
-        "promptType": "define",
-        "text": "={{ $json.text }}",
-        "messages": {
-          "messageValues": [
-            {
-              "message": "Sen ?ok konservatif ?al??an bir OCR randevu ayr??t?r?c?s?s?n. Sadece JSON ?ret: {\"rows\":[...]}. Emin olmad???n hi?bir de?eri tahmin etme; null b?rak. M??teri ad? ile hizmeti kar??t?rma. Hizmeti yaln?zca g??l? kan?t varsa normalize et. TV lazer = T?m V?cut Lazer. ka?, kas, ka?- = Ka? Al?m?. kal je, kal?c? oje = Kal?c? Oje. a?da varyasyonlar? = A?da. lazer, lezer, lace gibi varyasyonlar = Lazer. pedikur = Pedik?r. manikur = Manik?r. jel g??lendirme varyasyonlar?n? Jel G??lendirme yap. Hat?rlat ve benzeri notlar notesRaw alan?na gitmeli. Unvanlar? ve notlar? serviceNameRaw alan?na koyma. JSON d???nda hi?bir ?ey ?retme."
-            }
-          ]
-        },
-        "batching": {}
-      }
-    },
-    {
-      "id": "chain-deepseek-pipe-v3",
-      "name": "Chain 18 - DeepSeek V3.2 / Saat Bazl? Gruplama",
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.8,
-      "position": [
-        -360,
-        320
-      ],
-      "parameters": {
-        "promptType": "define",
-        "text": "={{ $json.text }}",
-        "messages": {
-          "messageValues": [
-            {
-              "message": "Sen el yaz?s? salon defterlerinden randevu ??karan bir ayr??t?r?c?s?n. ?nce zaman? tespit et, sonra o zaman?n ?evresindeki yak?n OCR par?alar?n? ayn? randevuda grupla. Sonraki saat ba?lad???nda yeni randevu ba?lat. ??kt? sadece JSON olmal?: {\"rows\":[...]}. customerName m??teri ad? olmal?. serviceNameRaw hizmetlerin normalize edilmi? T?rk?e g?sterimi olmal?. staffNameRaw yaln?zca ger?ekten yaz?yorsa dolu olmal?. Telefonu g?r?ld??? gibi koru; yaln?zca bariz bo?luk ve ay?r?c? g?r?lt?s?n? temizleyebilirsin. Saat format?n? m?mk?nse HH:MM yap. Ka? ile ilgili ifadeleri Ka? Al?m?, TV lazeri T?m V?cut Lazer olarak normalize et. Notlar? notesRaw alan?na ta??. A??klama ekleme, sadece JSON yaz."
-            }
-          ]
-        },
-        "batching": {}
-      }
-    },
-    {
-      "id": "chain-deepseek-pipe-v4",
-      "name": "Chain 19 - DeepSeek V3.2 / T?rk?e Sadakat",
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.8,
-      "position": [
-        -360,
-        400
-      ],
-      "parameters": {
-        "promptType": "define",
-        "text": "={{ $json.text }}",
-        "messages": {
-          "messageValues": [
-            {
-              "message": "Sen T?rkiye salonlar? i?in optimize edilmi? bir OCR post-processor modelisin. T?rk?e karakterleri koru: ?, ?, ?, ?, ?, ? ve k???k halleri. ??kt? yaln?zca JSON olacak: {\"rows\":[...]}. M??teri ad?, telefon, tarih, saat, hizmet ve not alanlar?n? ??karmaya ?al??. E2gi gibi OCR hatalar?n? Ezgi olarak g?venle okuyabiliyorsan d?zeltebilirsin; emin de?ilsen oldu?u gibi b?rak. Han?m, bey, hnm gibi unvanlar? customerName i?inde tutabilirsin, serviceNameRaw i?ine ta??ma. Demet han?m gibi ifadelerde han?m kelimesini hizmet gibi yorumlama. TV lazeri tek hizmet olarak T?m V?cut Lazer yap; ayr?ca ekstra Lazer ekleme. Hat?rlat gibi operasyon notlar?n? notesRaw alan?na koy. JSON d???nda tek karakter bile ?retme."
-            }
-          ]
-        },
-        "batching": {}
-      }
-    },
-    {
-      "id": "chain-deepseek-pipe-v5",
-      "name": "Chain 20 - DeepSeek V3.2 / Format Polisi",
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.8,
-      "position": [
-        -360,
-        480
-      ],
-      "parameters": {
-        "promptType": "define",
-        "text": "={{ $json.text }}",
-        "messages": {
-          "messageValues": [
-            {
-              "message": "Deterministik ?al??. Yaln?zca ge?erli JSON ?ret: {\"rows\":[...]}. Her row alan? ?u s?rayla bulunmal?: rowIndex, customerName, customerPhoneRaw, appointmentDate, startTime, endTime, durationMinutes, serviceNameRaw, staffNameRaw, priceRaw, notesRaw, confidence. Bo? alanlara null yaz. Telefon uydurma yok, saat uydurma yok, sat?r uydurma yok. Tek bir randevuyu ba?ka randevu ile birle?tirme. Service normalization s?zl???: Kal?c? Oje, T?m V?cut Lazer, Ka? Al?m?, Lazer, A?da, Pedik?r, Manik?r, Jel G??lendirme. notesRaw i?in ?rnek notlar: hat?rlat, geldi, iptal, ?dedi, arans?n. T?rk?e karakterleri koru. JSON d???nda hi?bir ?ey yazma."
-            }
-          ]
-        },
-        "batching": {}
       }
     },
     {
@@ -776,10 +214,54 @@
       "typeVersion": 1,
       "position": [
         -360,
-        400
+        -1120
       ],
       "parameters": {
         "model": "minimax/minimax-m2.7",
+        "options": {
+          "temperature": 0
+        }
+      },
+      "credentials": {
+        "openRouterApi": {
+          "id": "x4oJ9U04K1AOxKsx",
+          "name": "OpenRouter account"
+        }
+      }
+    },
+    {
+      "id": "model-grok",
+      "name": "Model - Grok 4.1 Fast",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        -360,
+        -120
+      ],
+      "parameters": {
+        "model": "x-ai/grok-4.1-fast",
+        "options": {
+          "temperature": 0
+        }
+      },
+      "credentials": {
+        "openRouterApi": {
+          "id": "x4oJ9U04K1AOxKsx",
+          "name": "OpenRouter account"
+        }
+      }
+    },
+    {
+      "id": "model-geminilite",
+      "name": "Model - Gemini 2.5 Flash Lite",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        -360,
+        880
+      ],
+      "parameters": {
+        "model": "google/gemini-2.5-flash-lite",
         "options": {
           "temperature": 0
         }
@@ -798,142 +280,10 @@
       "typeVersion": 3.2,
       "position": [
         120,
-        720
+        -760
       ],
       "parameters": {
-        "numberInputs": 5
-      }
-    },
-    {
-      "id": "chain-minimax-pipe-v1",
-      "name": "Chain 21 - MiniMax M2.7 / S?k? T?rk?e Pipe",
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.8,
-      "position": [
-        -360,
-        560
-      ],
-      "parameters": {
-        "promptType": "define",
-        "text": "={{ $json.text }}",
-        "messages": {
-          "messageValues": [
-            {
-              "message": "Sen deterministik bir salon randevu OCR normalizer'?s?n. Sadece ge?erli JSON ?ret. ?ema tam olarak {\"rows\":[...]} olmal?. Her row alanlar?: rowIndex, customerName, customerPhoneRaw, appointmentDate, startTime, endTime, durationMinutes, serviceNameRaw, staffNameRaw, priceRaw, notesRaw, confidence. OCR metnindeki g?r?lt?y? temizle, m??teri ad?n? okunabilir hale getir ama emin olmad???n yerde uydurma yapma. Hizmetleri yaln?zca g??l? sinyal varsa normalize et: Kal?c? Oje, T?m V?cut Lazer, Ka? Al?m?, Lazer, A?da, Pedik?r, Manik?r, Jel G??lendirme. Hat?rlat, geldi, iptal, ?dedi, arans?n gibi operasyon notlar?n? notesRaw alan?na ta??. Saatleri m?mk?nse HH:MM format?na ?evir. Birden fazla hizmet varsa virg?lle ay?r. JSON d???nda hi?bir ?ey yazma."
-            }
-          ]
-        },
-        "batching": {}
-      }
-    },
-    {
-      "id": "chain-minimax-pipe-v2",
-      "name": "Chain 22 - MiniMax M2.7 / Konservatif Pipe",
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.8,
-      "position": [
-        -360,
-        640
-      ],
-      "parameters": {
-        "promptType": "define",
-        "text": "={{ $json.text }}",
-        "messages": {
-          "messageValues": [
-            {
-              "message": "Sen ?ok konservatif ?al??an bir OCR randevu ayr??t?r?c?s?s?n. Sadece JSON ?ret: {\"rows\":[...]}. Emin olmad???n hi?bir de?eri tahmin etme; null b?rak. M??teri ad? ile hizmeti kar??t?rma. Hizmeti yaln?zca g??l? kan?t varsa normalize et. TV lazer = T?m V?cut Lazer. ka?, kas, ka?- = Ka? Al?m?. kal je, kal?c? oje = Kal?c? Oje. a?da varyasyonlar? = A?da. lazer, lezer, lace gibi varyasyonlar = Lazer. pedikur = Pedik?r. manikur = Manik?r. jel g??lendirme varyasyonlar?n? Jel G??lendirme yap. Hat?rlat ve benzeri notlar notesRaw alan?na gitmeli. Unvanlar? ve notlar? serviceNameRaw alan?na koyma. JSON d???nda hi?bir ?ey ?retme."
-            }
-          ]
-        },
-        "batching": {}
-      }
-    },
-    {
-      "id": "chain-minimax-pipe-v3",
-      "name": "Chain 23 - MiniMax M2.7 / Saat Bazl? Gruplama",
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.8,
-      "position": [
-        -360,
-        720
-      ],
-      "parameters": {
-        "promptType": "define",
-        "text": "={{ $json.text }}",
-        "messages": {
-          "messageValues": [
-            {
-              "message": "Sen el yaz?s? salon defterlerinden randevu ??karan bir ayr??t?r?c?s?n. ?nce zaman? tespit et, sonra o zaman?n ?evresindeki yak?n OCR par?alar?n? ayn? randevuda grupla. Sonraki saat ba?lad???nda yeni randevu ba?lat. ??kt? sadece JSON olmal?: {\"rows\":[...]}. customerName m??teri ad? olmal?. serviceNameRaw hizmetlerin normalize edilmi? T?rk?e g?sterimi olmal?. staffNameRaw yaln?zca ger?ekten yaz?yorsa dolu olmal?. Telefonu g?r?ld??? gibi koru; yaln?zca bariz bo?luk ve ay?r?c? g?r?lt?s?n? temizleyebilirsin. Saat format?n? m?mk?nse HH:MM yap. Ka? ile ilgili ifadeleri Ka? Al?m?, TV lazeri T?m V?cut Lazer olarak normalize et. Notlar? notesRaw alan?na ta??. A??klama ekleme, sadece JSON yaz."
-            }
-          ]
-        },
-        "batching": {}
-      }
-    },
-    {
-      "id": "chain-minimax-pipe-v4",
-      "name": "Chain 24 - MiniMax M2.7 / T?rk?e Sadakat",
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.8,
-      "position": [
-        -360,
-        800
-      ],
-      "parameters": {
-        "promptType": "define",
-        "text": "={{ $json.text }}",
-        "messages": {
-          "messageValues": [
-            {
-              "message": "Sen T?rkiye salonlar? i?in optimize edilmi? bir OCR post-processor modelisin. T?rk?e karakterleri koru: ?, ?, ?, ?, ?, ? ve k???k halleri. ??kt? yaln?zca JSON olacak: {\"rows\":[...]}. M??teri ad?, telefon, tarih, saat, hizmet ve not alanlar?n? ??karmaya ?al??. E2gi gibi OCR hatalar?n? Ezgi olarak g?venle okuyabiliyorsan d?zeltebilirsin; emin de?ilsen oldu?u gibi b?rak. Han?m, bey, hnm gibi unvanlar? customerName i?inde tutabilirsin, serviceNameRaw i?ine ta??ma. Demet han?m gibi ifadelerde han?m kelimesini hizmet gibi yorumlama. TV lazeri tek hizmet olarak T?m V?cut Lazer yap; ayr?ca ekstra Lazer ekleme. Hat?rlat gibi operasyon notlar?n? notesRaw alan?na koy. JSON d???nda tek karakter bile ?retme."
-            }
-          ]
-        },
-        "batching": {}
-      }
-    },
-    {
-      "id": "chain-minimax-pipe-v5",
-      "name": "Chain 25 - MiniMax M2.7 / Format Polisi",
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.8,
-      "position": [
-        -360,
-        880
-      ],
-      "parameters": {
-        "promptType": "define",
-        "text": "={{ $json.text }}",
-        "messages": {
-          "messageValues": [
-            {
-              "message": "Deterministik ?al??. Yaln?zca ge?erli JSON ?ret: {\"rows\":[...]}. Her row alan? ?u s?rayla bulunmal?: rowIndex, customerName, customerPhoneRaw, appointmentDate, startTime, endTime, durationMinutes, serviceNameRaw, staffNameRaw, priceRaw, notesRaw, confidence. Bo? alanlara null yaz. Telefon uydurma yok, saat uydurma yok, sat?r uydurma yok. Tek bir randevuyu ba?ka randevu ile birle?tirme. Service normalization s?zl???: Kal?c? Oje, T?m V?cut Lazer, Ka? Al?m?, Lazer, A?da, Pedik?r, Manik?r, Jel G??lendirme. notesRaw i?in ?rnek notlar: hat?rlat, geldi, iptal, ?dedi, arans?n. T?rk?e karakterleri koru. JSON d???nda hi?bir ?ey yazma."
-            }
-          ]
-        },
-        "batching": {}
-      }
-    },
-    {
-      "id": "model-grok",
-      "name": "Model - Grok 4.1 Fast",
-      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
-      "typeVersion": 1,
-      "position": [
-        -360,
-        800
-      ],
-      "parameters": {
-        "model": "x-ai/grok-4.1-fast",
-        "options": {
-          "temperature": 0
-        }
-      },
-      "credentials": {
-        "openRouterApi": {
-          "id": "x4oJ9U04K1AOxKsx",
-          "name": "OpenRouter account"
-        }
+        "numberInputs": 10
       }
     },
     {
@@ -943,20 +293,33 @@
       "typeVersion": 3.2,
       "position": [
         120,
-        1120
+        240
       ],
       "parameters": {
-        "numberInputs": 5
+        "numberInputs": 10
       }
     },
     {
-      "id": "chain-grok-pipe-v1",
-      "name": "Chain 26 - Grok 4.1 Fast / S?k? T?rk?e Pipe",
+      "id": "merge-geminilite",
+      "name": "Merge - Gemini 2.5 Flash Lite",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        120,
+        1240
+      ],
+      "parameters": {
+        "numberInputs": 10
+      }
+    },
+    {
+      "id": "chain-minimax-pipe-v1",
+      "name": "Chain 1 - MiniMax M2.7 / Deterministik Temel",
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.8,
       "position": [
         -360,
-        960
+        -960
       ],
       "parameters": {
         "promptType": "define",
@@ -964,7 +327,227 @@
         "messages": {
           "messageValues": [
             {
-              "message": "Sen deterministik bir salon randevu OCR normalizer'?s?n. Sadece ge?erli JSON ?ret. ?ema tam olarak {\"rows\":[...]} olmal?. Her row alanlar?: rowIndex, customerName, customerPhoneRaw, appointmentDate, startTime, endTime, durationMinutes, serviceNameRaw, staffNameRaw, priceRaw, notesRaw, confidence. OCR metnindeki g?r?lt?y? temizle, m??teri ad?n? okunabilir hale getir ama emin olmad???n yerde uydurma yapma. Hizmetleri yaln?zca g??l? sinyal varsa normalize et: Kal?c? Oje, T?m V?cut Lazer, Ka? Al?m?, Lazer, A?da, Pedik?r, Manik?r, Jel G??lendirme. Hat?rlat, geldi, iptal, ?dedi, arans?n gibi operasyon notlar?n? notesRaw alan?na ta??. Saatleri m?mk?nse HH:MM format?na ?evir. Birden fazla hizmet varsa virg?lle ay?r. JSON d???nda hi?bir ?ey yazma."
+              "message": "={{ $json.promptLibrary[\"pipe-v1\"] }}"
+            }
+          ]
+        },
+        "batching": {}
+      }
+    },
+    {
+      "id": "chain-minimax-pipe-v2",
+      "name": "Chain 2 - MiniMax M2.7 / Kanit Esikli",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.8,
+      "position": [
+        -360,
+        -880
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.text }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "={{ $json.promptLibrary[\"pipe-v2\"] }}"
+            }
+          ]
+        },
+        "batching": {}
+      }
+    },
+    {
+      "id": "chain-minimax-pipe-v3",
+      "name": "Chain 3 - MiniMax M2.7 / Saat Once Segmentasyon",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.8,
+      "position": [
+        -360,
+        -800
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.text }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "={{ $json.promptLibrary[\"pipe-v3\"] }}"
+            }
+          ]
+        },
+        "batching": {}
+      }
+    },
+    {
+      "id": "chain-minimax-pipe-v4",
+      "name": "Chain 4 - MiniMax M2.7 / Turkce Sadakat Plus",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.8,
+      "position": [
+        -360,
+        -720
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.text }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "={{ $json.promptLibrary[\"pipe-v4\"] }}"
+            }
+          ]
+        },
+        "batching": {}
+      }
+    },
+    {
+      "id": "chain-minimax-pipe-v5",
+      "name": "Chain 5 - MiniMax M2.7 / Hizmet Agirlikli",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.8,
+      "position": [
+        -360,
+        -640
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.text }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "={{ $json.promptLibrary[\"pipe-v5\"] }}"
+            }
+          ]
+        },
+        "batching": {}
+      }
+    },
+    {
+      "id": "chain-minimax-pipe-v6",
+      "name": "Chain 6 - MiniMax M2.7 / Not Ayristirma Sert",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.8,
+      "position": [
+        -360,
+        -560
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.text }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "={{ $json.promptLibrary[\"pipe-v6\"] }}"
+            }
+          ]
+        },
+        "batching": {}
+      }
+    },
+    {
+      "id": "chain-minimax-pipe-v7",
+      "name": "Chain 7 - MiniMax M2.7 / Cakisma Cozucu",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.8,
+      "position": [
+        -360,
+        -480
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.text }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "={{ $json.promptLibrary[\"pipe-v7\"] }}"
+            }
+          ]
+        },
+        "batching": {}
+      }
+    },
+    {
+      "id": "chain-minimax-pipe-v8",
+      "name": "Chain 8 - MiniMax M2.7 / Satir Satir Rekonstruksiyon",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.8,
+      "position": [
+        -360,
+        -400
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.text }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "={{ $json.promptLibrary[\"pipe-v8\"] }}"
+            }
+          ]
+        },
+        "batching": {}
+      }
+    },
+    {
+      "id": "chain-minimax-pipe-v9",
+      "name": "Chain 9 - MiniMax M2.7 / Kalite Kapisi",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.8,
+      "position": [
+        -360,
+        -320
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.text }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "={{ $json.promptLibrary[\"pipe-v9\"] }}"
+            }
+          ]
+        },
+        "batching": {}
+      }
+    },
+    {
+      "id": "chain-minimax-pipe-v10",
+      "name": "Chain 10 - MiniMax M2.7 / Dusuk Halusinasyon",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.8,
+      "position": [
+        -360,
+        -240
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.text }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "={{ $json.promptLibrary[\"pipe-v10\"] }}"
+            }
+          ]
+        },
+        "batching": {}
+      }
+    },
+    {
+      "id": "chain-grok-pipe-v1",
+      "name": "Chain 11 - Grok 4.1 Fast / Deterministik Temel",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.8,
+      "position": [
+        -360,
+        40
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.text }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "={{ $json.promptLibrary[\"pipe-v1\"] }}"
             }
           ]
         },
@@ -973,7 +556,205 @@
     },
     {
       "id": "chain-grok-pipe-v2",
-      "name": "Chain 27 - Grok 4.1 Fast / Konservatif Pipe",
+      "name": "Chain 12 - Grok 4.1 Fast / Kanit Esikli",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.8,
+      "position": [
+        -360,
+        120
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.text }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "={{ $json.promptLibrary[\"pipe-v2\"] }}"
+            }
+          ]
+        },
+        "batching": {}
+      }
+    },
+    {
+      "id": "chain-grok-pipe-v3",
+      "name": "Chain 13 - Grok 4.1 Fast / Saat Once Segmentasyon",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.8,
+      "position": [
+        -360,
+        200
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.text }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "={{ $json.promptLibrary[\"pipe-v3\"] }}"
+            }
+          ]
+        },
+        "batching": {}
+      }
+    },
+    {
+      "id": "chain-grok-pipe-v4",
+      "name": "Chain 14 - Grok 4.1 Fast / Turkce Sadakat Plus",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.8,
+      "position": [
+        -360,
+        280
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.text }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "={{ $json.promptLibrary[\"pipe-v4\"] }}"
+            }
+          ]
+        },
+        "batching": {}
+      }
+    },
+    {
+      "id": "chain-grok-pipe-v5",
+      "name": "Chain 15 - Grok 4.1 Fast / Hizmet Agirlikli",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.8,
+      "position": [
+        -360,
+        360
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.text }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "={{ $json.promptLibrary[\"pipe-v5\"] }}"
+            }
+          ]
+        },
+        "batching": {}
+      }
+    },
+    {
+      "id": "chain-grok-pipe-v6",
+      "name": "Chain 16 - Grok 4.1 Fast / Not Ayristirma Sert",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.8,
+      "position": [
+        -360,
+        440
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.text }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "={{ $json.promptLibrary[\"pipe-v6\"] }}"
+            }
+          ]
+        },
+        "batching": {}
+      }
+    },
+    {
+      "id": "chain-grok-pipe-v7",
+      "name": "Chain 17 - Grok 4.1 Fast / Cakisma Cozucu",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.8,
+      "position": [
+        -360,
+        520
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.text }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "={{ $json.promptLibrary[\"pipe-v7\"] }}"
+            }
+          ]
+        },
+        "batching": {}
+      }
+    },
+    {
+      "id": "chain-grok-pipe-v8",
+      "name": "Chain 18 - Grok 4.1 Fast / Satir Satir Rekonstruksiyon",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.8,
+      "position": [
+        -360,
+        600
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.text }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "={{ $json.promptLibrary[\"pipe-v8\"] }}"
+            }
+          ]
+        },
+        "batching": {}
+      }
+    },
+    {
+      "id": "chain-grok-pipe-v9",
+      "name": "Chain 19 - Grok 4.1 Fast / Kalite Kapisi",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.8,
+      "position": [
+        -360,
+        680
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.text }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "={{ $json.promptLibrary[\"pipe-v9\"] }}"
+            }
+          ]
+        },
+        "batching": {}
+      }
+    },
+    {
+      "id": "chain-grok-pipe-v10",
+      "name": "Chain 20 - Grok 4.1 Fast / Dusuk Halusinasyon",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.8,
+      "position": [
+        -360,
+        760
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.text }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "={{ $json.promptLibrary[\"pipe-v10\"] }}"
+            }
+          ]
+        },
+        "batching": {}
+      }
+    },
+    {
+      "id": "chain-geminilite-pipe-v1",
+      "name": "Chain 21 - Gemini 2.5 Flash Lite / Deterministik Temel",
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.8,
       "position": [
@@ -986,7 +767,7 @@
         "messages": {
           "messageValues": [
             {
-              "message": "Sen ?ok konservatif ?al??an bir OCR randevu ayr??t?r?c?s?s?n. Sadece JSON ?ret: {\"rows\":[...]}. Emin olmad???n hi?bir de?eri tahmin etme; null b?rak. M??teri ad? ile hizmeti kar??t?rma. Hizmeti yaln?zca g??l? kan?t varsa normalize et. TV lazer = T?m V?cut Lazer. ka?, kas, ka?- = Ka? Al?m?. kal je, kal?c? oje = Kal?c? Oje. a?da varyasyonlar? = A?da. lazer, lezer, lace gibi varyasyonlar = Lazer. pedikur = Pedik?r. manikur = Manik?r. jel g??lendirme varyasyonlar?n? Jel G??lendirme yap. Hat?rlat ve benzeri notlar notesRaw alan?na gitmeli. Unvanlar? ve notlar? serviceNameRaw alan?na koyma. JSON d???nda hi?bir ?ey ?retme."
+              "message": "={{ $json.promptLibrary[\"pipe-v1\"] }}"
             }
           ]
         },
@@ -994,8 +775,8 @@
       }
     },
     {
-      "id": "chain-grok-pipe-v3",
-      "name": "Chain 28 - Grok 4.1 Fast / Saat Bazl? Gruplama",
+      "id": "chain-geminilite-pipe-v2",
+      "name": "Chain 22 - Gemini 2.5 Flash Lite / Kanit Esikli",
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.8,
       "position": [
@@ -1008,7 +789,7 @@
         "messages": {
           "messageValues": [
             {
-              "message": "Sen el yaz?s? salon defterlerinden randevu ??karan bir ayr??t?r?c?s?n. ?nce zaman? tespit et, sonra o zaman?n ?evresindeki yak?n OCR par?alar?n? ayn? randevuda grupla. Sonraki saat ba?lad???nda yeni randevu ba?lat. ??kt? sadece JSON olmal?: {\"rows\":[...]}. customerName m??teri ad? olmal?. serviceNameRaw hizmetlerin normalize edilmi? T?rk?e g?sterimi olmal?. staffNameRaw yaln?zca ger?ekten yaz?yorsa dolu olmal?. Telefonu g?r?ld??? gibi koru; yaln?zca bariz bo?luk ve ay?r?c? g?r?lt?s?n? temizleyebilirsin. Saat format?n? m?mk?nse HH:MM yap. Ka? ile ilgili ifadeleri Ka? Al?m?, TV lazeri T?m V?cut Lazer olarak normalize et. Notlar? notesRaw alan?na ta??. A??klama ekleme, sadece JSON yaz."
+              "message": "={{ $json.promptLibrary[\"pipe-v2\"] }}"
             }
           ]
         },
@@ -1016,8 +797,8 @@
       }
     },
     {
-      "id": "chain-grok-pipe-v4",
-      "name": "Chain 29 - Grok 4.1 Fast / T?rk?e Sadakat",
+      "id": "chain-geminilite-pipe-v3",
+      "name": "Chain 23 - Gemini 2.5 Flash Lite / Saat Once Segmentasyon",
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.8,
       "position": [
@@ -1030,7 +811,7 @@
         "messages": {
           "messageValues": [
             {
-              "message": "Sen T?rkiye salonlar? i?in optimize edilmi? bir OCR post-processor modelisin. T?rk?e karakterleri koru: ?, ?, ?, ?, ?, ? ve k???k halleri. ??kt? yaln?zca JSON olacak: {\"rows\":[...]}. M??teri ad?, telefon, tarih, saat, hizmet ve not alanlar?n? ??karmaya ?al??. E2gi gibi OCR hatalar?n? Ezgi olarak g?venle okuyabiliyorsan d?zeltebilirsin; emin de?ilsen oldu?u gibi b?rak. Han?m, bey, hnm gibi unvanlar? customerName i?inde tutabilirsin, serviceNameRaw i?ine ta??ma. Demet han?m gibi ifadelerde han?m kelimesini hizmet gibi yorumlama. TV lazeri tek hizmet olarak T?m V?cut Lazer yap; ayr?ca ekstra Lazer ekleme. Hat?rlat gibi operasyon notlar?n? notesRaw alan?na koy. JSON d???nda tek karakter bile ?retme."
+              "message": "={{ $json.promptLibrary[\"pipe-v3\"] }}"
             }
           ]
         },
@@ -1038,8 +819,8 @@
       }
     },
     {
-      "id": "chain-grok-pipe-v5",
-      "name": "Chain 30 - Grok 4.1 Fast / Format Polisi",
+      "id": "chain-geminilite-pipe-v4",
+      "name": "Chain 24 - Gemini 2.5 Flash Lite / Turkce Sadakat Plus",
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.8,
       "position": [
@@ -1052,7 +833,139 @@
         "messages": {
           "messageValues": [
             {
-              "message": "Deterministik ?al??. Yaln?zca ge?erli JSON ?ret: {\"rows\":[...]}. Her row alan? ?u s?rayla bulunmal?: rowIndex, customerName, customerPhoneRaw, appointmentDate, startTime, endTime, durationMinutes, serviceNameRaw, staffNameRaw, priceRaw, notesRaw, confidence. Bo? alanlara null yaz. Telefon uydurma yok, saat uydurma yok, sat?r uydurma yok. Tek bir randevuyu ba?ka randevu ile birle?tirme. Service normalization s?zl???: Kal?c? Oje, T?m V?cut Lazer, Ka? Al?m?, Lazer, A?da, Pedik?r, Manik?r, Jel G??lendirme. notesRaw i?in ?rnek notlar: hat?rlat, geldi, iptal, ?dedi, arans?n. T?rk?e karakterleri koru. JSON d???nda hi?bir ?ey yazma."
+              "message": "={{ $json.promptLibrary[\"pipe-v4\"] }}"
+            }
+          ]
+        },
+        "batching": {}
+      }
+    },
+    {
+      "id": "chain-geminilite-pipe-v5",
+      "name": "Chain 25 - Gemini 2.5 Flash Lite / Hizmet Agirlikli",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.8,
+      "position": [
+        -360,
+        1360
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.text }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "={{ $json.promptLibrary[\"pipe-v5\"] }}"
+            }
+          ]
+        },
+        "batching": {}
+      }
+    },
+    {
+      "id": "chain-geminilite-pipe-v6",
+      "name": "Chain 26 - Gemini 2.5 Flash Lite / Not Ayristirma Sert",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.8,
+      "position": [
+        -360,
+        1440
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.text }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "={{ $json.promptLibrary[\"pipe-v6\"] }}"
+            }
+          ]
+        },
+        "batching": {}
+      }
+    },
+    {
+      "id": "chain-geminilite-pipe-v7",
+      "name": "Chain 27 - Gemini 2.5 Flash Lite / Cakisma Cozucu",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.8,
+      "position": [
+        -360,
+        1520
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.text }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "={{ $json.promptLibrary[\"pipe-v7\"] }}"
+            }
+          ]
+        },
+        "batching": {}
+      }
+    },
+    {
+      "id": "chain-geminilite-pipe-v8",
+      "name": "Chain 28 - Gemini 2.5 Flash Lite / Satir Satir Rekonstruksiyon",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.8,
+      "position": [
+        -360,
+        1600
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.text }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "={{ $json.promptLibrary[\"pipe-v8\"] }}"
+            }
+          ]
+        },
+        "batching": {}
+      }
+    },
+    {
+      "id": "chain-geminilite-pipe-v9",
+      "name": "Chain 29 - Gemini 2.5 Flash Lite / Kalite Kapisi",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.8,
+      "position": [
+        -360,
+        1680
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.text }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "={{ $json.promptLibrary[\"pipe-v9\"] }}"
+            }
+          ]
+        },
+        "batching": {}
+      }
+    },
+    {
+      "id": "chain-geminilite-pipe-v10",
+      "name": "Chain 30 - Gemini 2.5 Flash Lite / Dusuk Halusinasyon",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.8,
+      "position": [
+        -360,
+        1760
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.text }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "={{ $json.promptLibrary[\"pipe-v10\"] }}"
             }
           ]
         },
@@ -1069,7 +982,7 @@
         -40
       ],
       "parameters": {
-        "numberInputs": 6
+        "numberInputs": 3
       }
     },
     {
@@ -1082,7 +995,7 @@
         -40
       ],
       "parameters": {
-        "jsCode": "const promptLibrary = {\n  \"pipe-v1\": { \"label\": \"Dengeli Normalizasyon\" },\n  \"pipe-v2\": { \"label\": \"Konservatif Normalizasyon\" },\n  \"pipe-v3\": { \"label\": \"Saat Bazl? Gruplama\" },\n  \"pipe-v4\": { \"label\": \"T?rk?e Sadakat\" },\n  \"pipe-v5\": { \"label\": \"S?k? JSON\" }\n};\nconst modelMatrix = [\n  { \"name\": \"GPT-4o Mini\", \"model\": \"openai/gpt-4o-mini\", \"startIndex\": 1 },\n  { \"name\": \"Gemini 2.5 Flash\", \"model\": \"google/gemini-2.5-flash\", \"startIndex\": 6 },\n  { \"name\": \"Gemini 2.5 Flash Lite\", \"model\": \"google/gemini-2.5-flash-lite\", \"startIndex\": 11 },\n  { \"name\": \"DeepSeek V3.2\", \"model\": \"deepseek/deepseek-v3.2\", \"startIndex\": 16 },\n  { \"name\": \"MiniMax M2.7\", \"model\": \"minimax/minimax-m2.7\", \"startIndex\": 21 },\n  { \"name\": \"Grok 4.1 Fast\", \"model\": \"x-ai/grok-4.1-fast\", \"startIndex\": 26 }\n];\nconst promptVariants = [\n  { \"promptVersion\": \"pipe-v1\", \"legacyNodeSuffix\": \"S?k? T?rk?e Pipe\" },\n  { \"promptVersion\": \"pipe-v2\", \"legacyNodeSuffix\": \"Konservatif Pipe\" },\n  { \"promptVersion\": \"pipe-v3\", \"legacyNodeSuffix\": \"Saat Bazl? Gruplama\" },\n  { \"promptVersion\": \"pipe-v4\", \"legacyNodeSuffix\": \"T?rk?e Sadakat\" },\n  { \"promptVersion\": \"pipe-v5\", \"legacyNodeSuffix\": \"Format Polisi\" }\n];\nconst source = $(\"Extract OCR Text\").first().json;\nfunction trimText(v) { return typeof v === \"string\" ? v.trim() : \"\"; }\nfunction nullable(v) { const x = trimText(v); return !x || x.toLowerCase() === \"null\" ? null : x; }\nfunction normalizeTime(v) {\n  const x = trimText(v);\n  if (!x || x.toLowerCase() === \"null\") return null;\n  let m = x.match(/^(\\d{1,2})[:.](\\d{2})$/);\n  if (m) {\n    const hour = Number(m[1]);\n    const minute = Number(m[2]);\n    if (hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59) return String(hour).padStart(2, \"0\") + \":\" + String(minute).padStart(2, \"0\");\n  }\n  m = x.match(/^(\\d{2})(\\d{2})$/);\n  if (m) {\n    const hour = Number(m[1]);\n    const minute = Number(m[2]);\n    if (hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59) return String(hour).padStart(2, \"0\") + \":\" + String(minute).padStart(2, \"0\");\n  }\n  return null;\n}\nfunction normalizeDate(v) {\n  const x = trimText(v);\n  if (!x || x.toLowerCase() === \"null\") return null;\n  let m = x.match(/^(\\d{1,2})[./-](\\d{1,2})[./-](\\d{2,4})$/);\n  if (m) {\n    let year = Number(m[3]);\n    if (year < 100) year += 2000;\n    return String(Number(m[1])).padStart(2, \"0\") + \".\" + String(Number(m[2])).padStart(2, \"0\") + \".\" + String(year).padStart(4, \"0\");\n  }\n  if (/^(\\d{4})-(\\d{2})-(\\d{2})$/.test(x)) return x;\n  return null;\n}\nfunction normalizeNumber(v) {\n  if (v === null || v === undefined || v === \"\") return null;\n  const n = Number(String(v).replace(\",\", \".\"));\n  return Number.isFinite(n) ? n : null;\n}\nfunction unwrapJson(raw) {\n  const text = trimText(raw);\n  if (!text) throw new Error(\"llm_empty_output\");\n  try { return JSON.parse(text); } catch (error) {}\n  const fenced = text.match(/```(?:json)?\\s*([\\s\\S]*?)```/i);\n  if (fenced) return JSON.parse(fenced[1].trim());\n  const start = text.indexOf(\"{\");\n  const end = text.lastIndexOf(\"}\");\n  if (start !== -1 && end > start) return JSON.parse(text.slice(start, end + 1));\n  throw new Error(\"llm_invalid_json\");\n}\nfunction normalizeRows(payload) {\n  const rows = Array.isArray(payload) ? payload : (Array.isArray(payload?.rows) ? payload.rows : []);\n  return rows.map((row, index) => ({\n    rowIndex: Number(row?.rowIndex) > 0 ? Number(row.rowIndex) : index + 1,\n    customerName: nullable(row?.customerName),\n    customerPhoneRaw: nullable(row?.customerPhoneRaw),\n    appointmentDate: normalizeDate(row?.appointmentDate || row?.date),\n    startTime: normalizeTime(row?.startTime || row?.time),\n    endTime: normalizeTime(row?.endTime),\n    durationMinutes: normalizeNumber(row?.durationMinutes),\n    serviceNameRaw: nullable(row?.serviceNameRaw || row?.servicesNormalized || row?.service),\n    staffNameRaw: nullable(row?.staffNameRaw || row?.staff),\n    priceRaw: normalizeNumber(row?.priceRaw),\n    notesRaw: nullable(row?.notesRaw || row?.note),\n    confidence: (() => {\n      const value = Number(row?.confidence);\n      if (!Number.isFinite(value)) return 0.5;\n      return Math.max(0, Math.min(1, value));\n    })(),\n  })).filter((row) => row.appointmentDate || row.startTime || row.customerName || row.serviceNameRaw || row.notesRaw);\n}\nconst candidates = [];\nfor (const modelEntry of modelMatrix) {\n  for (let index = 0; index < promptVariants.length; index += 1) {\n    const variant = promptVariants[index];\n    const chainNumber = modelEntry.startIndex + index;\n    const nodeName = \"Chain \" + chainNumber + \" - \" + modelEntry.name + \" / \" + variant.legacyNodeSuffix;\n    let rawOutputText = \"\";\n    let parsedRows = [];\n    try {\n      const nodeJson = $item(0).$node[nodeName].json || {};\n      rawOutputText = trimText(nodeJson.text || \"\");\n      parsedRows = normalizeRows(unwrapJson(rawOutputText));\n    } catch (error) {\n      rawOutputText = trimText(rawOutputText) || (\"ERROR: \" + (error?.message || \"candidate_read_failed\"));\n      parsedRows = [];\n    }\n    candidates.push({\n      provider: \"openrouter\",\n      model: modelEntry.model,\n      promptVersion: variant.promptVersion,\n      promptLabel: promptLibrary[variant.promptVersion]?.label || variant.promptVersion,\n      rawOutputText,\n      parsedRows\n    });\n  }\n}\nconst successCount = candidates.filter((candidate) => Array.isArray(candidate.parsedRows) && candidate.parsedRows.length > 0).length;\nreturn [{ json: { batchId: source.batchId, sourceFileId: source.sourceFileId, mode: \"BENCHMARK\", candidates, audit: { ocrProvider: \"google-vision\", ocrModel: \"DOCUMENT_TEXT_DETECTION\", ocrRawText: source.text || \"\", activeConfigSnapshot: source.aiConfig || {}, metrics: { candidateCount: candidates.length, modelCount: modelMatrix.length, promptCount: promptVariants.length, successCount, failureCount: candidates.length - successCount } } } }];"
+        "jsCode": "const promptLibrary = {\n  \"pipe-v1\": {\n    \"label\": \"Deterministik Temel\"\n  },\n  \"pipe-v2\": {\n    \"label\": \"Kanit Esikli\"\n  },\n  \"pipe-v3\": {\n    \"label\": \"Saat Once Segmentasyon\"\n  },\n  \"pipe-v4\": {\n    \"label\": \"Turkce Sadakat Plus\"\n  },\n  \"pipe-v5\": {\n    \"label\": \"Hizmet Agirlikli\"\n  },\n  \"pipe-v6\": {\n    \"label\": \"Not Ayristirma Sert\"\n  },\n  \"pipe-v7\": {\n    \"label\": \"Cakişma Cozucu\"\n  },\n  \"pipe-v8\": {\n    \"label\": \"Satir Satir Rekonstruksiyon\"\n  },\n  \"pipe-v9\": {\n    \"label\": \"Kalite Kapisi\"\n  },\n  \"pipe-v10\": {\n    \"label\": \"Dusuk Halusinasyon\"\n  }\n};\nconst modelMatrix = [\n  {\n    \"name\": \"MiniMax M2.7\",\n    \"model\": \"minimax/minimax-m2.7\",\n    \"startIndex\": 1\n  },\n  {\n    \"name\": \"Grok 4.1 Fast\",\n    \"model\": \"x-ai/grok-4.1-fast\",\n    \"startIndex\": 11\n  },\n  {\n    \"name\": \"Gemini 2.5 Flash Lite\",\n    \"model\": \"google/gemini-2.5-flash-lite\",\n    \"startIndex\": 21\n  }\n];\nconst promptVariants = [\n  {\n    \"promptVersion\": \"pipe-v1\",\n    \"legacyNodeSuffix\": \"Deterministik Temel\"\n  },\n  {\n    \"promptVersion\": \"pipe-v2\",\n    \"legacyNodeSuffix\": \"Kanit Esikli\"\n  },\n  {\n    \"promptVersion\": \"pipe-v3\",\n    \"legacyNodeSuffix\": \"Saat Once Segmentasyon\"\n  },\n  {\n    \"promptVersion\": \"pipe-v4\",\n    \"legacyNodeSuffix\": \"Turkce Sadakat Plus\"\n  },\n  {\n    \"promptVersion\": \"pipe-v5\",\n    \"legacyNodeSuffix\": \"Hizmet Agirlikli\"\n  },\n  {\n    \"promptVersion\": \"pipe-v6\",\n    \"legacyNodeSuffix\": \"Not Ayristirma Sert\"\n  },\n  {\n    \"promptVersion\": \"pipe-v7\",\n    \"legacyNodeSuffix\": \"Cakisma Cozucu\"\n  },\n  {\n    \"promptVersion\": \"pipe-v8\",\n    \"legacyNodeSuffix\": \"Satir Satir Rekonstruksiyon\"\n  },\n  {\n    \"promptVersion\": \"pipe-v9\",\n    \"legacyNodeSuffix\": \"Kalite Kapisi\"\n  },\n  {\n    \"promptVersion\": \"pipe-v10\",\n    \"legacyNodeSuffix\": \"Dusuk Halusinasyon\"\n  }\n];\nconst source = $(\"Extract OCR Text\").first().json;\nfunction trimText(v) { return typeof v === \"string\" ? v.trim() : \"\"; }\nfunction nullable(v) { const x = trimText(v); return !x || x.toLowerCase() === \"null\" ? null : x; }\nfunction normalizeTime(v) {\n  const x = trimText(v);\n  if (!x || x.toLowerCase() === \"null\") return null;\n  let m = x.match(/^(\\d{1,2})[:.](\\d{2})$/);\n  if (m) {\n    const hour = Number(m[1]);\n    const minute = Number(m[2]);\n    if (hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59) return String(hour).padStart(2, \"0\") + \":\" + String(minute).padStart(2, \"0\");\n  }\n  m = x.match(/^(\\d{2})(\\d{2})$/);\n  if (m) {\n    const hour = Number(m[1]);\n    const minute = Number(m[2]);\n    if (hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59) return String(hour).padStart(2, \"0\") + \":\" + String(minute).padStart(2, \"0\");\n  }\n  return null;\n}\nfunction normalizeDate(v) {\n  const x = trimText(v);\n  if (!x || x.toLowerCase() === \"null\") return null;\n  let m = x.match(/^(\\d{1,2})[./-](\\d{1,2})[./-](\\d{2,4})$/);\n  if (m) {\n    let year = Number(m[3]);\n    if (year < 100) year += 2000;\n    return String(Number(m[1])).padStart(2, \"0\") + \".\" + String(Number(m[2])).padStart(2, \"0\") + \".\" + String(year).padStart(4, \"0\");\n  }\n  if (/^(\\d{4})-(\\d{2})-(\\d{2})$/.test(x)) return x;\n  return null;\n}\nfunction normalizeNumber(v) {\n  if (v === null || v === undefined || v === \"\") return null;\n  const n = Number(String(v).replace(\",\", \".\"));\n  return Number.isFinite(n) ? n : null;\n}\nfunction unwrapJson(raw) {\n  const text = trimText(raw);\n  if (!text) throw new Error(\"llm_empty_output\");\n  try { return JSON.parse(text); } catch (error) {}\n  const fenced = text.match(/```(?:json)?\\s*([\\s\\S]*?)```/i);\n  if (fenced) return JSON.parse(fenced[1].trim());\n  const start = text.indexOf(\"{\");\n  const end = text.lastIndexOf(\"}\");\n  if (start !== -1 && end > start) return JSON.parse(text.slice(start, end + 1));\n  throw new Error(\"llm_invalid_json\");\n}\nfunction normalizeRows(payload) {\n  const rows = Array.isArray(payload) ? payload : (Array.isArray(payload?.rows) ? payload.rows : []);\n  return rows.map((row, index) => ({\n    rowIndex: Number(row?.rowIndex) > 0 ? Number(row.rowIndex) : index + 1,\n    customerName: nullable(row?.customerName || row?.name || row?.customer || row?.customerNameRaw),\n    customerPhoneRaw: nullable(row?.customerPhoneRaw || row?.phoneRaw || row?.phone),\n    appointmentDate: normalizeDate(row?.appointmentDate || row?.date || row?.appointment_date),\n    startTime: normalizeTime(row?.startTime || row?.time || row?.hour || row?.start),\n    endTime: normalizeTime(row?.endTime || row?.end || row?.finishTime),\n    durationMinutes: normalizeNumber(row?.durationMinutes),\n    serviceNameRaw: nullable(row?.serviceNameRaw || row?.servicesNormalized || row?.service || row?.serviceRaw || row?.services),\n    staffNameRaw: nullable(row?.staffNameRaw || row?.staff),\n    priceRaw: normalizeNumber(row?.priceRaw),\n    notesRaw: nullable(row?.notesRaw || row?.note || row?.notes),\n    confidence: (() => {\n      const value = Number(row?.confidence);\n      if (!Number.isFinite(value)) return 0.5;\n      return Math.max(0, Math.min(1, value));\n    })(),\n  })).filter((row) => row.appointmentDate || row.startTime || row.customerName || row.serviceNameRaw || row.notesRaw);\n}\nconst candidates = [];\nfor (const modelEntry of modelMatrix) {\n  for (let index = 0; index < promptVariants.length; index += 1) {\n    const variant = promptVariants[index];\n    const chainNumber = modelEntry.startIndex + index;\n    const nodeName = \"Chain \" + chainNumber + \" - \" + modelEntry.name + \" / \" + variant.legacyNodeSuffix;\n    let rawOutputText = \"\";\n    let parsedRows = [];\n    try {\n      const nodeJson = $item(0).$node[nodeName].json || {};\n      rawOutputText = trimText(nodeJson.text || \"\");\n      parsedRows = normalizeRows(unwrapJson(rawOutputText));\n    } catch (error) {\n      rawOutputText = trimText(rawOutputText) || (\"ERROR: \" + (error?.message || \"candidate_read_failed\"));\n      parsedRows = [];\n    }\n    candidates.push({\n      provider: \"openrouter\",\n      model: modelEntry.model,\n      promptVersion: variant.promptVersion,\n      promptLabel: promptLibrary[variant.promptVersion]?.label || variant.promptVersion,\n      rawOutputText,\n      parsedRows\n    });\n  }\n}\nconst successCount = candidates.filter((candidate) => Array.isArray(candidate.parsedRows) && candidate.parsedRows.length > 0).length;\nreturn [{ json: { batchId: source.batchId, sourceFileId: source.sourceFileId, mode: \"BENCHMARK\", candidates, audit: { ocrProvider: \"google-vision\", ocrModel: \"DOCUMENT_TEXT_DETECTION\", ocrRawText: source.text || \"\", activeConfigSnapshot: source.aiConfig || {}, benchmarkReferenceText: source.benchmarkReferenceText || \"\", metrics: { benchmarkReferenceText: source.benchmarkReferenceText || \"\", candidateCount: candidates.length, modelCount: modelMatrix.length, promptCount: promptVariants.length, successCount, failureCount: candidates.length - successCount } } } }];"
       }
     },
     {
@@ -1102,13 +1015,13 @@
           "parameters": [
             {
               "name": "x-internal-api-key",
-              "value": "ae989558d5b97940b643e514ebc885d2656e7a8000efa5f499ce1e36c9a1182a"
+              "value": "4c4ec9dd02994c9fa27b2b316631f22fd1f04455a54351b8575a60d6a99756fd"
             }
           ]
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { mode: $json.mode || \"BENCHMARK\", sourceFileId: $json.sourceFileId, candidates: $json.candidates || [], audit: $json.audit || null } }}",
+        "jsonBody": "={{ { mode: $json.mode || \"BENCHMARK\", sourceFileId: $json.sourceFileId, benchmarkReferenceText: $json.audit?.benchmarkReferenceText || $json.benchmarkReferenceText || \"\", candidates: $json.candidates || [], audit: $json.audit || null } }}",
         "options": {}
       }
     },
@@ -1129,13 +1042,13 @@
           "parameters": [
             {
               "name": "x-internal-api-key",
-              "value": "ae989558d5b97940b643e514ebc885d2656e7a8000efa5f499ce1e36c9a1182a"
+              "value": "4c4ec9dd02994c9fa27b2b316631f22fd1f04455a54351b8575a60d6a99756fd"
             }
           ]
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { mode: $json.mode || \"BENCHMARK\", sourceFileId: $json.sourceFileId, error: $json.error, audit: { ocrProvider: \"google-vision\", ocrModel: \"DOCUMENT_TEXT_DETECTION\", ocrRawText: $json.text || \"\", activeConfigSnapshot: $json.aiConfig || {}, metrics: { candidateCount: 0, modelCount: 0, promptCount: 0, successCount: 0, failureCount: 0 } } } }}",
+        "jsonBody": "={{ { mode: $json.mode || \"BENCHMARK\", sourceFileId: $json.sourceFileId, benchmarkReferenceText: $json.benchmarkReferenceText || $json.audit?.benchmarkReferenceText || \"\", error: $json.error, audit: { ocrProvider: \"google-vision\", ocrModel: \"DOCUMENT_TEXT_DETECTION\", ocrRawText: $json.text || \"\", activeConfigSnapshot: $json.aiConfig || {}, benchmarkReferenceText: $json.benchmarkReferenceText || \"\", metrics: { benchmarkReferenceText: $json.benchmarkReferenceText || \"\", candidateCount: 0, modelCount: 0, promptCount: 0, successCount: 0, failureCount: 0 } } } }}",
         "options": {}
       }
     },
@@ -1156,155 +1069,56 @@
     }
   ],
   "connections": {
-    "Model - GPT-4o Mini": {
-      "ai_languageModel": [
-        [
-          {
-            "node": "Chain 1 - GPT-4o Mini / S?k? T?rk?e Pipe",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 2 - GPT-4o Mini / Konservatif Pipe",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 3 - GPT-4o Mini / Saat Bazl? Gruplama",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 4 - GPT-4o Mini / T?rk?e Sadakat",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 5 - GPT-4o Mini / Format Polisi",
-            "type": "ai_languageModel",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Model - Gemini 2.5 Flash": {
-      "ai_languageModel": [
-        [
-          {
-            "node": "Chain 6 - Gemini 2.5 Flash / S?k? T?rk?e Pipe",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 7 - Gemini 2.5 Flash / Konservatif Pipe",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 8 - Gemini 2.5 Flash / Saat Bazl? Gruplama",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 9 - Gemini 2.5 Flash / T?rk?e Sadakat",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 10 - Gemini 2.5 Flash / Format Polisi",
-            "type": "ai_languageModel",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Model - Gemini 2.5 Flash Lite": {
-      "ai_languageModel": [
-        [
-          {
-            "node": "Chain 11 - Gemini 2.5 Flash Lite / S?k? T?rk?e Pipe",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 12 - Gemini 2.5 Flash Lite / Konservatif Pipe",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 13 - Gemini 2.5 Flash Lite / Saat Bazl? Gruplama",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 14 - Gemini 2.5 Flash Lite / T?rk?e Sadakat",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 15 - Gemini 2.5 Flash Lite / Format Polisi",
-            "type": "ai_languageModel",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Model - DeepSeek V3.2": {
-      "ai_languageModel": [
-        [
-          {
-            "node": "Chain 16 - DeepSeek V3.2 / S?k? T?rk?e Pipe",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 17 - DeepSeek V3.2 / Konservatif Pipe",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 18 - DeepSeek V3.2 / Saat Bazl? Gruplama",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 19 - DeepSeek V3.2 / T?rk?e Sadakat",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 20 - DeepSeek V3.2 / Format Polisi",
-            "type": "ai_languageModel",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Model - MiniMax M2.7": {
       "ai_languageModel": [
         [
           {
-            "node": "Chain 21 - MiniMax M2.7 / S?k? T?rk?e Pipe",
+            "node": "Chain 1 - MiniMax M2.7 / Deterministik Temel",
             "type": "ai_languageModel",
             "index": 0
           },
           {
-            "node": "Chain 22 - MiniMax M2.7 / Konservatif Pipe",
+            "node": "Chain 2 - MiniMax M2.7 / Kanit Esikli",
             "type": "ai_languageModel",
             "index": 0
           },
           {
-            "node": "Chain 23 - MiniMax M2.7 / Saat Bazl? Gruplama",
+            "node": "Chain 3 - MiniMax M2.7 / Saat Once Segmentasyon",
             "type": "ai_languageModel",
             "index": 0
           },
           {
-            "node": "Chain 24 - MiniMax M2.7 / T?rk?e Sadakat",
+            "node": "Chain 4 - MiniMax M2.7 / Turkce Sadakat Plus",
             "type": "ai_languageModel",
             "index": 0
           },
           {
-            "node": "Chain 25 - MiniMax M2.7 / Format Polisi",
+            "node": "Chain 5 - MiniMax M2.7 / Hizmet Agirlikli",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Chain 6 - MiniMax M2.7 / Not Ayristirma Sert",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Chain 7 - MiniMax M2.7 / Cakisma Cozucu",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Chain 8 - MiniMax M2.7 / Satir Satir Rekonstruksiyon",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Chain 9 - MiniMax M2.7 / Kalite Kapisi",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Chain 10 - MiniMax M2.7 / Dusuk Halusinasyon",
             "type": "ai_languageModel",
             "index": 0
           }
@@ -1315,27 +1129,108 @@
       "ai_languageModel": [
         [
           {
-            "node": "Chain 26 - Grok 4.1 Fast / S?k? T?rk?e Pipe",
+            "node": "Chain 11 - Grok 4.1 Fast / Deterministik Temel",
             "type": "ai_languageModel",
             "index": 0
           },
           {
-            "node": "Chain 27 - Grok 4.1 Fast / Konservatif Pipe",
+            "node": "Chain 12 - Grok 4.1 Fast / Kanit Esikli",
             "type": "ai_languageModel",
             "index": 0
           },
           {
-            "node": "Chain 28 - Grok 4.1 Fast / Saat Bazl? Gruplama",
+            "node": "Chain 13 - Grok 4.1 Fast / Saat Once Segmentasyon",
             "type": "ai_languageModel",
             "index": 0
           },
           {
-            "node": "Chain 29 - Grok 4.1 Fast / T?rk?e Sadakat",
+            "node": "Chain 14 - Grok 4.1 Fast / Turkce Sadakat Plus",
             "type": "ai_languageModel",
             "index": 0
           },
           {
-            "node": "Chain 30 - Grok 4.1 Fast / Format Polisi",
+            "node": "Chain 15 - Grok 4.1 Fast / Hizmet Agirlikli",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Chain 16 - Grok 4.1 Fast / Not Ayristirma Sert",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Chain 17 - Grok 4.1 Fast / Cakisma Cozucu",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Chain 18 - Grok 4.1 Fast / Satir Satir Rekonstruksiyon",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Chain 19 - Grok 4.1 Fast / Kalite Kapisi",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Chain 20 - Grok 4.1 Fast / Dusuk Halusinasyon",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Model - Gemini 2.5 Flash Lite": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Chain 21 - Gemini 2.5 Flash Lite / Deterministik Temel",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Chain 22 - Gemini 2.5 Flash Lite / Kanit Esikli",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Chain 23 - Gemini 2.5 Flash Lite / Saat Once Segmentasyon",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Chain 24 - Gemini 2.5 Flash Lite / Turkce Sadakat Plus",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Chain 25 - Gemini 2.5 Flash Lite / Hizmet Agirlikli",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Chain 26 - Gemini 2.5 Flash Lite / Not Ayristirma Sert",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Chain 27 - Gemini 2.5 Flash Lite / Cakisma Cozucu",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Chain 28 - Gemini 2.5 Flash Lite / Satir Satir Rekonstruksiyon",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Chain 29 - Gemini 2.5 Flash Lite / Kalite Kapisi",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Chain 30 - Gemini 2.5 Flash Lite / Dusuk Halusinasyon",
             "type": "ai_languageModel",
             "index": 0
           }
@@ -1408,214 +1303,269 @@
       "main": [
         [
           {
-            "node": "Chain 1 - GPT-4o Mini / S?k? T?rk?e Pipe",
+            "node": "Chain 1 - MiniMax M2.7 / Deterministik Temel",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 2 - GPT-4o Mini / Konservatif Pipe",
+            "node": "Chain 2 - MiniMax M2.7 / Kanit Esikli",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 3 - GPT-4o Mini / Saat Bazl? Gruplama",
+            "node": "Chain 3 - MiniMax M2.7 / Saat Once Segmentasyon",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 4 - GPT-4o Mini / T?rk?e Sadakat",
+            "node": "Chain 4 - MiniMax M2.7 / Turkce Sadakat Plus",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 5 - GPT-4o Mini / Format Polisi",
+            "node": "Chain 5 - MiniMax M2.7 / Hizmet Agirlikli",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 6 - Gemini 2.5 Flash / S?k? T?rk?e Pipe",
+            "node": "Chain 6 - MiniMax M2.7 / Not Ayristirma Sert",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 7 - Gemini 2.5 Flash / Konservatif Pipe",
+            "node": "Chain 7 - MiniMax M2.7 / Cakisma Cozucu",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 8 - Gemini 2.5 Flash / Saat Bazl? Gruplama",
+            "node": "Chain 8 - MiniMax M2.7 / Satir Satir Rekonstruksiyon",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 9 - Gemini 2.5 Flash / T?rk?e Sadakat",
+            "node": "Chain 9 - MiniMax M2.7 / Kalite Kapisi",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 10 - Gemini 2.5 Flash / Format Polisi",
+            "node": "Chain 10 - MiniMax M2.7 / Dusuk Halusinasyon",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 11 - Gemini 2.5 Flash Lite / S?k? T?rk?e Pipe",
+            "node": "Chain 11 - Grok 4.1 Fast / Deterministik Temel",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 12 - Gemini 2.5 Flash Lite / Konservatif Pipe",
+            "node": "Chain 12 - Grok 4.1 Fast / Kanit Esikli",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 13 - Gemini 2.5 Flash Lite / Saat Bazl? Gruplama",
+            "node": "Chain 13 - Grok 4.1 Fast / Saat Once Segmentasyon",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 14 - Gemini 2.5 Flash Lite / T?rk?e Sadakat",
+            "node": "Chain 14 - Grok 4.1 Fast / Turkce Sadakat Plus",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 15 - Gemini 2.5 Flash Lite / Format Polisi",
+            "node": "Chain 15 - Grok 4.1 Fast / Hizmet Agirlikli",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 16 - DeepSeek V3.2 / S?k? T?rk?e Pipe",
+            "node": "Chain 16 - Grok 4.1 Fast / Not Ayristirma Sert",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 17 - DeepSeek V3.2 / Konservatif Pipe",
+            "node": "Chain 17 - Grok 4.1 Fast / Cakisma Cozucu",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 18 - DeepSeek V3.2 / Saat Bazl? Gruplama",
+            "node": "Chain 18 - Grok 4.1 Fast / Satir Satir Rekonstruksiyon",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 19 - DeepSeek V3.2 / T?rk?e Sadakat",
+            "node": "Chain 19 - Grok 4.1 Fast / Kalite Kapisi",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 20 - DeepSeek V3.2 / Format Polisi",
+            "node": "Chain 20 - Grok 4.1 Fast / Dusuk Halusinasyon",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 21 - MiniMax M2.7 / S?k? T?rk?e Pipe",
+            "node": "Chain 21 - Gemini 2.5 Flash Lite / Deterministik Temel",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 22 - MiniMax M2.7 / Konservatif Pipe",
+            "node": "Chain 22 - Gemini 2.5 Flash Lite / Kanit Esikli",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 23 - MiniMax M2.7 / Saat Bazl? Gruplama",
+            "node": "Chain 23 - Gemini 2.5 Flash Lite / Saat Once Segmentasyon",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 24 - MiniMax M2.7 / T?rk?e Sadakat",
+            "node": "Chain 24 - Gemini 2.5 Flash Lite / Turkce Sadakat Plus",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 25 - MiniMax M2.7 / Format Polisi",
+            "node": "Chain 25 - Gemini 2.5 Flash Lite / Hizmet Agirlikli",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 26 - Grok 4.1 Fast / S?k? T?rk?e Pipe",
+            "node": "Chain 26 - Gemini 2.5 Flash Lite / Not Ayristirma Sert",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 27 - Grok 4.1 Fast / Konservatif Pipe",
+            "node": "Chain 27 - Gemini 2.5 Flash Lite / Cakisma Cozucu",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 28 - Grok 4.1 Fast / Saat Bazl? Gruplama",
+            "node": "Chain 28 - Gemini 2.5 Flash Lite / Satir Satir Rekonstruksiyon",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 29 - Grok 4.1 Fast / T?rk?e Sadakat",
+            "node": "Chain 29 - Gemini 2.5 Flash Lite / Kalite Kapisi",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 30 - Grok 4.1 Fast / Format Polisi",
+            "node": "Chain 30 - Gemini 2.5 Flash Lite / Dusuk Halusinasyon",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Chain 1 - GPT-4o Mini / S?k? T?rk?e Pipe": {
+    "Chain 1 - MiniMax M2.7 / Deterministik Temel": {
       "main": [
         [
           {
-            "node": "Merge - GPT-4o Mini",
+            "node": "Merge - MiniMax M2.7",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Chain 2 - GPT-4o Mini / Konservatif Pipe": {
+    "Chain 2 - MiniMax M2.7 / Kanit Esikli": {
       "main": [
         [
           {
-            "node": "Merge - GPT-4o Mini",
+            "node": "Merge - MiniMax M2.7",
             "type": "main",
             "index": 1
           }
         ]
       ]
     },
-    "Chain 3 - GPT-4o Mini / Saat Bazl? Gruplama": {
+    "Chain 3 - MiniMax M2.7 / Saat Once Segmentasyon": {
       "main": [
         [
           {
-            "node": "Merge - GPT-4o Mini",
+            "node": "Merge - MiniMax M2.7",
             "type": "main",
             "index": 2
           }
         ]
       ]
     },
-    "Chain 4 - GPT-4o Mini / T?rk?e Sadakat": {
+    "Chain 4 - MiniMax M2.7 / Turkce Sadakat Plus": {
       "main": [
         [
           {
-            "node": "Merge - GPT-4o Mini",
+            "node": "Merge - MiniMax M2.7",
             "type": "main",
             "index": 3
           }
         ]
       ]
     },
-    "Chain 5 - GPT-4o Mini / Format Polisi": {
+    "Chain 5 - MiniMax M2.7 / Hizmet Agirlikli": {
       "main": [
         [
           {
-            "node": "Merge - GPT-4o Mini",
+            "node": "Merge - MiniMax M2.7",
             "type": "main",
             "index": 4
           }
         ]
       ]
     },
-    "Merge - GPT-4o Mini": {
+    "Chain 6 - MiniMax M2.7 / Not Ayristirma Sert": {
+      "main": [
+        [
+          {
+            "node": "Merge - MiniMax M2.7",
+            "type": "main",
+            "index": 5
+          }
+        ]
+      ]
+    },
+    "Chain 7 - MiniMax M2.7 / Cakisma Cozucu": {
+      "main": [
+        [
+          {
+            "node": "Merge - MiniMax M2.7",
+            "type": "main",
+            "index": 6
+          }
+        ]
+      ]
+    },
+    "Chain 8 - MiniMax M2.7 / Satir Satir Rekonstruksiyon": {
+      "main": [
+        [
+          {
+            "node": "Merge - MiniMax M2.7",
+            "type": "main",
+            "index": 7
+          }
+        ]
+      ]
+    },
+    "Chain 9 - MiniMax M2.7 / Kalite Kapisi": {
+      "main": [
+        [
+          {
+            "node": "Merge - MiniMax M2.7",
+            "type": "main",
+            "index": 8
+          }
+        ]
+      ]
+    },
+    "Chain 10 - MiniMax M2.7 / Dusuk Halusinasyon": {
+      "main": [
+        [
+          {
+            "node": "Merge - MiniMax M2.7",
+            "type": "main",
+            "index": 9
+          }
+        ]
+      ]
+    },
+    "Merge - MiniMax M2.7": {
       "main": [
         [
           {
@@ -1626,62 +1576,117 @@
         ]
       ]
     },
-    "Chain 6 - Gemini 2.5 Flash / S?k? T?rk?e Pipe": {
+    "Chain 11 - Grok 4.1 Fast / Deterministik Temel": {
       "main": [
         [
           {
-            "node": "Merge - Gemini 2.5 Flash",
+            "node": "Merge - Grok 4.1 Fast",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Chain 7 - Gemini 2.5 Flash / Konservatif Pipe": {
+    "Chain 12 - Grok 4.1 Fast / Kanit Esikli": {
       "main": [
         [
           {
-            "node": "Merge - Gemini 2.5 Flash",
+            "node": "Merge - Grok 4.1 Fast",
             "type": "main",
             "index": 1
           }
         ]
       ]
     },
-    "Chain 8 - Gemini 2.5 Flash / Saat Bazl? Gruplama": {
+    "Chain 13 - Grok 4.1 Fast / Saat Once Segmentasyon": {
       "main": [
         [
           {
-            "node": "Merge - Gemini 2.5 Flash",
+            "node": "Merge - Grok 4.1 Fast",
             "type": "main",
             "index": 2
           }
         ]
       ]
     },
-    "Chain 9 - Gemini 2.5 Flash / T?rk?e Sadakat": {
+    "Chain 14 - Grok 4.1 Fast / Turkce Sadakat Plus": {
       "main": [
         [
           {
-            "node": "Merge - Gemini 2.5 Flash",
+            "node": "Merge - Grok 4.1 Fast",
             "type": "main",
             "index": 3
           }
         ]
       ]
     },
-    "Chain 10 - Gemini 2.5 Flash / Format Polisi": {
+    "Chain 15 - Grok 4.1 Fast / Hizmet Agirlikli": {
       "main": [
         [
           {
-            "node": "Merge - Gemini 2.5 Flash",
+            "node": "Merge - Grok 4.1 Fast",
             "type": "main",
             "index": 4
           }
         ]
       ]
     },
-    "Merge - Gemini 2.5 Flash": {
+    "Chain 16 - Grok 4.1 Fast / Not Ayristirma Sert": {
+      "main": [
+        [
+          {
+            "node": "Merge - Grok 4.1 Fast",
+            "type": "main",
+            "index": 5
+          }
+        ]
+      ]
+    },
+    "Chain 17 - Grok 4.1 Fast / Cakisma Cozucu": {
+      "main": [
+        [
+          {
+            "node": "Merge - Grok 4.1 Fast",
+            "type": "main",
+            "index": 6
+          }
+        ]
+      ]
+    },
+    "Chain 18 - Grok 4.1 Fast / Satir Satir Rekonstruksiyon": {
+      "main": [
+        [
+          {
+            "node": "Merge - Grok 4.1 Fast",
+            "type": "main",
+            "index": 7
+          }
+        ]
+      ]
+    },
+    "Chain 19 - Grok 4.1 Fast / Kalite Kapisi": {
+      "main": [
+        [
+          {
+            "node": "Merge - Grok 4.1 Fast",
+            "type": "main",
+            "index": 8
+          }
+        ]
+      ]
+    },
+    "Chain 20 - Grok 4.1 Fast / Dusuk Halusinasyon": {
+      "main": [
+        [
+          {
+            "node": "Merge - Grok 4.1 Fast",
+            "type": "main",
+            "index": 9
+          }
+        ]
+      ]
+    },
+    "Merge - Grok 4.1 Fast": {
       "main": [
         [
           {
@@ -1692,7 +1697,7 @@
         ]
       ]
     },
-    "Chain 11 - Gemini 2.5 Flash Lite / S?k? T?rk?e Pipe": {
+    "Chain 21 - Gemini 2.5 Flash Lite / Deterministik Temel": {
       "main": [
         [
           {
@@ -1703,7 +1708,7 @@
         ]
       ]
     },
-    "Chain 12 - Gemini 2.5 Flash Lite / Konservatif Pipe": {
+    "Chain 22 - Gemini 2.5 Flash Lite / Kanit Esikli": {
       "main": [
         [
           {
@@ -1714,7 +1719,7 @@
         ]
       ]
     },
-    "Chain 13 - Gemini 2.5 Flash Lite / Saat Bazl? Gruplama": {
+    "Chain 23 - Gemini 2.5 Flash Lite / Saat Once Segmentasyon": {
       "main": [
         [
           {
@@ -1725,7 +1730,7 @@
         ]
       ]
     },
-    "Chain 14 - Gemini 2.5 Flash Lite / T?rk?e Sadakat": {
+    "Chain 24 - Gemini 2.5 Flash Lite / Turkce Sadakat Plus": {
       "main": [
         [
           {
@@ -1736,13 +1741,68 @@
         ]
       ]
     },
-    "Chain 15 - Gemini 2.5 Flash Lite / Format Polisi": {
+    "Chain 25 - Gemini 2.5 Flash Lite / Hizmet Agirlikli": {
       "main": [
         [
           {
             "node": "Merge - Gemini 2.5 Flash Lite",
             "type": "main",
             "index": 4
+          }
+        ]
+      ]
+    },
+    "Chain 26 - Gemini 2.5 Flash Lite / Not Ayristirma Sert": {
+      "main": [
+        [
+          {
+            "node": "Merge - Gemini 2.5 Flash Lite",
+            "type": "main",
+            "index": 5
+          }
+        ]
+      ]
+    },
+    "Chain 27 - Gemini 2.5 Flash Lite / Cakisma Cozucu": {
+      "main": [
+        [
+          {
+            "node": "Merge - Gemini 2.5 Flash Lite",
+            "type": "main",
+            "index": 6
+          }
+        ]
+      ]
+    },
+    "Chain 28 - Gemini 2.5 Flash Lite / Satir Satir Rekonstruksiyon": {
+      "main": [
+        [
+          {
+            "node": "Merge - Gemini 2.5 Flash Lite",
+            "type": "main",
+            "index": 7
+          }
+        ]
+      ]
+    },
+    "Chain 29 - Gemini 2.5 Flash Lite / Kalite Kapisi": {
+      "main": [
+        [
+          {
+            "node": "Merge - Gemini 2.5 Flash Lite",
+            "type": "main",
+            "index": 8
+          }
+        ]
+      ]
+    },
+    "Chain 30 - Gemini 2.5 Flash Lite / Dusuk Halusinasyon": {
+      "main": [
+        [
+          {
+            "node": "Merge - Gemini 2.5 Flash Lite",
+            "type": "main",
+            "index": 9
           }
         ]
       ]
@@ -1754,204 +1814,6 @@
             "node": "Merge All Benchmarks",
             "type": "main",
             "index": 2
-          }
-        ]
-      ]
-    },
-    "Chain 16 - DeepSeek V3.2 / S?k? T?rk?e Pipe": {
-      "main": [
-        [
-          {
-            "node": "Merge - DeepSeek V3.2",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Chain 17 - DeepSeek V3.2 / Konservatif Pipe": {
-      "main": [
-        [
-          {
-            "node": "Merge - DeepSeek V3.2",
-            "type": "main",
-            "index": 1
-          }
-        ]
-      ]
-    },
-    "Chain 18 - DeepSeek V3.2 / Saat Bazl? Gruplama": {
-      "main": [
-        [
-          {
-            "node": "Merge - DeepSeek V3.2",
-            "type": "main",
-            "index": 2
-          }
-        ]
-      ]
-    },
-    "Chain 19 - DeepSeek V3.2 / T?rk?e Sadakat": {
-      "main": [
-        [
-          {
-            "node": "Merge - DeepSeek V3.2",
-            "type": "main",
-            "index": 3
-          }
-        ]
-      ]
-    },
-    "Chain 20 - DeepSeek V3.2 / Format Polisi": {
-      "main": [
-        [
-          {
-            "node": "Merge - DeepSeek V3.2",
-            "type": "main",
-            "index": 4
-          }
-        ]
-      ]
-    },
-    "Merge - DeepSeek V3.2": {
-      "main": [
-        [
-          {
-            "node": "Merge All Benchmarks",
-            "type": "main",
-            "index": 3
-          }
-        ]
-      ]
-    },
-    "Chain 21 - MiniMax M2.7 / S?k? T?rk?e Pipe": {
-      "main": [
-        [
-          {
-            "node": "Merge - MiniMax M2.7",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Chain 22 - MiniMax M2.7 / Konservatif Pipe": {
-      "main": [
-        [
-          {
-            "node": "Merge - MiniMax M2.7",
-            "type": "main",
-            "index": 1
-          }
-        ]
-      ]
-    },
-    "Chain 23 - MiniMax M2.7 / Saat Bazl? Gruplama": {
-      "main": [
-        [
-          {
-            "node": "Merge - MiniMax M2.7",
-            "type": "main",
-            "index": 2
-          }
-        ]
-      ]
-    },
-    "Chain 24 - MiniMax M2.7 / T?rk?e Sadakat": {
-      "main": [
-        [
-          {
-            "node": "Merge - MiniMax M2.7",
-            "type": "main",
-            "index": 3
-          }
-        ]
-      ]
-    },
-    "Chain 25 - MiniMax M2.7 / Format Polisi": {
-      "main": [
-        [
-          {
-            "node": "Merge - MiniMax M2.7",
-            "type": "main",
-            "index": 4
-          }
-        ]
-      ]
-    },
-    "Merge - MiniMax M2.7": {
-      "main": [
-        [
-          {
-            "node": "Merge All Benchmarks",
-            "type": "main",
-            "index": 4
-          }
-        ]
-      ]
-    },
-    "Chain 26 - Grok 4.1 Fast / S?k? T?rk?e Pipe": {
-      "main": [
-        [
-          {
-            "node": "Merge - Grok 4.1 Fast",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Chain 27 - Grok 4.1 Fast / Konservatif Pipe": {
-      "main": [
-        [
-          {
-            "node": "Merge - Grok 4.1 Fast",
-            "type": "main",
-            "index": 1
-          }
-        ]
-      ]
-    },
-    "Chain 28 - Grok 4.1 Fast / Saat Bazl? Gruplama": {
-      "main": [
-        [
-          {
-            "node": "Merge - Grok 4.1 Fast",
-            "type": "main",
-            "index": 2
-          }
-        ]
-      ]
-    },
-    "Chain 29 - Grok 4.1 Fast / T?rk?e Sadakat": {
-      "main": [
-        [
-          {
-            "node": "Merge - Grok 4.1 Fast",
-            "type": "main",
-            "index": 3
-          }
-        ]
-      ]
-    },
-    "Chain 30 - Grok 4.1 Fast / Format Polisi": {
-      "main": [
-        [
-          {
-            "node": "Merge - Grok 4.1 Fast",
-            "type": "main",
-            "index": 4
-          }
-        ]
-      ]
-    },
-    "Merge - Grok 4.1 Fast": {
-      "main": [
-        [
-          {
-            "node": "Merge All Benchmarks",
-            "type": "main",
-            "index": 5
           }
         ]
       ]

@@ -251,6 +251,12 @@ router.post('/:batchId/files/:fileId/benchmark/trigger', async (req: any, res: a
       salonId: auth.salonId,
       batchId,
       sourceFileId: fileId,
+      benchmarkReferenceText:
+        typeof req.body?.benchmarkReferenceText === 'string'
+          ? req.body.benchmarkReferenceText
+          : typeof req.body?.referenceText === 'string'
+            ? req.body.referenceText
+            : null,
     });
     return res.status(200).json(result);
   } catch (error: any) {

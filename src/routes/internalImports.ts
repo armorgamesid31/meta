@@ -19,6 +19,9 @@ router.post('/:batchId/ocr-callback', async (req: any, res: any) => {
   const sourceFileId = Number(req.body?.sourceFileId || req.body?.fileId);
   const extractionError = typeof req.body?.error === 'string' ? req.body.error.trim() : null;
   const mode = typeof req.body?.mode === 'string' ? req.body.mode.trim() : null;
+  const benchmarkReferenceText =
+    typeof req.body?.benchmarkReferenceText === 'string' ? req.body.benchmarkReferenceText.trim() : null;
+  const referenceText = typeof req.body?.referenceText === 'string' ? req.body.referenceText.trim() : null;
   const audit = req.body?.audit && typeof req.body.audit === 'object' ? req.body.audit : null;
   const candidates = Array.isArray(req.body?.candidates) ? req.body.candidates : [];
   const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
@@ -33,6 +36,8 @@ router.post('/:batchId/ocr-callback', async (req: any, res: any) => {
       sourceFileId,
       extractionError,
       mode,
+      benchmarkReferenceText,
+      referenceText,
       audit,
       candidates,
       rows,
