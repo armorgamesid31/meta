@@ -1,32 +1,23 @@
 {
-  "name": "Kedy Import OCR Benchmark",
   "nodes": [
     {
-      "id": "webhook-trigger",
-      "name": "Webhook Trigger",
-      "type": "n8n-nodes-base.webhook",
-      "typeVersion": 2,
-      "position": [
-        -1420,
-        -120
-      ],
       "parameters": {
         "httpMethod": "POST",
         "path": "import-ocr",
         "responseMode": "responseNode",
         "options": {}
       },
+      "id": "5ef6666f-0151-4c7f-bf14-ed7c96c3350a",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -27408,
+        13840
+      ],
       "webhookId": "kedy-import-ocr"
     },
     {
-      "id": "prepare-input",
-      "name": "Prepare Input",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.4,
-      "position": [
-        -1220,
-        -120
-      ],
       "parameters": {
         "assignments": {
           "assignments": [
@@ -77,21 +68,27 @@
               "name": "benchmarkReferenceText",
               "value": "={{ \"15.11.2025 /n cumartesi /n 10:00 Sinem Kalıcı Oje (539-363-94-76) /n 11:30 Songül Hanım Lazer TV (Kaş-) /n 12:00 Nihal Ezgi Arslan Jel Güçlendirme (05380558462) /n 14:00 Neslihan Hanım Pedikür (5312683382) /n 15:00 Gülşah Hanım TV Lazer 16:00 Aydan Pedikür - Manikür - Ağda 16:00 Demet Hanım TV Lazer (hatırlat) /n 18:30 Sümeyye Hanım TV Lazer + Kaş\" }}",
               "type": "string"
+            },
+            {
+              "id": "phase",
+              "name": "phase",
+              "value": "={{ ($json.body.phase || $json.phase || $json.body.aiConfig?.benchmark?.phase || $json.aiConfig?.benchmark?.phase || \"PHASE1\") }}",
+              "type": "string"
             }
           ]
         },
         "options": {}
-      }
+      },
+      "id": "190e8cdb-55ac-40fd-96f8-36f7da90b720",
+      "name": "Prepare Input",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -27216,
+        13840
+      ]
     },
     {
-      "id": "vision-ocr",
-      "name": "Vision OCR",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.3,
-      "position": [
-        -1000,
-        -120
-      ],
       "parameters": {
         "method": "POST",
         "url": "https://vision.googleapis.com/v1/images:annotate",
@@ -102,6 +99,14 @@
         "jsonBody": "={{ { requests: [ { image: { source: { imageUri: $json.fileUrl } }, features: [ { type: \"DOCUMENT_TEXT_DETECTION\" } ] } ] } }}",
         "options": {}
       },
+      "id": "c7e147ac-68b9-4574-97f0-17d32d5fddf2",
+      "name": "Vision OCR",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -26992,
+        13840
+      ],
       "credentials": {
         "googleApi": {
           "id": "Lq2VAAoQdGOgiMaf",
@@ -110,27 +115,19 @@
       }
     },
     {
-      "id": "extract-ocr-text",
+      "parameters": {
+        "jsCode": "const ocrResponse = $input.first().json;\nlet extractedText = \"\";\nlet error = null;\ntry {\n  const apiError = ocrResponse.responses?.[0]?.error;\n  if (apiError) {\n    error = apiError.message || \"vision_api_error\";\n  } else {\n    extractedText = (ocrResponse.responses?.[0]?.fullTextAnnotation?.text || ocrResponse.responses?.[0]?.textAnnotations?.[0]?.description || \"\").trim();\n    if (!extractedText) error = \"ocr_empty_text\";\n  }\n} catch (e) {\n  error = e?.message || \"ocr_parse_exception\";\n}\nconst prep = $(\"Prepare Input\").first().json;\nreturn [{ json: { batchId: prep.batchId, sourceFileId: prep.sourceFileId, fileUrl: prep.fileUrl, objectKey: prep.objectKey || null, sourceType: prep.sourceType || null, mode: prep.mode || \"BENCHMARK\", aiConfig: prep.aiConfig || {}, benchmarkReferenceText: prep.benchmarkReferenceText || \"\", text: extractedText, error } }];"
+      },
+      "id": "fe876e5c-37be-48e8-a8a1-5193b1abcdb1",
       "name": "Extract OCR Text",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -780,
-        -120
-      ],
-      "parameters": {
-        "jsCode": "const ocrResponse = $input.first().json;\nlet extractedText = \"\";\nlet error = null;\ntry {\n  const apiError = ocrResponse.responses?.[0]?.error;\n  if (apiError) {\n    error = apiError.message || \"vision_api_error\";\n  } else {\n    extractedText = (ocrResponse.responses?.[0]?.fullTextAnnotation?.text || ocrResponse.responses?.[0]?.textAnnotations?.[0]?.description || \"\").trim();\n    if (!extractedText) error = \"ocr_empty_text\";\n  }\n} catch (e) {\n  error = e?.message || \"ocr_parse_exception\";\n}\nconst prep = $(\"Prepare Input\").first().json;\nreturn [{ json: { batchId: prep.batchId, sourceFileId: prep.sourceFileId, fileUrl: prep.fileUrl, objectKey: prep.objectKey || null, sourceType: prep.sourceType || null, mode: prep.mode || \"BENCHMARK\", aiConfig: prep.aiConfig || {}, benchmarkReferenceText: prep.benchmarkReferenceText || \"\", text: extractedText, error } }];"
-      }
+        -26768,
+        13840
+      ]
     },
     {
-      "id": "has-ocr-error",
-      "name": "Has OCR Error?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
-      "position": [
-        -560,
-        -120
-      ],
       "parameters": {
         "conditions": {
           "options": {
@@ -152,17 +149,17 @@
           "combinator": "and"
         },
         "options": {}
-      }
+      },
+      "id": "98b070df-b885-49a5-987e-8d6d098581ce",
+      "name": "Has OCR Error?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -26560,
+        13840
+      ]
     },
     {
-      "id": "benchmark-source",
-      "name": "Benchmark Source",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.4,
-      "position": [
-        -560,
-        -640
-      ],
       "parameters": {
         "assignments": {
           "assignments": [
@@ -199,29 +196,71 @@
             {
               "id": "promptLibrary",
               "name": "promptLibrary",
-              "value": "={{ {\"pipe-v1\":\"Sen salon randevu OCR normalizer'ısın. Hedefin yüksek doğruluklu normalizasyon; uydurma yasak. Cikti yalnizca JSON ve kokte {\\\"rows\\\":[...]} olacak. Telefon numaralarini tamamen ignore et. Hizmet normalizasyonu: TV/tv/tv lazer/tv laser/tv lace/tv lover => Tum Vucut Lazer; kas/kas-/kos => Kas Alimi; kalici oje/kal je => Kalici Oje; jel guclendirme => Jel Guclendirme; pedikur => Pedikur; manikur => Manikur; agda => Agda. Unvanlari (Hanim/Bey/Hnm) customerName icinde koru. Operasyon notlarini (hatirlat, geldi, iptal, odedi, aransin) notesRaw alanina tasi. Emin degilsen null birak.\",\"pipe-v2\":\"Sen kanit esikli bir normalizersin. Cikti yalnizca JSON ve kokte {\\\"rows\\\":[...]}. Sadece metinde acik kanit olan alanlari doldur; digerlerini null birak. Telefonlari tumden ignore et. Tarih/saatte zayif kanit varsa zorlamadan null birak. Hizmet adlarini yalnizca guclu eslesmeyle normalize et: TV lazer=>Tum Vucut Lazer, kas/kos=>Kas Alimi, kalici oje=>Kalici Oje, jel guclendirme=>Jel Guclendirme, pedikur=>Pedikur, manikur=>Manikur, agda=>Agda. Notlar service alanina kacmasin; notesRaw'a yaz. JSON disinda hicbir sey yazma.\",\"pipe-v3\":\"Sen once segmentasyon yapan bir normalizersin. Cikti yalnizca JSON ve kokte {\\\"rows\\\":[...]}. Adim 1: metinden saatleri cikar ve satirlari saate gore bol. Ayni saatte farkli musteri varsa mutlaka ayri satir uret. Adim 2: her satiri normalize et. Telefonlari ignore et. Saat formatini mumkunse HH:MM yap. Hizmet mapping: TV lazer=>Tum Vucut Lazer; kas/kos=>Kas Alimi; kalici oje=>Kalici Oje; jel guclendirme=>Jel Guclendirme; pedikur=>Pedikur; manikur=>Manikur; agda=>Agda. Notlari notesRaw'a tasi.\",\"pipe-v4\":\"Sen Turkce sadakat odakli OCR normalizersin. Cikti yalnizca JSON ve kokte {\\\"rows\\\":[...]}. Turkce karakterleri koru, OCR duzeltmesini sadece yuksek eminlikte yap (orn: E2gi=>Ezgi, harm=>Hanim, kos=>Kas, lace/lover=>Lazer, 16.00/1600=>16:00). Telefonlari ignore et. Unvanlar customerName icinde kalsin. Operasyon notlari notesRaw'a gitsin, serviceNameRaw'a karismasin. Ayni saatte birden fazla musteri varsa ayri satir uret. Uydurma yok; emin degilsen null.\",\"pipe-v5\":\"Sen hizmet normalizasyonunda uzman bir asistansin. Cikti yalnizca JSON ve kokte {\\\"rows\\\":[...]}. Her randevuda serviceNameRaw alanini once dogru normalize et: TV/tv/tv lazer/tv lace/tv lover=>Tum Vucut Lazer; kas/kos/kas-=>Kas Alimi; kal je/kalici oje=>Kalici Oje; jel guclendirme=>Jel Guclendirme; pedikur=>Pedikur; manikur=>Manikur; agda=>Agda. Ayni satirda coklu hizmet varsa serviceNameRaw'da virgul ile birlestir. Telefonlari ignore et. Notlari notesRaw'a tasi. JSON disinda metin yazma.\",\"pipe-v6\":\"Sen not ayristirma odakli normalizersin. Cikti yalnizca JSON ve kokte {\\\"rows\\\":[...]}. Hizmet, musteri ve saat bilgisi ile operasyonel notlari kesin olarak ayir. \\\"hatirlat\\\", \\\"geldi\\\", \\\"iptal\\\", \\\"odedi\\\", \\\"aransin\\\" gibi ifadeler notesRaw'a yazilmali; serviceNameRaw veya customerName'a kacmamalidir. Telefonlari tamamen ignore et. Hizmet adlarini normalize et. Belirsiz alanlari null birak. Ayni saatte farkli musteri varsa ayri satir uret.\",\"pipe-v7\":\"Sen cakisma cozucu bir normalizersin. Cikti yalnizca JSON ve kokte {\\\"rows\\\":[...]}. Bir satirda birden fazla kisi/hizmet/saat adayi varsa en tutarli ayrimi yap: farkli kisi sinyali varsa satirlari ayir, tek kisi sinyali varsa birlestirme. Telefonlari ignore et. Hizmet mapping kurallarini uygula. Tarih/saat/customer/service arasinda celiski varsa en guclu kanita gore doldur, digerlerini null birak. Operasyonel metni notesRaw'a tasi.\",\"pipe-v8\":\"Sen satir satir rekonstruksiyon yapan bir normalizersin. Cikti yalnizca JSON ve kokte {\\\"rows\\\":[...]}. Defter metnini satir mantigiyla yeniden kur: her saat gecisi yeni aday satirdir; saat yoksa bir onceki baglami dikkatle kullan. Ayni saatte farkli musteri adlari varsa ayri satirlar olustur. Telefonlari ignore et. Hizmetleri normalize et. Uydurma yapma; emin degilsen null. Notlari notesRaw'a tasi.\",\"pipe-v9\":\"Sen kalite kapisi olan bir normalizersin. Cikti yalnizca JSON ve kokte {\\\"rows\\\":[...]}. Uretmeden once ic denetim uygula: (1) JSON gecerli mi, (2) ayni saatte farkli musteriler ayrildi mi, (3) telefonlar ignore edildi mi, (4) notlar notesRaw'a tasindi mi, (5) hizmetler normalize edildi mi. Bu denetimi ciktiya yazma, sadece duzeltilmis final JSON'u ver. Belirsiz alanlari null birak.\",\"pipe-v10\":\"Sen dusuk halusinasyon modunda calisan normalizersin. Cikti yalnizca JSON ve kokte {\\\"rows\\\":[...]}. Metinde yoksa asla yeni kisi, yeni saat, yeni hizmet uretme. Telefonlari ignore et. Hizmet mappingini uygula fakat yalnizca kanitli eslesmelerde. Ayni saatte iki farkli isim geciyorsa iki satir yaz. Unvanlar customerName icinde kalmali. Operasyonel ifadeler notesRaw'a gitmeli. Cok belirsiz durumda bos satir uretme; null kullan.\"} }}",
+              "value": "={{ {\"pipe-v5a\":\"Rol: Dengeli normalize edici. Cikti yalnizca JSON ve kokte {\\\"rows\\\":[...]}. Hizmet map: TV/tv/tv lazer/tv lace/tv lover=>Tum Vucut Lazer; kas/kos/kas-=>Kas Alimi; kal je/kalici oje=>Kalici Oje; jel guclendirme=>Jel Guclendirme; pedikur=>Pedikur; manikur=>Manikur; agda=>Agda. Telefonu customerPhoneRaw=null yap. Kanit yoksa null.\",\"pipe-v5b\":\"Rol: Coklu hizmet ayristirici (strictness: BALANCED). Cikti yalnizca JSON ve kokte {\\\"rows\\\":[...]}. +,-,/,, ayiricilarini coklu hizmet sinyali kabul et; serviceNameRaw icinde virgul ile birlestir. Hizmet map ayni. Telefonu ignore et.\",\"pipe-v5c\":\"Rol: Sema disiplinli (strictness: STRICT). Sadece su alanlar: rowIndex, customerName, customerPhoneRaw, appointmentDate, startTime, endTime, durationMinutes, serviceNameRaw, staffNameRaw, priceRaw, notesRaw, confidence. JSON disinda metin yazma.\",\"pipe-v5d\":\"Rol: Saat-ankorlu eslestirici. Once saat ve tarih yakala, sonra isim/hizmet ata. Uydurma satir ekleme. Telefonu ignore et. JSON disinda metin yazma.\",\"pipe-v5e\":\"Rol: Not-ayristirma odakli. Operasyon notlarini sadece notesRaw alanina tasi, hizmet alanina not sızdırma. Uydurma yasak. JSON disinda metin yazma.\"} }}",
               "type": "object"
+            },
+            {
+              "id": "phase",
+              "name": "phase",
+              "value": "={{ ($json.phase || $json.aiConfig?.benchmark?.phase || \"PHASE1\") }}",
+              "type": "string"
             }
           ]
         },
         "options": {}
-      }
+      },
+      "id": "e439dfba-5bac-4ce3-ad89-1fec1fe242df",
+      "name": "Benchmark Source",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -26560,
+        13312
+      ]
     },
     {
-      "id": "model-minimax",
-      "name": "Model - MiniMax M2.7",
-      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "parameters": {
+        "jsCode": "const promptLibrary = {\n  \"pipe-v5a\": { \"label\": \"Dengeleyici / Esnek\", \"legacyNodeSuffix\": \"Hizmet Agirlikli Dengeli\", \"legacyIndex\": 0 },\n  \"pipe-v5b\": { \"label\": \"Coklu Hizmet Ayirici\", \"legacyNodeSuffix\": \"Hizmet Agirlikli Coklu Hizmet Sert\", \"legacyIndex\": 1 },\n  \"pipe-v5c\": { \"label\": \"Sema Disiplinli\", \"legacyNodeSuffix\": \"Hizmet Agirlikli Sema Disiplinli\", \"legacyIndex\": 2 },\n  \"pipe-v5d\": { \"label\": \"Saat/Isim Anchored\", \"legacyNodeSuffix\": null, \"legacyIndex\": null },\n  \"pipe-v5e\": { \"label\": \"Not Ayrimi Sert\", \"legacyNodeSuffix\": null, \"legacyIndex\": null }\n};\nconst modelMatrix = [\n  { \"name\": \"MiniMax M2.7\", \"model\": \"minimax/minimax-m2.7\", \"startIndex\": 1 },\n  { \"name\": \"Grok 4.1 Fast\", \"model\": \"x-ai/grok-4.1-fast\", \"startIndex\": 4 },\n  { \"name\": \"GPT-4o Mini\", \"model\": \"openai/gpt-4o-mini\", \"startIndex\": 7 },\n  { \"name\": \"Gemini 2.5 Flash Lite\", \"model\": \"google/gemini-2.5-flash-lite\", \"startIndex\": 10 },\n  { \"name\": \"Gemini 3.0 Flash\", \"model\": \"google/gemini-3.0-flash\", \"startIndex\": 13 },\n  { \"name\": \"Gemini 3.0 Flash Lite Preview\", \"model\": \"google/gemini-3.0-flash-lite-preview\", \"startIndex\": 16 },\n  { \"name\": \"Gemini 2.5 Flash\", \"model\": \"google/gemini-2.5-flash\", \"startIndex\": 19 }\n];\nconst phaseConfig = {\n  PHASE1: {\n    promptVersions: [\"pipe-v5a\", \"pipe-v5b\", \"pipe-v5c\", \"pipe-v5d\", \"pipe-v5e\"],\n    strictnesses: [\"OFF\"],\n    temperatures: [0]\n  },\n  PHASE2: {\n    promptVersions: null,\n    strictnesses: [\"BALANCED\", \"STRICT\"],\n    temperatures: [0]\n  },\n  PHASE3: {\n    promptVersions: null,\n    strictnesses: null,\n    temperatures: [0, 0.2, 0.4]\n  }\n};\n\nconst source = $(\"Extract OCR Text\").first().json;\nconst sourceConfig = source.aiConfig || {};\nconst benchmarkCfg = sourceConfig.benchmark || {};\nconst phaseRaw = String(source.phase || benchmarkCfg.phase || sourceConfig.phase || \"PHASE1\").toUpperCase();\nconst phase = phaseConfig[phaseRaw] ? phaseRaw : \"PHASE1\";\n\nfunction trimText(v) { return typeof v === \"string\" ? v.trim() : \"\"; }\nfunction nullable(v) { const x = trimText(v); return !x || x.toLowerCase() === \"null\" ? null : x; }\nfunction normalizeTime(v) {\n  const x = trimText(v);\n  if (!x || x.toLowerCase() === \"null\") return null;\n  let m = x.match(/^(\\d{1,2})[:.](\\d{2})$/);\n  if (m) {\n    const hour = Number(m[1]);\n    const minute = Number(m[2]);\n    if (hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59) return String(hour).padStart(2, \"0\") + \":\" + String(minute).padStart(2, \"0\");\n  }\n  m = x.match(/^(\\d{2})(\\d{2})$/);\n  if (m) {\n    const hour = Number(m[1]);\n    const minute = Number(m[2]);\n    if (hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59) return String(hour).padStart(2, \"0\") + \":\" + String(minute).padStart(2, \"0\");\n  }\n  return null;\n}\nfunction normalizeDate(v) {\n  const x = trimText(v);\n  if (!x || x.toLowerCase() === \"null\") return null;\n  let m = x.match(/^(\\d{1,2})[./-](\\d{1,2})[./-](\\d{2,4})$/);\n  if (m) {\n    let year = Number(m[3]);\n    if (year < 100) year += 2000;\n    return String(Number(m[1])).padStart(2, \"0\") + \".\" + String(Number(m[2])).padStart(2, \"0\") + \".\" + String(year).padStart(4, \"0\");\n  }\n  if (/^(\\d{4})-(\\d{2})-(\\d{2})$/.test(x)) return x;\n  return null;\n}\nfunction normalizeNumber(v) {\n  if (v === null || v === undefined || v === \"\") return null;\n  const n = Number(String(v).replace(\",\", \".\"));\n  return Number.isFinite(n) ? n : null;\n}\nfunction unwrapJson(raw) {\n  const text = trimText(raw);\n  if (!text) throw new Error(\"llm_empty_output\");\n  try { return JSON.parse(text); } catch (error) {}\n  const fenced = text.match(/```(?:json)?\\s*([\\s\\S]*?)```/i);\n  if (fenced) return JSON.parse(fenced[1].trim());\n  const start = text.indexOf(\"{\");\n  const end = text.lastIndexOf(\"}\");\n  if (start !== -1 && end > start) return JSON.parse(text.slice(start, end + 1));\n  throw new Error(\"llm_invalid_json\");\n}\nfunction normalizeRows(payload) {\n  const rows = Array.isArray(payload) ? payload : (Array.isArray(payload?.rows) ? payload.rows : []);\n  return rows.map((row, index) => ({\n    rowIndex: Number(row?.rowIndex) > 0 ? Number(row.rowIndex) : index + 1,\n    customerName: nullable(row?.customerName || row?.name || row?.customer || row?.customerNameRaw || row?.clientName || row?.client),\n    customerPhoneRaw: nullable(row?.customerPhoneRaw || row?.phoneRaw || row?.phone),\n    appointmentDate: normalizeDate(row?.appointmentDate || row?.date || row?.appointment_date),\n    startTime: normalizeTime(row?.startTime || row?.time || row?.hour || row?.start),\n    endTime: normalizeTime(row?.endTime || row?.end || row?.finishTime),\n    durationMinutes: normalizeNumber(row?.durationMinutes),\n    serviceNameRaw: nullable(row?.serviceNameRaw || row?.servicesNormalized || row?.service || row?.serviceRaw || row?.services || row?.serviceName),\n    staffNameRaw: nullable(row?.staffNameRaw || row?.staff),\n    priceRaw: normalizeNumber(row?.priceRaw),\n    notesRaw: nullable(row?.notesRaw || row?.note || row?.notes),\n    confidence: (() => {\n      const value = Number(row?.confidence);\n      if (!Number.isFinite(value)) return 0.5;\n      return Math.max(0, Math.min(1, value));\n    })(),\n  })).filter((row) => row.appointmentDate || row.startTime || row.customerName || row.serviceNameRaw || row.notesRaw);\n}\n\nconst finalistPrompts = Array.isArray(benchmarkCfg.finalistPromptVersions) && benchmarkCfg.finalistPromptVersions.length\n  ? benchmarkCfg.finalistPromptVersions\n  : (Array.isArray(benchmarkCfg.promptVersions) && benchmarkCfg.promptVersions.length ? benchmarkCfg.promptVersions : null);\nconst finalistStrictnesses = Array.isArray(benchmarkCfg.strictnesses) && benchmarkCfg.strictnesses.length ? benchmarkCfg.strictnesses : null;\nconst finalistTemperatures = Array.isArray(benchmarkCfg.temperatures) && benchmarkCfg.temperatures.length ? benchmarkCfg.temperatures : null;\n\nconst promptVersions = (phaseConfig[phase].promptVersions || finalistPrompts || [\"pipe-v5a\", \"pipe-v5b\"]).filter((v) => promptLibrary[v]);\nconst strictnesses = (phaseConfig[phase].strictnesses || finalistStrictnesses || [\"BALANCED\"]).map((v) => String(v).toUpperCase());\nconst temperatures = (phaseConfig[phase].temperatures || finalistTemperatures || [0]).map((v) => Number(v)).filter((v) => Number.isFinite(v));\n\nconst candidates = [];\nlet missingNodeCount = 0;\nfor (const modelEntry of modelMatrix) {\n  for (const promptVersion of promptVersions) {\n    const promptMeta = promptLibrary[promptVersion] || {};\n    for (const strictness of strictnesses) {\n      for (const temperature of temperatures) {\n        const canReadLegacy = Number(promptMeta.legacyIndex) >= 0 && temperature === 0 && (phase === \"PHASE1\" || strictness === \"OFF\" || strictness === \"BALANCED\");\n        let rawOutputText = \"\";\n        let parsedRows = [];\n        if (canReadLegacy) {\n          const chainNumber = modelEntry.startIndex + Number(promptMeta.legacyIndex);\n          const nodeName = \"Chain \" + chainNumber + \" - \" + modelEntry.name + \" / \" + promptMeta.legacyNodeSuffix;\n          try {\n            const nodeJson = $item(0).$node[nodeName].json || {};\n            rawOutputText = trimText(nodeJson.text || \"\");\n            parsedRows = normalizeRows(unwrapJson(rawOutputText));\n          } catch (error) {\n            missingNodeCount += 1;\n            rawOutputText = \"ERROR: \" + (error?.message || \"candidate_read_failed\");\n            parsedRows = [];\n          }\n        } else {\n          missingNodeCount += 1;\n          rawOutputText = \"SKIPPED: workflow chain not configured for this phase/prompt/temp/strictness combo\";\n          parsedRows = [];\n        }\n        candidates.push({\n          provider: \"openrouter\",\n          model: modelEntry.model,\n          promptVersion,\n          promptLabel: promptMeta.label || promptVersion,\n          phase,\n          strictness,\n          temperature,\n          rawOutputText,\n          parsedRows\n        });\n      }\n    }\n  }\n}\n\nconst successCount = candidates.filter((candidate) => Array.isArray(candidate.parsedRows) && candidate.parsedRows.length > 0).length;\nreturn [{\n  json: {\n    batchId: source.batchId,\n    sourceFileId: source.sourceFileId,\n    mode: \"BENCHMARK\",\n    phase,\n    strictness: strictnesses.length === 1 ? strictnesses[0] : null,\n    temperature: temperatures.length === 1 ? temperatures[0] : null,\n    candidates,\n    audit: {\n      ocrProvider: \"google-vision\",\n      ocrModel: \"DOCUMENT_TEXT_DETECTION\",\n      ocrRawText: source.text || \"\",\n      activeConfigSnapshot: source.aiConfig || {},\n      benchmarkReferenceText: source.benchmarkReferenceText || \"\",\n      metrics: {\n        benchmarkReferenceText: source.benchmarkReferenceText || \"\",\n        phase,\n        candidateCount: candidates.length,\n        modelCount: modelMatrix.length,\n        promptCount: promptVersions.length,\n        strictnessCount: strictnesses.length,\n        temperatureCount: temperatures.length,\n        successCount,\n        failureCount: candidates.length - successCount,\n        expectedCandidateCount: modelMatrix.length * promptVersions.length * strictnesses.length * temperatures.length,\n        missingNodeCount\n      }\n    }\n  }\n}];"
+      },
+      "id": "23a5da17-d7cc-4cb2-869b-24665f3c67a2",
+      "name": "Build Benchmark Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -25376,
+        13920
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"ok\": true, \"received\": true } }}",
+        "options": {}
+      },
+      "id": "41c0dba0-6fbb-4dd1-967a-3d8c822f0ba9",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
       "position": [
-        -360,
-        -1120
-      ],
+        -24912,
+        13840
+      ]
+    },
+    {
       "parameters": {
         "model": "minimax/minimax-m2.7",
         "options": {
           "temperature": 0
         }
       },
+      "id": "3b51b91d-edea-4079-b419-33bf184ab5f0",
+      "name": "Model - MiniMax M2.7",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        -26352,
+        12832
+      ],
       "credentials": {
         "openRouterApi": {
           "id": "x4oJ9U04K1AOxKsx",
@@ -230,20 +269,20 @@
       }
     },
     {
-      "id": "model-grok",
-      "name": "Model - Grok 4.1 Fast",
-      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
-      "typeVersion": 1,
-      "position": [
-        -360,
-        -120
-      ],
       "parameters": {
         "model": "x-ai/grok-4.1-fast",
         "options": {
           "temperature": 0
         }
       },
+      "id": "662da392-31d1-4de1-9716-3f971a13a5b9",
+      "name": "Model - Grok 4.1 Fast",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        -26352,
+        13264
+      ],
       "credentials": {
         "openRouterApi": {
           "id": "x4oJ9U04K1AOxKsx",
@@ -252,20 +291,42 @@
       }
     },
     {
-      "id": "model-geminilite",
-      "name": "Model - Gemini 2.5 Flash Lite",
+      "parameters": {
+        "model": "openai/gpt-4o-mini",
+        "options": {
+          "temperature": 0
+        }
+      },
+      "id": "60bbe8db-2428-4e26-a56d-9ba35a85f19a",
+      "name": "Model - GPT-4o Mini",
       "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
       "typeVersion": 1,
       "position": [
-        -360,
-        880
+        -26352,
+        13680
       ],
+      "credentials": {
+        "openRouterApi": {
+          "id": "x4oJ9U04K1AOxKsx",
+          "name": "OpenRouter account"
+        }
+      }
+    },
+    {
       "parameters": {
         "model": "google/gemini-2.5-flash-lite",
         "options": {
           "temperature": 0
         }
       },
+      "id": "6f47e7ea-9be3-46bf-a7ec-c8e6a2de58bf",
+      "name": "Model - Gemini 2.5 Flash Lite",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        -26352,
+        14096
+      ],
       "credentials": {
         "openRouterApi": {
           "id": "x4oJ9U04K1AOxKsx",
@@ -274,739 +335,638 @@
       }
     },
     {
-      "id": "merge-minimax",
+      "parameters": {
+        "model": "google/gemini-3-flash-preview",
+        "options": {
+          "temperature": 0
+        }
+      },
+      "id": "c267d4ea-329c-4350-9338-07efaeb322fc",
+      "name": "Model - Gemini 3.0 Flash",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        -26352,
+        14512
+      ],
+      "credentials": {
+        "openRouterApi": {
+          "id": "x4oJ9U04K1AOxKsx",
+          "name": "OpenRouter account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "google/gemini-3.1-flash-lite-preview",
+        "options": {
+          "temperature": 0
+        }
+      },
+      "id": "7d06acd0-990a-44a7-924e-76ab48009716",
+      "name": "Model - Gemini 3.0 Flash Lite Preview",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        -26352,
+        14944
+      ],
+      "credentials": {
+        "openRouterApi": {
+          "id": "x4oJ9U04K1AOxKsx",
+          "name": "OpenRouter account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "google/gemini-2.5-flash",
+        "options": {
+          "temperature": 0
+        }
+      },
+      "id": "63785f68-dd50-404a-985e-0f7bfe6a6e46",
+      "name": "Model - Gemini 2.5 Flash",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        -26352,
+        15360
+      ],
+      "credentials": {
+        "openRouterApi": {
+          "id": "x4oJ9U04K1AOxKsx",
+          "name": "OpenRouter account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "numberInputs": 3
+      },
+      "id": "f8352ed8-522d-4017-a2c6-8a2f0b687ba6",
       "name": "Merge - MiniMax M2.7",
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3.2,
       "position": [
-        120,
-        -760
-      ],
-      "parameters": {
-        "numberInputs": 10
-      }
+        -25872,
+        13200
+      ]
     },
     {
-      "id": "merge-grok",
+      "parameters": {
+        "numberInputs": 3
+      },
+      "id": "6948cb3f-c6a7-45a8-a66d-03db67e4ace7",
       "name": "Merge - Grok 4.1 Fast",
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3.2,
       "position": [
-        120,
-        240
-      ],
-      "parameters": {
-        "numberInputs": 10
-      }
+        -25872,
+        13616
+      ]
     },
     {
-      "id": "merge-geminilite",
+      "parameters": {
+        "numberInputs": 3
+      },
+      "id": "01d9df6d-803e-47b7-a0c8-50c9a60b11eb",
+      "name": "Merge - GPT-4o Mini",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -25872,
+        14032
+      ]
+    },
+    {
+      "parameters": {
+        "numberInputs": 3
+      },
+      "id": "89b2f9e6-0bc4-49be-8975-a694e3ff5d6a",
       "name": "Merge - Gemini 2.5 Flash Lite",
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3.2,
       "position": [
-        120,
-        1240
-      ],
-      "parameters": {
-        "numberInputs": 10
-      }
+        -25872,
+        14464
+      ]
     },
     {
-      "id": "chain-minimax-pipe-v1",
-      "name": "Chain 1 - MiniMax M2.7 / Deterministik Temel",
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.8,
+      "parameters": {
+        "numberInputs": 3
+      },
+      "id": "acc10fb6-fd9a-4a66-b39b-8a2f359e5d0d",
+      "name": "Merge - Gemini 3.0 Flash",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
       "position": [
-        -360,
-        -960
-      ],
+        -25872,
+        14880
+      ]
+    },
+    {
+      "parameters": {
+        "numberInputs": 3
+      },
+      "id": "b03c7a06-7322-48ad-b286-48f6765ad712",
+      "name": "Merge - Gemini 3.0 Flash Lite Preview",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -25872,
+        15296
+      ]
+    },
+    {
+      "parameters": {
+        "numberInputs": 3
+      },
+      "id": "abfb003a-3478-4e61-969a-254fe4ebe376",
+      "name": "Merge - Gemini 2.5 Flash",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -25872,
+        15712
+      ]
+    },
+    {
       "parameters": {
         "promptType": "define",
         "text": "={{ $json.text }}",
         "messages": {
           "messageValues": [
             {
-              "message": "={{ $json.promptLibrary[\"pipe-v1\"] }}"
+              "message": "={{ $json.promptLibrary[\"pipe-v5a\"] }}"
             }
           ]
         },
         "batching": {}
-      }
-    },
-    {
-      "id": "chain-minimax-pipe-v2",
-      "name": "Chain 2 - MiniMax M2.7 / Kanit Esikli",
+      },
+      "id": "34da47e1-d8ce-4afe-8bc7-ae5f6d23421a",
+      "name": "Chain 1 - MiniMax M2.7 / Hizmet Agirlikli Dengeli",
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.8,
       "position": [
-        -360,
-        -880
-      ],
+        -26352,
+        12992
+      ]
+    },
+    {
       "parameters": {
         "promptType": "define",
         "text": "={{ $json.text }}",
         "messages": {
           "messageValues": [
             {
-              "message": "={{ $json.promptLibrary[\"pipe-v2\"] }}"
+              "message": "={{ $json.promptLibrary[\"pipe-v5b\"] }}"
             }
           ]
         },
         "batching": {}
-      }
-    },
-    {
-      "id": "chain-minimax-pipe-v3",
-      "name": "Chain 3 - MiniMax M2.7 / Saat Once Segmentasyon",
+      },
+      "id": "51c78197-78ca-40f7-b56f-c933e99cf45e",
+      "name": "Chain 2 - MiniMax M2.7 / Hizmet Agirlikli Coklu Hizmet Sert",
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.8,
       "position": [
-        -360,
-        -800
-      ],
+        -26352,
+        13072
+      ]
+    },
+    {
       "parameters": {
         "promptType": "define",
         "text": "={{ $json.text }}",
         "messages": {
           "messageValues": [
             {
-              "message": "={{ $json.promptLibrary[\"pipe-v3\"] }}"
+              "message": "={{ $json.promptLibrary[\"pipe-v5c\"] }}"
             }
           ]
         },
         "batching": {}
-      }
-    },
-    {
-      "id": "chain-minimax-pipe-v4",
-      "name": "Chain 4 - MiniMax M2.7 / Turkce Sadakat Plus",
+      },
+      "id": "b8c04096-0fe0-4ed3-b4d2-1f9cd5f4dace",
+      "name": "Chain 3 - MiniMax M2.7 / Hizmet Agirlikli Sema Disiplinli",
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.8,
       "position": [
-        -360,
-        -720
-      ],
+        -26352,
+        13152
+      ]
+    },
+    {
       "parameters": {
         "promptType": "define",
         "text": "={{ $json.text }}",
         "messages": {
           "messageValues": [
             {
-              "message": "={{ $json.promptLibrary[\"pipe-v4\"] }}"
+              "message": "={{ $json.promptLibrary[\"pipe-v5a\"] }}"
             }
           ]
         },
         "batching": {}
-      }
-    },
-    {
-      "id": "chain-minimax-pipe-v5",
-      "name": "Chain 5 - MiniMax M2.7 / Hizmet Agirlikli",
+      },
+      "id": "cf681985-38af-4bcd-a610-49bd492caf33",
+      "name": "Chain 4 - Grok 4.1 Fast / Hizmet Agirlikli Dengeli",
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.8,
       "position": [
-        -360,
-        -640
-      ],
+        -26352,
+        13424
+      ]
+    },
+    {
       "parameters": {
         "promptType": "define",
         "text": "={{ $json.text }}",
         "messages": {
           "messageValues": [
             {
-              "message": "={{ $json.promptLibrary[\"pipe-v5\"] }}"
+              "message": "={{ $json.promptLibrary[\"pipe-v5b\"] }}"
             }
           ]
         },
         "batching": {}
-      }
-    },
-    {
-      "id": "chain-minimax-pipe-v6",
-      "name": "Chain 6 - MiniMax M2.7 / Not Ayristirma Sert",
+      },
+      "id": "dfb0311b-f871-41d1-b706-48fd0a358027",
+      "name": "Chain 5 - Grok 4.1 Fast / Hizmet Agirlikli Coklu Hizmet Sert",
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.8,
       "position": [
-        -360,
-        -560
-      ],
+        -26352,
+        13504
+      ]
+    },
+    {
       "parameters": {
         "promptType": "define",
         "text": "={{ $json.text }}",
         "messages": {
           "messageValues": [
             {
-              "message": "={{ $json.promptLibrary[\"pipe-v6\"] }}"
+              "message": "={{ $json.promptLibrary[\"pipe-v5c\"] }}"
             }
           ]
         },
         "batching": {}
-      }
-    },
-    {
-      "id": "chain-minimax-pipe-v7",
-      "name": "Chain 7 - MiniMax M2.7 / Cakisma Cozucu",
+      },
+      "id": "fc93492b-6873-42cc-bdfb-449263498760",
+      "name": "Chain 6 - Grok 4.1 Fast / Hizmet Agirlikli Sema Disiplinli",
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.8,
       "position": [
-        -360,
-        -480
-      ],
+        -26352,
+        13584
+      ]
+    },
+    {
       "parameters": {
         "promptType": "define",
         "text": "={{ $json.text }}",
         "messages": {
           "messageValues": [
             {
-              "message": "={{ $json.promptLibrary[\"pipe-v7\"] }}"
+              "message": "={{ $json.promptLibrary[\"pipe-v5a\"] }}"
             }
           ]
         },
         "batching": {}
-      }
-    },
-    {
-      "id": "chain-minimax-pipe-v8",
-      "name": "Chain 8 - MiniMax M2.7 / Satir Satir Rekonstruksiyon",
+      },
+      "id": "aeff88de-7e3e-45e8-898b-22de0670407c",
+      "name": "Chain 7 - GPT-4o Mini / Hizmet Agirlikli Dengeli",
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.8,
       "position": [
-        -360,
-        -400
-      ],
+        -26352,
+        13840
+      ]
+    },
+    {
       "parameters": {
         "promptType": "define",
         "text": "={{ $json.text }}",
         "messages": {
           "messageValues": [
             {
-              "message": "={{ $json.promptLibrary[\"pipe-v8\"] }}"
+              "message": "={{ $json.promptLibrary[\"pipe-v5b\"] }}"
             }
           ]
         },
         "batching": {}
-      }
-    },
-    {
-      "id": "chain-minimax-pipe-v9",
-      "name": "Chain 9 - MiniMax M2.7 / Kalite Kapisi",
+      },
+      "id": "c4390a55-5c04-4978-9d64-877955796268",
+      "name": "Chain 8 - GPT-4o Mini / Hizmet Agirlikli Coklu Hizmet Sert",
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.8,
       "position": [
-        -360,
-        -320
-      ],
+        -26352,
+        13920
+      ]
+    },
+    {
       "parameters": {
         "promptType": "define",
         "text": "={{ $json.text }}",
         "messages": {
           "messageValues": [
             {
-              "message": "={{ $json.promptLibrary[\"pipe-v9\"] }}"
+              "message": "={{ $json.promptLibrary[\"pipe-v5c\"] }}"
             }
           ]
         },
         "batching": {}
-      }
-    },
-    {
-      "id": "chain-minimax-pipe-v10",
-      "name": "Chain 10 - MiniMax M2.7 / Dusuk Halusinasyon",
+      },
+      "id": "19ca28c6-34c2-4e1c-868f-367b299cd2e1",
+      "name": "Chain 9 - GPT-4o Mini / Hizmet Agirlikli Sema Disiplinli",
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.8,
       "position": [
-        -360,
-        -240
-      ],
+        -26352,
+        14000
+      ]
+    },
+    {
       "parameters": {
         "promptType": "define",
         "text": "={{ $json.text }}",
         "messages": {
           "messageValues": [
             {
-              "message": "={{ $json.promptLibrary[\"pipe-v10\"] }}"
+              "message": "={{ $json.promptLibrary[\"pipe-v5a\"] }}"
             }
           ]
         },
         "batching": {}
-      }
-    },
-    {
-      "id": "chain-grok-pipe-v1",
-      "name": "Chain 11 - Grok 4.1 Fast / Deterministik Temel",
+      },
+      "id": "3a661c93-66b0-49fd-8bee-d80753dfd8a1",
+      "name": "Chain 10 - Gemini 2.5 Flash Lite / Hizmet Agirlikli Dengeli",
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.8,
       "position": [
-        -360,
-        40
-      ],
+        -26352,
+        14256
+      ]
+    },
+    {
       "parameters": {
         "promptType": "define",
         "text": "={{ $json.text }}",
         "messages": {
           "messageValues": [
             {
-              "message": "={{ $json.promptLibrary[\"pipe-v1\"] }}"
+              "message": "={{ $json.promptLibrary[\"pipe-v5b\"] }}"
             }
           ]
         },
         "batching": {}
-      }
-    },
-    {
-      "id": "chain-grok-pipe-v2",
-      "name": "Chain 12 - Grok 4.1 Fast / Kanit Esikli",
+      },
+      "id": "37a6d47a-9d2a-4009-98a5-4c710a204cd2",
+      "name": "Chain 11 - Gemini 2.5 Flash Lite / Hizmet Agirlikli Coklu Hizmet Sert",
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.8,
       "position": [
-        -360,
-        120
-      ],
+        -26352,
+        14336
+      ]
+    },
+    {
       "parameters": {
         "promptType": "define",
         "text": "={{ $json.text }}",
         "messages": {
           "messageValues": [
             {
-              "message": "={{ $json.promptLibrary[\"pipe-v2\"] }}"
+              "message": "={{ $json.promptLibrary[\"pipe-v5c\"] }}"
             }
           ]
         },
         "batching": {}
-      }
-    },
-    {
-      "id": "chain-grok-pipe-v3",
-      "name": "Chain 13 - Grok 4.1 Fast / Saat Once Segmentasyon",
+      },
+      "id": "ac05d03d-5239-4505-9890-574d6f6ff6bb",
+      "name": "Chain 12 - Gemini 2.5 Flash Lite / Hizmet Agirlikli Sema Disiplinli",
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.8,
       "position": [
-        -360,
-        200
-      ],
+        -26352,
+        14416
+      ]
+    },
+    {
       "parameters": {
         "promptType": "define",
         "text": "={{ $json.text }}",
         "messages": {
           "messageValues": [
             {
-              "message": "={{ $json.promptLibrary[\"pipe-v3\"] }}"
+              "message": "={{ $json.promptLibrary[\"pipe-v5a\"] }}"
             }
           ]
         },
         "batching": {}
-      }
-    },
-    {
-      "id": "chain-grok-pipe-v4",
-      "name": "Chain 14 - Grok 4.1 Fast / Turkce Sadakat Plus",
+      },
+      "id": "0ad00799-755c-4d15-bd9d-b4481596843d",
+      "name": "Chain 13 - Gemini 3.0 Flash / Hizmet Agirlikli Dengeli",
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.8,
       "position": [
-        -360,
-        280
-      ],
+        -26352,
+        14672
+      ]
+    },
+    {
       "parameters": {
         "promptType": "define",
         "text": "={{ $json.text }}",
         "messages": {
           "messageValues": [
             {
-              "message": "={{ $json.promptLibrary[\"pipe-v4\"] }}"
+              "message": "={{ $json.promptLibrary[\"pipe-v5b\"] }}"
             }
           ]
         },
         "batching": {}
-      }
-    },
-    {
-      "id": "chain-grok-pipe-v5",
-      "name": "Chain 15 - Grok 4.1 Fast / Hizmet Agirlikli",
+      },
+      "id": "ac49891f-ce88-41ec-b128-3ff74afdeddc",
+      "name": "Chain 14 - Gemini 3.0 Flash / Hizmet Agirlikli Coklu Hizmet Sert",
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.8,
       "position": [
-        -360,
-        360
-      ],
+        -26352,
+        14752
+      ]
+    },
+    {
       "parameters": {
         "promptType": "define",
         "text": "={{ $json.text }}",
         "messages": {
           "messageValues": [
             {
-              "message": "={{ $json.promptLibrary[\"pipe-v5\"] }}"
+              "message": "={{ $json.promptLibrary[\"pipe-v5c\"] }}"
             }
           ]
         },
         "batching": {}
-      }
-    },
-    {
-      "id": "chain-grok-pipe-v6",
-      "name": "Chain 16 - Grok 4.1 Fast / Not Ayristirma Sert",
+      },
+      "id": "88a7a6d4-9998-4e27-afb1-29284478530a",
+      "name": "Chain 15 - Gemini 3.0 Flash / Hizmet Agirlikli Sema Disiplinli",
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.8,
       "position": [
-        -360,
-        440
-      ],
+        -26352,
+        14832
+      ]
+    },
+    {
       "parameters": {
         "promptType": "define",
         "text": "={{ $json.text }}",
         "messages": {
           "messageValues": [
             {
-              "message": "={{ $json.promptLibrary[\"pipe-v6\"] }}"
+              "message": "={{ $json.promptLibrary[\"pipe-v5a\"] }}"
             }
           ]
         },
         "batching": {}
-      }
-    },
-    {
-      "id": "chain-grok-pipe-v7",
-      "name": "Chain 17 - Grok 4.1 Fast / Cakisma Cozucu",
+      },
+      "id": "4f67592b-4f93-44f7-817d-bac2c66db780",
+      "name": "Chain 16 - Gemini 3.0 Flash Lite Preview / Hizmet Agirlikli Dengeli",
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.8,
       "position": [
-        -360,
-        520
-      ],
+        -26352,
+        15104
+      ]
+    },
+    {
       "parameters": {
         "promptType": "define",
         "text": "={{ $json.text }}",
         "messages": {
           "messageValues": [
             {
-              "message": "={{ $json.promptLibrary[\"pipe-v7\"] }}"
+              "message": "={{ $json.promptLibrary[\"pipe-v5b\"] }}"
             }
           ]
         },
         "batching": {}
-      }
-    },
-    {
-      "id": "chain-grok-pipe-v8",
-      "name": "Chain 18 - Grok 4.1 Fast / Satir Satir Rekonstruksiyon",
+      },
+      "id": "a4bfeb84-f73e-4359-86c0-a31af516f1dd",
+      "name": "Chain 17 - Gemini 3.0 Flash Lite Preview / Hizmet Agirlikli Coklu Hizmet Sert",
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.8,
       "position": [
-        -360,
-        600
-      ],
+        -26352,
+        15184
+      ]
+    },
+    {
       "parameters": {
         "promptType": "define",
         "text": "={{ $json.text }}",
         "messages": {
           "messageValues": [
             {
-              "message": "={{ $json.promptLibrary[\"pipe-v8\"] }}"
+              "message": "={{ $json.promptLibrary[\"pipe-v5c\"] }}"
             }
           ]
         },
         "batching": {}
-      }
-    },
-    {
-      "id": "chain-grok-pipe-v9",
-      "name": "Chain 19 - Grok 4.1 Fast / Kalite Kapisi",
+      },
+      "id": "26613b14-ce91-44dd-9d70-82af9a148fe5",
+      "name": "Chain 18 - Gemini 3.0 Flash Lite Preview / Hizmet Agirlikli Sema Disiplinli",
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.8,
       "position": [
-        -360,
-        680
-      ],
+        -26352,
+        15264
+      ]
+    },
+    {
       "parameters": {
         "promptType": "define",
         "text": "={{ $json.text }}",
         "messages": {
           "messageValues": [
             {
-              "message": "={{ $json.promptLibrary[\"pipe-v9\"] }}"
+              "message": "={{ $json.promptLibrary[\"pipe-v5a\"] }}"
             }
           ]
         },
         "batching": {}
-      }
-    },
-    {
-      "id": "chain-grok-pipe-v10",
-      "name": "Chain 20 - Grok 4.1 Fast / Dusuk Halusinasyon",
+      },
+      "id": "e0621e51-d6c3-4ab1-a473-8b988531b489",
+      "name": "Chain 19 - Gemini 2.5 Flash / Hizmet Agirlikli Dengeli",
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.8,
       "position": [
-        -360,
-        760
-      ],
+        -26352,
+        15520
+      ]
+    },
+    {
       "parameters": {
         "promptType": "define",
         "text": "={{ $json.text }}",
         "messages": {
           "messageValues": [
             {
-              "message": "={{ $json.promptLibrary[\"pipe-v10\"] }}"
+              "message": "={{ $json.promptLibrary[\"pipe-v5b\"] }}"
             }
           ]
         },
         "batching": {}
-      }
-    },
-    {
-      "id": "chain-geminilite-pipe-v1",
-      "name": "Chain 21 - Gemini 2.5 Flash Lite / Deterministik Temel",
+      },
+      "id": "54a590e7-8927-46dd-bc2b-b7f53617706b",
+      "name": "Chain 20 - Gemini 2.5 Flash / Hizmet Agirlikli Coklu Hizmet Sert",
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.8,
       "position": [
-        -360,
-        1040
-      ],
+        -26352,
+        15600
+      ]
+    },
+    {
       "parameters": {
         "promptType": "define",
         "text": "={{ $json.text }}",
         "messages": {
           "messageValues": [
             {
-              "message": "={{ $json.promptLibrary[\"pipe-v1\"] }}"
+              "message": "={{ $json.promptLibrary[\"pipe-v5c\"] }}"
             }
           ]
         },
         "batching": {}
-      }
-    },
-    {
-      "id": "chain-geminilite-pipe-v2",
-      "name": "Chain 22 - Gemini 2.5 Flash Lite / Kanit Esikli",
+      },
+      "id": "c97a3047-6bf9-443d-8cb5-530358b9b536",
+      "name": "Chain 21 - Gemini 2.5 Flash / Hizmet Agirlikli Sema Disiplinli",
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.8,
       "position": [
-        -360,
-        1120
-      ],
-      "parameters": {
-        "promptType": "define",
-        "text": "={{ $json.text }}",
-        "messages": {
-          "messageValues": [
-            {
-              "message": "={{ $json.promptLibrary[\"pipe-v2\"] }}"
-            }
-          ]
-        },
-        "batching": {}
-      }
+        -26352,
+        15680
+      ]
     },
     {
-      "id": "chain-geminilite-pipe-v3",
-      "name": "Chain 23 - Gemini 2.5 Flash Lite / Saat Once Segmentasyon",
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.8,
-      "position": [
-        -360,
-        1200
-      ],
       "parameters": {
-        "promptType": "define",
-        "text": "={{ $json.text }}",
-        "messages": {
-          "messageValues": [
-            {
-              "message": "={{ $json.promptLibrary[\"pipe-v3\"] }}"
-            }
-          ]
-        },
-        "batching": {}
-      }
-    },
-    {
-      "id": "chain-geminilite-pipe-v4",
-      "name": "Chain 24 - Gemini 2.5 Flash Lite / Turkce Sadakat Plus",
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.8,
-      "position": [
-        -360,
-        1280
-      ],
-      "parameters": {
-        "promptType": "define",
-        "text": "={{ $json.text }}",
-        "messages": {
-          "messageValues": [
-            {
-              "message": "={{ $json.promptLibrary[\"pipe-v4\"] }}"
-            }
-          ]
-        },
-        "batching": {}
-      }
-    },
-    {
-      "id": "chain-geminilite-pipe-v5",
-      "name": "Chain 25 - Gemini 2.5 Flash Lite / Hizmet Agirlikli",
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.8,
-      "position": [
-        -360,
-        1360
-      ],
-      "parameters": {
-        "promptType": "define",
-        "text": "={{ $json.text }}",
-        "messages": {
-          "messageValues": [
-            {
-              "message": "={{ $json.promptLibrary[\"pipe-v5\"] }}"
-            }
-          ]
-        },
-        "batching": {}
-      }
-    },
-    {
-      "id": "chain-geminilite-pipe-v6",
-      "name": "Chain 26 - Gemini 2.5 Flash Lite / Not Ayristirma Sert",
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.8,
-      "position": [
-        -360,
-        1440
-      ],
-      "parameters": {
-        "promptType": "define",
-        "text": "={{ $json.text }}",
-        "messages": {
-          "messageValues": [
-            {
-              "message": "={{ $json.promptLibrary[\"pipe-v6\"] }}"
-            }
-          ]
-        },
-        "batching": {}
-      }
-    },
-    {
-      "id": "chain-geminilite-pipe-v7",
-      "name": "Chain 27 - Gemini 2.5 Flash Lite / Cakisma Cozucu",
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.8,
-      "position": [
-        -360,
-        1520
-      ],
-      "parameters": {
-        "promptType": "define",
-        "text": "={{ $json.text }}",
-        "messages": {
-          "messageValues": [
-            {
-              "message": "={{ $json.promptLibrary[\"pipe-v7\"] }}"
-            }
-          ]
-        },
-        "batching": {}
-      }
-    },
-    {
-      "id": "chain-geminilite-pipe-v8",
-      "name": "Chain 28 - Gemini 2.5 Flash Lite / Satir Satir Rekonstruksiyon",
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.8,
-      "position": [
-        -360,
-        1600
-      ],
-      "parameters": {
-        "promptType": "define",
-        "text": "={{ $json.text }}",
-        "messages": {
-          "messageValues": [
-            {
-              "message": "={{ $json.promptLibrary[\"pipe-v8\"] }}"
-            }
-          ]
-        },
-        "batching": {}
-      }
-    },
-    {
-      "id": "chain-geminilite-pipe-v9",
-      "name": "Chain 29 - Gemini 2.5 Flash Lite / Kalite Kapisi",
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.8,
-      "position": [
-        -360,
-        1680
-      ],
-      "parameters": {
-        "promptType": "define",
-        "text": "={{ $json.text }}",
-        "messages": {
-          "messageValues": [
-            {
-              "message": "={{ $json.promptLibrary[\"pipe-v9\"] }}"
-            }
-          ]
-        },
-        "batching": {}
-      }
-    },
-    {
-      "id": "chain-geminilite-pipe-v10",
-      "name": "Chain 30 - Gemini 2.5 Flash Lite / Dusuk Halusinasyon",
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.8,
-      "position": [
-        -360,
-        1760
-      ],
-      "parameters": {
-        "promptType": "define",
-        "text": "={{ $json.text }}",
-        "messages": {
-          "messageValues": [
-            {
-              "message": "={{ $json.promptLibrary[\"pipe-v10\"] }}"
-            }
-          ]
-        },
-        "batching": {}
-      }
-    },
-    {
-      "id": "merge-all-benchmarks",
+        "numberInputs": 7
+      },
+      "id": "f7c77d5a-51e6-4fee-bafb-2df8785c5f76",
       "name": "Merge All Benchmarks",
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3.2,
       "position": [
-        360,
-        -40
-      ],
-      "parameters": {
-        "numberInputs": 3
-      }
+        -25632,
+        13920
+      ]
     },
     {
-      "id": "build-benchmark-payload",
-      "name": "Build Benchmark Payload",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        620,
-        -40
-      ],
-      "parameters": {
-        "jsCode": "const promptLibrary = {\n  \"pipe-v1\": {\n    \"label\": \"Deterministik Temel\"\n  },\n  \"pipe-v2\": {\n    \"label\": \"Kanit Esikli\"\n  },\n  \"pipe-v3\": {\n    \"label\": \"Saat Once Segmentasyon\"\n  },\n  \"pipe-v4\": {\n    \"label\": \"Turkce Sadakat Plus\"\n  },\n  \"pipe-v5\": {\n    \"label\": \"Hizmet Agirlikli\"\n  },\n  \"pipe-v6\": {\n    \"label\": \"Not Ayristirma Sert\"\n  },\n  \"pipe-v7\": {\n    \"label\": \"Cakişma Cozucu\"\n  },\n  \"pipe-v8\": {\n    \"label\": \"Satir Satir Rekonstruksiyon\"\n  },\n  \"pipe-v9\": {\n    \"label\": \"Kalite Kapisi\"\n  },\n  \"pipe-v10\": {\n    \"label\": \"Dusuk Halusinasyon\"\n  }\n};\nconst modelMatrix = [\n  {\n    \"name\": \"MiniMax M2.7\",\n    \"model\": \"minimax/minimax-m2.7\",\n    \"startIndex\": 1\n  },\n  {\n    \"name\": \"Grok 4.1 Fast\",\n    \"model\": \"x-ai/grok-4.1-fast\",\n    \"startIndex\": 11\n  },\n  {\n    \"name\": \"Gemini 2.5 Flash Lite\",\n    \"model\": \"google/gemini-2.5-flash-lite\",\n    \"startIndex\": 21\n  }\n];\nconst promptVariants = [\n  {\n    \"promptVersion\": \"pipe-v1\",\n    \"legacyNodeSuffix\": \"Deterministik Temel\"\n  },\n  {\n    \"promptVersion\": \"pipe-v2\",\n    \"legacyNodeSuffix\": \"Kanit Esikli\"\n  },\n  {\n    \"promptVersion\": \"pipe-v3\",\n    \"legacyNodeSuffix\": \"Saat Once Segmentasyon\"\n  },\n  {\n    \"promptVersion\": \"pipe-v4\",\n    \"legacyNodeSuffix\": \"Turkce Sadakat Plus\"\n  },\n  {\n    \"promptVersion\": \"pipe-v5\",\n    \"legacyNodeSuffix\": \"Hizmet Agirlikli\"\n  },\n  {\n    \"promptVersion\": \"pipe-v6\",\n    \"legacyNodeSuffix\": \"Not Ayristirma Sert\"\n  },\n  {\n    \"promptVersion\": \"pipe-v7\",\n    \"legacyNodeSuffix\": \"Cakisma Cozucu\"\n  },\n  {\n    \"promptVersion\": \"pipe-v8\",\n    \"legacyNodeSuffix\": \"Satir Satir Rekonstruksiyon\"\n  },\n  {\n    \"promptVersion\": \"pipe-v9\",\n    \"legacyNodeSuffix\": \"Kalite Kapisi\"\n  },\n  {\n    \"promptVersion\": \"pipe-v10\",\n    \"legacyNodeSuffix\": \"Dusuk Halusinasyon\"\n  }\n];\nconst source = $(\"Extract OCR Text\").first().json;\nfunction trimText(v) { return typeof v === \"string\" ? v.trim() : \"\"; }\nfunction nullable(v) { const x = trimText(v); return !x || x.toLowerCase() === \"null\" ? null : x; }\nfunction normalizeTime(v) {\n  const x = trimText(v);\n  if (!x || x.toLowerCase() === \"null\") return null;\n  let m = x.match(/^(\\d{1,2})[:.](\\d{2})$/);\n  if (m) {\n    const hour = Number(m[1]);\n    const minute = Number(m[2]);\n    if (hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59) return String(hour).padStart(2, \"0\") + \":\" + String(minute).padStart(2, \"0\");\n  }\n  m = x.match(/^(\\d{2})(\\d{2})$/);\n  if (m) {\n    const hour = Number(m[1]);\n    const minute = Number(m[2]);\n    if (hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59) return String(hour).padStart(2, \"0\") + \":\" + String(minute).padStart(2, \"0\");\n  }\n  return null;\n}\nfunction normalizeDate(v) {\n  const x = trimText(v);\n  if (!x || x.toLowerCase() === \"null\") return null;\n  let m = x.match(/^(\\d{1,2})[./-](\\d{1,2})[./-](\\d{2,4})$/);\n  if (m) {\n    let year = Number(m[3]);\n    if (year < 100) year += 2000;\n    return String(Number(m[1])).padStart(2, \"0\") + \".\" + String(Number(m[2])).padStart(2, \"0\") + \".\" + String(year).padStart(4, \"0\");\n  }\n  if (/^(\\d{4})-(\\d{2})-(\\d{2})$/.test(x)) return x;\n  return null;\n}\nfunction normalizeNumber(v) {\n  if (v === null || v === undefined || v === \"\") return null;\n  const n = Number(String(v).replace(\",\", \".\"));\n  return Number.isFinite(n) ? n : null;\n}\nfunction unwrapJson(raw) {\n  const text = trimText(raw);\n  if (!text) throw new Error(\"llm_empty_output\");\n  try { return JSON.parse(text); } catch (error) {}\n  const fenced = text.match(/```(?:json)?\\s*([\\s\\S]*?)```/i);\n  if (fenced) return JSON.parse(fenced[1].trim());\n  const start = text.indexOf(\"{\");\n  const end = text.lastIndexOf(\"}\");\n  if (start !== -1 && end > start) return JSON.parse(text.slice(start, end + 1));\n  throw new Error(\"llm_invalid_json\");\n}\nfunction normalizeRows(payload) {\n  const rows = Array.isArray(payload) ? payload : (Array.isArray(payload?.rows) ? payload.rows : []);\n  return rows.map((row, index) => ({\n    rowIndex: Number(row?.rowIndex) > 0 ? Number(row.rowIndex) : index + 1,\n    customerName: nullable(row?.customerName || row?.name || row?.customer || row?.customerNameRaw),\n    customerPhoneRaw: nullable(row?.customerPhoneRaw || row?.phoneRaw || row?.phone),\n    appointmentDate: normalizeDate(row?.appointmentDate || row?.date || row?.appointment_date),\n    startTime: normalizeTime(row?.startTime || row?.time || row?.hour || row?.start),\n    endTime: normalizeTime(row?.endTime || row?.end || row?.finishTime),\n    durationMinutes: normalizeNumber(row?.durationMinutes),\n    serviceNameRaw: nullable(row?.serviceNameRaw || row?.servicesNormalized || row?.service || row?.serviceRaw || row?.services),\n    staffNameRaw: nullable(row?.staffNameRaw || row?.staff),\n    priceRaw: normalizeNumber(row?.priceRaw),\n    notesRaw: nullable(row?.notesRaw || row?.note || row?.notes),\n    confidence: (() => {\n      const value = Number(row?.confidence);\n      if (!Number.isFinite(value)) return 0.5;\n      return Math.max(0, Math.min(1, value));\n    })(),\n  })).filter((row) => row.appointmentDate || row.startTime || row.customerName || row.serviceNameRaw || row.notesRaw);\n}\nconst candidates = [];\nfor (const modelEntry of modelMatrix) {\n  for (let index = 0; index < promptVariants.length; index += 1) {\n    const variant = promptVariants[index];\n    const chainNumber = modelEntry.startIndex + index;\n    const nodeName = \"Chain \" + chainNumber + \" - \" + modelEntry.name + \" / \" + variant.legacyNodeSuffix;\n    let rawOutputText = \"\";\n    let parsedRows = [];\n    try {\n      const nodeJson = $item(0).$node[nodeName].json || {};\n      rawOutputText = trimText(nodeJson.text || \"\");\n      parsedRows = normalizeRows(unwrapJson(rawOutputText));\n    } catch (error) {\n      rawOutputText = trimText(rawOutputText) || (\"ERROR: \" + (error?.message || \"candidate_read_failed\"));\n      parsedRows = [];\n    }\n    candidates.push({\n      provider: \"openrouter\",\n      model: modelEntry.model,\n      promptVersion: variant.promptVersion,\n      promptLabel: promptLibrary[variant.promptVersion]?.label || variant.promptVersion,\n      rawOutputText,\n      parsedRows\n    });\n  }\n}\nconst successCount = candidates.filter((candidate) => Array.isArray(candidate.parsedRows) && candidate.parsedRows.length > 0).length;\nreturn [{ json: { batchId: source.batchId, sourceFileId: source.sourceFileId, mode: \"BENCHMARK\", candidates, audit: { ocrProvider: \"google-vision\", ocrModel: \"DOCUMENT_TEXT_DETECTION\", ocrRawText: source.text || \"\", activeConfigSnapshot: source.aiConfig || {}, benchmarkReferenceText: source.benchmarkReferenceText || \"\", metrics: { benchmarkReferenceText: source.benchmarkReferenceText || \"\", candidateCount: candidates.length, modelCount: modelMatrix.length, promptCount: promptVariants.length, successCount, failureCount: candidates.length - successCount } } } }];"
-      }
-    },
-    {
-      "id": "callback-success",
-      "name": "Callback Success",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        860,
-        -120
-      ],
       "parameters": {
         "method": "POST",
         "url": "={{ 'https://app.berkai.shop/api/internal/imports/' + $json.batchId + '/ocr-callback' }}",
@@ -1021,19 +981,19 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { mode: $json.mode || \"BENCHMARK\", sourceFileId: $json.sourceFileId, benchmarkReferenceText: $json.audit?.benchmarkReferenceText || $json.benchmarkReferenceText || \"\", candidates: $json.candidates || [], audit: $json.audit || null } }}",
+        "jsonBody": "={{ { mode: $json.mode || \"BENCHMARK\", phase: $json.phase || null, strictness: $json.strictness || null, temperature: $json.temperature ?? null, sourceFileId: $json.sourceFileId, benchmarkReferenceText: $json.audit?.benchmarkReferenceText || $json.benchmarkReferenceText || \"\", candidates: $json.candidates || [], audit: $json.audit || null } }}",
         "options": {}
-      }
-    },
-    {
-      "id": "callback-error",
-      "name": "Callback Error",
+      },
+      "id": "27d79e64-1cb8-418a-be90-f0ae85aabd38",
+      "name": "Callback Success1",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        -300,
-        80
-      ],
+        -25136,
+        13840
+      ]
+    },
+    {
       "parameters": {
         "method": "POST",
         "url": "={{ 'https://app.berkai.shop/api/internal/imports/' + $json.batchId + '/ocr-callback' }}",
@@ -1048,195 +1008,20 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { mode: $json.mode || \"BENCHMARK\", sourceFileId: $json.sourceFileId, benchmarkReferenceText: $json.benchmarkReferenceText || $json.audit?.benchmarkReferenceText || \"\", error: $json.error, audit: { ocrProvider: \"google-vision\", ocrModel: \"DOCUMENT_TEXT_DETECTION\", ocrRawText: $json.text || \"\", activeConfigSnapshot: $json.aiConfig || {}, benchmarkReferenceText: $json.benchmarkReferenceText || \"\", metrics: { benchmarkReferenceText: $json.benchmarkReferenceText || \"\", candidateCount: 0, modelCount: 0, promptCount: 0, successCount: 0, failureCount: 0 } } } }}",
+        "jsonBody": "={{ { mode: $json.mode || \"BENCHMARK\", phase: $json.phase || null, strictness: $json.strictness || null, temperature: $json.temperature ?? null, sourceFileId: $json.sourceFileId, benchmarkReferenceText: $json.benchmarkReferenceText || $json.audit?.benchmarkReferenceText || \"\", error: $json.error, audit: { ocrProvider: \"google-vision\", ocrModel: \"DOCUMENT_TEXT_DETECTION\", ocrRawText: $json.text || \"\", activeConfigSnapshot: $json.aiConfig || {}, benchmarkReferenceText: $json.benchmarkReferenceText || \"\", metrics: { benchmarkReferenceText: $json.benchmarkReferenceText || \"\", phase: $json.phase || null, strictness: $json.strictness || null, temperature: $json.temperature ?? null, candidateCount: 0, modelCount: 0, promptCount: 0, successCount: 0, failureCount: 0 } } } }}",
         "options": {}
-      }
-    },
-    {
-      "id": "webhook-response",
-      "name": "Webhook Response",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1,
+      },
+      "id": "b71479fd-2247-418a-b374-1e0161bc6dc6",
+      "name": "Callback Error1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
-        1080,
-        -120
-      ],
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ { \"ok\": true, \"received\": true } }}",
-        "options": {}
-      }
+        -26288,
+        14032
+      ]
     }
   ],
   "connections": {
-    "Model - MiniMax M2.7": {
-      "ai_languageModel": [
-        [
-          {
-            "node": "Chain 1 - MiniMax M2.7 / Deterministik Temel",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 2 - MiniMax M2.7 / Kanit Esikli",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 3 - MiniMax M2.7 / Saat Once Segmentasyon",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 4 - MiniMax M2.7 / Turkce Sadakat Plus",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 5 - MiniMax M2.7 / Hizmet Agirlikli",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 6 - MiniMax M2.7 / Not Ayristirma Sert",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 7 - MiniMax M2.7 / Cakisma Cozucu",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 8 - MiniMax M2.7 / Satir Satir Rekonstruksiyon",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 9 - MiniMax M2.7 / Kalite Kapisi",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 10 - MiniMax M2.7 / Dusuk Halusinasyon",
-            "type": "ai_languageModel",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Model - Grok 4.1 Fast": {
-      "ai_languageModel": [
-        [
-          {
-            "node": "Chain 11 - Grok 4.1 Fast / Deterministik Temel",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 12 - Grok 4.1 Fast / Kanit Esikli",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 13 - Grok 4.1 Fast / Saat Once Segmentasyon",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 14 - Grok 4.1 Fast / Turkce Sadakat Plus",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 15 - Grok 4.1 Fast / Hizmet Agirlikli",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 16 - Grok 4.1 Fast / Not Ayristirma Sert",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 17 - Grok 4.1 Fast / Cakisma Cozucu",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 18 - Grok 4.1 Fast / Satir Satir Rekonstruksiyon",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 19 - Grok 4.1 Fast / Kalite Kapisi",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 20 - Grok 4.1 Fast / Dusuk Halusinasyon",
-            "type": "ai_languageModel",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Model - Gemini 2.5 Flash Lite": {
-      "ai_languageModel": [
-        [
-          {
-            "node": "Chain 21 - Gemini 2.5 Flash Lite / Deterministik Temel",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 22 - Gemini 2.5 Flash Lite / Kanit Esikli",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 23 - Gemini 2.5 Flash Lite / Saat Once Segmentasyon",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 24 - Gemini 2.5 Flash Lite / Turkce Sadakat Plus",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 25 - Gemini 2.5 Flash Lite / Hizmet Agirlikli",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 26 - Gemini 2.5 Flash Lite / Not Ayristirma Sert",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 27 - Gemini 2.5 Flash Lite / Cakisma Cozucu",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 28 - Gemini 2.5 Flash Lite / Satir Satir Rekonstruksiyon",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 29 - Gemini 2.5 Flash Lite / Kalite Kapisi",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Chain 30 - Gemini 2.5 Flash Lite / Dusuk Halusinasyon",
-            "type": "ai_languageModel",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Webhook Trigger": {
       "main": [
         [
@@ -1285,7 +1070,7 @@
       "main": [
         [
           {
-            "node": "Callback Error",
+            "node": "Callback Error1",
             "type": "main",
             "index": 0
           }
@@ -1303,264 +1088,267 @@
       "main": [
         [
           {
-            "node": "Chain 1 - MiniMax M2.7 / Deterministik Temel",
+            "node": "Chain 1 - MiniMax M2.7 / Hizmet Agirlikli Dengeli",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 2 - MiniMax M2.7 / Kanit Esikli",
+            "node": "Chain 2 - MiniMax M2.7 / Hizmet Agirlikli Coklu Hizmet Sert",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 3 - MiniMax M2.7 / Saat Once Segmentasyon",
+            "node": "Chain 3 - MiniMax M2.7 / Hizmet Agirlikli Sema Disiplinli",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 4 - MiniMax M2.7 / Turkce Sadakat Plus",
+            "node": "Chain 4 - Grok 4.1 Fast / Hizmet Agirlikli Dengeli",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 5 - MiniMax M2.7 / Hizmet Agirlikli",
+            "node": "Chain 5 - Grok 4.1 Fast / Hizmet Agirlikli Coklu Hizmet Sert",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 6 - MiniMax M2.7 / Not Ayristirma Sert",
+            "node": "Chain 6 - Grok 4.1 Fast / Hizmet Agirlikli Sema Disiplinli",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 7 - MiniMax M2.7 / Cakisma Cozucu",
+            "node": "Chain 7 - GPT-4o Mini / Hizmet Agirlikli Dengeli",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 8 - MiniMax M2.7 / Satir Satir Rekonstruksiyon",
+            "node": "Chain 8 - GPT-4o Mini / Hizmet Agirlikli Coklu Hizmet Sert",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 9 - MiniMax M2.7 / Kalite Kapisi",
+            "node": "Chain 9 - GPT-4o Mini / Hizmet Agirlikli Sema Disiplinli",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 10 - MiniMax M2.7 / Dusuk Halusinasyon",
+            "node": "Chain 10 - Gemini 2.5 Flash Lite / Hizmet Agirlikli Dengeli",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 11 - Grok 4.1 Fast / Deterministik Temel",
+            "node": "Chain 11 - Gemini 2.5 Flash Lite / Hizmet Agirlikli Coklu Hizmet Sert",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 12 - Grok 4.1 Fast / Kanit Esikli",
+            "node": "Chain 12 - Gemini 2.5 Flash Lite / Hizmet Agirlikli Sema Disiplinli",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 13 - Grok 4.1 Fast / Saat Once Segmentasyon",
+            "node": "Chain 13 - Gemini 3.0 Flash / Hizmet Agirlikli Dengeli",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 14 - Grok 4.1 Fast / Turkce Sadakat Plus",
+            "node": "Chain 14 - Gemini 3.0 Flash / Hizmet Agirlikli Coklu Hizmet Sert",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 15 - Grok 4.1 Fast / Hizmet Agirlikli",
+            "node": "Chain 15 - Gemini 3.0 Flash / Hizmet Agirlikli Sema Disiplinli",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 16 - Grok 4.1 Fast / Not Ayristirma Sert",
+            "node": "Chain 16 - Gemini 3.0 Flash Lite Preview / Hizmet Agirlikli Dengeli",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 17 - Grok 4.1 Fast / Cakisma Cozucu",
+            "node": "Chain 17 - Gemini 3.0 Flash Lite Preview / Hizmet Agirlikli Coklu Hizmet Sert",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 18 - Grok 4.1 Fast / Satir Satir Rekonstruksiyon",
+            "node": "Chain 18 - Gemini 3.0 Flash Lite Preview / Hizmet Agirlikli Sema Disiplinli",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 19 - Grok 4.1 Fast / Kalite Kapisi",
+            "node": "Chain 19 - Gemini 2.5 Flash / Hizmet Agirlikli Dengeli",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 20 - Grok 4.1 Fast / Dusuk Halusinasyon",
+            "node": "Chain 20 - Gemini 2.5 Flash / Hizmet Agirlikli Coklu Hizmet Sert",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Chain 21 - Gemini 2.5 Flash Lite / Deterministik Temel",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Chain 22 - Gemini 2.5 Flash Lite / Kanit Esikli",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Chain 23 - Gemini 2.5 Flash Lite / Saat Once Segmentasyon",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Chain 24 - Gemini 2.5 Flash Lite / Turkce Sadakat Plus",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Chain 25 - Gemini 2.5 Flash Lite / Hizmet Agirlikli",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Chain 26 - Gemini 2.5 Flash Lite / Not Ayristirma Sert",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Chain 27 - Gemini 2.5 Flash Lite / Cakisma Cozucu",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Chain 28 - Gemini 2.5 Flash Lite / Satir Satir Rekonstruksiyon",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Chain 29 - Gemini 2.5 Flash Lite / Kalite Kapisi",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Chain 30 - Gemini 2.5 Flash Lite / Dusuk Halusinasyon",
+            "node": "Chain 21 - Gemini 2.5 Flash / Hizmet Agirlikli Sema Disiplinli",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Chain 1 - MiniMax M2.7 / Deterministik Temel": {
+    "Build Benchmark Payload": {
       "main": [
         [
           {
-            "node": "Merge - MiniMax M2.7",
+            "node": "Callback Success1",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Chain 2 - MiniMax M2.7 / Kanit Esikli": {
-      "main": [
+    "Model - MiniMax M2.7": {
+      "ai_languageModel": [
         [
           {
-            "node": "Merge - MiniMax M2.7",
-            "type": "main",
-            "index": 1
+            "node": "Chain 1 - MiniMax M2.7 / Hizmet Agirlikli Dengeli",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Chain 2 - MiniMax M2.7 / Hizmet Agirlikli Coklu Hizmet Sert",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Chain 3 - MiniMax M2.7 / Hizmet Agirlikli Sema Disiplinli",
+            "type": "ai_languageModel",
+            "index": 0
           }
         ]
       ]
     },
-    "Chain 3 - MiniMax M2.7 / Saat Once Segmentasyon": {
-      "main": [
+    "Model - Grok 4.1 Fast": {
+      "ai_languageModel": [
         [
           {
-            "node": "Merge - MiniMax M2.7",
-            "type": "main",
-            "index": 2
+            "node": "Chain 4 - Grok 4.1 Fast / Hizmet Agirlikli Dengeli",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Chain 5 - Grok 4.1 Fast / Hizmet Agirlikli Coklu Hizmet Sert",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Chain 6 - Grok 4.1 Fast / Hizmet Agirlikli Sema Disiplinli",
+            "type": "ai_languageModel",
+            "index": 0
           }
         ]
       ]
     },
-    "Chain 4 - MiniMax M2.7 / Turkce Sadakat Plus": {
-      "main": [
+    "Model - GPT-4o Mini": {
+      "ai_languageModel": [
         [
           {
-            "node": "Merge - MiniMax M2.7",
-            "type": "main",
-            "index": 3
+            "node": "Chain 7 - GPT-4o Mini / Hizmet Agirlikli Dengeli",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Chain 8 - GPT-4o Mini / Hizmet Agirlikli Coklu Hizmet Sert",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Chain 9 - GPT-4o Mini / Hizmet Agirlikli Sema Disiplinli",
+            "type": "ai_languageModel",
+            "index": 0
           }
         ]
       ]
     },
-    "Chain 5 - MiniMax M2.7 / Hizmet Agirlikli": {
-      "main": [
+    "Model - Gemini 2.5 Flash Lite": {
+      "ai_languageModel": [
         [
           {
-            "node": "Merge - MiniMax M2.7",
-            "type": "main",
-            "index": 4
+            "node": "Chain 10 - Gemini 2.5 Flash Lite / Hizmet Agirlikli Dengeli",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Chain 11 - Gemini 2.5 Flash Lite / Hizmet Agirlikli Coklu Hizmet Sert",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Chain 12 - Gemini 2.5 Flash Lite / Hizmet Agirlikli Sema Disiplinli",
+            "type": "ai_languageModel",
+            "index": 0
           }
         ]
       ]
     },
-    "Chain 6 - MiniMax M2.7 / Not Ayristirma Sert": {
-      "main": [
+    "Model - Gemini 3.0 Flash": {
+      "ai_languageModel": [
         [
           {
-            "node": "Merge - MiniMax M2.7",
-            "type": "main",
-            "index": 5
+            "node": "Chain 13 - Gemini 3.0 Flash / Hizmet Agirlikli Dengeli",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Chain 14 - Gemini 3.0 Flash / Hizmet Agirlikli Coklu Hizmet Sert",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Chain 15 - Gemini 3.0 Flash / Hizmet Agirlikli Sema Disiplinli",
+            "type": "ai_languageModel",
+            "index": 0
           }
         ]
       ]
     },
-    "Chain 7 - MiniMax M2.7 / Cakisma Cozucu": {
-      "main": [
+    "Model - Gemini 3.0 Flash Lite Preview": {
+      "ai_languageModel": [
         [
           {
-            "node": "Merge - MiniMax M2.7",
-            "type": "main",
-            "index": 6
+            "node": "Chain 16 - Gemini 3.0 Flash Lite Preview / Hizmet Agirlikli Dengeli",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Chain 17 - Gemini 3.0 Flash Lite Preview / Hizmet Agirlikli Coklu Hizmet Sert",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Chain 18 - Gemini 3.0 Flash Lite Preview / Hizmet Agirlikli Sema Disiplinli",
+            "type": "ai_languageModel",
+            "index": 0
           }
         ]
       ]
     },
-    "Chain 8 - MiniMax M2.7 / Satir Satir Rekonstruksiyon": {
-      "main": [
+    "Model - Gemini 2.5 Flash": {
+      "ai_languageModel": [
         [
           {
-            "node": "Merge - MiniMax M2.7",
-            "type": "main",
-            "index": 7
-          }
-        ]
-      ]
-    },
-    "Chain 9 - MiniMax M2.7 / Kalite Kapisi": {
-      "main": [
-        [
+            "node": "Chain 19 - Gemini 2.5 Flash / Hizmet Agirlikli Dengeli",
+            "type": "ai_languageModel",
+            "index": 0
+          },
           {
-            "node": "Merge - MiniMax M2.7",
-            "type": "main",
-            "index": 8
-          }
-        ]
-      ]
-    },
-    "Chain 10 - MiniMax M2.7 / Dusuk Halusinasyon": {
-      "main": [
-        [
+            "node": "Chain 20 - Gemini 2.5 Flash / Hizmet Agirlikli Coklu Hizmet Sert",
+            "type": "ai_languageModel",
+            "index": 0
+          },
           {
-            "node": "Merge - MiniMax M2.7",
-            "type": "main",
-            "index": 9
+            "node": "Chain 21 - Gemini 2.5 Flash / Hizmet Agirlikli Sema Disiplinli",
+            "type": "ai_languageModel",
+            "index": 0
           }
         ]
       ]
@@ -1576,116 +1364,6 @@
         ]
       ]
     },
-    "Chain 11 - Grok 4.1 Fast / Deterministik Temel": {
-      "main": [
-        [
-          {
-            "node": "Merge - Grok 4.1 Fast",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Chain 12 - Grok 4.1 Fast / Kanit Esikli": {
-      "main": [
-        [
-          {
-            "node": "Merge - Grok 4.1 Fast",
-            "type": "main",
-            "index": 1
-          }
-        ]
-      ]
-    },
-    "Chain 13 - Grok 4.1 Fast / Saat Once Segmentasyon": {
-      "main": [
-        [
-          {
-            "node": "Merge - Grok 4.1 Fast",
-            "type": "main",
-            "index": 2
-          }
-        ]
-      ]
-    },
-    "Chain 14 - Grok 4.1 Fast / Turkce Sadakat Plus": {
-      "main": [
-        [
-          {
-            "node": "Merge - Grok 4.1 Fast",
-            "type": "main",
-            "index": 3
-          }
-        ]
-      ]
-    },
-    "Chain 15 - Grok 4.1 Fast / Hizmet Agirlikli": {
-      "main": [
-        [
-          {
-            "node": "Merge - Grok 4.1 Fast",
-            "type": "main",
-            "index": 4
-          }
-        ]
-      ]
-    },
-    "Chain 16 - Grok 4.1 Fast / Not Ayristirma Sert": {
-      "main": [
-        [
-          {
-            "node": "Merge - Grok 4.1 Fast",
-            "type": "main",
-            "index": 5
-          }
-        ]
-      ]
-    },
-    "Chain 17 - Grok 4.1 Fast / Cakisma Cozucu": {
-      "main": [
-        [
-          {
-            "node": "Merge - Grok 4.1 Fast",
-            "type": "main",
-            "index": 6
-          }
-        ]
-      ]
-    },
-    "Chain 18 - Grok 4.1 Fast / Satir Satir Rekonstruksiyon": {
-      "main": [
-        [
-          {
-            "node": "Merge - Grok 4.1 Fast",
-            "type": "main",
-            "index": 7
-          }
-        ]
-      ]
-    },
-    "Chain 19 - Grok 4.1 Fast / Kalite Kapisi": {
-      "main": [
-        [
-          {
-            "node": "Merge - Grok 4.1 Fast",
-            "type": "main",
-            "index": 8
-          }
-        ]
-      ]
-    },
-    "Chain 20 - Grok 4.1 Fast / Dusuk Halusinasyon": {
-      "main": [
-        [
-          {
-            "node": "Merge - Grok 4.1 Fast",
-            "type": "main",
-            "index": 9
-          }
-        ]
-      ]
-    },
     "Merge - Grok 4.1 Fast": {
       "main": [
         [
@@ -1697,7 +1375,161 @@
         ]
       ]
     },
-    "Chain 21 - Gemini 2.5 Flash Lite / Deterministik Temel": {
+    "Merge - GPT-4o Mini": {
+      "main": [
+        [
+          {
+            "node": "Merge All Benchmarks",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Merge - Gemini 2.5 Flash Lite": {
+      "main": [
+        [
+          {
+            "node": "Merge All Benchmarks",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Merge - Gemini 3.0 Flash": {
+      "main": [
+        [
+          {
+            "node": "Merge All Benchmarks",
+            "type": "main",
+            "index": 4
+          }
+        ]
+      ]
+    },
+    "Merge - Gemini 3.0 Flash Lite Preview": {
+      "main": [
+        [
+          {
+            "node": "Merge All Benchmarks",
+            "type": "main",
+            "index": 5
+          }
+        ]
+      ]
+    },
+    "Merge - Gemini 2.5 Flash": {
+      "main": [
+        [
+          {
+            "node": "Merge All Benchmarks",
+            "type": "main",
+            "index": 6
+          }
+        ]
+      ]
+    },
+    "Chain 1 - MiniMax M2.7 / Hizmet Agirlikli Dengeli": {
+      "main": [
+        [
+          {
+            "node": "Merge - MiniMax M2.7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chain 2 - MiniMax M2.7 / Hizmet Agirlikli Coklu Hizmet Sert": {
+      "main": [
+        [
+          {
+            "node": "Merge - MiniMax M2.7",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Chain 3 - MiniMax M2.7 / Hizmet Agirlikli Sema Disiplinli": {
+      "main": [
+        [
+          {
+            "node": "Merge - MiniMax M2.7",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Chain 4 - Grok 4.1 Fast / Hizmet Agirlikli Dengeli": {
+      "main": [
+        [
+          {
+            "node": "Merge - Grok 4.1 Fast",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chain 5 - Grok 4.1 Fast / Hizmet Agirlikli Coklu Hizmet Sert": {
+      "main": [
+        [
+          {
+            "node": "Merge - Grok 4.1 Fast",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Chain 6 - Grok 4.1 Fast / Hizmet Agirlikli Sema Disiplinli": {
+      "main": [
+        [
+          {
+            "node": "Merge - Grok 4.1 Fast",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Chain 7 - GPT-4o Mini / Hizmet Agirlikli Dengeli": {
+      "main": [
+        [
+          {
+            "node": "Merge - GPT-4o Mini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chain 8 - GPT-4o Mini / Hizmet Agirlikli Coklu Hizmet Sert": {
+      "main": [
+        [
+          {
+            "node": "Merge - GPT-4o Mini",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Chain 9 - GPT-4o Mini / Hizmet Agirlikli Sema Disiplinli": {
+      "main": [
+        [
+          {
+            "node": "Merge - GPT-4o Mini",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Chain 10 - Gemini 2.5 Flash Lite / Hizmet Agirlikli Dengeli": {
       "main": [
         [
           {
@@ -1708,7 +1540,7 @@
         ]
       ]
     },
-    "Chain 22 - Gemini 2.5 Flash Lite / Kanit Esikli": {
+    "Chain 11 - Gemini 2.5 Flash Lite / Hizmet Agirlikli Coklu Hizmet Sert": {
       "main": [
         [
           {
@@ -1719,7 +1551,7 @@
         ]
       ]
     },
-    "Chain 23 - Gemini 2.5 Flash Lite / Saat Once Segmentasyon": {
+    "Chain 12 - Gemini 2.5 Flash Lite / Hizmet Agirlikli Sema Disiplinli": {
       "main": [
         [
           {
@@ -1730,88 +1562,99 @@
         ]
       ]
     },
-    "Chain 24 - Gemini 2.5 Flash Lite / Turkce Sadakat Plus": {
+    "Chain 13 - Gemini 3.0 Flash / Hizmet Agirlikli Dengeli": {
       "main": [
         [
           {
-            "node": "Merge - Gemini 2.5 Flash Lite",
+            "node": "Merge - Gemini 3.0 Flash",
             "type": "main",
-            "index": 3
+            "index": 0
           }
         ]
       ]
     },
-    "Chain 25 - Gemini 2.5 Flash Lite / Hizmet Agirlikli": {
+    "Chain 14 - Gemini 3.0 Flash / Hizmet Agirlikli Coklu Hizmet Sert": {
       "main": [
         [
           {
-            "node": "Merge - Gemini 2.5 Flash Lite",
+            "node": "Merge - Gemini 3.0 Flash",
             "type": "main",
-            "index": 4
+            "index": 1
           }
         ]
       ]
     },
-    "Chain 26 - Gemini 2.5 Flash Lite / Not Ayristirma Sert": {
+    "Chain 15 - Gemini 3.0 Flash / Hizmet Agirlikli Sema Disiplinli": {
       "main": [
         [
           {
-            "node": "Merge - Gemini 2.5 Flash Lite",
+            "node": "Merge - Gemini 3.0 Flash",
             "type": "main",
-            "index": 5
+            "index": 2
           }
         ]
       ]
     },
-    "Chain 27 - Gemini 2.5 Flash Lite / Cakisma Cozucu": {
+    "Chain 16 - Gemini 3.0 Flash Lite Preview / Hizmet Agirlikli Dengeli": {
       "main": [
         [
           {
-            "node": "Merge - Gemini 2.5 Flash Lite",
+            "node": "Merge - Gemini 3.0 Flash Lite Preview",
             "type": "main",
-            "index": 6
+            "index": 0
           }
         ]
       ]
     },
-    "Chain 28 - Gemini 2.5 Flash Lite / Satir Satir Rekonstruksiyon": {
+    "Chain 17 - Gemini 3.0 Flash Lite Preview / Hizmet Agirlikli Coklu Hizmet Sert": {
       "main": [
         [
           {
-            "node": "Merge - Gemini 2.5 Flash Lite",
+            "node": "Merge - Gemini 3.0 Flash Lite Preview",
             "type": "main",
-            "index": 7
+            "index": 1
           }
         ]
       ]
     },
-    "Chain 29 - Gemini 2.5 Flash Lite / Kalite Kapisi": {
+    "Chain 18 - Gemini 3.0 Flash Lite Preview / Hizmet Agirlikli Sema Disiplinli": {
       "main": [
         [
           {
-            "node": "Merge - Gemini 2.5 Flash Lite",
+            "node": "Merge - Gemini 3.0 Flash Lite Preview",
             "type": "main",
-            "index": 8
+            "index": 2
           }
         ]
       ]
     },
-    "Chain 30 - Gemini 2.5 Flash Lite / Dusuk Halusinasyon": {
+    "Chain 19 - Gemini 2.5 Flash / Hizmet Agirlikli Dengeli": {
       "main": [
         [
           {
-            "node": "Merge - Gemini 2.5 Flash Lite",
+            "node": "Merge - Gemini 2.5 Flash",
             "type": "main",
-            "index": 9
+            "index": 0
           }
         ]
       ]
     },
-    "Merge - Gemini 2.5 Flash Lite": {
+    "Chain 20 - Gemini 2.5 Flash / Hizmet Agirlikli Coklu Hizmet Sert": {
       "main": [
         [
           {
-            "node": "Merge All Benchmarks",
+            "node": "Merge - Gemini 2.5 Flash",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Chain 21 - Gemini 2.5 Flash / Hizmet Agirlikli Sema Disiplinli": {
+      "main": [
+        [
+          {
+            "node": "Merge - Gemini 2.5 Flash",
             "type": "main",
             "index": 2
           }
@@ -1829,18 +1672,7 @@
         ]
       ]
     },
-    "Build Benchmark Payload": {
-      "main": [
-        [
-          {
-            "node": "Callback Success",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Callback Success": {
+    "Callback Success1": {
       "main": [
         [
           {
@@ -1851,7 +1683,7 @@
         ]
       ]
     },
-    "Callback Error": {
+    "Callback Error1": {
       "main": [
         [
           {
@@ -1863,7 +1695,53 @@
       ]
     }
   },
-  "pinData": {},
+  "pinData": {
+    "Webhook Trigger": [
+      {
+        "headers": {
+          "host": "n8n.berkai.shop",
+          "user-agent": "node",
+          "content-length": "666",
+          "accept": "*/*",
+          "accept-encoding": "br, gzip, deflate",
+          "accept-language": "*",
+          "content-type": "application/json",
+          "sec-fetch-mode": "cors",
+          "x-forwarded-for": "10.0.1.1",
+          "x-forwarded-host": "n8n.berkai.shop",
+          "x-forwarded-port": "443",
+          "x-forwarded-proto": "https",
+          "x-forwarded-server": "fb1aeec3f90d",
+          "x-internal-api-key": "ae989558d5b97940b643e514ebc885d2656e7a8000efa5f499ce1e36c9a1182a",
+          "x-real-ip": "10.0.1.1"
+        },
+        "params": {},
+        "query": {},
+        "body": {
+          "batchId": "cmnqnrlkx000bpf0j7h8av3wr",
+          "sourceFileId": 39,
+          "fileUrl": "https://cdn.kedyapp.com/imports/2/cmnqnrlkx000bpf0j7h8av3wr/2026-04-08T23-09-15-386Z-whatsapp-image-2026-04-06-at-01.07.52---kopya-5-.jpeg",
+          "objectKey": "imports/2/cmnqnrlkx000bpf0j7h8av3wr/2026-04-08T23-09-15-386Z-whatsapp-image-2026-04-06-at-01.07.52---kopya-5-.jpeg",
+          "sourceType": "IMAGE",
+          "mode": "PRODUCTION",
+          "benchmarkReferenceText": null,
+          "aiConfig": {
+            "id": null,
+            "ocrProvider": "google-vision",
+            "ocrModel": "DOCUMENT_TEXT_DETECTION",
+            "llmProvider": "openrouter",
+            "llmModel": "openai/gpt-4o-mini",
+            "promptVersion": "prod-v1",
+            "promptLabel": "Production Prompt",
+            "outputContractVersion": "rows-v1",
+            "notesJson": {}
+          }
+        },
+        "webhookUrl": "https://n8n.berkai.shop/webhook/import-ocr",
+        "executionMode": "production"
+      }
+    ]
+  },
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "afd9177fa22bd401d1ec287c9dde7939ce50fb767c8e226f6de704d0a8fffb41"

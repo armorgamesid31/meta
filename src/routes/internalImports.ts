@@ -19,6 +19,12 @@ router.post('/:batchId/ocr-callback', async (req: any, res: any) => {
   const sourceFileId = Number(req.body?.sourceFileId || req.body?.fileId);
   const extractionError = typeof req.body?.error === 'string' ? req.body.error.trim() : null;
   const mode = typeof req.body?.mode === 'string' ? req.body.mode.trim() : null;
+  const phase = typeof req.body?.phase === 'string' ? req.body.phase.trim() : null;
+  const strictness = typeof req.body?.strictness === 'string' ? req.body.strictness.trim() : null;
+  const temperature =
+    req.body?.temperature === null || req.body?.temperature === undefined || req.body?.temperature === ''
+      ? null
+      : Number(req.body.temperature);
   const benchmarkReferenceText =
     typeof req.body?.benchmarkReferenceText === 'string' ? req.body.benchmarkReferenceText.trim() : null;
   const referenceText = typeof req.body?.referenceText === 'string' ? req.body.referenceText.trim() : null;
@@ -36,6 +42,9 @@ router.post('/:batchId/ocr-callback', async (req: any, res: any) => {
       sourceFileId,
       extractionError,
       mode,
+      phase,
+      strictness,
+      temperature: Number.isFinite(temperature) ? temperature : null,
       benchmarkReferenceText,
       referenceText,
       audit,

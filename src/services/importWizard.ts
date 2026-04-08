@@ -75,10 +75,16 @@ type ImportExtractionCandidateInput = {
   model?: unknown;
   promptVersion?: unknown;
   promptLabel?: unknown;
+  phase?: unknown;
+  strictness?: unknown;
+  temperature?: unknown;
   rawOutputText?: unknown;
   parsedRows?: unknown;
   scoreTotal?: unknown;
   scoreBreakdown?: unknown;
+  errorScore?: unknown;
+  hallucinationPenalty?: unknown;
+  schemaViolationCount?: unknown;
   isSelected?: unknown;
 };
 
@@ -87,7 +93,9 @@ type NormalizedEvalRow = {
   appointmentDate: string | null;
   startTime: string | null;
   customerNameKey: string | null;
+  customerNameRaw: string | null;
   services: string[];
+  serviceNameRaw: string | null;
   noteTokens: string[];
 };
 
@@ -95,6 +103,9 @@ type ImportExtractionAuditInput = {
   ocrProvider?: unknown;
   ocrModel?: unknown;
   ocrRawText?: unknown;
+  phase?: unknown;
+  strictness?: unknown;
+  temperature?: unknown;
   activeConfigSnapshot?: unknown;
   metrics?: unknown;
 };
@@ -207,6 +218,27 @@ function normalizeExtractionMode(value: unknown): 'PRODUCTION' | 'BENCHMARK' {
   return normalizeText(value).toUpperCase() === 'BENCHMARK' ? 'BENCHMARK' : 'PRODUCTION';
 }
 
+function normalizeBenchmarkPhase(value: unknown): 'PHASE1' | 'PHASE2' | 'PHASE3' | null {
+  const normalized = normalizeText(value).toUpperCase();
+  if (normalized === 'PHASE1' || normalized === 'PHASE2' || normalized === 'PHASE3') return normalized;
+  return null;
+}
+
+function normalizeStrictness(value: unknown): 'OFF' | 'BALANCED' | 'STRICT' | null {
+  const normalized = normalizeText(value).toUpperCase();
+  if (normalized === 'STRICT') return 'STRICT';
+  if (normalized === 'BALANCED') return 'BALANCED';
+  if (normalized === 'OFF') return 'OFF';
+  return null;
+}
+
+function normalizeTemperature(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.max(0, Math.min(2, parsed));
+}
+
 function countHallucinatedServices(rawText: string, rows: Array<Record<string, unknown>>): number {
   const rawKey = normalizeNameKey(rawText);
   if (!rawKey) return 0;
@@ -304,6 +336,62 @@ function tokenizeNotes(value: unknown): string[] {
   return Array.from(out);
 }
 
+function foldTurkishText(value: string): string {
+  const map: Record<string, string> = {
+    ç: 'c',
+    ğ: 'g',
+    ı: 'i',
+    İ: 'i',
+    ö: 'o',
+    ş: 's',
+    ü: 'u',
+    Ç: 'c',
+    Ğ: 'g',
+    Ö: 'o',
+    Ş: 's',
+    Ü: 'u',
+  };
+  return value
+    .split('')
+    .map((char) => map[char] || char)
+    .join('')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function levenshteinDistance(inputA: string, inputB: string): number {
+  const a = inputA;
+  const b = inputB;
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  const dp = Array.from({ length: b.length + 1 }, (_, idx) => idx);
+  for (let i = 1; i <= a.length; i += 1) {
+    let prev = dp[0];
+    dp[0] = i;
+    for (let j = 1; j <= b.length; j += 1) {
+      const tmp = dp[j]!;
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[j] = Math.min(dp[j]! + 1, dp[j - 1]! + 1, prev + cost);
+      prev = tmp;
+    }
+  }
+  return dp[b.length]!;
+}
+
+function splitServiceRawTokens(value: string | null): string[] {
+  const text = normalizeText(value);
+  if (!text) return [];
+  return text
+    .split(/[,+/|-]/g)
+    .map((token) => token.trim())
+    .filter(Boolean);
+}
+
 function buildRowKey(date: string | null, time: string | null, ordinalByTime: number): string {
   return `${date || '-'}|${time || '-'}|${ordinalByTime}`;
 }
@@ -322,7 +410,9 @@ function rowsFromStructuredOutput(rows: Array<Record<string, unknown>>): Normali
       appointmentDate,
       startTime,
       customerNameKey: normalizeTextKey(row.customerName ?? row.name ?? row.customer ?? null) || null,
+      customerNameRaw: normalizeText(row.customerName ?? row.name ?? row.customer ?? null) || null,
       services: tokenizeServices(row.serviceNameRaw ?? row.servicesNormalized ?? row.service ?? null),
+      serviceNameRaw: normalizeText(row.serviceNameRaw ?? row.servicesNormalized ?? row.service ?? null) || null,
       noteTokens: tokenizeNotes(row.notesRaw ?? row.note ?? row.notes ?? null),
     });
   }
@@ -392,7 +482,9 @@ function rowsFromReferenceLikeText(rawText: string): NormalizedEvalRow[] {
         appointmentDate: activeDate,
         startTime: segment.time,
         customerNameKey: normalizeTextKey(customerName) || null,
+        customerNameRaw: customerName || null,
         services: tokenizeServices(segment.rest),
+        serviceNameRaw: segment.rest || null,
         noteTokens: tokenizeNotes(segment.rest),
       });
     }
@@ -466,57 +558,257 @@ function scoreExtractionCandidate(input: {
   parsedRows: Array<Record<string, unknown>>;
   ocrRawText: string;
   benchmarkReferenceText?: string;
-}): { total: number; breakdown: Record<string, number> } {
+}): { total: number; breakdown: Record<string, unknown> } {
   const outputText = normalizeText(input.rawOutputText);
   const rows = Array.isArray(input.parsedRows) ? input.parsedRows : [];
-  const malformedTimes = rows.filter((row) => {
-    const value = normalizeText(row.startTime ?? row.time);
-    return value && !normalizeTimeLoose(value);
-  }).length;
-  const invalidDates = rows.filter((row) => {
-    const value = normalizeText(row.appointmentDate ?? row.date);
-    return value && !normalizeDateLoose(value);
-  }).length;
-  const hallucinatedServices = countHallucinatedServices(input.ocrRawText, rows);
-  const noteLeakage = rows.filter((row) => {
-    const services = normalizeNameKey(String(row.servicesNormalized || row.serviceNameRaw || ''));
-    return /(hatirlat|geldi|iptal|odedi|ödedi|aransin)/.test(services);
-  }).length;
-  const benchmarkReferenceText = normalizeText(input.benchmarkReferenceText);
-  let breakdown: Record<string, number>;
+  const referenceText = normalizeText(input.benchmarkReferenceText);
+  const referenceRows = rowsFromReferenceLikeText(referenceText || input.ocrRawText);
+  const targetRows = rowsFromStructuredOutput(rows);
 
-  if (benchmarkReferenceText) {
-    const referenceRows = rowsFromReferenceLikeText(benchmarkReferenceText);
-    const ocrRows = rowsFromReferenceLikeText(input.ocrRawText);
-    const llmRows = rowsFromStructuredOutput(rows);
-    const baseline = compareRows(referenceRows, ocrRows);
-    const candidate = compareRows(referenceRows, llmRows);
-    const accuracyPercent =
-      candidate.totalFieldChecks > 0 ? ((candidate.totalFieldChecks - candidate.errorCount) / candidate.totalFieldChecks) * 100 : 0;
-    const correctionRate =
-      baseline.errorCount > 0 ? ((baseline.errorCount - candidate.errorCount) / baseline.errorCount) * 100 : 0;
-    breakdown = {
-      schemaValidity: Math.max(0, 20 - malformedTimes * 4 - invalidDates * 3),
-      referenceAccuracy: Math.max(0, Math.min(50, (accuracyPercent / 100) * 50)),
-      errorRecovery: Math.max(0, Math.min(25, (Math.max(0, correctionRate) / 100) * 25)),
-      rowCoverage: Math.max(0, Math.min(5, candidate.rowCoverage * 5)),
-      hallucinationGuard: Math.max(0, 5 - hallucinatedServices),
-      ocrErrorCount: baseline.errorCount,
-      llmErrorCount: candidate.errorCount,
-      correctedErrorCount: Math.max(0, baseline.errorCount - candidate.errorCount),
-      correctionRatePercent: Math.max(0, correctionRate),
-      accuracyPercent: Math.max(0, accuracyPercent),
-    };
-  } else {
-    breakdown = {
-      schemaValidity: Math.max(0, 30 - malformedTimes * 5 - invalidDates * 4),
-      rowPresence: Math.min(20, rows.length * 3),
-      outputPresence: outputText ? 10 : 0,
-      hallucinationGuard: Math.max(0, 25 - hallucinatedServices * 3),
-      noteSeparation: Math.max(0, 15 - noteLeakage * 4),
-    };
+  const allowedSchemaKeys = new Set([
+    'rowIndex',
+    'customerName',
+    'customerPhoneRaw',
+    'appointmentDate',
+    'startTime',
+    'endTime',
+    'durationMinutes',
+    'serviceNameRaw',
+    'staffNameRaw',
+    'priceRaw',
+    'notesRaw',
+    'confidence',
+  ]);
+  const canonicalServiceLabels: Record<string, string> = {
+    'tum vucut lazer': 'Tüm Vücut Lazer',
+    'kas alimi': 'Kaş Alımı',
+    'kalici oje': 'Kalıcı Oje',
+    'jel guclendirme': 'Jel Güçlendirme',
+    pedikur: 'Pedikür',
+    manikur: 'Manikür',
+    agda: 'Ağda',
+  };
+  const typoFindings: Array<{
+    field: 'customerName' | 'serviceName';
+    expected: string;
+    actual: string;
+    type: 'diacritic' | 'typo';
+    severity: 'low' | 'high';
+    distance: number;
+    rowKey: string;
+  }> = [];
+
+  const keyToTargetIndexes = new Map<string, number[]>();
+  targetRows.forEach((row, index) => {
+    const arr = keyToTargetIndexes.get(row.rowKey) || [];
+    arr.push(index);
+    keyToTargetIndexes.set(row.rowKey, arr);
+  });
+
+  const usedTargetIndexes = new Set<number>();
+  let matchedRows = 0;
+  let missedRows = 0;
+  let timeMismatchCount = 0;
+  let nameMismatchCount = 0;
+  let serviceMismatchCount = 0;
+  let noteMismatchCount = 0;
+  let hallucinatedServiceCount = 0;
+
+  for (const ref of referenceRows) {
+    let chosenIndex: number | null = null;
+    const direct = keyToTargetIndexes.get(ref.rowKey) || [];
+    for (const index of direct) {
+      if (!usedTargetIndexes.has(index)) {
+        chosenIndex = index;
+        break;
+      }
+    }
+    if (chosenIndex === null) {
+      let bestScore = Number.NEGATIVE_INFINITY;
+      for (let i = 0; i < targetRows.length; i += 1) {
+        if (usedTargetIndexes.has(i)) continue;
+        const row = targetRows[i]!;
+        let score = 0;
+        if (ref.startTime && row.startTime === ref.startTime) score += 4;
+        else if (ref.startTime && row.startTime && row.startTime !== ref.startTime) score -= 2;
+        if (ref.appointmentDate && row.appointmentDate === ref.appointmentDate) score += 2;
+        if (ref.customerNameKey && row.customerNameKey === ref.customerNameKey) score += 3;
+        if (ref.services.length > 0 && row.services.some((s) => ref.services.includes(s))) score += 2;
+        if (score > bestScore) {
+          bestScore = score;
+          chosenIndex = i;
+        }
+      }
+      if (bestScore < 2) chosenIndex = null;
+    }
+
+    if (chosenIndex === null) {
+      missedRows += 1;
+      continue;
+    }
+
+    usedTargetIndexes.add(chosenIndex);
+    matchedRows += 1;
+    const got = targetRows[chosenIndex]!;
+
+    if (ref.startTime && got.startTime && ref.startTime !== got.startTime) timeMismatchCount += 1;
+    if (ref.customerNameKey && (!got.customerNameKey || got.customerNameKey !== ref.customerNameKey)) {
+      nameMismatchCount += 1;
+      if (ref.customerNameRaw && got.customerNameRaw) {
+        const expectedFold = foldTurkishText(ref.customerNameRaw);
+        const actualFold = foldTurkishText(got.customerNameRaw);
+        const distance = levenshteinDistance(expectedFold, actualFold);
+        const isDiacriticOnly = expectedFold === actualFold && ref.customerNameRaw !== got.customerNameRaw;
+        if (isDiacriticOnly || distance <= 2) {
+          typoFindings.push({
+            field: 'customerName',
+            expected: ref.customerNameRaw,
+            actual: got.customerNameRaw,
+            type: isDiacriticOnly ? 'diacritic' : 'typo',
+            severity: isDiacriticOnly ? 'low' : 'high',
+            distance,
+            rowKey: ref.rowKey,
+          });
+        }
+      }
+    }
+
+    if (ref.services.length > 0) {
+      const gotSet = new Set(got.services);
+      const tokenMap = new Map<string, string>();
+      const serviceTokens = splitServiceRawTokens(got.serviceNameRaw);
+      for (const token of serviceTokens) {
+        const canonicalList = tokenizeServices(token);
+        for (const canonical of canonicalList) {
+          if (!tokenMap.has(canonical)) tokenMap.set(canonical, token);
+        }
+      }
+      for (const expectedService of ref.services) {
+        if (!gotSet.has(expectedService)) serviceMismatchCount += 1;
+        const expectedLabel = canonicalServiceLabels[expectedService] || expectedService;
+        const actualToken = tokenMap.get(expectedService);
+        if (actualToken) {
+          const expectedFold = foldTurkishText(expectedLabel);
+          const actualFold = foldTurkishText(actualToken);
+          const distance = levenshteinDistance(expectedFold, actualFold);
+          const isDiacriticOnly = expectedFold === actualFold && expectedLabel !== actualToken;
+          if (isDiacriticOnly || distance <= 2) {
+            typoFindings.push({
+              field: 'serviceName',
+              expected: expectedLabel,
+              actual: actualToken,
+              type: isDiacriticOnly ? 'diacritic' : 'typo',
+              severity: isDiacriticOnly ? 'low' : 'high',
+              distance,
+              rowKey: ref.rowKey,
+            });
+          }
+        }
+      }
+      for (const service of got.services) {
+        if (!ref.services.includes(service)) hallucinatedServiceCount += 1;
+      }
+    }
+
+    if (ref.noteTokens.length > 0) {
+      const gotSet = new Set(got.noteTokens);
+      for (const token of ref.noteTokens) {
+        if (!gotSet.has(token)) noteMismatchCount += 1;
+      }
+    }
   }
-  return { total: Object.values(breakdown).reduce((sum, value) => sum + value, 0), breakdown };
+
+  const hallucinatedRowCount = Math.max(0, targetRows.length - usedTargetIndexes.size);
+  const fallbackHallucinatedServices = countHallucinatedServices(input.ocrRawText, rows);
+  const hallucinationCount = hallucinatedRowCount + Math.max(hallucinatedServiceCount, fallbackHallucinatedServices);
+
+  let schemaViolationCount = 0;
+  let malformedTimes = 0;
+  let invalidDates = 0;
+  let phoneLeakCount = 0;
+  for (const row of rows) {
+    if (row && typeof row === 'object' && !Array.isArray(row)) {
+      const keys = Object.keys(row);
+      const unknownKeyCount = keys.filter((key) => !allowedSchemaKeys.has(key)).length;
+      schemaViolationCount += unknownKeyCount;
+    } else {
+      schemaViolationCount += 1;
+    }
+
+    const valueTime = normalizeText((row as any)?.startTime ?? (row as any)?.time);
+    if (valueTime && !normalizeTimeLoose(valueTime)) malformedTimes += 1;
+
+    const valueDate = normalizeText((row as any)?.appointmentDate ?? (row as any)?.date);
+    if (valueDate && !normalizeDateLoose(valueDate)) invalidDates += 1;
+
+    const phoneRaw = normalizeDigitsOnly(normalizeText((row as any)?.customerPhoneRaw ?? (row as any)?.phoneRaw ?? (row as any)?.phone));
+    if (phoneRaw) phoneLeakCount += 1;
+  }
+  schemaViolationCount += malformedTimes + invalidDates;
+
+  const parseFailurePenalty = outputText ? 0 : 30;
+  const missedRowsPenalty = missedRows * 12;
+  const timePenalty = timeMismatchCount * 8;
+  const namePenalty = nameMismatchCount * 6;
+  const servicePenalty = serviceMismatchCount * 7;
+  const notePenalty = noteMismatchCount * 3;
+  const hallucinationPenalty = hallucinationCount * 20;
+  const schemaPenalty = schemaViolationCount * 3;
+  const phoneLeakPenalty = phoneLeakCount * 4;
+  const typoPenalty = typoFindings.filter((finding) => finding.type === 'typo').length * 2;
+
+  const errorScore =
+    parseFailurePenalty +
+    missedRowsPenalty +
+    timePenalty +
+    namePenalty +
+    servicePenalty +
+    notePenalty +
+    hallucinationPenalty +
+    schemaPenalty +
+    phoneLeakPenalty +
+    typoPenalty;
+
+  return {
+    total: Math.max(0, 1000 - errorScore),
+    breakdown: {
+      scoreVersion: 'v2',
+      scoreTotal: Math.max(0, 1000 - errorScore),
+      errorScore,
+      hallucinationPenalty,
+      schemaViolationCount,
+      phoneLeakCount,
+      matchedRows,
+      missedRows,
+      hallucinatedRowCount,
+      hallucinatedServiceCount: Math.max(hallucinatedServiceCount, fallbackHallucinatedServices),
+      malformedTimes,
+      invalidDates,
+      timeMismatchCount,
+      nameMismatchCount,
+      serviceMismatchCount,
+      noteMismatchCount,
+      typoCount: typoFindings.length,
+      nameTypoCount: typoFindings.filter((finding) => finding.field === 'customerName').length,
+      serviceTypoCount: typoFindings.filter((finding) => finding.field === 'serviceName').length,
+      diacriticOnlyCount: typoFindings.filter((finding) => finding.type === 'diacritic').length,
+      typoFindings: typoFindings.slice(0, 80),
+      penalties: {
+        parseFailurePenalty,
+        missedRowsPenalty,
+        timePenalty,
+        namePenalty,
+        servicePenalty,
+        notePenalty,
+        hallucinationPenalty,
+        schemaPenalty,
+        phoneLeakPenalty,
+        typoPenalty,
+      },
+      referenceRowCount: referenceRows.length,
+      targetRowCount: targetRows.length,
+    },
+  };
 }
 
 function inferSourceType(input: { fileName: string; mimeType?: string | null }): ImportSourceType {
@@ -1377,6 +1669,9 @@ export async function processImportOcrCallback(input: {
   sourceFileId: number;
   extractionError?: string | null;
   mode?: string | null;
+  phase?: string | null;
+  strictness?: string | null;
+  temperature?: number | string | null;
   benchmarkReferenceText?: string | null;
   referenceText?: string | null;
   audit?: ImportExtractionAuditInput | null;
@@ -1391,6 +1686,18 @@ export async function processImportOcrCallback(input: {
 
   const mode = normalizeExtractionMode(input.mode);
   const auditRecord = coerceRecord(input.audit) || {};
+  const benchmarkPhase =
+    normalizeBenchmarkPhase(input.phase) ||
+    normalizeBenchmarkPhase(auditRecord.phase) ||
+    normalizeBenchmarkPhase((coerceRecord(auditRecord.metrics) || {}).phase);
+  const runStrictness =
+    normalizeStrictness(input.strictness) ||
+    normalizeStrictness(auditRecord.strictness) ||
+    normalizeStrictness((coerceRecord(auditRecord.metrics) || {}).strictness);
+  const runTemperature =
+    normalizeTemperature(input.temperature) ??
+    normalizeTemperature(auditRecord.temperature) ??
+    normalizeTemperature((coerceRecord(auditRecord.metrics) || {}).temperature);
   const benchmarkReferenceText = pickBenchmarkReferenceText({
     explicitBenchmarkReferenceText: input.benchmarkReferenceText,
     explicitReferenceText: input.referenceText,
@@ -1413,7 +1720,12 @@ export async function processImportOcrCallback(input: {
       ocrModel,
       ocrRawText: ocrRawText || null,
       activeConfigSnapshot: activeConfigSnapshot as any,
-      metricsJson: metricsJson as any,
+      metricsJson: {
+        ...(metricsJson || {}),
+        phase: benchmarkPhase,
+        strictness: runStrictness,
+        temperature: runTemperature,
+      } as any,
       error: null,
       startedAt: new Date(),
     },
@@ -1451,15 +1763,35 @@ export async function processImportOcrCallback(input: {
       ocrRawText,
       benchmarkReferenceText,
     });
+    const breakdownRecord = coerceRecord(scoring.breakdown) || {};
+    const candidatePhase = normalizeBenchmarkPhase(candidate.phase) || benchmarkPhase;
+    const candidateStrictness = normalizeStrictness(candidate.strictness) || runStrictness;
+    const candidateTemperature = normalizeTemperature(candidate.temperature) ?? runTemperature;
     return {
       provider: normalizeText(candidate.provider) || activeConfigSnapshot.llmProvider,
       model: normalizeText(candidate.model) || activeConfigSnapshot.llmModel,
       promptVersion: normalizeText(candidate.promptVersion) || activeConfigSnapshot.promptVersion,
       promptLabel: normalizeText(candidate.promptLabel) || activeConfigSnapshot.promptLabel,
+      phase: candidatePhase,
+      strictness: candidateStrictness,
+      temperature: candidateTemperature,
       rawOutputText: normalizeText(candidate.rawOutputText) || null,
       parsedRows,
       scoreTotal: scoring.total,
-      scoreBreakdown: scoring.breakdown,
+      errorScore: Number.isFinite(Number(breakdownRecord.errorScore)) ? Number(breakdownRecord.errorScore) : 9999,
+      hallucinationPenalty: Number.isFinite(Number(breakdownRecord.hallucinationPenalty))
+        ? Number(breakdownRecord.hallucinationPenalty)
+        : 9999,
+      schemaViolationCount: Number.isFinite(Number(breakdownRecord.schemaViolationCount))
+        ? Number(breakdownRecord.schemaViolationCount)
+        : 9999,
+      phoneLeakCount: Number.isFinite(Number(breakdownRecord.phoneLeakCount)) ? Number(breakdownRecord.phoneLeakCount) : 9999,
+      scoreBreakdown: {
+        ...scoring.breakdown,
+        phase: candidatePhase,
+        strictness: candidateStrictness,
+        temperature: candidateTemperature,
+      } as Record<string, unknown>,
       explicitSelected: candidate.isSelected === true,
     };
   });
@@ -1476,10 +1808,30 @@ export async function processImportOcrCallback(input: {
       model: activeConfigSnapshot.llmModel,
       promptVersion: activeConfigSnapshot.promptVersion,
       promptLabel: activeConfigSnapshot.promptLabel,
+      phase: benchmarkPhase,
+      strictness: runStrictness,
+      temperature: runTemperature,
       rawOutputText: normalizeText((auditRecord as Record<string, unknown>)?.rawOutputText) || null,
       parsedRows: callbackRows,
       scoreTotal: scoring.total,
-      scoreBreakdown: scoring.breakdown,
+      errorScore: Number.isFinite(Number((scoring.breakdown as Record<string, unknown>).errorScore))
+        ? Number((scoring.breakdown as Record<string, unknown>).errorScore)
+        : 9999,
+      hallucinationPenalty: Number.isFinite(Number((scoring.breakdown as Record<string, unknown>).hallucinationPenalty))
+        ? Number((scoring.breakdown as Record<string, unknown>).hallucinationPenalty)
+        : 9999,
+      schemaViolationCount: Number.isFinite(Number((scoring.breakdown as Record<string, unknown>).schemaViolationCount))
+        ? Number((scoring.breakdown as Record<string, unknown>).schemaViolationCount)
+        : 9999,
+      phoneLeakCount: Number.isFinite(Number((scoring.breakdown as Record<string, unknown>).phoneLeakCount))
+        ? Number((scoring.breakdown as Record<string, unknown>).phoneLeakCount)
+        : 9999,
+      scoreBreakdown: {
+        ...scoring.breakdown,
+        phase: benchmarkPhase,
+        strictness: runStrictness,
+        temperature: runTemperature,
+      } as Record<string, unknown>,
       explicitSelected: mode === 'PRODUCTION',
     });
   }
@@ -1487,8 +1839,20 @@ export async function processImportOcrCallback(input: {
   let selectedCandidateIndex = normalizedCandidates.findIndex((candidate) => candidate.explicitSelected);
   if (selectedCandidateIndex < 0 && normalizedCandidates.length > 0) {
     selectedCandidateIndex = normalizedCandidates
-      .map((candidate, index) => ({ index, score: candidate.scoreTotal }))
-      .sort((a, b) => b.score - a.score)[0]!.index;
+      .map((candidate, index) => ({
+        index,
+        hallucinationPenalty: candidate.hallucinationPenalty,
+        errorScore: candidate.errorScore,
+        schemaViolationCount: candidate.schemaViolationCount,
+        phoneLeakCount: candidate.phoneLeakCount,
+      }))
+      .sort((a, b) => {
+        if (a.hallucinationPenalty !== b.hallucinationPenalty) return a.hallucinationPenalty - b.hallucinationPenalty;
+        if (a.errorScore !== b.errorScore) return a.errorScore - b.errorScore;
+        if (a.schemaViolationCount !== b.schemaViolationCount) return a.schemaViolationCount - b.schemaViolationCount;
+        if (a.phoneLeakCount !== b.phoneLeakCount) return a.phoneLeakCount - b.phoneLeakCount;
+        return a.index - b.index;
+      })[0]!.index;
   }
 
   let selectedCandidateId: number | null = null;
@@ -1564,6 +1928,9 @@ export async function processImportOcrCallback(input: {
       completedAt: new Date(),
       metricsJson: {
         ...(metricsJson || {}),
+        phase: benchmarkPhase,
+        strictness: runStrictness,
+        temperature: runTemperature,
         callbackRowCount: callbackRows.length,
         parsedRowCount,
         candidateCount: normalizedCandidates.length,
