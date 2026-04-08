@@ -348,6 +348,16 @@ function splitByTimeSegments(rawLine: string): Array<{ time: string | null; rest
   return out;
 }
 
+function extractDateFromLine(rawLine: string): { date: string | null; rest: string } {
+  const line = rawLine.trim();
+  if (!line) return { date: null, rest: '' };
+  const match = line.match(/(\d{1,2}[./-]\d{1,2}[./-]\d{2,4}|\d{4}-\d{2}-\d{2})/);
+  if (!match) return { date: null, rest: line };
+  const date = normalizeDateLoose(match[1]);
+  const rest = line.replace(match[1], ' ').replace(/\s+/g, ' ').trim();
+  return { date, rest };
+}
+
 function rowsFromReferenceLikeText(rawText: string): NormalizedEvalRow[] {
   const text = rawText.replace(/\/n/gi, '\n');
   const lines = text
@@ -358,12 +368,14 @@ function rowsFromReferenceLikeText(rawText: string): NormalizedEvalRow[] {
   let activeDate: string | null = null;
   const timeCounters = new Map<string, number>();
   for (const line of lines) {
-    const dateInLine = normalizeDateLoose(line);
+    const { date: extractedDate, rest } = extractDateFromLine(line);
+    const dateInLine = extractedDate || normalizeDateLoose(line);
     if (dateInLine) {
       activeDate = dateInLine;
-      continue;
+      if (!rest) continue;
     }
-    const segments = splitByTimeSegments(line);
+    const parsingLine = rest || line;
+    const segments = splitByTimeSegments(parsingLine);
     for (const segment of segments) {
       if (!segment.time) continue;
       const ordinal = (timeCounters.get(segment.time) || 0) + 1;
