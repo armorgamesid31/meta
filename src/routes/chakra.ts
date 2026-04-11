@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import axios from 'axios';
 import { authenticateToken } from '../middleware/auth.js';
+import { writeAccessAudit } from '../services/accessControl.js';
 
 const router = Router();
 
@@ -16,6 +17,14 @@ const CHAKRA_PASSTHROUGH_WEBHOOK_URL = (
   process.env.N8N_CHAKRA_WEBHOOK_URL ||
   DEFAULT_CHAKRA_PASSTHROUGH_WEBHOOK_URL
 ).trim();
+
+type ConnectIntent = 'CONNECT' | 'REPLACE_CONNECTION';
+
+function parseConnectIntent(value: unknown): ConnectIntent {
+  return typeof value === 'string' && value.trim().toUpperCase() === 'REPLACE_CONNECTION'
+    ? 'REPLACE_CONNECTION'
+    : 'CONNECT';
+}
 
 function isPluginNotFoundError(error: any): boolean {
   const errors = error?.response?.data?._errors;
@@ -537,6 +546,7 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
 // Connect token route (uses saved pluginId)
 router.get('/connect-token', authenticateToken, async (req: any, res: any) => {
   try {
+    const intent = parseConnectIntent(req.query?.intent);
     let salon = await getAuthenticatedSalon(req);
     if (!salon) {
       return res.status(401).json({ message: 'Unauthorized.' });
@@ -583,6 +593,7 @@ router.get('/connect-token', authenticateToken, async (req: any, res: any) => {
       connectToken,
       pluginId,
       sdkUrl: CHAKRA_SDK_URL,
+      intent,
     });
   } catch (error: any) {
     console.error('Token generation failed:', error?.response?.data || error);
@@ -603,6 +614,7 @@ router.post('/connect-event', authenticateToken, async (req: any, res: any) => {
 
     const event = req.body?.event;
     const data = req.body?.data;
+    const intent = parseConnectIntent(req.body?.intent);
     const pluginIdFromClient =
       typeof req.body?.pluginId === 'string' && req.body.pluginId.trim() ? req.body.pluginId.trim() : null;
     const pluginId = pluginIdFromClient || salon.chakraPluginId || null;
@@ -617,6 +629,10 @@ router.post('/connect-event', authenticateToken, async (req: any, res: any) => {
     let connected = isConnectSuccessEvent(event, data);
     let pluginState: Record<string, any> | null = null;
     let whatsappPhoneNumberId: string | null = null;
+    const oldPhoneNumberId =
+      typeof salon.chakraPhoneNumberId === 'string' && salon.chakraPhoneNumberId.trim().length > 0
+        ? salon.chakraPhoneNumberId.trim()
+        : null;
 
     if (!salon.chakraPluginId) {
       await updateSalonChakraState(salon.id, {
@@ -667,6 +683,29 @@ router.post('/connect-event', authenticateToken, async (req: any, res: any) => {
       }
     }
 
+    if (
+      connected &&
+      intent === 'REPLACE_CONNECTION' &&
+      oldPhoneNumberId &&
+      whatsappPhoneNumberId &&
+      oldPhoneNumberId !== whatsappPhoneNumberId
+    ) {
+      await writeAccessAudit({
+        salonId: salon.id,
+        actorUserId: Number.isInteger(req?.user?.userId) ? Number(req.user.userId) : null,
+        action: 'channel_identity_replaced',
+        targetType: 'WHATSAPP',
+        targetId: whatsappPhoneNumberId,
+        metadata: {
+          intent,
+          oldId: oldPhoneNumberId,
+          newId: whatsappPhoneNumberId,
+          pluginId,
+          changedAt: new Date().toISOString(),
+        },
+      });
+    }
+
     console.log('Chakra connect event', {
       salonId: salon.id,
       pluginId,
@@ -674,6 +713,7 @@ router.post('/connect-event', authenticateToken, async (req: any, res: any) => {
       data,
       connected,
       whatsappPhoneNumberId,
+      intent,
     });
 
     return res.status(200).json({
@@ -684,6 +724,7 @@ router.post('/connect-event', authenticateToken, async (req: any, res: any) => {
       whatsappPhoneNumberId,
       pluginState,
       event: typeof event === 'string' ? event : null,
+      intent,
     });
   } catch (error: any) {
     console.error('Connect event capture failed:', error?.response?.data || error);

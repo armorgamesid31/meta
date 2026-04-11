@@ -7767,6 +7767,120 @@ async function resolveConnectedInstagramAccountIdForSalon(salonId: number): Prom
   return fromSettings || fromBinding || null;
 }
 
+type ConversationChannelHealth = {
+  instagram: {
+    connected: boolean;
+    status: string;
+    message: string;
+    bindingReady: boolean;
+    missingRequirements: string[];
+  };
+  whatsapp: {
+    connected: boolean;
+    isActive: boolean;
+    hasPlugin: boolean;
+    whatsappPhoneNumberId: string | null;
+    message: string;
+    missingRequirements: string[];
+  };
+};
+
+async function buildConversationChannelHealth(salonId: number): Promise<ConversationChannelHealth> {
+  const [settings, salon, bindings] = await Promise.all([
+    prisma.salonAiAgentSettings.findUnique({
+      where: { salonId },
+      select: { faqAnswers: true },
+    }),
+    prisma.salon.findUnique({
+      where: { id: salonId },
+      select: {
+        chakraPluginId: true,
+        chakraPhoneNumberId: true,
+      },
+    }),
+    prisma.salonChannelBinding.findMany({
+      where: {
+        salonId,
+        channel: {
+          in: ['INSTAGRAM', 'WHATSAPP'],
+        },
+        isActive: true,
+      },
+      select: {
+        channel: true,
+        externalAccountId: true,
+      },
+    }),
+  ]);
+
+  const faq = asObject(settings?.faqAnswers);
+  const meta = asObject(faq.metaDirect);
+  const instagramMeta = asObject(meta.instagram);
+
+  const instagramStatusRaw = typeof instagramMeta.status === 'string' ? instagramMeta.status.trim().toUpperCase() : 'NOT_CONNECTED';
+  const instagramStatus = instagramStatusRaw || 'NOT_CONNECTED';
+  const instagramConnected = instagramStatus === 'CONNECTED';
+  const instagramMessage =
+    typeof instagramMeta.message === 'string' && instagramMeta.message.trim()
+      ? instagramMeta.message.trim()
+      : instagramConnected
+        ? 'Instagram connected.'
+        : 'Instagram not connected.';
+  const instagramBindings = bindings
+    .filter((item) => item.channel === 'INSTAGRAM')
+    .map((item) => (typeof item.externalAccountId === 'string' ? item.externalAccountId.trim() : ''))
+    .filter(Boolean);
+  const instagramHasToken =
+    typeof instagramMeta.accessToken === 'string' && instagramMeta.accessToken.trim().length > 0;
+  const instagramBindingReady = instagramBindings.length > 0 && instagramHasToken;
+  const instagramMissingRequirements = [
+    ...(instagramConnected ? [] : ['not_connected']),
+    ...(instagramHasToken ? [] : ['missing_access_token']),
+    ...(instagramBindings.length > 0 ? [] : ['missing_binding']),
+  ];
+
+  const hasPlugin = typeof salon?.chakraPluginId === 'string' && salon.chakraPluginId.trim().length > 0;
+  const isActive = faq.whatsappPluginActive === true;
+  const whatsappBindings = bindings
+    .filter((item) => item.channel === 'WHATSAPP')
+    .map((item) => (typeof item.externalAccountId === 'string' ? item.externalAccountId.trim() : ''))
+    .filter(Boolean);
+  const whatsappPhoneNumberId =
+    (typeof salon?.chakraPhoneNumberId === 'string' && salon.chakraPhoneNumberId.trim()) ||
+    (typeof faq.whatsappPhoneNumberId === 'string' && faq.whatsappPhoneNumberId.trim()) ||
+    whatsappBindings[0] ||
+    null;
+  const whatsappConnected = Boolean(hasPlugin && (isActive || whatsappBindings.length > 0 || whatsappPhoneNumberId));
+  const whatsappMessage = whatsappConnected
+    ? 'WhatsApp connected.'
+    : hasPlugin
+      ? 'WhatsApp plugin exists but channel is not fully linked.'
+      : 'WhatsApp not connected.';
+  const whatsappMissingRequirements = [
+    ...(hasPlugin ? [] : ['missing_plugin']),
+    ...(isActive ? [] : ['plugin_inactive']),
+    ...(whatsappPhoneNumberId || whatsappBindings.length > 0 ? [] : ['missing_phone_binding']),
+  ];
+
+  return {
+    instagram: {
+      connected: instagramConnected,
+      status: instagramStatus,
+      message: instagramMessage,
+      bindingReady: instagramBindingReady,
+      missingRequirements: instagramMissingRequirements,
+    },
+    whatsapp: {
+      connected: whatsappConnected,
+      isActive,
+      hasPlugin,
+      whatsappPhoneNumberId,
+      message: whatsappMessage,
+      missingRequirements: whatsappMissingRequirements,
+    },
+  };
+}
+
 router.get('/conversations', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
   if (!salonId) {
@@ -7778,32 +7892,31 @@ router.get('/conversations', authenticateToken, async (req: any, res: any) => {
   const scanLimit = Math.max(limit * 60, 300);
 
   try {
-    const rows = await prisma.conversationMessageEvent.findMany({
-      where: {
-        salonId,
-        channel: channelFilter || undefined,
-      },
-      orderBy: {
-        eventTimestamp: 'desc',
-      },
-      take: scanLimit,
-      select: {
-        conversationKey: true,
-        channel: true,
-        externalAccountId: true,
-        customerName: true,
-        messageType: true,
-        text: true,
-        processingStatus: true,
-        eventTimestamp: true,
-        rawPayload: true,
-      },
-    });
-
-    const hasInstagramRows = rows.some((row) => row.channel === 'INSTAGRAM');
-    const connectedInstagramId = hasInstagramRows
-      ? await resolveConnectedInstagramAccountIdForSalon(salonId)
-      : null;
+    const [rows, channelHealth, connectedInstagramId] = await Promise.all([
+      prisma.conversationMessageEvent.findMany({
+        where: {
+          salonId,
+          channel: channelFilter || undefined,
+        },
+        orderBy: {
+          eventTimestamp: 'desc',
+        },
+        take: scanLimit,
+        select: {
+          conversationKey: true,
+          channel: true,
+          externalAccountId: true,
+          customerName: true,
+          messageType: true,
+          text: true,
+          processingStatus: true,
+          eventTimestamp: true,
+          rawPayload: true,
+        },
+      }),
+      buildConversationChannelHealth(salonId),
+      resolveConnectedInstagramAccountIdForSalon(salonId),
+    ]);
 
     const byConversation = new Map<
       string,
@@ -8084,6 +8197,7 @@ router.get('/conversations', authenticateToken, async (req: any, res: any) => {
     return res.status(200).json({
       items,
       hasMore: byConversation.size > limit,
+      channelHealth,
     });
   } catch (error) {
     console.error('Admin conversations error:', error);

@@ -4,6 +4,7 @@ import axios from 'axios';
 import { ChannelType, Prisma } from '@prisma/client';
 import { prisma } from '../prisma.js';
 import { authenticateToken } from '../middleware/auth.js';
+import { writeAccessAudit } from '../services/accessControl.js';
 
 const router = Router();
 
@@ -25,6 +26,7 @@ type MetaChannelKey = 'instagram' | 'whatsapp';
 type ConnectMode = 'OAUTH' | 'EMBEDDED_SIGNUP';
 type ConnectionMode = 'INSTAGRAM_LOGIN' | 'WHATSAPP_EMBEDDED_SIGNUP' | 'WHATSAPP_OAUTH';
 type CredentialsSource = 'META_INSTAGRAM' | 'META_APP';
+type ConnectIntent = 'CONNECT' | 'REPLACE_CONNECTION';
 
 interface MetaChannelState {
   status: MetaStatus;
@@ -52,6 +54,7 @@ interface StatePayload {
   ch: MetaChannel;
   ts: number;
   nonce: string;
+  intent?: ConnectIntent;
 }
 
 interface PrefillConnection {
@@ -97,6 +100,12 @@ function toMetaChannel(value: unknown): MetaChannel | null {
   }
 
   return null;
+}
+
+function parseConnectIntent(value: unknown): ConnectIntent {
+  return typeof value === 'string' && value.trim().toUpperCase() === 'REPLACE_CONNECTION'
+    ? 'REPLACE_CONNECTION'
+    : 'CONNECT';
 }
 
 function toMetaKey(channel: MetaChannel): MetaChannelKey {
@@ -746,9 +755,12 @@ async function finalizeConnection(args: {
   channel: MetaChannel;
   token: MetaTokenResult;
   prefill?: PrefillConnection;
+  intent?: ConnectIntent;
+  actorUserId?: number | null;
 }) {
   const { salonId, channel, token, prefill } = args;
   const key = toMetaKey(channel);
+  const intent = args.intent || 'CONNECT';
 
   let probe: Awaited<ReturnType<typeof runProbe>> | null = null;
   let probeError: string | null = null;
@@ -756,6 +768,17 @@ async function finalizeConnection(args: {
   let message = 'Connected and verified with a live API call.';
   let accessTokenToPersist = token.accessToken;
   const nowIso = new Date().toISOString();
+  const previousActiveBindings = await prisma.salonChannelBinding.findMany({
+    where: {
+      salonId,
+      channel,
+      isActive: true,
+    },
+    select: {
+      externalAccountId: true,
+    },
+  });
+  const oldActiveIds = sanitizeIds(previousActiveBindings.map((item) => item.externalAccountId));
 
   if (channel === 'INSTAGRAM') {
     const instagramIdCandidate =
@@ -872,6 +895,39 @@ async function finalizeConnection(args: {
     lastError: probeError,
   };
   await saveStoreForSalon(salonId, loaded.faqAnswers, loaded.store);
+
+  if (intent === 'REPLACE_CONNECTION') {
+    const nextActiveBindings = await prisma.salonChannelBinding.findMany({
+      where: {
+        salonId,
+        channel,
+        isActive: true,
+      },
+      select: {
+        externalAccountId: true,
+      },
+    });
+    const newActiveIds = sanitizeIds(nextActiveBindings.map((item) => item.externalAccountId));
+    const changed =
+      newActiveIds.length > 0 &&
+      (oldActiveIds.length !== newActiveIds.length || oldActiveIds.some((id) => !newActiveIds.includes(id)));
+
+    if (changed) {
+      await writeAccessAudit({
+        salonId,
+        actorUserId: args.actorUserId || null,
+        action: 'channel_identity_replaced',
+        targetType: channel,
+        targetId: newActiveIds[0] || null,
+        metadata: {
+          intent,
+          oldIds: oldActiveIds,
+          newIds: newActiveIds,
+          changedAt: nowIso,
+        },
+      });
+    }
+  }
 
   return {
     probe,
@@ -1014,6 +1070,7 @@ router.post('/connect-url', authenticateToken, async (req: any, res: any) => {
     if (!channel) {
       return res.status(400).json({ message: 'channel must be INSTAGRAM or WHATSAPP.' });
     }
+    const intent = parseConnectIntent(req.body?.intent);
 
     const appId = getClientId(channel);
     if (!appId) {
@@ -1042,6 +1099,7 @@ router.post('/connect-url', authenticateToken, async (req: any, res: any) => {
       ch: channel,
       ts: Date.now(),
       nonce: crypto.randomBytes(12).toString('hex'),
+      intent,
     };
 
     const state = encodeState(statePayload);
@@ -1069,6 +1127,7 @@ router.post('/connect-url', authenticateToken, async (req: any, res: any) => {
 
     return res.status(200).json({
       channel,
+      intent,
       connectMode,
       connectionMode,
       credentialsSource,
@@ -1101,6 +1160,7 @@ router.get('/callback', async (req: any, res: any) => {
   }
 
   const channel = statePayload.ch;
+  const intent = statePayload.intent || 'CONNECT';
   const key = toMetaKey(channel);
 
   const fail = async (message: string) => {
@@ -1155,6 +1215,8 @@ router.get('/callback', async (req: any, res: any) => {
       channel,
       token,
       prefill: prefillFromToken,
+      intent,
+      actorUserId: null,
     });
 
     return res.status(200).send(renderCallbackHtml({
@@ -1192,6 +1254,7 @@ router.post('/exchange-code', authenticateToken, async (req: any, res: any) => {
     if (!code) {
       return res.status(400).json({ message: 'code is required.' });
     }
+    const intent = parseConnectIntent(req.body?.intent);
 
     const redirectUri = getRedirectUri(req);
     const token = await exchangeCodeForToken(code, redirectUri, channel);
@@ -1237,6 +1300,8 @@ router.post('/exchange-code', authenticateToken, async (req: any, res: any) => {
       channel,
       token,
       prefill,
+      intent,
+      actorUserId: Number.isInteger(req?.user?.userId) ? Number(req.user.userId) : null,
     });
 
     const tokenValid = status === 'CONNECTED' || status === 'DEGRADED';
@@ -1245,6 +1310,7 @@ router.post('/exchange-code', authenticateToken, async (req: any, res: any) => {
     return res.status(200).json({
       ok: true,
       channel,
+      intent,
       connected: status === 'CONNECTED',
       status,
       bindingReady: bindingReady && tokenValid,
