@@ -854,6 +854,67 @@ type ParsedPackageServiceQuota = {
   initialQuota: number;
 };
 
+type CheckoutMode = 'GROUP' | 'SPLIT';
+type CheckoutCloseType = 'SINGLE_PAYMENT' | 'USE_EXISTING_PACKAGE' | 'SELL_NEW_PACKAGE';
+
+type ParsedCheckoutLine = {
+  appointmentId: number;
+  appointmentLineId: number | null;
+  closeType: CheckoutCloseType;
+  paymentMethod: 'CASH' | 'CARD' | 'TRANSFER' | 'OTHER' | null;
+  customerPackageId: number | null;
+};
+
+function parseCheckoutMode(value: unknown): CheckoutMode {
+  if (typeof value !== 'string') return 'GROUP';
+  const normalized = value.trim().toUpperCase();
+  return normalized === 'SPLIT' ? 'SPLIT' : 'GROUP';
+}
+
+function parseCheckoutCloseType(value: unknown): CheckoutCloseType | null {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toUpperCase();
+  if (normalized === 'SINGLE_PAYMENT' || normalized === 'USE_EXISTING_PACKAGE' || normalized === 'SELL_NEW_PACKAGE') {
+    return normalized;
+  }
+  return null;
+}
+
+function parseCheckoutLines(input: unknown): ParsedCheckoutLine[] {
+  if (!Array.isArray(input)) return [];
+  const seen = new Set<string>();
+  const rows: ParsedCheckoutLine[] = [];
+  for (const row of input) {
+    if (!row || typeof row !== 'object') continue;
+    const appointmentId = Number((row as any).appointmentId);
+    const appointmentLineIdRaw = (row as any).appointmentLineId;
+    const appointmentLineId =
+      appointmentLineIdRaw === null || appointmentLineIdRaw === undefined || appointmentLineIdRaw === ''
+        ? null
+        : Number(appointmentLineIdRaw);
+    const normalizedLineId = Number.isInteger(appointmentLineId) && appointmentLineId > 0 ? appointmentLineId : null;
+    const key = `${appointmentId}:${normalizedLineId || 0}`;
+    if (!Number.isInteger(appointmentId) || appointmentId <= 0 || seen.has(key)) continue;
+    const closeType = parseCheckoutCloseType((row as any).closeType);
+    if (!closeType) continue;
+    const paymentMethod = asPaymentMethod((row as any).paymentMethod);
+    const customerPackageIdRaw = (row as any).customerPackageId;
+    const customerPackageId =
+      customerPackageIdRaw === null || customerPackageIdRaw === undefined || customerPackageIdRaw === ''
+        ? null
+        : Number(customerPackageIdRaw);
+    rows.push({
+      appointmentId,
+      appointmentLineId: normalizedLineId,
+      closeType,
+      paymentMethod,
+      customerPackageId: Number.isInteger(customerPackageId) && customerPackageId > 0 ? customerPackageId : null,
+    });
+    seen.add(key);
+  }
+  return rows;
+}
+
 function parseServiceIdsFromAppointmentPayload(input: unknown): number[] {
   if (!Array.isArray(input)) {
     return [];
@@ -1005,14 +1066,17 @@ async function consumePackageForAppointmentService(tx: any, input: {
   salonId: number;
   customerId: number;
   appointmentId: number;
+  appointmentLineId?: number | null;
   serviceId: number;
   now: Date;
 }) {
-  const { salonId, customerId, appointmentId, serviceId, now } = input;
+  const { salonId, customerId, appointmentId, appointmentLineId, serviceId, now } = input;
 
-  const existingConsumption = await tx.appointmentPackageConsumption.findUnique({
+  const existingConsumption = await tx.appointmentPackageConsumption.findFirst({
     where: {
-      appointmentId_serviceId: { appointmentId, serviceId },
+      appointmentId,
+      appointmentLineId: appointmentLineId ?? null,
+      serviceId,
     },
   });
   if (existingConsumption && !existingConsumption.restoredAt) {
@@ -1079,6 +1143,7 @@ async function consumePackageForAppointmentService(tx: any, input: {
         customerPackageId: expiredBalance?.customerPackageId || null,
         serviceId,
         appointmentId,
+        appointmentLineId: appointmentLineId ?? null,
         actionType,
         delta: 0,
         balanceAfter: null,
@@ -1123,6 +1188,7 @@ async function consumePackageForAppointmentService(tx: any, input: {
       data: {
         salonId,
         appointmentId,
+        appointmentLineId: appointmentLineId ?? null,
         customerId,
         customerPackageId: selectedBalance.customerPackageId,
         serviceId,
@@ -1138,6 +1204,7 @@ async function consumePackageForAppointmentService(tx: any, input: {
       customerPackageId: selectedBalance.customerPackageId,
       serviceId,
       appointmentId,
+      appointmentLineId: appointmentLineId ?? null,
       actionType: 'AUTO_CONSUME',
       delta: -1,
       balanceAfter: updatedBalance.remainingQuota,
@@ -1158,18 +1225,172 @@ async function consumePackageForAppointmentService(tx: any, input: {
   };
 }
 
+async function consumeSpecificPackageForAppointmentService(tx: any, input: {
+  salonId: number;
+  customerId: number;
+  appointmentId: number;
+  appointmentLineId?: number | null;
+  serviceId: number;
+  customerPackageId: number;
+  now: Date;
+  source: 'checkout_existing' | 'checkout_new';
+}) {
+  const { salonId, customerId, appointmentId, appointmentLineId, serviceId, customerPackageId, now, source } = input;
+
+  const existingConsumption = await tx.appointmentPackageConsumption.findFirst({
+    where: {
+      appointmentId,
+      appointmentLineId: appointmentLineId ?? null,
+      serviceId,
+    },
+  });
+  if (existingConsumption && !existingConsumption.restoredAt) {
+    return { type: 'IDEMPOTENT', serviceId, customerPackageId };
+  }
+
+  const targetPackage = await (tx as any).customerPackage.findFirst({
+    where: {
+      id: customerPackageId,
+      salonId,
+      customerId,
+      status: 'ACTIVE',
+      AND: [
+        { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
+        { OR: [{ expiresAt: null }, { expiresAt: { gte: now } }] },
+      ],
+    },
+    select: {
+      id: true,
+      expiresAt: true,
+    },
+  });
+  if (!targetPackage) {
+    await (tx as any).packageLedger.create({
+      data: {
+        salonId,
+        customerId,
+        customerPackageId,
+        serviceId,
+        appointmentId,
+        appointmentLineId: appointmentLineId ?? null,
+        actionType: 'SKIPPED_NO_ELIGIBLE_PACKAGE',
+        delta: 0,
+        balanceAfter: null,
+        reason: 'checkout_package_not_eligible',
+        metadata: { source },
+      },
+    });
+    return { type: 'SKIPPED_NO_ELIGIBLE_PACKAGE', serviceId, customerPackageId };
+  }
+
+  const targetBalance = await (tx as any).customerPackageServiceBalance.findFirst({
+    where: {
+      customerPackageId,
+      serviceId,
+      remainingQuota: { gt: 0 },
+    },
+    select: {
+      id: true,
+      remainingQuota: true,
+    },
+  });
+  if (!targetBalance) {
+    await (tx as any).packageLedger.create({
+      data: {
+        salonId,
+        customerId,
+        customerPackageId,
+        serviceId,
+        appointmentId,
+        appointmentLineId: appointmentLineId ?? null,
+        actionType: 'SKIPPED_NO_ELIGIBLE_PACKAGE',
+        delta: 0,
+        balanceAfter: null,
+        reason: 'checkout_service_quota_not_available',
+        metadata: { source },
+      },
+    });
+    return { type: 'SKIPPED_NO_ELIGIBLE_PACKAGE', serviceId, customerPackageId };
+  }
+
+  const updatedBalance = await (tx as any).customerPackageServiceBalance.update({
+    where: { id: targetBalance.id },
+    data: {
+      remainingQuota: { decrement: 1 },
+    },
+    select: {
+      remainingQuota: true,
+    },
+  });
+
+  if (existingConsumption?.id) {
+    await tx.appointmentPackageConsumption.update({
+      where: { id: existingConsumption.id },
+      data: {
+        salonId,
+        customerId,
+        customerPackageId,
+        consumed: 1,
+        restoredAt: null,
+      },
+    });
+  } else {
+    await tx.appointmentPackageConsumption.create({
+      data: {
+        salonId,
+        appointmentId,
+        appointmentLineId: appointmentLineId ?? null,
+        customerId,
+        customerPackageId,
+        serviceId,
+        consumed: 1,
+      },
+    });
+  }
+
+  await (tx as any).packageLedger.create({
+    data: {
+      salonId,
+      customerId,
+      customerPackageId,
+      serviceId,
+      appointmentId,
+      appointmentLineId: appointmentLineId ?? null,
+      actionType: 'AUTO_CONSUME',
+      delta: -1,
+      balanceAfter: updatedBalance.remainingQuota,
+      reason: 'appointment_completed',
+      metadata: {
+        source,
+      },
+    },
+  });
+
+  await refreshCustomerPackageStatus(tx, customerPackageId, now);
+
+  return {
+    type: 'AUTO_CONSUME',
+    serviceId,
+    customerPackageId,
+    balanceAfter: updatedBalance.remainingQuota,
+  };
+}
+
 async function restorePackageForAppointmentService(tx: any, input: {
   salonId: number;
   customerId: number;
   appointmentId: number;
+  appointmentLineId?: number | null;
   serviceId: number;
   now: Date;
   reason: string;
 }) {
-  const { salonId, customerId, appointmentId, serviceId, now, reason } = input;
-  const consumption = await tx.appointmentPackageConsumption.findUnique({
+  const { salonId, customerId, appointmentId, appointmentLineId, serviceId, now, reason } = input;
+  const consumption = await tx.appointmentPackageConsumption.findFirst({
     where: {
-      appointmentId_serviceId: { appointmentId, serviceId },
+      appointmentId,
+      appointmentLineId: appointmentLineId ?? null,
+      serviceId,
     },
   });
 
@@ -1220,6 +1441,7 @@ async function restorePackageForAppointmentService(tx: any, input: {
       customerPackageId: consumption.customerPackageId,
       serviceId,
       appointmentId,
+      appointmentLineId: appointmentLineId ?? null,
       actionType: 'AUTO_RESTORE',
       delta: consumption.consumed,
       balanceAfter: restoredBalance.remainingQuota,
@@ -1238,6 +1460,78 @@ async function restorePackageForAppointmentService(tx: any, input: {
     customerPackageId: restoredBalance.customerPackageId,
     balanceAfter: restoredBalance.remainingQuota,
   };
+}
+
+function mapAppointmentStatusToLineStatus(status: string | null | undefined): 'BOOKED' | 'CANCELLED' | 'NO_SHOW' | 'COMPLETED' {
+  const normalized = String(status || '').toUpperCase();
+  if (normalized === 'COMPLETED') return 'COMPLETED';
+  if (normalized === 'CANCELLED') return 'CANCELLED';
+  if (normalized === 'NO_SHOW') return 'NO_SHOW';
+  return 'BOOKED';
+}
+
+async function ensureDefaultAppointmentLine(tx: any, appointment: any) {
+  const existing = await (tx as any).appointmentLine.findFirst({
+    where: { appointmentId: Number(appointment.id) },
+    orderBy: [{ orderIndex: 'asc' }, { id: 'asc' }],
+  });
+  if (existing) return existing;
+
+  const startTime = appointment.startTime ? new Date(appointment.startTime) : null;
+  const endTime = appointment.endTime ? new Date(appointment.endTime) : null;
+  const durationMinutes =
+    startTime && endTime ? Math.max(1, Math.floor((endTime.getTime() - startTime.getTime()) / 60000)) : null;
+
+  return (tx as any).appointmentLine.create({
+    data: {
+      appointmentId: Number(appointment.id),
+      salonId: Number(appointment.salonId),
+      customerId: Number.isInteger(appointment.customerId) && appointment.customerId > 0 ? Number(appointment.customerId) : null,
+      serviceId: Number(appointment.serviceId),
+      specialistId: Number.isInteger(appointment.staffId) && appointment.staffId > 0 ? Number(appointment.staffId) : null,
+      startTime: startTime || null,
+      endTime: endTime || null,
+      durationMinutes,
+      listPrice: appointment.listPrice ?? null,
+      finalPrice: appointment.finalPrice ?? null,
+      status: mapAppointmentStatusToLineStatus(appointment.status),
+      paymentMethod: appointment.paymentMethod || null,
+      paymentRecordedAt: appointment.paymentRecordedAt || null,
+      notes: appointment.notes || null,
+      orderIndex: 0,
+    },
+  });
+}
+
+async function recomputeAndPersistAppointmentStatusFromLines(tx: any, appointmentId: number) {
+  const lines = await (tx as any).appointmentLine.findMany({
+    where: { appointmentId },
+    select: { status: true },
+  });
+  if (!lines.length) {
+    return null;
+  }
+  const statuses = lines.map((line: any) => String(line.status || '').toUpperCase());
+  let nextStatus: 'BOOKED' | 'CANCELLED' | 'NO_SHOW' | 'COMPLETED' = 'BOOKED';
+  if (statuses.every((status) => status === 'COMPLETED')) {
+    nextStatus = 'COMPLETED';
+  } else if (statuses.every((status) => status === 'CANCELLED')) {
+    nextStatus = 'CANCELLED';
+  } else if (statuses.every((status) => status === 'NO_SHOW')) {
+    nextStatus = 'NO_SHOW';
+  } else {
+    nextStatus = 'BOOKED';
+  }
+
+  await tx.appointment.update({
+    where: { id: appointmentId },
+    data: {
+      status: nextStatus,
+      ...(nextStatus === 'COMPLETED' ? {} : { paymentMethod: null, paymentRecordedAt: null }),
+    },
+  });
+
+  return nextStatus;
 }
 
 function toPackageTemplateDto(item: any) {
@@ -1417,6 +1711,27 @@ router.get('/appointments', authenticateToken, async (req: any, res: any) => {
             name: true,
             phone: true,
           },
+        },
+        appointmentLines: {
+          include: {
+            service: {
+              select: {
+                id: true,
+                name: true,
+                duration: true,
+                price: true,
+                requiresSpecialist: true,
+              },
+            },
+            specialist: {
+              select: {
+                id: true,
+                name: true,
+                title: true,
+              },
+            },
+          },
+          orderBy: [{ orderIndex: 'asc' }, { id: 'asc' }],
         },
       },
       orderBy: [{ startTime: 'asc' }, { id: 'asc' }],
@@ -1667,6 +1982,7 @@ router.post('/appointments', authenticateToken, async (req: any, res: any) => {
             },
           },
         });
+        await ensureDefaultAppointmentLine(tx, appointment);
         createdAppointments.push(appointment);
       }
 
@@ -3028,31 +3344,82 @@ router.patch('/appointments/:id/status', authenticateToken, async (req: any, res
 
       const previousStatus = appointment.status || 'BOOKED';
       const serviceIdsFromPayload = parseServiceIdsFromAppointmentPayload(req.body?.services);
-      const serviceIds = serviceIdsFromPayload.length ? serviceIdsFromPayload : [appointment.serviceId];
-      const uniqueServiceIds = Array.from(new Set(serviceIds));
+      const lineIdsFromPayload = Array.isArray(req.body?.appointmentLineIds)
+        ? req.body.appointmentLineIds.map((value: unknown) => Number(value)).filter((value: number) => Number.isInteger(value) && value > 0)
+        : [];
 
-      const foundServices = await tx.service.findMany({
-        where: {
-          salonId,
-          id: { in: uniqueServiceIds },
-        },
-        select: { id: true },
+      let appointmentLines = await (tx as any).appointmentLine.findMany({
+        where: { appointmentId },
+        orderBy: [{ orderIndex: 'asc' }, { id: 'asc' }],
       });
-      if (foundServices.length !== uniqueServiceIds.length) {
-        return { error: { code: 404, message: 'One or more services were not found.' } };
+      if (!appointmentLines.length) {
+        const createdLine = await ensureDefaultAppointmentLine(tx, appointment);
+        appointmentLines = [createdLine];
       }
 
-      const updated = await tx.appointment.update({
+      let targetLines = appointmentLines;
+      if (lineIdsFromPayload.length) {
+        targetLines = appointmentLines.filter((line: any) => lineIdsFromPayload.includes(Number(line.id)));
+      } else if (serviceIdsFromPayload.length) {
+        targetLines = appointmentLines.filter((line: any) => serviceIdsFromPayload.includes(Number(line.serviceId)));
+      } else {
+        const firstActive =
+          appointmentLines.find((line: any) => String(line.status || '').toUpperCase() === 'BOOKED') ||
+          appointmentLines[0];
+        targetLines = firstActive ? [firstActive] : [];
+      }
+      if (!targetLines.length) {
+        return { error: { code: 404, message: 'No matching appointment line was found for the update request.' } };
+      }
+
+      const events: any[] = [];
+      for (const line of targetLines) {
+        const previousLineStatus = String(line.status || 'BOOKED').toUpperCase();
+        await (tx as any).appointmentLine.update({
+          where: { id: Number(line.id) },
+          data: {
+            status: nextStatus,
+            ...(nextStatus === 'COMPLETED'
+              ? {
+                  paymentMethod: paymentMethod || undefined,
+                  paymentRecordedAt: paymentMethod ? now : undefined,
+                }
+              : {
+                  paymentMethod: null,
+                  paymentRecordedAt: null,
+                }),
+          },
+        });
+
+        if (appointment.customerId) {
+          if (previousLineStatus !== 'COMPLETED' && nextStatus === 'COMPLETED') {
+            const consumeResult = await consumePackageForAppointmentService(tx, {
+              salonId,
+              customerId: appointment.customerId,
+              appointmentId,
+              appointmentLineId: Number(line.id),
+              serviceId: Number(line.serviceId),
+              now,
+            });
+            events.push(consumeResult);
+          } else if (previousLineStatus === 'COMPLETED' && nextStatus !== 'COMPLETED') {
+            const restoreResult = await restorePackageForAppointmentService(tx, {
+              salonId,
+              customerId: appointment.customerId,
+              appointmentId,
+              appointmentLineId: Number(line.id),
+              serviceId: Number(line.serviceId),
+              now,
+              reason: `status_${previousLineStatus}_to_${nextStatus}`,
+            });
+            events.push(restoreResult);
+          }
+        }
+      }
+
+      const computedStatus = await recomputeAndPersistAppointmentStatusFromLines(tx, appointmentId);
+      const updated = await tx.appointment.findUnique({
         where: { id: appointmentId },
-        data: {
-          status: nextStatus,
-          ...(nextStatus === 'COMPLETED'
-            ? {
-                paymentMethod: paymentMethod || undefined,
-                paymentRecordedAt: paymentMethod ? now : undefined,
-              }
-            : {}),
-        },
         include: {
           service: {
             select: {
@@ -3077,35 +3444,17 @@ router.patch('/appointments/:id/status', authenticateToken, async (req: any, res
               phone: true,
             },
           },
+          appointmentLines: {
+            include: {
+              service: { select: { id: true, name: true, duration: true, price: true, requiresSpecialist: true } },
+              specialist: { select: { id: true, name: true, title: true } },
+            },
+            orderBy: [{ orderIndex: 'asc' }, { id: 'asc' }],
+          },
         },
       });
-
-      const events: any[] = [];
-      if (updated.customerId) {
-        if (previousStatus !== 'COMPLETED' && nextStatus === 'COMPLETED') {
-          for (const serviceId of uniqueServiceIds) {
-            const consumeResult = await consumePackageForAppointmentService(tx, {
-              salonId,
-              customerId: updated.customerId,
-              appointmentId,
-              serviceId,
-              now,
-            });
-            events.push(consumeResult);
-          }
-        } else if (previousStatus === 'COMPLETED' && nextStatus !== 'COMPLETED') {
-          for (const serviceId of uniqueServiceIds) {
-            const restoreResult = await restorePackageForAppointmentService(tx, {
-              salonId,
-              customerId: updated.customerId,
-              appointmentId,
-              serviceId,
-              now,
-              reason: `status_${previousStatus}_to_${nextStatus}`,
-            });
-            events.push(restoreResult);
-          }
-        }
+      if (!updated) {
+        return { error: { code: 404, message: 'Appointment not found after update.' } };
       }
 
       return {
@@ -3117,11 +3466,11 @@ router.patch('/appointments/:id/status', authenticateToken, async (req: any, res
           serviceName: updated.service?.name || null,
           startTime: updated.startTime,
           previousStatus,
-          nextStatus,
+          nextStatus: computedStatus || previousStatus,
         },
         packageAutomation: {
           previousStatus,
-          nextStatus,
+          nextStatus: computedStatus || previousStatus,
           events,
         },
       };
@@ -3188,6 +3537,524 @@ router.patch('/appointments/:id/status', authenticateToken, async (req: any, res
       });
     }
     console.error('Admin appointment status update error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.patch('/appointment-lines/:id/status', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) return;
+
+  const appointmentLineId = Number(req.params.id);
+  const nextStatus = asAppointmentStatus(req.body?.status);
+  const paymentMethod = asPaymentMethod(req.body?.paymentMethod);
+  if (!Number.isInteger(appointmentLineId) || appointmentLineId <= 0) {
+    return res.status(400).json({ message: 'Invalid appointment line id.' });
+  }
+  if (!nextStatus) {
+    return res.status(400).json({ message: 'status must be BOOKED, COMPLETED, CANCELLED, or NO_SHOW.' });
+  }
+
+  try {
+    const now = new Date();
+    const result = await prisma.$transaction(async (tx) => {
+      const line = await (tx as any).appointmentLine.findFirst({
+        where: { id: appointmentLineId, salonId },
+        select: {
+          id: true,
+          appointmentId: true,
+          serviceId: true,
+          customerId: true,
+          status: true,
+        },
+      });
+      if (!line) return { error: { code: 404, message: 'Appointment line not found.' } };
+
+      const previousStatus = String(line.status || 'BOOKED').toUpperCase();
+      await (tx as any).appointmentLine.update({
+        where: { id: appointmentLineId },
+        data: {
+          status: nextStatus,
+          ...(nextStatus === 'COMPLETED'
+            ? {
+                paymentMethod: paymentMethod || undefined,
+                paymentRecordedAt: paymentMethod ? now : undefined,
+              }
+            : {
+                paymentMethod: null,
+                paymentRecordedAt: null,
+              }),
+        },
+      });
+
+      const events: any[] = [];
+      if (line.customerId) {
+        if (previousStatus !== 'COMPLETED' && nextStatus === 'COMPLETED') {
+          events.push(
+            await consumePackageForAppointmentService(tx, {
+              salonId,
+              customerId: Number(line.customerId),
+              appointmentId: Number(line.appointmentId),
+              appointmentLineId,
+              serviceId: Number(line.serviceId),
+              now,
+            }),
+          );
+        } else if (previousStatus === 'COMPLETED' && nextStatus !== 'COMPLETED') {
+          events.push(
+            await restorePackageForAppointmentService(tx, {
+              salonId,
+              customerId: Number(line.customerId),
+              appointmentId: Number(line.appointmentId),
+              appointmentLineId,
+              serviceId: Number(line.serviceId),
+              now,
+              reason: `line_status_${previousStatus}_to_${nextStatus}`,
+            }),
+          );
+        }
+      }
+
+      const appointmentStatus = await recomputeAndPersistAppointmentStatusFromLines(tx, Number(line.appointmentId));
+      const appointment = await tx.appointment.findFirst({
+        where: { id: Number(line.appointmentId), salonId },
+        include: {
+          service: { select: { id: true, name: true, duration: true, price: true, requiresSpecialist: true } },
+          staff: { select: { id: true, name: true, title: true } },
+          customer: { select: { id: true, name: true, phone: true } },
+          appointmentLines: {
+            include: {
+              service: { select: { id: true, name: true, duration: true, price: true, requiresSpecialist: true } },
+              specialist: { select: { id: true, name: true, title: true } },
+            },
+            orderBy: [{ orderIndex: 'asc' }, { id: 'asc' }],
+          },
+        },
+      });
+      if (!appointment) return { error: { code: 404, message: 'Appointment not found.' } };
+
+      return {
+        item: appointment,
+        lineId: appointmentLineId,
+        appointmentId: Number(line.appointmentId),
+        previousStatus,
+        nextStatus,
+        appointmentStatus: appointmentStatus || appointment.status || 'BOOKED',
+        packageAutomation: {
+          previousStatus,
+          nextStatus,
+          events,
+        },
+      };
+    });
+
+    if ('error' in result) {
+      return res.status(result.error.code).json({ message: result.error.message });
+    }
+
+    return res.status(200).json(result);
+  } catch (error) {
+    if (isPackageSchemaNotReadyError(error)) {
+      return res.status(503).json({
+        message: 'Package schema is not ready. Run database migrations.',
+        code: 'PACKAGE_SCHEMA_NOT_READY',
+      });
+    }
+    console.error('Admin appointment line status update error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.post('/appointments/checkout', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const mode = parseCheckoutMode(req.body?.mode);
+  const lines = parseCheckoutLines(req.body?.lines);
+  const now = new Date();
+
+  if (!lines.length) {
+    return res.status(400).json({ message: 'lines must be a non-empty array.' });
+  }
+
+  const sellNewCount = lines.filter((line) => line.closeType === 'SELL_NEW_PACKAGE').length;
+  const useExistingCount = lines.filter((line) => line.closeType === 'USE_EXISTING_PACKAGE').length;
+  const singlePaymentCount = lines.filter((line) => line.closeType === 'SINGLE_PAYMENT').length;
+
+  if (mode === 'GROUP') {
+    const firstType = lines[0]?.closeType;
+    const mixedCloseType = lines.some((line) => line.closeType !== firstType);
+    if (mixedCloseType) {
+      return res.status(400).json({ message: 'GROUP mode requires the same closeType for all lines.' });
+    }
+    if (firstType === 'SINGLE_PAYMENT') {
+      const firstPayment = lines[0]?.paymentMethod || null;
+      const mixedPayment = lines.some((line) => (line.paymentMethod || null) !== firstPayment);
+      if (mixedPayment) {
+        return res.status(400).json({ message: 'GROUP mode SINGLE_PAYMENT requires the same paymentMethod for all lines.' });
+      }
+    }
+    if (firstType === 'USE_EXISTING_PACKAGE') {
+      const firstPackageId = lines[0]?.customerPackageId || null;
+      const mixedPackage = lines.some((line) => (line.customerPackageId || null) !== firstPackageId);
+      if (mixedPackage) {
+        return res.status(400).json({ message: 'GROUP mode USE_EXISTING_PACKAGE requires the same customerPackageId for all lines.' });
+      }
+    }
+  }
+
+  if (singlePaymentCount && lines.some((line) => line.closeType === 'SINGLE_PAYMENT' && !line.paymentMethod)) {
+    return res.status(400).json({ message: 'paymentMethod is required for SINGLE_PAYMENT lines.' });
+  }
+  if (useExistingCount && lines.some((line) => line.closeType === 'USE_EXISTING_PACKAGE' && !line.customerPackageId)) {
+    return res.status(400).json({ message: 'customerPackageId is required for USE_EXISTING_PACKAGE lines.' });
+  }
+  if (sellNewCount > 0 && lines.some((line) => line.closeType === 'SELL_NEW_PACKAGE' && line.customerPackageId)) {
+    return res.status(400).json({ message: 'SELL_NEW_PACKAGE lines must not include customerPackageId.' });
+  }
+
+  const parsedNewPackageServices = parsePackageServices(req.body?.newPackage?.services);
+  const parsedNewPackageScopeType = parsePackageScopeType(req.body?.newPackage?.scopeType);
+  const parsedNewPackagePrice = parsePriceOrNull(req.body?.newPackage?.price);
+  const parsedNewPackageStartsAt = parseDateOrNull(req.body?.newPackage?.startsAt) || now;
+  const parsedNewPackageExpiresAt = parseDateOrNull(req.body?.newPackage?.expiresAt);
+  const parsedNewPackageNotes = typeof req.body?.newPackage?.notes === 'string' ? req.body.newPackage.notes.trim() : null;
+  const parsedNewPackagePaymentMethod = asPaymentMethod(req.body?.newPackage?.paymentMethod);
+  const parsedNewPackageName = typeof req.body?.newPackage?.name === 'string' ? req.body.newPackage.name.trim() : '';
+
+  if (sellNewCount > 0) {
+    if (!parsedNewPackageName) {
+      return res.status(400).json({ message: 'newPackage.name is required when SELL_NEW_PACKAGE is used.' });
+    }
+    if (!parsedNewPackageServices.length) {
+      return res.status(400).json({ message: 'newPackage.services is required when SELL_NEW_PACKAGE is used.' });
+    }
+    if (parsedNewPackageExpiresAt && parsedNewPackageExpiresAt <= parsedNewPackageStartsAt) {
+      return res.status(400).json({ message: 'newPackage.expiresAt must be later than newPackage.startsAt.' });
+    }
+    if (!parsedNewPackagePaymentMethod) {
+      return res.status(400).json({ message: 'newPackage.paymentMethod must be CASH, CARD, TRANSFER or OTHER.' });
+    }
+  }
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      const appointmentIds = lines.map((line) => line.appointmentId);
+      const appointments = await tx.appointment.findMany({
+        where: {
+          salonId,
+          id: { in: appointmentIds },
+        },
+        select: {
+          id: true,
+          customerId: true,
+          serviceId: true,
+          status: true,
+          paymentMethod: true,
+        },
+      });
+
+      if (appointments.length !== appointmentIds.length) {
+        return { error: { code: 404, message: 'One or more appointments were not found.' } };
+      }
+
+      const appointmentById = new Map<number, any>();
+      for (const item of appointments) {
+        appointmentById.set(item.id, item);
+      }
+
+      const appointmentLinesRaw = await (tx as any).appointmentLine.findMany({
+        where: { appointmentId: { in: appointmentIds } },
+        orderBy: [{ orderIndex: 'asc' }, { id: 'asc' }],
+      });
+      const linesByAppointment = new Map<number, any[]>();
+      for (const line of appointmentLinesRaw) {
+        const list = linesByAppointment.get(Number(line.appointmentId)) || [];
+        list.push(line);
+        linesByAppointment.set(Number(line.appointmentId), list);
+      }
+      for (const appointment of appointments) {
+        if (!linesByAppointment.has(Number(appointment.id)) || !(linesByAppointment.get(Number(appointment.id)) || []).length) {
+          const createdLine = await ensureDefaultAppointmentLine(tx, appointment);
+          linesByAppointment.set(Number(appointment.id), [createdLine]);
+        }
+      }
+
+      const requiresCustomerPackage = lines.some((line) => line.closeType !== 'SINGLE_PAYMENT');
+      const customerIds = Array.from(
+        new Set(
+          appointments
+            .map((item) => (Number.isInteger(item.customerId) && item.customerId > 0 ? Number(item.customerId) : null))
+            .filter((id): id is number => id !== null),
+        ),
+      );
+      if (requiresCustomerPackage && customerIds.length !== 1) {
+        return { error: { code: 400, message: 'Package actions require checkout lines to belong to one registered customer.' } };
+      }
+      if (requiresCustomerPackage && appointments.some((item) => !Number.isInteger(item.customerId) || Number(item.customerId) <= 0)) {
+        return { error: { code: 400, message: 'Package actions require a registered customer on every selected line.' } };
+      }
+      const customerId = customerIds.length === 1 ? customerIds[0] : null;
+
+      if (lines.some((line) => {
+        const appointment = appointmentById.get(line.appointmentId);
+        return !appointment || appointment.status === 'CANCELLED' || appointment.status === 'NO_SHOW';
+      })) {
+        return { error: { code: 400, message: 'Cancelled or no-show appointments cannot be processed in checkout.' } };
+      }
+
+      let createdPackage: any = null;
+      let newCustomerPackageId: number | null = null;
+      if (sellNewCount > 0) {
+        if (!customerId) {
+          return { error: { code: 400, message: 'newPackage sale requires a registered customer.' } };
+        }
+        const newServiceIds = parsedNewPackageServices.map((row) => row.serviceId);
+        const foundServices = await tx.service.findMany({
+          where: { salonId, id: { in: newServiceIds } },
+          select: { id: true },
+        });
+        if (foundServices.length !== newServiceIds.length) {
+          return { error: { code: 404, message: 'One or more newPackage.services were not found.' } };
+        }
+
+        createdPackage = await (tx as any).customerPackage.create({
+          data: {
+            salonId,
+            customerId,
+            packageTemplateId: null,
+            sourceType: 'CUSTOM',
+            scopeType: parsedNewPackageScopeType,
+            status: 'ACTIVE',
+            name: parsedNewPackageName,
+            startsAt: parsedNewPackageStartsAt,
+            expiresAt: parsedNewPackageExpiresAt,
+            price: parsedNewPackagePrice,
+            notes: parsedNewPackageNotes || null,
+            serviceBalances: {
+              create: parsedNewPackageServices.map((row) => ({
+                serviceId: row.serviceId,
+                initialQuota: row.initialQuota,
+                remainingQuota: row.initialQuota,
+              })),
+            },
+          },
+          include: {
+            serviceBalances: {
+              include: { service: { select: { id: true, name: true } } },
+            },
+          },
+        });
+        newCustomerPackageId = createdPackage.id;
+
+        for (const balance of createdPackage.serviceBalances || []) {
+          await (tx as any).packageLedger.create({
+            data: {
+              salonId,
+              customerId,
+              customerPackageId: createdPackage.id,
+              serviceId: balance.serviceId,
+              actionType: 'ASSIGNED',
+              delta: balance.initialQuota,
+              balanceAfter: balance.remainingQuota,
+              reason: 'checkout_custom_sale',
+              metadata: {
+                sourceType: 'CUSTOM',
+                source: 'checkout_new_package',
+                checkoutMode: mode,
+                paymentMethod: parsedNewPackagePaymentMethod,
+              },
+            },
+          });
+        }
+      }
+
+      const existingPackageIds = Array.from(
+        new Set(
+          lines
+            .filter((line) => line.closeType === 'USE_EXISTING_PACKAGE' && line.customerPackageId)
+            .map((line) => Number(line.customerPackageId)),
+        ),
+      );
+      if (existingPackageIds.length) {
+        if (!customerId) {
+          return { error: { code: 400, message: 'Existing package usage requires a registered customer.' } };
+        }
+        const foundPackages = await (tx as any).customerPackage.findMany({
+          where: {
+            id: { in: existingPackageIds },
+            salonId,
+            customerId,
+          },
+          select: { id: true },
+        });
+        if (foundPackages.length !== existingPackageIds.length) {
+          return { error: { code: 404, message: 'One or more selected customer packages were not found.' } };
+        }
+      }
+
+      const lineResults: Array<{
+        appointmentId: number;
+        appointmentLineId: number;
+        previousStatus: string;
+        nextStatus: string;
+        closeType: CheckoutCloseType;
+        paymentMethod: string | null;
+        packageAction: any;
+      }> = [];
+      const ledgerEvents: any[] = [];
+      const justCompletedAppointmentIds: number[] = [];
+      const touchedAppointmentIds = new Set<number>();
+
+      for (const line of lines) {
+        const appointment = appointmentById.get(line.appointmentId);
+        if (!appointment) {
+          return { error: { code: 404, message: 'Appointment not found in checkout lines.' } };
+        }
+        const appointmentLineCandidates = linesByAppointment.get(Number(line.appointmentId)) || [];
+        const targetLine = line.appointmentLineId
+          ? appointmentLineCandidates.find((item) => Number(item.id) === Number(line.appointmentLineId))
+          : appointmentLineCandidates[0];
+        if (!targetLine) {
+          return { error: { code: 404, message: `Appointment line not found for appointment #${line.appointmentId}.` } };
+        }
+        if (targetLine.status === 'CANCELLED' || targetLine.status === 'NO_SHOW') {
+          return { error: { code: 400, message: `Cancelled or no-show lines cannot be processed in checkout (#${targetLine.id}).` } };
+        }
+        if (
+          (line.closeType === 'USE_EXISTING_PACKAGE' || line.closeType === 'SELL_NEW_PACKAGE') &&
+          String(targetLine.status || '').toUpperCase() === 'COMPLETED'
+        ) {
+          return { error: { code: 400, message: `Package actions can only be applied while completing lines in same checkout (#${targetLine.id}).` } };
+        }
+
+        let packageAction: any = null;
+
+        if (line.closeType === 'USE_EXISTING_PACKAGE') {
+          if (!customerId) {
+            return { error: { code: 400, message: `Existing package usage requires a registered customer for appointment #${line.appointmentId}.` } };
+          }
+          packageAction = await consumeSpecificPackageForAppointmentService(tx, {
+            salonId,
+            customerId,
+            appointmentId: line.appointmentId,
+            appointmentLineId: Number(targetLine.id),
+            serviceId: Number(targetLine.serviceId || appointment.serviceId),
+            customerPackageId: Number(line.customerPackageId),
+            now,
+            source: 'checkout_existing',
+          });
+          ledgerEvents.push(packageAction);
+          if (packageAction.type !== 'AUTO_CONSUME' && packageAction.type !== 'IDEMPOTENT') {
+            return { error: { code: 400, message: `Package usage failed for appointment #${line.appointmentId}.` } };
+          }
+        } else if (line.closeType === 'SELL_NEW_PACKAGE') {
+          if (!newCustomerPackageId) {
+            return { error: { code: 400, message: 'newPackage is required for SELL_NEW_PACKAGE lines.' } };
+          }
+          if (!customerId) {
+            return { error: { code: 400, message: `New package usage requires a registered customer for appointment #${line.appointmentId}.` } };
+          }
+          packageAction = await consumeSpecificPackageForAppointmentService(tx, {
+            salonId,
+            customerId,
+            appointmentId: line.appointmentId,
+            appointmentLineId: Number(targetLine.id),
+            serviceId: Number(targetLine.serviceId || appointment.serviceId),
+            customerPackageId: newCustomerPackageId,
+            now,
+            source: 'checkout_new',
+          });
+          ledgerEvents.push(packageAction);
+          if (packageAction.type !== 'AUTO_CONSUME' && packageAction.type !== 'IDEMPOTENT') {
+            return { error: { code: 400, message: `New package usage failed for appointment #${line.appointmentId}.` } };
+          }
+        }
+
+        const nextStatus = 'COMPLETED';
+        const previousStatus = String(targetLine.status || 'BOOKED');
+        const shouldSetPayment = line.closeType === 'SINGLE_PAYMENT' ? line.paymentMethod : null;
+        await (tx as any).appointmentLine.update({
+          where: { id: Number(targetLine.id) },
+          data: {
+            status: nextStatus,
+            paymentMethod: shouldSetPayment || null,
+            paymentRecordedAt: shouldSetPayment ? now : null,
+          },
+        });
+        touchedAppointmentIds.add(Number(line.appointmentId));
+
+        if (previousStatus !== 'COMPLETED' && nextStatus === 'COMPLETED') {
+          justCompletedAppointmentIds.push(line.appointmentId);
+        }
+
+        lineResults.push({
+          appointmentId: line.appointmentId,
+          appointmentLineId: Number(targetLine.id),
+          previousStatus,
+          nextStatus,
+          closeType: line.closeType,
+          paymentMethod: shouldSetPayment || null,
+          packageAction,
+        });
+      }
+
+      for (const appointmentId of touchedAppointmentIds) {
+        await recomputeAndPersistAppointmentStatusFromLines(tx, appointmentId);
+      }
+
+      return {
+        mode,
+        customerId,
+        lineResults,
+        ledgerEvents,
+        packageCreated: createdPackage ? toCustomerPackageDto(createdPackage) : null,
+        justCompletedAppointmentIds,
+        summary: {
+          totalLines: lines.length,
+          singlePaymentCount,
+          existingPackageUsageCount: useExistingCount,
+          newPackageUsageCount: sellNewCount,
+          packageCreated: Boolean(createdPackage),
+        },
+      };
+    });
+
+    if ('error' in result) {
+      return res.status(result.error.code).json({ message: result.error.message });
+    }
+
+    const uniqueCompletedIds = Array.from(new Set(result.justCompletedAppointmentIds || []));
+    for (const appointmentId of uniqueCompletedIds) {
+      await processCompletionCampaignRewards({
+        salonId,
+        appointmentId,
+        customerId: result.customerId || null,
+      }).catch((rewardError) => {
+        console.error('Checkout completion campaign reward error:', rewardError);
+      });
+    }
+
+    return res.status(200).json({
+      mode: result.mode,
+      lineResults: result.lineResults,
+      packageCreated: result.packageCreated,
+      ledgerEvents: result.ledgerEvents,
+      summary: {
+        ...result.summary,
+        message: `Checkout completed for ${result.summary.totalLines} appointment(s).`,
+      },
+    });
+  } catch (error) {
+    if (isPackageSchemaNotReadyError(error)) {
+      return res.status(503).json({
+        message: 'Package schema is not ready. Run database migrations.',
+        code: 'PACKAGE_SCHEMA_NOT_READY',
+      });
+    }
+    console.error('Admin appointment checkout error:', error);
     return res.status(500).json({ message: 'Internal server error.' });
   }
 });
@@ -3536,6 +4403,11 @@ router.patch('/appointments/:id/payment', authenticateToken, async (req: any, re
   if (!salonId) return;
 
   const appointmentId = Number(req.params.id);
+  const appointmentLineIdRaw = req.body?.appointmentLineId;
+  const appointmentLineId =
+    appointmentLineIdRaw === null || appointmentLineIdRaw === undefined || appointmentLineIdRaw === ''
+      ? null
+      : Number(appointmentLineIdRaw);
   const paymentMethod = asPaymentMethod(req.body?.paymentMethod);
 
   if (!Number.isInteger(appointmentId) || appointmentId <= 0) {
@@ -3546,20 +4418,64 @@ router.patch('/appointments/:id/payment', authenticateToken, async (req: any, re
   }
 
   try {
-    const rows = await prisma.$queryRawUnsafe<any[]>(
-      `SELECT "id", "status" FROM "Appointment" WHERE "id" = $1 AND "salonId" = $2 LIMIT 1`,
-      appointmentId,
-      salonId,
-    );
-    if (!rows.length) {
-      return res.status(404).json({ message: 'Appointment not found.' });
-    }
+    await prisma.$transaction(async (tx) => {
+      const appointment = await tx.appointment.findFirst({
+        where: { id: appointmentId, salonId },
+        select: {
+          id: true,
+          salonId: true,
+          customerId: true,
+          serviceId: true,
+          staffId: true,
+          startTime: true,
+          endTime: true,
+          status: true,
+          listPrice: true,
+          finalPrice: true,
+          paymentMethod: true,
+          paymentRecordedAt: true,
+          notes: true,
+        },
+      });
+      if (!appointment) {
+        throw new Error('APPOINTMENT_NOT_FOUND');
+      }
 
-    await prisma.$executeRawUnsafe(
-      `UPDATE "Appointment" SET "paymentMethod" = $1::"PaymentMethod", "paymentRecordedAt" = NOW(), "updatedAt" = NOW() WHERE "id" = $2`,
-      paymentMethod,
-      appointmentId,
-    );
+      let lines = await (tx as any).appointmentLine.findMany({
+        where: { appointmentId },
+        orderBy: [{ orderIndex: 'asc' }, { id: 'asc' }],
+      });
+      if (!lines.length) {
+        const createdLine = await ensureDefaultAppointmentLine(tx, appointment);
+        lines = [createdLine];
+      }
+
+      const targetLine = Number.isInteger(appointmentLineId) && appointmentLineId && appointmentLineId > 0
+        ? lines.find((line: any) => Number(line.id) === Number(appointmentLineId))
+        : lines.find((line: any) => String(line.status || '').toUpperCase() === 'BOOKED') || lines[0];
+
+      if (!targetLine) {
+        throw new Error('APPOINTMENT_LINE_NOT_FOUND');
+      }
+
+      await (tx as any).appointmentLine.update({
+        where: { id: Number(targetLine.id) },
+        data: {
+          paymentMethod,
+          paymentRecordedAt: new Date(),
+        },
+      });
+
+      if (String(appointment.status || '').toUpperCase() === 'COMPLETED') {
+        await tx.appointment.update({
+          where: { id: appointmentId },
+          data: {
+            paymentMethod,
+            paymentRecordedAt: new Date(),
+          },
+        });
+      }
+    });
 
     const updated = await prisma.appointment.findFirst({
       where: { id: appointmentId, salonId },
@@ -3587,11 +4503,38 @@ router.patch('/appointments/:id/payment', authenticateToken, async (req: any, re
             phone: true,
           },
         },
+        appointmentLines: {
+          include: {
+            service: {
+              select: {
+                id: true,
+                name: true,
+                duration: true,
+                price: true,
+                requiresSpecialist: true,
+              },
+            },
+            specialist: {
+              select: {
+                id: true,
+                name: true,
+                title: true,
+              },
+            },
+          },
+          orderBy: [{ orderIndex: 'asc' }, { id: 'asc' }],
+        },
       },
     });
 
     return res.status(200).json({ item: updated });
   } catch (error) {
+    if ((error as any)?.message === 'APPOINTMENT_NOT_FOUND') {
+      return res.status(404).json({ message: 'Appointment not found.' });
+    }
+    if ((error as any)?.message === 'APPOINTMENT_LINE_NOT_FOUND') {
+      return res.status(404).json({ message: 'Appointment line not found.' });
+    }
     console.error('Admin appointment payment update error:', error);
     return res.status(500).json({ message: 'Internal server error.' });
   }
