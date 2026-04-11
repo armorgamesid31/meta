@@ -486,21 +486,11 @@ function pickInstagramMePayload(responseData: any): Record<string, any> {
 
 async function validateInstagramToken(
   accessToken: string,
-  accountIdCandidate?: string | null,
+  _accountIdCandidate?: string | null,
 ): Promise<InstagramValidationResult> {
-  const normalizedAccountIdCandidate =
-    typeof accountIdCandidate === 'string' && accountIdCandidate.trim()
-      ? accountIdCandidate.trim()
-      : null;
   const endpoints = [
     `https://graph.instagram.com/${META_GRAPH_VERSION}/me`,
     'https://graph.instagram.com/me',
-    ...(normalizedAccountIdCandidate
-      ? [
-          `https://graph.instagram.com/${META_GRAPH_VERSION}/${normalizedAccountIdCandidate}`,
-          `https://graph.instagram.com/${normalizedAccountIdCandidate}`,
-        ]
-      : []),
   ];
   const fieldSets = ['user_id,username', 'id,user_id,username'];
 
@@ -795,10 +785,13 @@ async function finalizeConnection(args: {
       }
     }
 
-    const bindingIds = sanitizeIds([
-      validation.accountId,
+    const trustedPrefillIds = sanitizeIds([
       ...(prefill?.bindingIds || []),
       prefill?.externalAccountId || null,
+    ]).filter((id) => id === validation.accountId);
+    const bindingIds = sanitizeIds([
+      validation.accountId,
+      ...trustedPrefillIds,
     ]);
 
     if (!bindingIds.length) {
