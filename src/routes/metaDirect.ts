@@ -674,6 +674,12 @@ function wrapStepError(step: string, error: unknown): Error {
   return new Error(`${step}: ${details.message}${meta ? ` [${meta}]` : ''}`);
 }
 
+function maskToken(token: string): string {
+  const trimmed = token.trim();
+  if (trimmed.length <= 12) return `${trimmed.slice(0, 4)}...`;
+  return `${trimmed.slice(0, 8)}...${trimmed.slice(-4)}`;
+}
+
 async function probeInstagram(accessToken: string) {
   const validation = await validateInstagramToken(accessToken);
   const igId = validation.accountId;
@@ -1414,6 +1420,95 @@ router.post('/probe', authenticateToken, async (req: any, res: any) => {
   } catch (error) {
     console.error('Meta Direct probe failed:', error);
     return res.status(500).json({ message: 'Meta Direct probe failed.' });
+  }
+});
+
+router.post('/debug-token', authenticateToken, async (req: any, res: any) => {
+  try {
+    const salonId = req?.user?.salonId;
+    if (!Number.isInteger(salonId) || salonId <= 0) {
+      return res.status(401).json({ message: 'Unauthorized.' });
+    }
+
+    const channel = toMetaChannel(req.body?.channel || 'INSTAGRAM');
+    if (channel !== 'INSTAGRAM') {
+      return res.status(400).json({ message: 'debug-token currently supports only INSTAGRAM.' });
+    }
+
+    const loaded = await loadStoreForSalon(salonId);
+    const tokenFromBody = typeof req.body?.accessToken === 'string' ? req.body.accessToken.trim() : '';
+    const accessToken = tokenFromBody || loaded.store.instagram.accessToken || '';
+    if (!accessToken) {
+      return res.status(400).json({ message: 'No access token provided and no stored Instagram token found.' });
+    }
+
+    const runCheck = async (name: string, url: string, fields?: string) => {
+      try {
+        const response = await axios.get(url, {
+          params: {
+            access_token: accessToken,
+            ...(fields ? { fields } : {}),
+          },
+          timeout: 20000,
+        });
+        return {
+          name,
+          ok: true,
+          url,
+          fields: fields || null,
+          data: response.data || null,
+          error: null,
+        };
+      } catch (error) {
+        return {
+          name,
+          ok: false,
+          url,
+          fields: fields || null,
+          data: null,
+          error: {
+            message: getAxiosErrorMessage(error),
+            details: getAxiosErrorDetails(error),
+          },
+        };
+      }
+    };
+
+    const checks = await Promise.all([
+      runCheck('instagram_me_versioned', `https://graph.instagram.com/${META_GRAPH_VERSION}/me`, 'user_id,username'),
+      runCheck('instagram_me_unversioned', 'https://graph.instagram.com/me', 'user_id,username'),
+      runCheck('facebook_me', `https://graph.facebook.com/${META_GRAPH_VERSION}/me`, 'id,name'),
+      runCheck(
+        'facebook_me_accounts',
+        `https://graph.facebook.com/${META_GRAPH_VERSION}/me/accounts`,
+        'id,name,instagram_business_account{id,username}',
+      ),
+    ]);
+
+    const instagramCheckOk = checks.some((item) => item.name.startsWith('instagram_me') && item.ok);
+    const facebookCheckOk = checks.some((item) => item.name.startsWith('facebook_') && item.ok);
+    const classification = instagramCheckOk
+      ? 'instagram_login_token_valid'
+      : facebookCheckOk
+        ? 'facebook_graph_token_detected_not_instagram_login'
+        : 'token_invalid_or_app_config_mismatch';
+
+    return res.status(200).json({
+      ok: true,
+      channel,
+      classification,
+      tokenHint: maskToken(accessToken),
+      usedStoredToken: !tokenFromBody,
+      checks,
+      guidance: instagramCheckOk
+        ? 'Instagram token looks valid for graph.instagram.com/me.'
+        : facebookCheckOk
+          ? 'Token works on graph.facebook.com but not graph.instagram.com. Check Instagram Login configuration and app flow.'
+          : 'Token failed on both graphs. Re-run OAuth and verify app mode, scopes, and product configuration.',
+    });
+  } catch (error) {
+    console.error('Meta Direct debug-token failed:', error);
+    return res.status(500).json({ message: 'Meta Direct debug-token failed.' });
   }
 });
 
