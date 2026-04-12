@@ -246,8 +246,9 @@ router.post('/website/generate', authenticateToken, async (req: any, res: any) =
           
           console.log('[WebsiteGenerate] n8n response received successfully');
           
-          if (data?.generated) {
-            return res.status(200).json({ generated: data.generated });
+          const resultGenerated = data?.output?.generated || data?.generated;
+          if (resultGenerated) {
+            return res.status(200).json({ generated: resultGenerated });
           }
         }
       } catch (webhookError) {
