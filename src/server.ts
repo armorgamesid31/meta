@@ -135,6 +135,12 @@ const corsOptions: cors.CorsOptions = {
 };
 
 app.use(cors(corsOptions));
+app.use((req, res, next) => {
+  if (req.originalUrl.includes('/website/generate')) {
+    console.log(`[GLOBAL_DEBUG] Incoming ${req.method} to ${req.originalUrl} from ${req.ip}`);
+  }
+  next();
+});
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 

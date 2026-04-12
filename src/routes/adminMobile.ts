@@ -40,6 +40,249 @@ import {
 
 const router = Router();
 
+// Website Routes (Moved to top for priority)
+router.get('/website/content', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  try {
+    const [salon, gallery] = await prisma.$transaction([
+      prisma.salon.findUnique({
+        where: { id: salonId },
+        select: {
+          id: true,
+          name: true,
+          tagline: true,
+          about: true,
+          heroImageUrl: true,
+          instagramUrl: true,
+          whatsappPhone: true,
+          city: true,
+          heroText: true,
+        },
+      }),
+      prisma.salonGalleryImage.findMany({
+        where: { salonId },
+        orderBy: [{ displayOrder: 'asc' }, { id: 'asc' }],
+        select: {
+          id: true,
+          imageUrl: true,
+          altText: true,
+          displayOrder: true,
+          categoryId: true,
+        },
+      }),
+    ]);
+
+    if (!salon) {
+      return res.status(404).json({ message: 'Salon not found.' });
+    }
+
+    return res.status(200).json({
+      salon: {
+        name: salon.name,
+        tagline: salon.tagline,
+        heroText: salon.heroText || salon.tagline,
+        about: salon.about,
+        heroImageUrl: salon.heroImageUrl,
+        instagramUrl: salon.instagramUrl,
+        whatsappPhone: salon.whatsappPhone,
+        city: salon.city,
+      },
+      gallery,
+    });
+  } catch (error) {
+    console.error('Admin website content read error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.put('/website/content', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const payload = req.body || {};
+  const gallery = Array.isArray(payload.gallery) ? payload.gallery : null;
+
+  try {
+    const updatedSalon = await prisma.salon.update({
+      where: { id: salonId },
+      data: {
+        ...(typeof payload.salonName === 'string' ? { name: payload.salonName.trim() } : {}),
+        ...(typeof payload.tagline === 'string' ? { tagline: payload.tagline.trim() } : {}),
+        ...(typeof payload.description === 'string' ? { about: payload.description.trim() } : {}),
+        ...(typeof payload.heroImageUrl === 'string' ? { heroImageUrl: payload.heroImageUrl.trim() } : {}),
+      },
+      select: {
+        id: true,
+        name: true,
+        tagline: true,
+        about: true,
+        heroImageUrl: true,
+        instagramUrl: true,
+        whatsappPhone: true,
+      },
+    });
+
+    if (gallery) {
+      const sanitizedGallery = gallery
+        .map((item: any, index: number) => {
+          const imageUrl = typeof item?.imageUrl === 'string' ? item.imageUrl.trim() : '';
+          if (!imageUrl) {
+            return null;
+          }
+          return {
+            salonId,
+            imageUrl,
+            altText: typeof item?.altText === 'string' ? item.altText.trim() || null : null,
+            displayOrder: Number.isInteger(item?.displayOrder) ? Number(item.displayOrder) : index,
+            categoryId: Number.isInteger(item?.categoryId) ? Number(item.categoryId) : null,
+          };
+        })
+        .filter(Boolean) as Array<{
+        salonId: number;
+        imageUrl: string;
+        altText: string | null;
+        displayOrder: number;
+        categoryId: number | null;
+      }>;
+
+      await prisma.$transaction([
+        prisma.salonGalleryImage.deleteMany({ where: { salonId } }),
+        ...(sanitizedGallery.length > 0 ? [prisma.salonGalleryImage.createMany({ data: sanitizedGallery })] : []),
+      ]);
+    }
+
+    const galleryResponse = await prisma.salonGalleryImage.findMany({
+      where: { salonId },
+      orderBy: [{ displayOrder: 'asc' }, { id: 'asc' }],
+      select: {
+        id: true,
+        imageUrl: true,
+        altText: true,
+        displayOrder: true,
+        categoryId: true,
+      },
+    });
+
+    return res.status(200).json({
+      salon: {
+        ...updatedSalon,
+        heroText: updatedSalon.tagline,
+      },
+      gallery: galleryResponse,
+    });
+  } catch (error) {
+    console.error('Admin website content update error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.post('/website/generate', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  try {
+    const [salon, categories, services, staff] = await prisma.$transaction([
+      prisma.salon.findUnique({
+        where: { id: salonId },
+        select: { 
+          name: true, city: true, about: true, tagline: true,
+          logoUrl: true, address: true, district: true, heroText: true
+        },
+      }),
+      prisma.serviceCategory.findMany({
+        where: { salonId, isActive: true },
+        select: { name: true },
+        orderBy: { displayOrder: 'asc' },
+      }),
+      prisma.service.findMany({
+        where: { salonId, isActive: true },
+        select: { name: true, price: true },
+        take: 30,
+      }),
+      prisma.staff.findMany({
+        where: { salonId },
+        select: { name: true, title: true },
+        take: 10,
+      }),
+    ]);
+
+    if (!salon) {
+      return res.status(404).json({ message: 'Salon not found.' });
+    }
+
+    const categoryNames = categories.map((c) => c.name);
+    const serviceList = services.map((s) => `${s.name} (${s.price} TL)`);
+    const staffList = staff.map((s) => `${s.name} - ${s.title || 'Ekip Üyesi'}`);
+    
+    const webhookUrl = process.env.N8N_WEBSITE_GENERATE_WEBHOOK_URL;
+    const internalApiKey = process.env.N8N_INTERNAL_API_KEY || process.env.INTERNAL_API_KEY;
+
+    if (!webhookUrl) {
+      console.warn('[WebsiteGenerate] Webhook URL is missing in .env');
+    }
+
+    if (webhookUrl) {
+      try {
+        console.log(`[WebsiteGenerate] Triggering n8n at: ${webhookUrl}`);
+        
+        const response = await fetch(webhookUrl, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            ...(internalApiKey ? { 'x-internal-api-key': internalApiKey } : {}),
+          },
+          body: JSON.stringify({
+            salonName: typeof req.body?.salonName === 'string' ? req.body.salonName : salon.name,
+            city: typeof req.body?.city === 'string' ? req.body.city : salon.city,
+            district: salon.district,
+            address: salon.address,
+            logoUrl: salon.logoUrl,
+            about: salon.about,
+            tagline: salon.tagline,
+            heroText: salon.heroText,
+            categories: categoryNames,
+            services: serviceList,
+            staff: staffList,
+            callbackUrl: `${process.env.FRONTEND_URL?.replace('mobil', 'app')}/api/internal/website/${salonId}/generate-callback`,
+            internalApiKey: internalApiKey,
+          }),
+        });
+
+        if (!response.ok) {
+          console.error(`[WebsiteGenerate] n8n responded with error ${response.status}: ${response.statusText}`);
+        } else {
+          const data: any = await response.json();
+          console.log('[WebsiteGenerate] n8n response received successfully');
+          
+          if (data?.generated) {
+            return res.status(200).json({ generated: data.generated });
+          }
+        }
+      } catch (webhookError) {
+        console.error('[WebsiteGenerate] n8n webhook trigger failed:', webhookError);
+      }
+    }
+
+    const generated = buildGeneratedWebsiteCopy({
+      salonName: typeof req.body?.salonName === 'string' ? req.body.salonName : salon.name,
+      city: typeof req.body?.city === 'string' ? req.body.city : salon.city,
+    });
+
+    return res.status(200).json({ generated });
+  } catch (error) {
+    console.error('Admin website copy generate error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
 router.get('/conversations/stream', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
   if (!salonId) {
@@ -4841,250 +5084,11 @@ router.put('/whatsapp-agent/settings', authenticateToken, async (req: any, res: 
   }
 });
 
-router.get('/website/content', authenticateToken, async (req: any, res: any) => {
-  const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
 
-  try {
-    const [salon, gallery] = await prisma.$transaction([
-      prisma.salon.findUnique({
-        where: { id: salonId },
-        select: {
-          id: true,
-          name: true,
-          tagline: true,
-          about: true,
-          heroImageUrl: true,
-          instagramUrl: true,
-          about: true,
-          heroImageUrl: true,
-          instagramUrl: true,
-          whatsappPhone: true,
-          city: true,
-          heroText: true,
-        },
-      }),
-      prisma.salonGalleryImage.findMany({
-        where: { salonId },
-        orderBy: [{ displayOrder: 'asc' }, { id: 'asc' }],
-        select: {
-          id: true,
-          imageUrl: true,
-          altText: true,
-          displayOrder: true,
-          categoryId: true,
-        },
-      }),
-    ]);
 
-    if (!salon) {
-      return res.status(404).json({ message: 'Salon not found.' });
-    }
 
-    return res.status(200).json({
-      salon: {
-        name: salon.name,
-        tagline: salon.tagline,
-        heroText: salon.heroText || salon.tagline,
-        about: salon.about,
-        heroImageUrl: salon.heroImageUrl,
-        instagramUrl: salon.instagramUrl,
-        whatsappPhone: salon.whatsappPhone,
-        city: salon.city,
-      },
-      gallery,
-    });
-  } catch (error) {
-    console.error('Admin website content read error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
-  }
-});
 
-router.put('/website/content', authenticateToken, async (req: any, res: any) => {
-  const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
 
-  const payload = req.body || {};
-  const gallery = Array.isArray(payload.gallery) ? payload.gallery : null;
-
-  try {
-    const updatedSalon = await prisma.salon.update({
-      where: { id: salonId },
-      data: {
-        ...(typeof payload.salonName === 'string' ? { name: payload.salonName.trim() } : {}),
-        ...(typeof payload.tagline === 'string' ? { tagline: payload.tagline.trim() } : {}),
-        ...(typeof payload.description === 'string' ? { about: payload.description.trim() } : {}),
-        ...(typeof payload.heroImageUrl === 'string' ? { heroImageUrl: payload.heroImageUrl.trim() } : {}),
-      },
-      select: {
-        id: true,
-        name: true,
-        tagline: true,
-        about: true,
-        heroImageUrl: true,
-        instagramUrl: true,
-        whatsappPhone: true,
-      },
-    });
-
-    if (gallery) {
-      const sanitizedGallery = gallery
-        .map((item: any, index: number) => {
-          const imageUrl = typeof item?.imageUrl === 'string' ? item.imageUrl.trim() : '';
-          if (!imageUrl) {
-            return null;
-          }
-          return {
-            salonId,
-            imageUrl,
-            altText: typeof item?.altText === 'string' ? item.altText.trim() || null : null,
-            displayOrder: Number.isInteger(item?.displayOrder) ? Number(item.displayOrder) : index,
-            categoryId: Number.isInteger(item?.categoryId) ? Number(item.categoryId) : null,
-          };
-        })
-        .filter(Boolean) as Array<{
-        salonId: number;
-        imageUrl: string;
-        altText: string | null;
-        displayOrder: number;
-        categoryId: number | null;
-      }>;
-
-      await prisma.$transaction([
-        prisma.salonGalleryImage.deleteMany({ where: { salonId } }),
-        ...(sanitizedGallery.length > 0 ? [prisma.salonGalleryImage.createMany({ data: sanitizedGallery })] : []),
-      ]);
-    }
-
-    const galleryResponse = await prisma.salonGalleryImage.findMany({
-      where: { salonId },
-      orderBy: [{ displayOrder: 'asc' }, { id: 'asc' }],
-      select: {
-        id: true,
-        imageUrl: true,
-        altText: true,
-        displayOrder: true,
-        categoryId: true,
-      },
-    });
-
-    return res.status(200).json({
-      salon: {
-        ...updatedSalon,
-        heroText: updatedSalon.tagline,
-      },
-      gallery: galleryResponse,
-    });
-  } catch (error) {
-    console.error('Admin website content update error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
-  }
-});
-
-router.post('/website/generate', authenticateToken, async (req: any, res: any) => {
-  const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
-  try {
-    const [salon, categories, services, staff] = await prisma.$transaction([
-      prisma.salon.findUnique({
-        where: { id: salonId },
-        select: { 
-          name: true, city: true, about: true, tagline: true,
-          logoUrl: true, address: true, district: true, heroText: true
-        },
-      }),
-      prisma.serviceCategory.findMany({
-        where: { salonId, isActive: true },
-        select: { name: true },
-        orderBy: { displayOrder: 'asc' },
-      }),
-      prisma.service.findMany({
-        where: { salonId, isActive: true },
-        select: { name: true, price: true },
-        take: 30,
-      }),
-      prisma.staff.findMany({
-        where: { salonId },
-        select: { name: true, title: true },
-        take: 10,
-      }),
-    ]);
-
-    if (!salon) {
-      return res.status(404).json({ message: 'Salon not found.' });
-    }
-
-    const categoryNames = categories.map((c) => c.name);
-    const serviceList = services.map((s) => `${s.name} (${s.price} TL)`);
-    const staffList = staff.map((s) => `${s.name} - ${s.title || 'Ekip Üyesi'}`);
-    
-    const webhookUrl = process.env.N8N_WEBSITE_GENERATE_WEBHOOK_URL;
-    const internalApiKey = process.env.N8N_INTERNAL_API_KEY || process.env.INTERNAL_API_KEY;
-
-    if (!webhookUrl) {
-      console.warn('[WebsiteGenerate] Webhook URL is missing in .env');
-    }
-
-    if (webhookUrl) {
-      try {
-        console.log(`[WebsiteGenerate] Triggering n8n at: ${webhookUrl}`);
-        
-        const response = await fetch(webhookUrl, {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            ...(internalApiKey ? { 'x-internal-api-key': internalApiKey } : {}),
-          },
-          body: JSON.stringify({
-            salonName: typeof req.body?.salonName === 'string' ? req.body.salonName : salon.name,
-            city: typeof req.body?.city === 'string' ? req.body.city : salon.city,
-            district: salon.district,
-            address: salon.address,
-            logoUrl: salon.logoUrl,
-            about: salon.about,
-            tagline: salon.tagline,
-            heroText: salon.heroText,
-            categories: categoryNames,
-            services: serviceList,
-            staff: staffList,
-            callbackUrl: `${process.env.FRONTEND_URL?.replace('mobil', 'app')}/api/internal/website/${salonId}/generate-callback`,
-            internalApiKey: internalApiKey,
-          }),
-        });
-
-        if (!response.ok) {
-          console.error(`[WebsiteGenerate] n8n responded with error ${response.status}: ${response.statusText}`);
-        } else {
-          const data: any = await response.json();
-          console.log('[WebsiteGenerate] n8n response received successfully');
-          
-          if (data?.generated) {
-            return res.status(200).json({ generated: data.generated });
-          }
-        }
-      } catch (webhookError) {
-        console.error('[WebsiteGenerate] n8n webhook trigger failed:', webhookError);
-      }
-    }
-
-    const generated = buildGeneratedWebsiteCopy({
-      salonName: typeof req.body?.salonName === 'string' ? req.body.salonName : salon.name,
-      city: typeof req.body?.city === 'string' ? req.body.city : salon.city,
-    });
-
-    return res.status(200).json({ generated });
-  } catch (error) {
-    console.error('Admin website copy generate error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
-  }
-});
 
 router.get('/service-categories', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
