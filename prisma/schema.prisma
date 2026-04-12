@@ -542,6 +542,7 @@ model ServiceCategory {
   ServiceRegion        ServiceRegion[]
   Salon                Salon              @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   testimonials         SalonTestimonial[]
+  salonGalleryImages   SalonGalleryImage[]
 
   @@index([salonId, displayOrder], map: "idx_servicecategory_salon_display_order")
   @@index([salonId, categoryId, displayOrder], map: "idx_servicecategory_salon_category_display")
@@ -571,11 +572,14 @@ model SalonGalleryImage {
   imageUrl     String
   altText      String?
   displayOrder Int?      @default(0)
+  categoryId   Int?
   createdAt    DateTime? @default(now()) @db.Timestamp(6)
   updatedAt    DateTime? @default(now()) @updatedAt @db.Timestamp(6)
+  category     ServiceCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   salon        Salon     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([salonId, displayOrder], map: "idx_gallery_salon_display_order")
+  @@index([categoryId], map: "idx_gallery_category")
 }
 
 model SalonTestimonial {

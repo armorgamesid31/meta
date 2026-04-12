@@ -4869,6 +4869,7 @@ router.get('/website/content', authenticateToken, async (req: any, res: any) => 
           imageUrl: true,
           altText: true,
           displayOrder: true,
+          categoryId: true,
         },
       }),
     ]);
@@ -4913,8 +4914,6 @@ router.put('/website/content', authenticateToken, async (req: any, res: any) => 
         ...(typeof payload.tagline === 'string' ? { tagline: payload.tagline.trim() } : {}),
         ...(typeof payload.description === 'string' ? { about: payload.description.trim() } : {}),
         ...(typeof payload.heroImageUrl === 'string' ? { heroImageUrl: payload.heroImageUrl.trim() } : {}),
-        ...(payload.instagram !== undefined ? { instagramUrl: normalizeInstagramUrl(payload.instagram) } : {}),
-        ...(typeof payload.whatsapp === 'string' ? { whatsappPhone: payload.whatsapp.trim() } : {}),
       },
       select: {
         id: true,
@@ -4939,6 +4938,7 @@ router.put('/website/content', authenticateToken, async (req: any, res: any) => 
             imageUrl,
             altText: typeof item?.altText === 'string' ? item.altText.trim() || null : null,
             displayOrder: Number.isInteger(item?.displayOrder) ? Number(item.displayOrder) : index,
+            categoryId: Number.isInteger(item?.categoryId) ? Number(item.categoryId) : null,
           };
         })
         .filter(Boolean) as Array<{
@@ -4946,6 +4946,7 @@ router.put('/website/content', authenticateToken, async (req: any, res: any) => 
         imageUrl: string;
         altText: string | null;
         displayOrder: number;
+        categoryId: number | null;
       }>;
 
       await prisma.$transaction([
@@ -4962,6 +4963,7 @@ router.put('/website/content', authenticateToken, async (req: any, res: any) => 
         imageUrl: true,
         altText: true,
         displayOrder: true,
+        categoryId: true,
       },
     });
 
@@ -4985,13 +4987,72 @@ router.post('/website/generate', authenticateToken, async (req: any, res: any) =
   }
 
   try {
-    const salon = await prisma.salon.findUnique({
-      where: { id: salonId },
-      select: { name: true, city: true },
-    });
+    const [salon, categories, services, staff] = await prisma.$transaction([
+      prisma.salon.findUnique({
+        where: { id: salonId },
+        select: { 
+          name: true, city: true, about: true, tagline: true,
+          logoUrl: true, address: true, district: true 
+        },
+      }),
+      prisma.serviceCategory.findMany({
+        where: { salonId, isActive: true },
+        select: { name: true },
+        orderBy: { displayOrder: 'asc' },
+      }),
+      prisma.service.findMany({
+        where: { salonId, isActive: true },
+        select: { name: true, price: true },
+        take: 30,
+      }),
+      prisma.staff.findMany({
+        where: { salonId },
+        select: { name: true, title: true },
+        take: 10,
+      }),
+    ]);
 
     if (!salon) {
       return res.status(404).json({ message: 'Salon not found.' });
+    }
+
+    const categoryNames = categories.map((c) => c.name);
+    const serviceList = services.map((s) => `${s.name} (${s.price} TL)`);
+    const staffList = staff.map((s) => `${s.name} - ${s.title || 'Ekip Üyesi'}`);
+    
+    const webhookUrl = process.env.N8N_WEBSITE_GENERATE_WEBHOOK_URL;
+
+    if (webhookUrl) {
+      try {
+        const response = await axios.post(
+          webhookUrl,
+          {
+            salonName: typeof req.body?.salonName === 'string' ? req.body.salonName : salon.name,
+            city: typeof req.body?.city === 'string' ? req.body.city : salon.city,
+            district: salon.district,
+            address: salon.address,
+            logoUrl: salon.logoUrl,
+            about: salon.about,
+            tagline: salon.tagline,
+            categories: categoryNames,
+            services: serviceList,
+            staff: staffList,
+          },
+          {
+            headers: {
+              'X-N8N-API-KEY': process.env.N8N_INTERNAL_API_KEY,
+            },
+            timeout: 10000,
+          },
+        );
+
+        if (response.data?.generated) {
+          return res.status(200).json({ generated: response.data.generated });
+        }
+      } catch (webhookError) {
+        console.error('n8n website generate webhook failed:', webhookError);
+        // Fallback to local copy on webhook failure
+      }
     }
 
     const generated = buildGeneratedWebsiteCopy({
