@@ -5026,12 +5026,23 @@ router.post('/website/generate', authenticateToken, async (req: any, res: any) =
     const staffList = staff.map((s) => `${s.name} - ${s.title || 'Ekip Üyesi'}`);
     
     const webhookUrl = process.env.N8N_WEBSITE_GENERATE_WEBHOOK_URL;
+    const internalApiKey = process.env.N8N_INTERNAL_API_KEY || process.env.INTERNAL_API_KEY;
+
+    if (!webhookUrl) {
+      console.warn('[WebsiteGenerate] Webhook URL is missing in .env');
+    }
 
     if (webhookUrl) {
       try {
-        const response = await axios.post(
-          webhookUrl,
-          {
+        console.log(`[WebsiteGenerate] Triggering n8n at: ${webhookUrl}`);
+        
+        const response = await fetch(webhookUrl, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            ...(internalApiKey ? { 'x-internal-api-key': internalApiKey } : {}),
+          },
+          body: JSON.stringify({
             salonName: typeof req.body?.salonName === 'string' ? req.body.salonName : salon.name,
             city: typeof req.body?.city === 'string' ? req.body.city : salon.city,
             district: salon.district,
@@ -5044,22 +5055,22 @@ router.post('/website/generate', authenticateToken, async (req: any, res: any) =
             services: serviceList,
             staff: staffList,
             callbackUrl: `${process.env.FRONTEND_URL?.replace('mobil', 'app')}/api/internal/website/${salonId}/generate-callback`,
-            internalApiKey: process.env.N8N_INTERNAL_API_KEY,
-          },
-          {
-            headers: {
-              'x-internal-api-key': process.env.N8N_INTERNAL_API_KEY,
-            },
-            timeout: 10000,
-          },
-        );
+            internalApiKey: internalApiKey,
+          }),
+        });
 
-        if (response.data?.generated) {
-          return res.status(200).json({ generated: response.data.generated });
+        if (!response.ok) {
+          console.error(`[WebsiteGenerate] n8n responded with error ${response.status}: ${response.statusText}`);
+        } else {
+          const data: any = await response.json();
+          console.log('[WebsiteGenerate] n8n response received successfully');
+          
+          if (data?.generated) {
+            return res.status(200).json({ generated: data.generated });
+          }
         }
       } catch (webhookError) {
-        console.error('n8n website generate webhook failed:', webhookError);
-        // Fallback to local copy on webhook failure
+        console.error('[WebsiteGenerate] n8n webhook trigger failed:', webhookError);
       }
     }
 
