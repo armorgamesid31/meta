@@ -16,10 +16,20 @@ router.post('/:salonId/generate-callback', async (req: any, res: any) => {
   }
 
   const salonId = Number(req.params.salonId);
-  const { generated } = req.body;
+  const body = req.body || {};
+  
+  // Accept 'generated' at root or as a nested property
+  const generated = body.generated || (body.heroText ? body : null);
 
-  if (!salonId || !generated) {
-    return res.status(400).json({ message: 'salonId and generated content are required.' });
+  console.log(`[Internal/WebsiteCallback] Received callback for Salon ID: ${req.params.salonId} (parsed: ${salonId})`);
+  console.log(`[Internal/WebsiteCallback] Body keys:`, Object.keys(body));
+
+  if (Number.isNaN(salonId) || !generated || !generated.heroText) {
+    console.warn(`[Internal/WebsiteCallback] Bad request: salonId=${salonId}, hasGenerated=${!!generated}, hasHeroText=${!!(generated?.heroText)}`);
+    return res.status(400).json({ 
+      message: 'salonId and generated content (including heroText) are required.',
+      receivedBodyKeys: Object.keys(body)
+    });
   }
 
   try {
@@ -28,11 +38,11 @@ router.post('/:salonId/generate-callback', async (req: any, res: any) => {
       data: {
         heroText: generated.heroText || undefined,
         tagline: generated.tagline || undefined,
-        about: generated.description || undefined,
+        about: generated.description || generated.about || undefined,
       },
     });
 
-    console.log(`[Internal] Website content updated via callback for salon ${salonId}`);
+    console.log(`[Internal/WebsiteCallback] Website content updated successfully for salon ${salonId}`);
     return res.status(200).json({ success: true });
   } catch (error) {
     console.error('Internal website generate callback error:', error);
