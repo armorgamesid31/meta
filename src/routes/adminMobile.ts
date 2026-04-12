@@ -246,9 +246,25 @@ router.post('/website/generate', authenticateToken, async (req: any, res: any) =
           
           console.log('[WebsiteGenerate] n8n response received successfully');
           
-          const resultGenerated = data?.output?.generated || data?.generated;
+          // Deep search for generated content in n8n response
+          const candidates = [
+            data?.output?.generated,
+            data?.generated,
+            data?.output,
+            data
+          ];
+          
+          const resultGenerated = candidates.find(c => c && typeof c === 'object' && c.heroText);
+          
           if (resultGenerated) {
-            return res.status(200).json({ generated: resultGenerated });
+            console.log('[WebsiteGenerate] Found AI content in n8n response at some level');
+            return res.status(200).json({ 
+              generated: {
+                heroText: resultGenerated.heroText,
+                tagline: resultGenerated.tagline,
+                description: resultGenerated.description || resultGenerated.about
+              } 
+            });
           }
         }
       } catch (webhookError) {
