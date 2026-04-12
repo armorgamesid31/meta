@@ -189,38 +189,17 @@ router.post('/website/generate', authenticateToken, async (req: any, res: any) =
   }
 
   try {
-    const [salon, categories, services, staff] = await prisma.$transaction([
-      prisma.salon.findUnique({
-        where: { id: salonId },
-        select: { 
-          name: true, city: true, about: true, tagline: true,
-          logoUrl: true, address: true, district: true, heroText: true
-        },
-      }),
-      prisma.serviceCategory.findMany({
-        where: { salonId, isActive: true },
-        select: { name: true },
-        orderBy: { displayOrder: 'asc' },
-      }),
-      prisma.service.findMany({
-        where: { salonId, isActive: true },
-        select: { name: true, price: true },
-        take: 30,
-      }),
-      prisma.staff.findMany({
-        where: { salonId },
-        select: { name: true, title: true },
-        take: 10,
-      }),
-    ]);
+    const salon = await prisma.salon.findUnique({
+      where: { id: salonId },
+      select: { 
+        name: true, city: true, about: true, tagline: true,
+        address: true, district: true, heroText: true
+      },
+    });
 
     if (!salon) {
       return res.status(404).json({ message: 'Salon not found.' });
     }
-
-    const categoryNames = categories.map((c) => c.name);
-    const serviceList = services.map((s) => `${s.name} (${s.price} TL)`);
-    const staffList = staff.map((s) => `${s.name} - ${s.title || 'Ekip Üyesi'}`);
     
     const webhookUrl = process.env.N8N_WEBSITE_GENERATE_WEBHOOK_URL;
     const internalApiKey = process.env.N8N_INTERNAL_API_KEY || process.env.INTERNAL_API_KEY;
@@ -244,13 +223,9 @@ router.post('/website/generate', authenticateToken, async (req: any, res: any) =
             city: typeof req.body?.city === 'string' ? req.body.city : salon.city,
             district: salon.district,
             address: salon.address,
-            logoUrl: salon.logoUrl,
             about: salon.about,
             tagline: salon.tagline,
             heroText: salon.heroText,
-            categories: categoryNames,
-            services: serviceList,
-            staff: staffList,
             callbackUrl: `${process.env.FRONTEND_URL?.replace('mobil', 'app')}/api/internal/website/${salonId}/generate-callback`,
             internalApiKey: internalApiKey,
           }),
