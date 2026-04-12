@@ -234,7 +234,16 @@ router.post('/website/generate', authenticateToken, async (req: any, res: any) =
         if (!response.ok) {
           console.error(`[WebsiteGenerate] n8n responded with error ${response.status}: ${response.statusText}`);
         } else {
-          const data: any = await response.json();
+          const text = await response.text();
+          let data: any = {};
+          if (text) {
+            try {
+              data = JSON.parse(text);
+            } catch (e) {
+              console.warn('[WebsiteGenerate] Failed to parse n8n response as JSON:', text);
+            }
+          }
+          
           console.log('[WebsiteGenerate] n8n response received successfully');
           
           if (data?.generated) {

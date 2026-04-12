@@ -18,8 +18,9 @@ router.post('/:salonId/generate-callback', async (req: any, res: any) => {
   const salonId = Number(req.params.salonId);
   const body = req.body || {};
   
-  // Accept 'generated' at root or as a nested property
-  const generated = body.generated || (body.heroText ? body : null);
+  // Accept 'generated' at root, nested in 'output', or the root itself if heroText is present
+  const rawOutput = body.output || body;
+  const generated = rawOutput.generated || (rawOutput.heroText ? rawOutput : null);
 
   console.log(`[Internal/WebsiteCallback] Received callback for Salon ID: ${req.params.salonId} (parsed: ${salonId})`);
   console.log(`[Internal/WebsiteCallback] Body keys:`, Object.keys(body));
