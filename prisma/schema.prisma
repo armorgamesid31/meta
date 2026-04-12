@@ -20,6 +20,7 @@ model Salon {
   districtSlug         String?
   countryCode          String?
   tagline              String?
+  heroText             String?
   about                String?
   heroImageUrl         String?
   instagramUrl         String?

@@ -31,6 +31,7 @@ import internalConversationStateRoutes from './routes/internalConversationState.
 import internalOutboundRoutes from './routes/internalOutbound.js';
 import internalAgentOutboundRoutes from './routes/internalAgentOutbound.js';
 import internalImportsRoutes from './routes/internalImports.js';
+import internalWebsiteRoutes from './routes/internalWebsite.js';
 import channelWebhooksRoutes from './routes/channelWebhooks.js';
 import { multiTenantMiddleware } from './middleware/multiTenant.js';
 import { authenticateToken } from './middleware/auth.js';
@@ -166,6 +167,7 @@ app.use('/api/internal/conversation-state', internalConversationStateRoutes);
 app.use('/api/internal/outbound', internalOutboundRoutes);
 app.use('/api/internal/agent-outbound', internalAgentOutboundRoutes);
 app.use('/api/internal/imports', internalImportsRoutes);
+app.use('/api/internal/website', internalWebsiteRoutes);
 app.use('/api/webhooks', channelWebhooksRoutes);
 
 // Apply tenant middleware to ALL other API routes

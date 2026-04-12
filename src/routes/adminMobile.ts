@@ -4633,6 +4633,7 @@ router.put('/setup', authenticateToken, async (req: any, res: any) => {
         ...(typeof payload.city === 'string' ? { city: payload.city.trim() } : {}),
         ...(typeof payload.countryCode === 'string' ? { countryCode: payload.countryCode.trim().toUpperCase() } : {}),
         ...(typeof payload.tagline === 'string' ? { tagline: payload.tagline.trim() } : {}),
+        ...(typeof payload.heroText === 'string' ? { heroText: payload.heroText.trim() } : {}),
         ...(typeof payload.about === 'string' ? { about: payload.about.trim() } : {}),
         ...(typeof payload.heroImageUrl === 'string' ? { heroImageUrl: payload.heroImageUrl.trim() } : {}),
         ...(typeof payload.instagramUrl === 'string' ? { instagramUrl: payload.instagramUrl.trim() } : {}),
@@ -4857,8 +4858,12 @@ router.get('/website/content', authenticateToken, async (req: any, res: any) => 
           about: true,
           heroImageUrl: true,
           instagramUrl: true,
+          about: true,
+          heroImageUrl: true,
+          instagramUrl: true,
           whatsappPhone: true,
           city: true,
+          heroText: true,
         },
       }),
       prisma.salonGalleryImage.findMany({
@@ -4882,7 +4887,7 @@ router.get('/website/content', authenticateToken, async (req: any, res: any) => 
       salon: {
         name: salon.name,
         tagline: salon.tagline,
-        heroText: salon.tagline,
+        heroText: salon.heroText || salon.tagline,
         about: salon.about,
         heroImageUrl: salon.heroImageUrl,
         instagramUrl: salon.instagramUrl,
@@ -4992,7 +4997,7 @@ router.post('/website/generate', authenticateToken, async (req: any, res: any) =
         where: { id: salonId },
         select: { 
           name: true, city: true, about: true, tagline: true,
-          logoUrl: true, address: true, district: true 
+          logoUrl: true, address: true, district: true, heroText: true
         },
       }),
       prisma.serviceCategory.findMany({
@@ -5034,13 +5039,16 @@ router.post('/website/generate', authenticateToken, async (req: any, res: any) =
             logoUrl: salon.logoUrl,
             about: salon.about,
             tagline: salon.tagline,
+            heroText: salon.heroText,
             categories: categoryNames,
             services: serviceList,
             staff: staffList,
+            callbackUrl: `${process.env.FRONTEND_URL?.replace('mobil', 'app')}/api/internal/website/${salonId}/generate-callback`,
+            internalApiKey: process.env.N8N_INTERNAL_API_KEY,
           },
           {
             headers: {
-              'X-N8N-API-KEY': process.env.N8N_INTERNAL_API_KEY,
+              'x-internal-api-key': process.env.N8N_INTERNAL_API_KEY,
             },
             timeout: 10000,
           },
