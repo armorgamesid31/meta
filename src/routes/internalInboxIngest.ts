@@ -106,14 +106,6 @@ function mergeInstagramProfile(input: {
   };
 }
 
-function isInternalAuthorized(req: any): boolean {
-  const configured = process.env.INTERNAL_API_KEY;
-  if (!configured) {
-    return true;
-  }
-  const token = req.headers['x-internal-api-key'];
-  return typeof token === 'string' && token === configured;
-}
 
 function asChannel(value: unknown): ChannelType | null {
   if (typeof value !== 'string') return null;
@@ -186,9 +178,6 @@ function isOutboundEcho(row: any): boolean {
 const HUMAN_ACTIVE_MINUTES = Number(process.env.CONVERSATION_HUMAN_ACTIVE_MINUTES || 240);
 
 router.post('/ingest', async (req: any, res: any) => {
-  if (!isInternalAuthorized(req)) {
-    return res.status(401).json({ message: 'Unauthorized' });
-  }
 
   const payload = Array.isArray(req.body) ? req.body : Array.isArray(req.body?.items) ? req.body.items : [req.body];
   if (!Array.isArray(payload) || payload.length === 0) {
