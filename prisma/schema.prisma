@@ -816,6 +816,10 @@ model SalonMessageTemplate {
   sessionText     String?
   templateName    String?
   templateContent String?
+  externalId      String?
+  metaCategory    String?
+  metaStatus      String?
+  lastSyncAt      DateTime?                   @db.Timestamp(6)
   isActive        Boolean                     @default(true)
   createdAt       DateTime?                   @default(now()) @db.Timestamp(6)
   updatedAt       DateTime?                   @default(now()) @updatedAt @db.Timestamp(6)

@@ -159,6 +159,7 @@ if (process.env.NODE_ENV !== 'production') {
       res.status(500).json({ error: (error as Error).message });
     }
   });
+}
 
 if (process.env.NODE_ENV !== 'production') {
   app.post("/api/internal/chakra/webhook", (req, res) => {

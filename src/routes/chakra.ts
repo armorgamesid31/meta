@@ -18,6 +18,70 @@ const CHAKRA_PASSTHROUGH_WEBHOOK_URL = (
   DEFAULT_CHAKRA_PASSTHROUGH_WEBHOOK_URL
 ).trim();
 
+// WhatsApp Master Templates Definitions
+const KEDY_MASTER_TEMPLATES = [
+  {
+    name: 'kedy_randevu_onay',
+    category: 'UTILITY',
+    eventType: 'CONFIRMATION',
+    components: [
+      {
+        type: 'BODY',
+        text: 'Merhaba {{1}}, {{2}} tarihindeki {{3}} randevunuz başarıyla oluşturulmuştur. Görüşmek üzere!',
+        example: { body_text: [['Müşteri', '14 Nisan 15:30', 'Saç Kesimi']] }
+      }
+    ]
+  },
+  {
+    name: 'kedy_randevu_hatirlatma',
+    category: 'UTILITY',
+    eventType: 'REMINDER',
+    components: [
+      {
+        type: 'BODY',
+        text: 'Hatırlatma: Merhaba {{1}}, yarın saat {{2}}\'de {{3}} randevunuz bulunmaktadır. Sizi bekliyoruz.',
+        example: { body_text: [['Müşteri', '15:30', 'Saç Kesimi']] }
+      }
+    ]
+  },
+  {
+    name: 'kedy_randevu_iptal',
+    category: 'UTILITY',
+    eventType: 'CANCELLATION',
+    components: [
+      {
+        type: 'BODY',
+        text: 'Merhaba {{1}}, {{2}} tarihindeki randevunuz iptal edilmiştir. Yeni bir randevu için dilediğiniz zaman bize ulaşabilirsiniz.',
+        example: { body_text: [['Müşteri', '14 Nisan 15:30']] }
+      }
+    ]
+  },
+  {
+    name: 'kedy_dogrulama_kodu',
+    category: 'AUTHENTICATION',
+    eventType: 'SATISFACTION_SURVEY', // Used for OTP in some contexts
+    components: [
+      {
+        type: 'BODY',
+        text: 'Kedy doğrulama kodunuz: {{1}}. Güvenliğiniz için bu kodu kimseyle paylaşmayın.',
+        example: { body_text: [['123456']] }
+      }
+    ]
+  },
+  {
+    name: 'kedy_waitlist_teklifi',
+    category: 'UTILITY',
+    eventType: 'SATISFACTION_SURVEY', // Map to a specific event type if available, otherwise generic
+    components: [
+      {
+        type: 'BODY',
+        text: 'Merhaba {{1}}, beklediğiniz {{2}} için yer açıldı! Randevu oluşturmak için hemen bize ulaşabilirsiniz.',
+        example: { body_text: [['Müşteri', 'Saç Kesimi']] }
+      }
+    ]
+  }
+];
+
 type ConnectIntent = 'CONNECT' | 'REPLACE_CONNECTION';
 
 function parseConnectIntent(value: unknown): ConnectIntent {
@@ -148,11 +212,76 @@ async function createConnectToken(pluginId: string) {
   );
 
   const connectToken = tokenResponse?.data?._data?.connectToken;
-  if (!connectToken || typeof connectToken !== 'string') {
-    throw new Error('No connectToken returned from Chakra.');
+  if (!!connectToken && typeof connectToken === 'string') {
+    return connectToken;
   }
 
-  return connectToken;
+  throw new Error('No connectToken returned from Chakra.');
+}
+
+async function syncAndEnsureMasterTemplates(salonId: number, pluginId: string) {
+  if (!CHAKRA_API_TOKEN) return;
+
+  try {
+    const response = await axios.get(`${CHAKRA_API_BASE}/plugin/${pluginId}/whatsapp-templates`, {
+      headers: { Authorization: `Bearer ${CHAKRA_API_TOKEN}` },
+    });
+
+    const externalTemplates = response?.data?._data || [];
+
+    for (const master of KEDY_MASTER_TEMPLATES) {
+      const match = externalTemplates.find((ext: any) => ext.name === master.name);
+      
+      const bodyComponent = master.components.find(c => c.type === 'BODY');
+      
+      await prisma.salonMessageTemplate.upsert({
+        where: {
+          salonId_eventType_locale: {
+            salonId,
+            eventType: master.eventType as any,
+            locale: 'tr',
+          }
+        },
+        update: {
+          templateName: master.name,
+          templateContent: bodyComponent?.text,
+          externalId: match?.id,
+          metaCategory: match?.category || master.category,
+          metaStatus: match?.status || 'PENDING_SUBMISSION',
+          lastSyncAt: new Date(),
+        },
+        create: {
+          salonId,
+          eventType: master.eventType as any,
+          locale: 'tr',
+          templateName: master.name,
+          templateContent: bodyComponent?.text,
+          externalId: match?.id,
+          metaCategory: match?.category || master.category,
+          metaStatus: match?.status || 'PENDING_SUBMISSION',
+          lastSyncAt: new Date(),
+        }
+      });
+
+      if (!match) {
+        console.log(`Submitting master template ${master.name} for salon ${salonId}`);
+        await axios.post(
+          `${CHAKRA_API_BASE}/plugin/${pluginId}/whatsapp-templates`,
+          {
+            name: master.name,
+            category: master.category,
+            language: 'tr',
+            components: master.components,
+          },
+          { headers: { Authorization: `Bearer ${CHAKRA_API_TOKEN}` } }
+        ).catch(err => {
+          console.error(`Submission failed for ${master.name}:`, err?.response?.data || err.message);
+        });
+      }
+    }
+  } catch (error) {
+    console.error('syncAndEnsureMasterTemplates failed:', error);
+  }
 }
 
 async function fetchPluginState(pluginId: string) {
@@ -655,6 +784,11 @@ router.post('/connect-event', authenticateToken, async (req: any, res: any) => {
         whatsappPhoneNumberId,
         whatsappConnectedAt: new Date().toISOString(),
       });
+
+      // SYNC MASTER TEMPLATES ON SUCCESS
+      await syncAndEnsureMasterTemplates(salon.id, pluginId).catch(err => {
+        console.error('Initial template sync failed:', err);
+      });
     } else if (CHAKRA_API_TOKEN) {
       // Popup event adı beklediğimiz formatta gelmese bile canlı plugin durumundan doğrulayalım.
       try {
@@ -676,6 +810,11 @@ router.post('/connect-event', authenticateToken, async (req: any, res: any) => {
             whatsappPluginActive: true,
             whatsappPhoneNumberId,
             whatsappConnectedAt: new Date().toISOString(),
+          });
+
+          // SYNC MASTER TEMPLATES ON SUCCESS (Live Check)
+          await syncAndEnsureMasterTemplates(salon.id, pluginId).catch(err => {
+            console.error('Initial template sync (live) failed:', err);
           });
         }
       } catch (liveCheckError: any) {
@@ -850,6 +989,80 @@ router.post('/setup-connect', authenticateToken, async (req: any, res: any) => {
       message: 'Setup connect failed.',
       error: error?.response?.data || error?.message || 'Unknown error',
     });
+  }
+});
+
+// Template routes
+router.get('/templates', authenticateToken, async (req: any, res: any) => {
+  try {
+    const salonId = getSalonIdFromUser(req);
+    if (!salonId) return res.status(401).json({ message: 'Unauthorized' });
+
+    const templates = await prisma.salonMessageTemplate.findMany({
+      where: { salonId },
+      orderBy: { eventType: 'asc' }
+    });
+
+    return res.status(200).json({ templates });
+  } catch (error: any) {
+    return res.status(500).json({ message: 'Failed to fetch templates' });
+  }
+});
+
+router.post('/templates/sync', authenticateToken, async (req: any, res: any) => {
+  try {
+    const salon = await getAuthenticatedSalon(req);
+    if (!salon || !salon.chakraPluginId) return res.status(400).json({ message: 'WhatsApp not connected' });
+
+    await syncAndEnsureMasterTemplates(salon.id, salon.chakraPluginId);
+    
+    const templates = await prisma.salonMessageTemplate.findMany({
+      where: { salonId: salon.id }
+    });
+
+    return res.status(200).json({ templates });
+  } catch (error: any) {
+    return res.status(500).json({ message: 'Sync failed' });
+  }
+});
+
+router.post('/templates/:templateId/appeal', authenticateToken, async (req: any, res: any) => {
+  try {
+    const salon = await getAuthenticatedSalon(req);
+    if (!salon || !salon.chakraPluginId) return res.status(400).json({ message: 'WhatsApp not connected' });
+
+    const { templateId } = req.params;
+    const template = await prisma.salonMessageTemplate.findFirst({
+      where: { id: parseInt(templateId), salonId: salon.id }
+    });
+
+    if (!template || !template.templateName) return res.status(404).json({ message: 'Template not found' });
+
+    // Look up the master config
+    const master = KEDY_MASTER_TEMPLATES.find(m => m.name === template.templateName);
+    if (!master) return res.status(400).json({ message: 'Not a master template' });
+
+    // Re-submit with original category as a way to "appeal/force"
+    await axios.post(
+      `${CHAKRA_API_BASE}/plugin/${salon.chakraPluginId}/whatsapp-templates`,
+      {
+        name: master.name,
+        category: master.category,
+        language: 'tr',
+        components: master.components,
+      },
+      { headers: { Authorization: `Bearer ${CHAKRA_API_TOKEN}` } }
+    );
+
+    await prisma.salonMessageTemplate.update({
+      where: { id: template.id },
+      data: { metaStatus: 'APPEALED', lastSyncAt: new Date() }
+    });
+
+    return res.status(200).json({ message: 'Appeal submitted' });
+  } catch (error: any) {
+    console.error('Appeal failed:', error?.response?.data || error);
+    return res.status(500).json({ message: 'Appeal failed' });
   }
 });
 
