@@ -27,16 +27,28 @@ async function applyMigration() {
   }
 
   console.log('Connecting to database...');
-  const client = new Client({
+  let client = new Client({
     connectionString,
-    ssl: { rejectUnauthorized: false } // Common for cloud DBs
+    ssl: { rejectUnauthorized: false }
   });
 
   try {
-    await client.connect();
+    try {
+      await client.connect();
+    } catch (sslErr) {
+      if (sslErr.message.includes('does not support SSL')) {
+        console.log('SSL failed, retrying without SSL...');
+        client = new Client({ connectionString });
+        await client.connect();
+      } else {
+        throw sslErr;
+      }
+    }
+
     console.log('Connected. Running migration...');
     await client.query(sql);
     console.log('Migration completed successfully!');
+
     
     // Check if columns exist
     const res = await client.query(`

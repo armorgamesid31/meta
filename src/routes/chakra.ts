@@ -260,68 +260,91 @@ async function createConnectToken(pluginId: string) {
   throw new Error('No connectToken returned from Chakra.');
 }
 
-async function syncAndEnsureMasterTemplates(salonId: number, pluginId: string) {
-  if (!CHAKRA_API_TOKEN) return;
+async function syncAndEnsureMasterTemplates(salonId: number, pluginId: string, logs: string[] = []) {
+  if (!CHAKRA_API_TOKEN) {
+    logs.push('HATA: CHAKRA_API_TOKEN tanımlanmamış.');
+    return;
+  }
+
+  logs.push(`Senkronizasyon başlatıldı. Salon: ${salonId}, Plugin: ${pluginId}`);
 
   try {
+    logs.push('Chakra API üzerinden mevcut şablonlar sorgulanıyor...');
     const response = await axios.get(`${CHAKRA_API_BASE}/plugin/${pluginId}/whatsapp-templates`, {
       headers: { Authorization: `Bearer ${CHAKRA_API_TOKEN}` },
     });
 
-    const externalTemplates = response?.data?._data || [];
+    // Chakra returns data in _data property usually
+    const externalTemplates = response?.data?._data || response?.data || [];
+    logs.push(`Chakra'da ${externalTemplates.length} adet mevcut şablon bulundu.`);
 
     for (const master of KEDY_MASTER_TEMPLATES) {
+      logs.push(`İşleniyor: ${master.name} (${master.eventType})`);
       const match = externalTemplates.find((ext: any) => ext.name === master.name);
       
       const bodyComponent = master.components.find(c => c.type === 'BODY');
       
-      await prisma.salonMessageTemplate.upsert({
-        where: {
-          salonId_eventType_locale: {
+      try {
+        await prisma.salonMessageTemplate.upsert({
+          where: {
+            salonId_eventType_locale: {
+              salonId,
+              eventType: master.eventType as any,
+              locale: 'tr',
+            }
+          },
+          update: {
+            templateName: master.name,
+            templateContent: bodyComponent?.text,
+            externalId: match?.id,
+            metaCategory: match?.category || master.category,
+            metaStatus: match?.status || 'PENDING_SUBMISSION',
+            lastSyncAt: new Date(),
+          },
+          create: {
             salonId,
             eventType: master.eventType as any,
             locale: 'tr',
+            templateName: master.name,
+            templateContent: bodyComponent?.text,
+            externalId: match?.id,
+            metaCategory: match?.category || master.category,
+            metaStatus: match?.status || 'PENDING_SUBMISSION',
+            lastSyncAt: new Date(),
           }
-        },
-        update: {
-          templateName: master.name,
-          templateContent: bodyComponent?.text,
-          externalId: match?.id,
-          metaCategory: match?.category || master.category,
-          metaStatus: match?.status || 'PENDING_SUBMISSION',
-          lastSyncAt: new Date(),
-        },
-        create: {
-          salonId,
-          eventType: master.eventType as any,
-          locale: 'tr',
-          templateName: master.name,
-          templateContent: bodyComponent?.text,
-          externalId: match?.id,
-          metaCategory: match?.category || master.category,
-          metaStatus: match?.status || 'PENDING_SUBMISSION',
-          lastSyncAt: new Date(),
-        }
-      });
+        });
+        logs.push(`Veritabanı güncellendi: ${master.name}`);
+      } catch (dbErr: any) {
+        logs.push(`HATA: Veritabanı yazma hatası (${master.name}): ${dbErr.message}`);
+      }
 
       if (!match) {
-        console.log(`Submitting master template ${master.name} for salon ${salonId}`);
+        logs.push(`Eksik şablon tespit edildi, Chakra'ya gönderiliyor: ${master.name}`);
         await axios.post(
           `${CHAKRA_API_BASE}/plugin/${pluginId}/whatsapp-templates`,
           {
             name: master.name,
             category: master.category,
             language: 'tr',
-            parameter_format: (master as any).parameter_format || 'POSITIONAL',
+            parameter_format: (master as any).parameter_format || 'NAMED',
             components: master.components,
           },
           { headers: { Authorization: `Bearer ${CHAKRA_API_TOKEN}` } }
-        ).catch(err => {
-          console.error(`Submission failed for ${master.name}:`, err?.response?.data || err.message);
+        ).then(() => {
+          logs.push(`Başarıyla gönderildi: ${master.name}`);
+        }).catch(err => {
+          const detail = err?.response?.data || err.message;
+          logs.push(`HATA: Gönderim başarısız (${master.name}): ${JSON.stringify(detail)}`);
+          console.error(`Submission failed for ${master.name}:`, detail);
         });
+      } else {
+        logs.push(`Şablon zaten mevcut (Durum: ${match.status || 'Bilinmiyor'})`);
       }
     }
-  } catch (error) {
+    logs.push('Senkronizasyon başarıyla tamamlandı.');
+  } catch (error: any) {
+    const errMsg = error?.response?.data || error.message;
+    logs.push(`KRİTİK HATA: Senkronizasyon yarıda kesildi: ${JSON.stringify(errMsg)}`);
     console.error('syncAndEnsureMasterTemplates failed:', error);
   }
 }
@@ -1052,20 +1075,37 @@ router.get('/templates', authenticateToken, async (req: any, res: any) => {
 });
 
 router.post('/templates/sync', authenticateToken, async (req: any, res: any) => {
+  const logs: string[] = [];
   try {
     const salon = await getAuthenticatedSalon(req);
-    if (!salon || !salon.chakraPluginId) return res.status(400).json({ message: 'WhatsApp not connected' });
+    if (!salon) {
+      return res.status(401).json({ message: 'Unauthorized', logs: ['Yetkisiz erişim denemesi.'] });
+    }
+    
+    if (!salon.chakraPluginId) {
+      logs.push('HATA: Salonun Chakra Plugin ID\'si bulunamadı. Lütfen önce bağlantıyı kurun.');
+      return res.status(400).json({ message: 'WhatsApp not connected', logs });
+    }
 
-    await syncAndEnsureMasterTemplates(salon.id, salon.chakraPluginId);
+    await syncAndEnsureMasterTemplates(salon.id, salon.chakraPluginId, logs);
     
     const templates = await prisma.salonMessageTemplate.findMany({
       where: { salonId: salon.id }
     });
 
-    return res.status(200).json({ templates });
+    return res.status(200).json({ 
+      templates, 
+      logs,
+      stats: {
+        total: templates.length,
+        approved: templates.filter(t => t.metaStatus === 'APPROVED').length,
+        lastSync: new Date().toISOString()
+      }
+    });
   } catch (error: any) {
+    logs.push(`Sistem Hatası: ${error.message}`);
     console.error('Template sync error:', error);
-    return res.status(500).json({ message: 'Sync failed', error: error?.message || error });
+    return res.status(500).json({ message: 'Sync failed', error: error?.message || error, logs });
   }
 });
 
