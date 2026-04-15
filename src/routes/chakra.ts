@@ -19,6 +19,83 @@ const CHAKRA_PASSTHROUGH_WEBHOOK_URL = (
 ).trim();
 
 // WhatsApp Master Templates Definitions
+// WhatsApp Master Template Variations
+const MASTER_TEMPLATE_VARIATIONS: Record<string, string[]> = {
+  kedy_randevu_onay: [
+    "Merhaba! {{customer_name}}, {{appointment_date}} tarihindeki {{service_name}} randevunuz onaylanmıştır. Konumumuz: {{location_url}} ✨",
+    "Harika haber! {{customer_name}}, {{appointment_date}} vaktindeki {{service_name}} randevunuz başarıyla oluşturuldu. Adresimiz: {{location_url}} 🗓️",
+    "{{customer_name}} randevunuz hazır! {{appointment_date}} tarihinde {{service_name}} için sizi bekliyoruz. Detaylar: {{location_url}} 💖",
+    "Selam! {{appointment_date}} tarihinde {{service_name}} hizmeti için {{customer_name}} randevunuz konfirme edildi. Yol tarifi: {{location_url}} 🌸",
+    "Randevu Onayı: {{appointment_date}} tarihinde {{service_name}} için yeriniz ayrıldı. Teşekkürler {{customer_name}}! {{location_url}} 🙏",
+    "Merhaba, {{appointment_date}} tarihinde {{service_name}} randevunuzu heyecanla bekliyoruz {{customer_name}}. Konum: {{location_url}} 🌟",
+    "{{appointment_date}} tarihindeki {{service_name}} randevunuzun onaylandığını bildirmekten mutluluk duyarız. ✅ Harita: {{location_url}}",
+    "Randevunuz Onaylandı! {{appointment_date}} | {{service_name}} | {{customer_name}}. Sabırsızlıkla bekliyoruz! 😊 {{location_url}}",
+    "{{appointment_date}} vaktinde {{service_name}} için hazırız. Sizi de bekliyoruz {{customer_name}}! 🌺 Adres: {{location_url}}",
+    "Selamlar, {{appointment_date}} tarihli {{service_name}} randevunuz sisteme kaydedildi {{customer_name}}. İşte konumumuz: {{location_url}} 👋"
+  ],
+  kedy_randevu_hatirlatma: [
+    "Merhaba {{customer_name}}! Hatırlatmak isteriz: Randevunuz yarın {{appointment_time}} saatinde. Konum: {{location_url}} ⏰",
+    "Randevu Hatırlatması: {{customer_name}}, yarın saat {{appointment_time}}'de {{service_name}} randevunuz var. Yol tarifi: {{location_url}} ✨",
+    "Selam! Yarın {{appointment_time}} saatindeki {{service_name}} randevunuz için sizi bekliyor olacağız {{customer_name}}. 🌸 {{location_url}}",
+    "Unutmadınız değil mi {{customer_name}}? Yarın {{appointment_time}} vaktinde {{service_name}} randevunuz var. Adres: {{location_url}} 🗓️",
+    "Küçük bir hatırlatma: Yarın {{appointment_time}} | {{service_name}} randevunuz için hazırız {{customer_name}}! 💖 {{location_url}}",
+    "Merhaba! Yarın {{appointment_time}} saatinde {{service_name}} randevunuzu sabırsızlıkla bekliyoruz. 🌟 Konum: {{location_url}}",
+    "Hatırlatma: Yarın {{appointment_time}} tarihindeki randevunuza gelmeden önce lütfen teyit edin {{customer_name}}. 🙏 {{location_url}}",
+    "Hey! Yarın {{appointment_time}} tarihinde {{service_name}} için davetlisiniz. Görüşmek dileğiyle! 👋 Harita: {{location_url}}",
+    "Randevunuz yarın! {{appointment_time}} | {{service_name}}. Sizi görmek için sabırsızlanıyoruz {{customer_name}}! 😊 {{location_url}}",
+    "Selamlar, yarın {{appointment_time}} tarihli {{service_name}} randevunuzun yaklaştığını hatırlatmak istedik. 🌺 {{location_url}}"
+  ],
+  kedy_randevu_iptal: [
+    "Üzgünüz {{customer_name}}! Randevunuz {{appointment_date}} tarihinde iptal edilmiştir. Yeni bir randevu için bizi arayın. 😔",
+    "Bilgilendirme: {{appointment_date}} tarihindeki {{service_name}} randevunuz iptal edildi {{customer_name}}. ❌",
+    "Merhaba {{customer_name}}, {{appointment_date}} tarihli {{service_name}} randevunuz ne yazık ki iptal edilmiştir. 🙏",
+    "Randevu İptali: {{appointment_date}} vaktindeki randevunuzun iptal edildiğini bildirmek isteriz {{customer_name}}. 📄",
+    "Selam! {{appointment_date}} tarihindeki randevunuzun iptal işlemi tamamlandı. 🌸",
+    "Randevu Durumu: {{appointment_date}} tarihindeki {{service_name}} randevunuz iptal görünüyor {{customer_name}}. 🗒️",
+    "Üzgün kalarak bildiriyoruz; {{appointment_date}} tarihli randevunuz şu an için iptal edildi. 🌟",
+    "Bilgi: {{appointment_date}} tarihinde gerçekleşecek {{service_name}} randevunuzun iptal edildiğini teyit ederiz. ✔️",
+    "Merhaba {{customer_name}}, beklenmeyen bir durum sebebiyle {{appointment_date}} randevunuz iptal edildi. 🌺",
+    "Selamlar {{customer_name}}, {{appointment_date}} tarihli {{service_name}} randevunuz sistemden kaldırılmıştır. 👋"
+  ],
+  kedy_waitlist_teklif: [
+    "Güzel haber {{customer_name}}! Bekleme listenizde olduğunuz {{service_name}} için {{appointment_date}} vaktinde bir boşluk oluştu! ✨",
+    "Merhaba! {{appointment_date}} saatindeki {{service_name}} hizmeti artık müsait. Sizinle doldurabiliriz! ⏰",
+    "Beklediğiniz an geldi {{customer_name}}! {{appointment_date}} tarihinde {{service_name}} için yerimiz var. 🌟",
+    "Hey! {{appointment_date}} tarihinde boş bir koltuğumuz var. {{service_name}} için gelmek ister misiniz? 🌸",
+    "Şanslı gününüz! {{service_name}} listesinde {{appointment_date}} tarihinde yer açıldı. Hemen onaylayın! ✅",
+    "Selam {{customer_name}}! {{appointment_date}} vaktindeki {{service_name}} randevusu şu an boşta. Kaçırmayın! 🌸",
+    "Bilginize: {{appointment_date}} tarihinde bir iptal oldu. {{service_name}} için sizi yazalım mı? 🗓️",
+    "Harika Fırsat! {{appointment_date}} saatindeki {{service_name}} randevusu için en ön sıradasınız. 😊",
+    "Merhaba {{customer_name}}, bekleme listesinden size haber veriyoruz: {{appointment_date}} | {{service_name}} müsait! 🌺",
+    "Selamlar, {{appointment_date}} tarihli seansımızda bir kişilik boşluk var. Bekliyoruz! 👋"
+  ],
+  kedy_memnuniyet_anketi: [
+    "Merhaba {{customer_name}}! Aldığınız {{service_name}} hizmetinden memnun kaldınız mı? Değerlendirmeniz bizim için çok önemli. ✨",
+    "Bizi oylayın! {{service_name}} deneyiminizi merak ediyoruz. Görüşlerinizi bizimle paylaşır mısınız {{customer_name}}? 🌟",
+    "Selam {{customer_name}}! Bugün aldığınız {{service_name}} hizmetimize dair yorumlarınızı bekliyoruz. 🌸",
+    "Memnuniyetiniz bizim önceliğimiz. Bugün aldığınız {{service_name}} hizmetini nasıl buldunuz? 🥰",
+    "Merhaba, {{service_name}} randevunuzdan mutlu ayrıldığınızı umuyoruz. Bizi puanlayın! ⭐",
+    "Görüşleriniz değerli {{customer_name}}! Aldığınız {{service_name}} hizmetini geliştirmemiz için bize yardımcı olun. 🙏",
+    "Hey! Bugün aldığınız {{service_name}} hizmeti hakkında neler düşünüyorsunuz? Hemen paylaşın! 🌺",
+    "Deneyiminizi Paylaşın! {{service_name}} randevunuz nasıldı? Yorumlarınızı sabırsızlıkla bekliyoruz. 😊",
+    "Merhaba {{customer_name}}, {{service_name}} ile gününüzün güzelleştiğini umuyoruz. Bir yorum bırakmak ister misiniz? 🌸",
+    "Selamlar, {{service_name}} randevunuzu değerlendirmek için vakit ayırdığınız için teşekkürler! 👋"
+  ],
+  kedy_auth_code: [
+    "Kedy doğrulama kodunuz: {{verification_code}}. Bu kodu kimseyle paylaşmayın. ✨",
+    "Giriş için onay kodunuz: {{verification_code}}. Teşekkürler! 🔒",
+    "Kedy Hesabınız için Doğrulama Kodu: {{verification_code}}. 🛠️",
+    "Selam! Doğrulama kodun burada: {{verification_code}}. Hesabına hemen giriş yapabilirsin. 🌸",
+    "{{verification_code}} - Bu sizin güvenlik kodunuzdur. Lütfen ilgili alana giriniz. 🧤",
+    "Merhaba, Kedy işlemine devam etmek için bu kodu kullan: {{verification_code}}. 🌟",
+    "Güvenliğiniz için doğrulama kodunuz: {{verification_code}}. İyi günler! 🙏",
+    "Hey! İşte beklediğin giriş kodu: {{verification_code}}. Kedy dünyasına hoş geldin! 👋",
+    "Doğrulama kodunuz oluşturuldu: {{verification_code}}. ⏰",
+    "Selamlar, hesabını teyit etmek için bu kodu girmen yeterli: {{verification_code}}. 😊"
+  ]
+};
+
+// WhatsApp Master Templates Definitions
 const KEDY_MASTER_TEMPLATES = [
   {
     name: 'kedy_randevu_onay',
@@ -28,14 +105,30 @@ const KEDY_MASTER_TEMPLATES = [
     components: [
       {
         type: 'BODY',
-        text: 'Merhaba {{customer_name}}, {{appointment_date}} tarihindeki {{service_name}} randevunuz başarıyla oluşturulmuştur. Görüşmek üzere!',
+        text: MASTER_TEMPLATE_VARIATIONS.kedy_randevu_onay[0],
         example: {
           body_text_named_params: [
             { param_name: 'customer_name', example: 'Müşteri' },
             { param_name: 'appointment_date', example: '14 Nisan 15:30' },
-            { param_name: 'service_name', example: 'Saç Kesimi' }
+            { param_name: 'service_name', example: 'Saç Kesimi' },
+            { param_name: 'location_url', example: 'https://maps.google.com/?q=Salon' }
           ]
         }
+      },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'QUICK_REPLY',
+            text: 'Onaylıyorum ✅',
+            payload: 'CONFIRM_APPOINTMENT'
+          },
+          {
+            type: 'QUICK_REPLY',
+            text: 'İptal Et ❌',
+            payload: 'CANCEL_APPOINTMENT'
+          }
+        ]
       }
     ]
   },
@@ -47,14 +140,30 @@ const KEDY_MASTER_TEMPLATES = [
     components: [
       {
         type: 'BODY',
-        text: 'Hatırlatma: Merhaba {{customer_name}}, yarın saat {{appointment_time}}\'de {{service_name}} randevunuz bulunmaktadır. Sizi bekliyoruz.',
+        text: MASTER_TEMPLATE_VARIATIONS.kedy_randevu_hatirlatma[0],
         example: {
           body_text_named_params: [
             { param_name: 'customer_name', example: 'Müşteri' },
             { param_name: 'appointment_time', example: '15:30' },
-            { param_name: 'service_name', example: 'Saç Kesimi' }
+            { param_name: 'service_name', example: 'Saç Kesimi' },
+            { param_name: 'location_url', example: 'https://maps.google.com/?q=Salon' }
           ]
         }
+      },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'QUICK_REPLY',
+            text: 'Geliyorum 👍',
+            payload: 'REMINDER_CONFIRM'
+          },
+          {
+            type: 'QUICK_REPLY',
+            text: 'Gelemiyorum 👎',
+            payload: 'REMINDER_CANCEL'
+          }
+        ]
       }
     ]
   },
@@ -66,52 +175,107 @@ const KEDY_MASTER_TEMPLATES = [
     components: [
       {
         type: 'BODY',
-        text: 'Merhaba {{customer_name}}, {{appointment_date}} tarihindeki randevunuz iptal edilmiştir. Yeni bir randevu için dilediğiniz zaman bize ulaşabilirsiniz.',
+        text: MASTER_TEMPLATE_VARIATIONS.kedy_randevu_iptal[0],
         example: {
           body_text_named_params: [
             { param_name: 'customer_name', example: 'Müşteri' },
-            { param_name: 'appointment_date', example: '14 Nisan 15:30' }
+            { param_name: 'appointment_date', example: '14 Nisan 15:30' },
+            { param_name: 'service_name', example: 'Saç Kesimi' }
           ]
         }
       }
     ]
   },
   {
-    name: 'kedy_dogrulama_kodu',
-    category: 'UTILITY',
+    name: 'kedy_auth_code',
+    category: 'AUTHENTICATION',
     parameter_format: 'NAMED',
-    eventType: 'SATISFACTION_SURVEY', // Note: This mapping should ideally match the actual usage (e.g., OTP)
+    eventType: 'AUTH_CODE',
     components: [
       {
         type: 'BODY',
-        text: 'Kedy doğrulama kodunuz: {{verification_code}}. Güvenliğiniz için bu kodu kimseyle paylaşmayın.',
-        example: {
-          body_text_named_params: [
-            { param_name: 'verification_code', example: '123456' }
-          ]
-        }
+        add_authentication_template_state_button: true
+      },
+      {
+        type: 'FOOTER',
+        text: 'Güvenliğiniz için bu kodu paylaşmayın.'
+      },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'OTP',
+            otp_type: 'COPY_CODE',
+            text: 'Kodu Kopyala'
+          }
+        ]
       }
     ]
   },
   {
-    name: 'kedy_waitlist_teklifi',
+    name: 'kedy_waitlist_teklif',
+    category: 'UTILITY',
+    parameter_format: 'NAMED',
+    eventType: 'WAITLIST_OFFER',
+    components: [
+      {
+        type: 'BODY',
+        text: MASTER_TEMPLATE_VARIATIONS.kedy_waitlist_teklif[0],
+        example: {
+          body_text_named_params: [
+            { param_name: 'customer_name', example: 'Müşteri' },
+            { param_name: 'appointment_date', example: '14 Nisan 15:30' },
+            { param_name: 'service_name', example: 'Saç Kesimi' }
+          ]
+        }
+      },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'QUICK_REPLY',
+            text: 'Hemen Al 🏃',
+            payload: 'WAITLIST_ACCEPT'
+          }
+        ]
+      }
+    ]
+  },
+  {
+    name: 'kedy_memnuniyet_anketi',
     category: 'UTILITY',
     parameter_format: 'NAMED',
     eventType: 'SATISFACTION_SURVEY',
     components: [
       {
         type: 'BODY',
-        text: 'Merhaba {{customer_name}}, beklediğiniz {{service_name}} için yer açıldı! Randevu oluşturmak için hemen bize ulaşabilirsiniz.',
+        text: MASTER_TEMPLATE_VARIATIONS.kedy_memnuniyet_anketi[0],
         example: {
           body_text_named_params: [
             { param_name: 'customer_name', example: 'Müşteri' },
             { param_name: 'service_name', example: 'Saç Kesimi' }
           ]
         }
+      },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          {
+            type: 'QUICK_REPLY',
+            text: 'Çok Memnunum 😍',
+            payload: 'FEEDBACK_HAPPY'
+          },
+          {
+            type: 'QUICK_REPLY',
+            text: 'Geliştirilmeli 🛠️',
+            payload: 'FEEDBACK_ISSUE'
+          }
+        ]
       }
     ]
   }
 ];
+
 
 type ConnectIntent = 'CONNECT' | 'REPLACE_CONNECTION';
 
@@ -294,8 +458,38 @@ async function syncAndEnsureMasterTemplates(salonId: number, pluginId: string, l
       logs.push(`İşleniyor: ${master.name} (${master.eventType})`);
       const match = externalTemplates.find((ext: any) => ext.name === master.name);
       
+      let shouldSubmit = !match;
+      let variationToSubmit = MASTER_TEMPLATE_VARIATIONS[master.name][0];
+
+      if (match) {
+        // Log status
+        logs.push(`Şablon mevcut: ${master.name} (Durum: ${match.status}, Kategori: ${match.category})`);
+        
+        // Resilience logic: If rejected or auto-reclassified to MARKETING, try next variation
+        const isRejected = ['REJECTED', 'DISABLED', 'PAUSED'].includes(match.status);
+        const isWrongCategory = master.category === 'UTILITY' && match.category === 'MARKETING';
+
+        if (isRejected || isWrongCategory) {
+          logs.push(`DİKKAT: ${master.name} ${isRejected ? 'REDDEDİLMİŞ' : 'PAZARLAMAYA DÖNÜŞMÜŞ'}. Yeni varyasyon deneniyor...`);
+          
+          // Find current variation index
+          const currentBody = match.components?.find((c: any) => c.type === 'BODY')?.text;
+          const variations = MASTER_TEMPLATE_VARIATIONS[master.name] || [];
+          const currentIndex = variations.indexOf(currentBody);
+          const nextIndex = (currentIndex + 1) % variations.length;
+          
+          variationToSubmit = variations[nextIndex];
+          shouldSubmit = true;
+
+          // Delete old one if allowed (Meta requires deletion to reuse name if pending/rejected sometimes, 
+          // or we can just update if Chakra supports it. Here we try to overwrite via POST)
+          logs.push(`Eski şablonun üzerine yazılacak veya yeniden gönderilecek: Varyasyon #${nextIndex + 1}`);
+        }
+      }
+
       const bodyComponent = master.components.find(c => c.type === 'BODY');
-      
+      const finalBodyText = shouldSubmit ? variationToSubmit : (match?.components?.find((c: any) => c.type === 'BODY')?.text || bodyComponent?.text);
+
       try {
         await prisma.salonMessageTemplate.upsert({
           where: {
@@ -307,7 +501,7 @@ async function syncAndEnsureMasterTemplates(salonId: number, pluginId: string, l
           },
           update: {
             templateName: master.name,
-            templateContent: bodyComponent?.text,
+            templateContent: finalBodyText,
             externalId: match?.id,
             metaCategory: match?.category || master.category,
             metaStatus: match?.status || 'PENDING_SUBMISSION',
@@ -318,7 +512,7 @@ async function syncAndEnsureMasterTemplates(salonId: number, pluginId: string, l
             eventType: master.eventType as any,
             locale: 'tr',
             templateName: master.name,
-            templateContent: bodyComponent?.text,
+            templateContent: finalBodyText,
             externalId: match?.id,
             metaCategory: match?.category || master.category,
             metaStatus: match?.status || 'PENDING_SUBMISSION',
@@ -330,8 +524,16 @@ async function syncAndEnsureMasterTemplates(salonId: number, pluginId: string, l
         logs.push(`HATA: Veritabanı yazma hatası (${master.name}): ${dbErr.message}`);
       }
 
-      if (!match) {
-        logs.push(`Eksik şablon tespit edildi, Chakra'ya gönderiliyor: ${master.name}`);
+      if (shouldSubmit) {
+        logs.push(`Chakra'ya gönderiliyor: ${master.name}`);
+        
+        // Prepare components with new variation
+        const components = JSON.parse(JSON.stringify(master.components));
+        const bodyIdx = components.findIndex((c: any) => c.type === 'BODY');
+        if (bodyIdx !== -1) {
+          components[bodyIdx].text = variationToSubmit;
+        }
+
         await axios.post(
           templatesUrl,
           {
@@ -339,7 +541,7 @@ async function syncAndEnsureMasterTemplates(salonId: number, pluginId: string, l
             category: master.category,
             language: 'tr',
             parameter_format: (master as any).parameter_format || 'NAMED',
-            components: master.components,
+            components: components,
           },
           { headers: { Authorization: `Bearer ${CHAKRA_API_TOKEN}` } }
         ).then(() => {
@@ -349,8 +551,6 @@ async function syncAndEnsureMasterTemplates(salonId: number, pluginId: string, l
           logs.push(`HATA: Gönderim başarısız (${master.name}): ${JSON.stringify(detail)}`);
           console.error(`Submission failed for ${master.name}:`, detail);
         });
-      } else {
-        logs.push(`Şablon zaten mevcut (Durum: ${match.status || 'Bilinmiyor'})`);
       }
     }
     logs.push('Senkronizasyon başarıyla tamamlandı.');

@@ -1,0 +1,13 @@
+# Randevu Onayı Şablon Varyasyonları (10 Adet)
+# Değişkenler: {{customer_name}}, {{appointment_date}}, {{service_name}}, {{location_url}}
+
+1. Merhaba! {{customer_name}}, {{appointment_date}} tarihindeki {{service_name}} randevunuz onaylanmıştır. Konumumuz: {{location_url}} ✨
+2. Harika haber! {{customer_name}}, {{appointment_date}} vaktindeki {{service_name}} randevunuz başarıyla oluşturuldu. Adresimiz: {{location_url}} 🗓️
+3. {{customer_name}} randevunuz hazır! {{appointment_date}} tarihinde {{service_name}} için sizi bekliyoruz. Detaylar: {{location_url}} 💖
+4. Selam! {{appointment_date}} tarihinde {{service_name}} hizmeti için {{customer_name}} randevunuz konfirme edildi. Yol tarifi: {{location_url}} 🌸
+5. Randevu Onayı: {{appointment_date}} tarihinde {{service_name}} için yeriniz ayrıldı. Teşekkürler {{customer_name}}! {{location_url}} 🙏
+6. Merhaba, {{appointment_date}} tarihinde {{service_name}} randevunuzu heyecanla bekliyoruz {{customer_name}}. Konum: {{location_url}} 🌟
+7. {{appointment_date}} tarihindeki {{service_name}} randevunuzun onaylandığını bildirmekten mutluluk duyarız. ✅ Harita: {{location_url}}
+8. Randevunuz Onaylandı! {{appointment_date}} | {{service_name}} | {{customer_name}}. Sabırsızlıkla bekliyoruz! 😊 {{location_url}}
+9. {{appointment_date}} vaktinde {{service_name}} için hazırız. Sizi de bekliyoruz {{customer_name}}! 🌺 Adres: {{location_url}}
+10. Selamlar, {{appointment_date}} tarihli {{service_name}} randevunuz sisteme kaydedildi {{customer_name}}. İşte konumumuz: {{location_url}} 👋

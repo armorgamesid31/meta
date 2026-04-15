@@ -1,0 +1,13 @@
+# Randevu Hatırlatma Şablon Varyasyonları (10 Adet)
+# Değişkenler: {{customer_name}}, {{appointment_time}}, {{service_name}}, {{location_url}}
+
+1. Merhaba {{customer_name}}! Hatırlatmak isteriz: Randevunuz yarın {{appointment_time}} saatinde. Konum: {{location_url}} ⏰
+2. Randevu Hatırlatması: {{customer_name}}, yarın saat {{appointment_time}}'de {{service_name}} randevunuz var. Yol tarifi: {{location_url}} ✨
+3. Selam! Yarın {{appointment_time}} saatindeki {{service_name}} randevunuz için sizi bekliyor olacağız {{customer_name}}. 🌸 {{location_url}}
+4. Unutmadınız değil mi {{customer_name}}? Yarın {{appointment_time}} vaktinde {{service_name}} randevunuz var. Adres: {{location_url}} 🗓️
+5. Küçük bir hatırlatma: Yarın {{appointment_time}} | {{service_name}} randevunuz için hazırız {{customer_name}}! 💖 {{location_url}}
+6. Merhaba! Yarın {{appointment_time}} saatinde {{service_name}} randevunuzu sabırsızlıkla bekliyoruz. 🌟 Konum: {{location_url}}
+7. Hatırlatma: Yarın {{appointment_time}} tarihindeki randevunuza gelmeden önce lütfen teyit edin {{customer_name}}. 🙏 {{location_url}}
+8. Hey! Yarın {{appointment_time}} tarihinde {{service_name}} için davetlisiniz. Görüşmek dileğiyle! 👋 Harita: {{location_url}}
+9. Randevunuz yarın! {{appointment_time}} | {{service_name}}. Sizi görmek için sabırsızlanıyoruz {{customer_name}}! 😊 {{location_url}}
+10. Selamlar, yarın {{appointment_time}} tarihli {{service_name}} randevunuzun yaklaştığını hatırlatmak istedik. 🌺 {{location_url}}

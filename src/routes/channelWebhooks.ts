@@ -1,9 +1,6 @@
-import {
-  ChannelProfileFetchStatus,
-  ChannelType,
-  ConversationAutomationMode,
-  InboundMessageStatus,
   OutboundMessageSource,
+  AppointmentStatus,
+  WaitlistOfferStatus,
 } from '@prisma/client';
 import axios from 'axios';
 import { createHash } from 'crypto';
@@ -929,6 +926,80 @@ async function processIncomingBatch(items: any[]) {
       channelUserId: typeof row.channelUserId === 'string' ? row.channelUserId : null,
       conversationKey,
     });
+
+    // --- INTERACTIVE BUTTON HANDLER ---
+    if (row.actionPayload && customer?.id) {
+      const payload = String(row.actionPayload).trim().toUpperCase();
+      const now = new Date();
+
+      if (['CONFIRM_APPOINTMENT', 'REMINDER_CONFIRM', 'CANCEL_APPOINTMENT', 'REMINDER_CANCEL'].includes(payload)) {
+        // Find next upcoming appointment
+        const appointment = await prisma.appointment.findFirst({
+          where: {
+            salonId,
+            customerId: customer.id,
+            startTime: { gte: now },
+            status: { in: [AppointmentStatus.BOOKED, AppointmentStatus.UPDATED] }
+          },
+          orderBy: { startTime: 'asc' }
+        });
+
+        if (appointment) {
+          let newStatus: AppointmentStatus | null = null;
+          if (payload === 'CONFIRM_APPOINTMENT' || payload === 'REMINDER_CONFIRM') {
+            newStatus = AppointmentStatus.CONFIRMED;
+          } else if (payload === 'CANCEL_APPOINTMENT' || payload === 'REMINDER_CANCEL') {
+            newStatus = AppointmentStatus.CANCELLED;
+          }
+
+          if (newStatus) {
+            await prisma.appointment.update({
+              where: { id: appointment.id },
+              data: { status: newStatus }
+            });
+            console.log(`[Webhook] Appointment ${appointment.id} updated to ${newStatus} via ${payload}`);
+          }
+        }
+      } else if (payload === 'WAITLIST_ACCEPT') {
+        // Find most recent pending waitlist offer
+        const offer = await prisma.waitlistOffer.findFirst({
+          where: {
+            salonId,
+            waitlistEntry: { customerId: customer.id },
+            status: WaitlistOfferStatus.SENT,
+            expiresAt: { gte: now }
+          },
+          orderBy: { createdAt: 'desc' }
+        });
+
+        if (offer) {
+          await prisma.waitlistOffer.update({
+            where: { id: offer.id },
+            data: { 
+              status: WaitlistOfferStatus.ACCEPTED,
+              acceptedAt: now
+            }
+          });
+          console.log(`[Webhook] Waitlist offer ${offer.id} accepted for customer ${customer.id}`);
+        }
+      } else if (['FEEDBACK_HAPPY', 'FEEDBACK_ISSUE'].includes(payload)) {
+        // Find most recent finished appointment
+        const appointment = await prisma.appointment.findFirst({
+          where: {
+            salonId,
+            customerId: customer.id,
+            endTime: { lte: now }
+          },
+          orderBy: { endTime: 'desc' }
+        });
+
+        if (appointment) {
+          console.log(`[Webhook] Feedback received: ${payload} for appointment ${appointment.id}`);
+          // Optional: Create a SalonFeedback entry if model exists
+        }
+      }
+    }
+    // ----------------------------------
 
     const customerStatus = computeCustomerStatus({ customer, identityLinked });
     const canonicalUserId = customer?.id ? `customer:${customer.id}` : conversationKey;
