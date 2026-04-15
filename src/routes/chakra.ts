@@ -30,12 +30,10 @@ const KEDY_MASTER_TEMPLATES = [
         type: 'BODY',
         text: 'Merhaba {{customer_name}}, {{appointment_date}} tarihindeki {{service_name}} randevunuz başarıyla oluşturulmuştur. Görüşmek üzere!',
         example: {
-          body_text: [
-            {
-              customer_name: 'Müşteri',
-              appointment_date: '14 Nisan 15:30',
-              service_name: 'Saç Kesimi'
-            }
+          body_text_named_params: [
+            { param_name: 'customer_name', example: 'Müşteri' },
+            { param_name: 'appointment_date', example: '14 Nisan 15:30' },
+            { param_name: 'service_name', example: 'Saç Kesimi' }
           ]
         }
       }
@@ -51,12 +49,10 @@ const KEDY_MASTER_TEMPLATES = [
         type: 'BODY',
         text: 'Hatırlatma: Merhaba {{customer_name}}, yarın saat {{appointment_time}}\'de {{service_name}} randevunuz bulunmaktadır. Sizi bekliyoruz.',
         example: {
-          body_text: [
-            {
-              customer_name: 'Müşteri',
-              appointment_time: '15:30',
-              service_name: 'Saç Kesimi'
-            }
+          body_text_named_params: [
+            { param_name: 'customer_name', example: 'Müşteri' },
+            { param_name: 'appointment_time', example: '15:30' },
+            { param_name: 'service_name', example: 'Saç Kesimi' }
           ]
         }
       }
@@ -72,11 +68,9 @@ const KEDY_MASTER_TEMPLATES = [
         type: 'BODY',
         text: 'Merhaba {{customer_name}}, {{appointment_date}} tarihindeki randevunuz iptal edilmiştir. Yeni bir randevu için dilediğiniz zaman bize ulaşabilirsiniz.',
         example: {
-          body_text: [
-            {
-              customer_name: 'Müşteri',
-              appointment_date: '14 Nisan 15:30'
-            }
+          body_text_named_params: [
+            { param_name: 'customer_name', example: 'Müşteri' },
+            { param_name: 'appointment_date', example: '14 Nisan 15:30' }
           ]
         }
       }
@@ -84,7 +78,7 @@ const KEDY_MASTER_TEMPLATES = [
   },
   {
     name: 'kedy_dogrulama_kodu',
-    category: 'AUTHENTICATION',
+    category: 'UTILITY',
     parameter_format: 'NAMED',
     eventType: 'SATISFACTION_SURVEY', // Note: This mapping should ideally match the actual usage (e.g., OTP)
     components: [
@@ -92,10 +86,8 @@ const KEDY_MASTER_TEMPLATES = [
         type: 'BODY',
         text: 'Kedy doğrulama kodunuz: {{verification_code}}. Güvenliğiniz için bu kodu kimseyle paylaşmayın.',
         example: {
-          body_text: [
-            {
-              verification_code: '123456'
-            }
+          body_text_named_params: [
+            { param_name: 'verification_code', example: '123456' }
           ]
         }
       }
@@ -111,11 +103,9 @@ const KEDY_MASTER_TEMPLATES = [
         type: 'BODY',
         text: 'Merhaba {{customer_name}}, beklediğiniz {{service_name}} için yer açıldı! Randevu oluşturmak için hemen bize ulaşabilirsiniz.',
         example: {
-          body_text: [
-            {
-              customer_name: 'Müşteri',
-              service_name: 'Saç Kesimi'
-            }
+          body_text_named_params: [
+            { param_name: 'customer_name', example: 'Müşteri' },
+            { param_name: 'service_name', example: 'Saç Kesimi' }
           ]
         }
       }
@@ -269,13 +259,35 @@ async function syncAndEnsureMasterTemplates(salonId: number, pluginId: string, l
   logs.push(`Senkronizasyon başlatıldı. Salon: ${salonId}, Plugin: ${pluginId}`);
 
   try {
-    logs.push('Chakra API üzerinden mevcut şablonlar sorgulanıyor...');
-    const response = await axios.get(`${CHAKRA_API_BASE}/plugin/${pluginId}/whatsapp-templates`, {
+    // 1. Fetch Plugin info to get WABA ID
+    logs.push('Plugin bilgileri ve WABA ID doğrulanıyor...');
+    const pluginData = await fetchPluginState(pluginId).catch(async () => {
+        // Fallback or retry logic if needed
+        return null;
+    });
+
+    if (!pluginData) {
+        logs.push('HATA: Plugin bilgileri alınamadı.');
+        return;
+    }
+
+    const wabaMap = pluginData.auth?.whatsappBusinessAccountsById;
+    const wabaId = wabaMap ? Object.keys(wabaMap)[0] : null;
+
+    if (!wabaId) {
+        logs.push('HATA: Bu plugin için bağlı bir WhatsApp Business Account (WABA) bulunamadı.');
+        return;
+    }
+
+    logs.push(`WABA ID bulundu: ${wabaId}. Şablonlar sorgulanıyor...`);
+
+    const templatesUrl = `${CHAKRA_API_BASE}/v1/ext/plugin/whatsapp/api/v22.0/${wabaId}/message_templates`;
+
+    const response = await axios.get(templatesUrl, {
       headers: { Authorization: `Bearer ${CHAKRA_API_TOKEN}` },
     });
 
-    // Chakra returns data in _data property usually
-    const externalTemplates = response?.data?._data || response?.data || [];
+    const externalTemplates = response?.data?.data || response?.data?._data || [];
     logs.push(`Chakra'da ${externalTemplates.length} adet mevcut şablon bulundu.`);
 
     for (const master of KEDY_MASTER_TEMPLATES) {
@@ -321,7 +333,7 @@ async function syncAndEnsureMasterTemplates(salonId: number, pluginId: string, l
       if (!match) {
         logs.push(`Eksik şablon tespit edildi, Chakra'ya gönderiliyor: ${master.name}`);
         await axios.post(
-          `${CHAKRA_API_BASE}/plugin/${pluginId}/whatsapp-templates`,
+          templatesUrl,
           {
             name: master.name,
             category: master.category,
@@ -1063,12 +1075,21 @@ router.get('/templates', authenticateToken, async (req: any, res: any) => {
     const salonId = getSalonIdFromUser(req);
     if (!salonId) return res.status(401).json({ message: 'Unauthorized' });
 
-    const templates = await prisma.salonMessageTemplate.findMany({
-      where: { salonId },
-      orderBy: { eventType: 'asc' }
-    });
+    const [templates, salon] = await Promise.all([
+      prisma.salonMessageTemplate.findMany({
+        where: { salonId },
+        orderBy: { eventType: 'asc' }
+      }),
+      prisma.salon.findUnique({
+        where: { id: salonId },
+        select: { chakraPluginId: true }
+      })
+    ]);
 
-    return res.status(200).json({ templates });
+    return res.status(200).json({ 
+      templates, 
+      isConnected: !!salon?.chakraPluginId 
+    });
   } catch (error: any) {
     return res.status(500).json({ message: 'Failed to fetch templates', error: error?.message || error });
   }
