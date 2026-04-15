@@ -23,60 +23,101 @@ const KEDY_MASTER_TEMPLATES = [
   {
     name: 'kedy_randevu_onay',
     category: 'UTILITY',
+    parameter_format: 'NAMED',
     eventType: 'CONFIRMATION',
     components: [
       {
         type: 'BODY',
-        text: 'Merhaba {{1}}, {{2}} tarihindeki {{3}} randevunuz başarıyla oluşturulmuştur. Görüşmek üzere!',
-        example: { body_text: [['Müşteri', '14 Nisan 15:30', 'Saç Kesimi']] }
+        text: 'Merhaba {{customer_name}}, {{appointment_date}} tarihindeki {{service_name}} randevunuz başarıyla oluşturulmuştur. Görüşmek üzere!',
+        example: {
+          body_text: [
+            {
+              customer_name: 'Müşteri',
+              appointment_date: '14 Nisan 15:30',
+              service_name: 'Saç Kesimi'
+            }
+          ]
+        }
       }
     ]
   },
   {
     name: 'kedy_randevu_hatirlatma',
     category: 'UTILITY',
+    parameter_format: 'NAMED',
     eventType: 'REMINDER',
     components: [
       {
         type: 'BODY',
-        text: 'Hatırlatma: Merhaba {{1}}, yarın saat {{2}}\'de {{3}} randevunuz bulunmaktadır. Sizi bekliyoruz.',
-        example: { body_text: [['Müşteri', '15:30', 'Saç Kesimi']] }
+        text: 'Hatırlatma: Merhaba {{customer_name}}, yarın saat {{appointment_time}}\'de {{service_name}} randevunuz bulunmaktadır. Sizi bekliyoruz.',
+        example: {
+          body_text: [
+            {
+              customer_name: 'Müşteri',
+              appointment_time: '15:30',
+              service_name: 'Saç Kesimi'
+            }
+          ]
+        }
       }
     ]
   },
   {
     name: 'kedy_randevu_iptal',
     category: 'UTILITY',
+    parameter_format: 'NAMED',
     eventType: 'CANCELLATION',
     components: [
       {
         type: 'BODY',
-        text: 'Merhaba {{1}}, {{2}} tarihindeki randevunuz iptal edilmiştir. Yeni bir randevu için dilediğiniz zaman bize ulaşabilirsiniz.',
-        example: { body_text: [['Müşteri', '14 Nisan 15:30']] }
+        text: 'Merhaba {{customer_name}}, {{appointment_date}} tarihindeki randevunuz iptal edilmiştir. Yeni bir randevu için dilediğiniz zaman bize ulaşabilirsiniz.',
+        example: {
+          body_text: [
+            {
+              customer_name: 'Müşteri',
+              appointment_date: '14 Nisan 15:30'
+            }
+          ]
+        }
       }
     ]
   },
   {
     name: 'kedy_dogrulama_kodu',
     category: 'AUTHENTICATION',
-    eventType: 'SATISFACTION_SURVEY', // Used for OTP in some contexts
+    parameter_format: 'NAMED',
+    eventType: 'SATISFACTION_SURVEY', // Note: This mapping should ideally match the actual usage (e.g., OTP)
     components: [
       {
         type: 'BODY',
-        text: 'Kedy doğrulama kodunuz: {{1}}. Güvenliğiniz için bu kodu kimseyle paylaşmayın.',
-        example: { body_text: [['123456']] }
+        text: 'Kedy doğrulama kodunuz: {{verification_code}}. Güvenliğiniz için bu kodu kimseyle paylaşmayın.',
+        example: {
+          body_text: [
+            {
+              verification_code: '123456'
+            }
+          ]
+        }
       }
     ]
   },
   {
     name: 'kedy_waitlist_teklifi',
     category: 'UTILITY',
-    eventType: 'SATISFACTION_SURVEY', // Map to a specific event type if available, otherwise generic
+    parameter_format: 'NAMED',
+    eventType: 'SATISFACTION_SURVEY',
     components: [
       {
         type: 'BODY',
-        text: 'Merhaba {{1}}, beklediğiniz {{2}} için yer açıldı! Randevu oluşturmak için hemen bize ulaşabilirsiniz.',
-        example: { body_text: [['Müşteri', 'Saç Kesimi']] }
+        text: 'Merhaba {{customer_name}}, beklediğiniz {{service_name}} için yer açıldı! Randevu oluşturmak için hemen bize ulaşabilirsiniz.',
+        example: {
+          body_text: [
+            {
+              customer_name: 'Müşteri',
+              service_name: 'Saç Kesimi'
+            }
+          ]
+        }
       }
     ]
   }
@@ -271,6 +312,7 @@ async function syncAndEnsureMasterTemplates(salonId: number, pluginId: string) {
             name: master.name,
             category: master.category,
             language: 'tr',
+            parameter_format: (master as any).parameter_format || 'POSITIONAL',
             components: master.components,
           },
           { headers: { Authorization: `Bearer ${CHAKRA_API_TOKEN}` } }
