@@ -1,0 +1,232 @@
+{
+  "name": "Salon Automation Hub v2 (Production)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "76ec2e5f-514d-4876-8869-28c94e098dd1",
+      "name": "Hourly Schedule",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        400,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  a.id as \"appointmentId\", \n  a.start, \n  c.fullname as \"customerName\", \n  c.phone, \n  s.name as \"salonName\",\n  'REMINDER_2H' as \"reminderType\"\nFROM \"Appointment\" a\nJOIN \"Customer\" c ON a.\"customerId\" = c.id\nJOIN \"Salon\" s ON a.\"salonId\" = s.id\nWHERE a.start BETWEEN NOW() + INTERVAL '2 hours' AND NOW() + INTERVAL '3 hours'\n  AND a.status = 'CONFIRMED'\n  AND NOT EXISTS (\n    SELECT 1 FROM \"NotificationLog\" nl \n    WHERE nl.\"appointmentId\" = a.id AND nl.type = 'REMINDER_2H'\n  );\n\nUNION ALL\n\nSELECT \n  a.id as \"appointmentId\", \n  a.start, \n  c.fullname as \"customerName\", \n  c.phone, \n  s.name as \"salonName\",\n  'REMINDER_24H' as \"reminderType\"\nFROM \"Appointment\" a\nJOIN \"Customer\" c ON a.\"customerId\" = c.id\nJOIN \"Salon\" s ON a.\"salonId\" = s.id\nWHERE a.start BETWEEN NOW() + INTERVAL '24 hours' AND NOW() + INTERVAL '25 hours'\n  AND a.status = 'CONFIRMED'\n  AND NOT EXISTS (\n    SELECT 1 FROM \"NotificationLog\" nl \n    WHERE nl.\"appointmentId\" = a.id AND nl.type = 'REMINDER_24H'\n  );\n\nUNION ALL\n\nSELECT \n  a.id as \"appointmentId\", \n  a.start, \n  c.fullname as \"customerName\", \n  c.phone, \n  s.name as \"salonName\",\n  'REMINDER_72H' as \"reminderType\"\nFROM \"Appointment\" a\nJOIN \"Customer\" c ON a.\"customerId\" = c.id\nJOIN \"Salon\" s ON a.\"salonId\" = s.id\nWHERE a.start BETWEEN NOW() + INTERVAL '72 hours' AND NOW() + INTERVAL '73 hours'\n  AND a.status = 'CONFIRMED'\n  AND NOT EXISTS (\n    SELECT 1 FROM \"NotificationLog\" nl \n    WHERE nl.\"appointmentId\" = a.id AND nl.type = 'REMINDER_72H'\n  );"
+      },
+      "id": "e8a9f24e-b5c1-4573-982c-47ea798c895d",
+      "name": "Fetch Reminders (2h, 24h, 72h)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        620,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  c.id as \"customerId\", \n  c.fullname as \"customerName\", \n  c.phone, \n  'BIRTHDAY_7D' as \"campaignType\"\nFROM \"Customer\" c\nWHERE EXTRACT(MONTH FROM c.birthday) = EXTRACT(MONTH FROM (NOW() + INTERVAL '7 days'))\n  AND EXTRACT(DAY FROM c.birthday) = EXTRACT(DAY FROM (NOW() + INTERVAL '7 days'))\n  AND NOT EXISTS (\n    SELECT 1 FROM \"NotificationLog\" nl \n    WHERE nl.\"customerId\" = c.id AND nl.type = 'BIRTHDAY_7D' \n    AND nl.\"sentAt\" > CURRENT_DATE - INTERVAL '300 days'\n  )\n\nUNION ALL\n\nSELECT \n  c.id as \"customerId\", \n  c.fullname as \"customerName\", \n  c.phone, \n  'BIRTHDAY_TODAY' as \"campaignType\"\nFROM \"Customer\" c\nWHERE EXTRACT(MONTH FROM c.birthday) = EXTRACT(MONTH FROM NOW())\n  AND EXTRACT(DAY FROM c.birthday) = EXTRACT(DAY FROM NOW())\n  AND NOT EXISTS (\n    SELECT 1 FROM \"NotificationLog\" nl \n    WHERE nl.\"customerId\" = c.id AND nl.type = 'BIRTHDAY_TODAY' \n    AND nl.\"sentAt\" > CURRENT_DATE - INTERVAL '300 days'\n  );"
+      },
+      "id": "b1a2c3d4-e5f6-4789-0123-456789abcdef",
+      "name": "Fetch Birthdays (7d & Today)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        620,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  c.id as \"customerId\", \n  c.fullname as \"customerName\", \n  c.phone,\n  'WINBACK_45D' as \"campaignType\"\nFROM \"Customer\" c\nLEFT JOIN \"Appointment\" a ON a.\"customerId\" = c.id\nGROUP BY c.id\nHAVING MAX(a.start) < NOW() - INTERVAL '45 days'\n  AND MAX(a.start) > NOW() - INTERVAL '46 days'\n  AND NOT EXISTS (\n    SELECT 1 FROM \"NotificationLog\" nl \n    WHERE nl.\"customerId\" = c.id AND nl.type = 'WINBACK' \n    AND nl.\"sentAt\" > NOW() - INTERVAL '30 days'\n  );"
+      },
+      "id": "c1a2b3c4-d5e6-4789-0123-456789012345",
+      "name": "Fetch Winback (45d Inactive)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        620,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://app.berkai.shop/api/internal/chakra/templates/send",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "templateName",
+              "value": "={{$json.reminderType === 'REMINDER_2H' ? 'appointment_reminder_short' : 'appointment_reminder'}}"
+            },
+            {
+              "name": "phone",
+              "value": "={{$json.phone}}"
+            },
+            {
+              "name": "variables",
+              "value": "={{ { customer_name: $json.customerName, time: $json.start, salon_name: $json.salonName } }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f1a2b3c4-d5e6-4789-0123-4567890abcdef",
+      "name": "Send Reminder WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        850,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://app.berkai.shop/api/internal/chakra/templates/send",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "templateName",
+              "value": "={{$json.campaignType.startsWith('BIRTHDAY') ? 'birthday_voucher' : 'winback_offer'}}"
+            },
+            {
+              "name": "phone",
+              "value": "={{$json.phone}}"
+            },
+            {
+              "name": "variables",
+              "value": "={{ { customer_name: $json.customerName, offer_details: $json.campaignType } }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "d1a2b3c4-e5f6-4789-0123-4567890abcde",
+      "name": "Send Campaign WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        850,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO \"NotificationLog\" (\"customerId\", \"appointmentId\", \"type\", \"status\", \"sentAt\")\nVALUES (\n  {{ $json.customerId ? $json.customerId : 'NULL' }},\n  {{ $json.appointmentId ? $json.appointmentId : 'NULL' }},\n  '{{ $json.reminderType || $json.campaignType }}',\n  'SENT',\n  NOW()\n);"
+      },
+      "id": "e1a2b3c4-d5e6-4789-0123-456789012344",
+      "name": "Log Notification",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        1100,
+        600
+      ]
+    }
+  ],
+  "connections": {
+    "Hourly Schedule": {
+      "main": [
+        [
+          {
+            "node": "Fetch Reminders (2h, 24h, 72h)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Birthdays (7d & Today)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Winback (45d Inactive)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Reminders (2h, 24h, 72h)": {
+      "main": [
+        [
+          {
+            "node": "Send Reminder WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Birthdays (7d & Today)": {
+      "main": [
+        [
+          {
+            "node": "Send Campaign WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Winback (45d Inactive)": {
+      "main": [
+        [
+          {
+            "node": "Send Campaign WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Reminder WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Log Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Campaign WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Log Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "salon-automation-v2",
+  "id": "salon-automation-hub-v2",
+  "meta": {
+    "instanceId": "salon-prod"
+  }
+}

@@ -348,11 +348,18 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
       }
 
       let amount = 0;
+      const rewardType = String(cfg.rewardType || cfg.discountType || cfg.offerType || '').trim().toLowerCase();
 
       if (type === 'LOYALTY' || type === 'REFERRAL') {
         const walletAmount = walletByCampaign.get(campaign.id) || 0;
         if (walletAmount <= 0) continue;
         amount = Math.min(running, walletAmount);
+      } else if (rewardType === 'free_service') {
+        if (Number(cfg.rewardServiceId) === Number(line.serviceId)) {
+          amount = running;
+        } else {
+          continue;
+        }
       } else {
         const kind = parseDiscountKind(cfg);
         const value = parseDiscountValue(cfg);
@@ -589,20 +596,32 @@ export async function getCampaignTeasersForCustomer(input: {
   salonId: number;
   customerId?: number | null;
 }): Promise<{
-  active: Array<{ id: number; name: string; type: string; deliveryMode: 'AUTO' | 'MANUAL'; startsAt: string | null; endsAt: string | null; priority: number }>;
+  active: Array<{ id: number; name: string; type: string; deliveryMode: 'AUTO' | 'MANUAL'; startsAt: string | null; endsAt: string | null; priority: number; config: any }>;
   wallet: Array<{ campaignId: number; availableAmount: number }>;
   enrollments: Array<{ campaignId: number; status: string; enrolledAt: string | null }>;
   shareLinks: Array<{ campaignId: number; token: string; status: string; expiresAt: string | null }>;
+  completedCount: number;
 }> {
   const activeRows = await prisma.$queryRawUnsafe<any[]>(
     `
-      SELECT "id", "name", "type", "deliveryMode", "startsAt", "endsAt", "priority"
+      SELECT "id", "name", "type", "deliveryMode", "startsAt", "endsAt", "priority", "config"
       FROM "Campaign"
       WHERE "salonId" = $1 AND "isActive" = true
       ORDER BY "priority" ASC, "id" ASC
     `,
     input.salonId,
   );
+
+  let completedCount = 0;
+  if (input.customerId) {
+    completedCount = await prisma.appointment.count({
+      where: {
+        salonId: input.salonId,
+        customerId: input.customerId,
+        status: 'COMPLETED',
+      },
+    });
+  }
 
   if (!input.customerId) {
     return {
@@ -614,10 +633,12 @@ export async function getCampaignTeasersForCustomer(input: {
         startsAt: r.startsAt ? new Date(r.startsAt).toISOString() : null,
         endsAt: r.endsAt ? new Date(r.endsAt).toISOString() : null,
         priority: Number(r.priority || 100),
+        config: asObject(r.config),
       })),
       wallet: [],
       enrollments: [],
       shareLinks: [],
+      completedCount: 0,
     };
   }
 
@@ -660,6 +681,7 @@ export async function getCampaignTeasersForCustomer(input: {
       startsAt: r.startsAt ? new Date(r.startsAt).toISOString() : null,
       endsAt: r.endsAt ? new Date(r.endsAt).toISOString() : null,
       priority: Number(r.priority || 100),
+      config: asObject(r.config),
     })),
     wallet: walletRows.map((row) => ({ campaignId: Number(row.campaignId), availableAmount: Number(row.available || 0) })),
     enrollments: enrollmentRows.map((row) => ({
@@ -673,6 +695,7 @@ export async function getCampaignTeasersForCustomer(input: {
       status: String(row.status || ''),
       expiresAt: row.expiresAt ? new Date(row.expiresAt).toISOString() : null,
     })),
+    completedCount,
   };
 }
 

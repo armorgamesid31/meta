@@ -389,6 +389,8 @@ router.get('/context', async (req: any, res: any) => {
     originInstagramId,
     salonId,
     salonName: salon.name,
+    salonId,
+    salonName: salon.name,
     isKnownCustomer,
     identityLinked,
     identitySessionId: magicLink.identitySessionId,
@@ -398,6 +400,7 @@ router.get('/context', async (req: any, res: any) => {
     campaignWallet: campaignContext.wallet,
     campaignEnrollments: campaignContext.enrollments,
     campaignShareLinks: campaignContext.shareLinks,
+    completedCount: campaignContext.completedCount,
   });
 });
 

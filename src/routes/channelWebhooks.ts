@@ -1,6 +1,10 @@
+import {
+  ChannelType,
+  ConversationAutomationMode,
   OutboundMessageSource,
   AppointmentStatus,
   WaitlistOfferStatus,
+  ChannelProfileFetchStatus,
 } from '@prisma/client';
 import axios from 'axios';
 import { createHash } from 'crypto';

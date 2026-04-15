@@ -1,0 +1,206 @@
+{
+  "name": "Salon Automation Hub",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "trigger-campaign",
+        "options": {}
+      },
+      "name": "Campaign Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        340,
+        240
+      ],
+      "id": "webhook-campaign"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  a.id, \n  a.start, \n  c.fullname, \n  c.phone \nFROM \"Appointment\" a\nJOIN \"Customer\" c ON a.\"customerId\" = c.id\nWHERE a.start BETWEEN NOW() + INTERVAL '24 hours' AND NOW() + INTERVAL '25 hours'\n  AND a.status = 'CONFIRMED'\n  AND NOT EXISTS (\n    SELECT 1 FROM \"SalonNotificationLog\" nl \n    WHERE nl.\"appointmentId\" = a.id AND nl.type = 'REMINDER'\n  );"
+      },
+      "name": "Fetch Upcoming Appointments",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        560,
+        440
+      ],
+      "id": "db-fetch-reminders"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours"
+            }
+          ]
+        }
+      },
+      "name": "Hourly Schedule",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        340,
+        440
+      ],
+      "id": "cron-hourly"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://app.berkai.shop/api/internal/chakra/templates/send",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "templateName",
+              "value": "appointment_reminder"
+            },
+            {
+              "name": "phone",
+              "value": "={{$json.phone}}"
+            },
+            {
+              "name": "variables",
+              "value": "={{ { customer_name: $json.fullname, time: $json.start } }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Send Reminder WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        800,
+        440
+      ],
+      "id": "http-send-whatsapp"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  c.id, \n  c.name, \n  c.description, \n  c.config \nFROM \"Campaign\" c\nWHERE c.id = {{ $json.body.campaignId }};"
+      },
+      "name": "Get Campaign Info",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        560,
+        240
+      ],
+      "id": "db-campaign-info"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT fullname, phone FROM \"Customer\" WHERE \"isActive\" = true;"
+      },
+      "name": "Get Target Customers",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        780,
+        240
+      ],
+      "id": "db-customers"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://app.berkai.shop/api/internal/chakra/templates/send",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "templateName",
+              "value": "={{$node[\"Get Campaign Info\"].json.config.templateName}}"
+            },
+            {
+              "name": "phone",
+              "value": "={{$json.phone}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Send Campaign WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1000,
+        240
+      ],
+      "id": "http-send-campaign"
+    }
+  ],
+  "connections": {
+    "Campaign Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Campaign Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Campaign Info": {
+      "main": [
+        [
+          {
+            "node": "Get Target Customers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Target Customers": {
+      "main": [
+        [
+          {
+            "node": "Send Campaign WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hourly Schedule": {
+      "main": [
+        [
+          {
+            "node": "Fetch Upcoming Appointments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Upcoming Appointments": {
+      "main": [
+        [
+          {
+            "node": "Send Reminder WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "salon-automation-v1",
+  "id": "salon-automation-hub",
+  "meta": {
+    "instanceId": "salon-prod"
+  }
+}
