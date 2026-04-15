@@ -1047,7 +1047,7 @@ router.get('/templates', authenticateToken, async (req: any, res: any) => {
 
     return res.status(200).json({ templates });
   } catch (error: any) {
-    return res.status(500).json({ message: 'Failed to fetch templates' });
+    return res.status(500).json({ message: 'Failed to fetch templates', error: error?.message || error });
   }
 });
 
@@ -1064,7 +1064,8 @@ router.post('/templates/sync', authenticateToken, async (req: any, res: any) => 
 
     return res.status(200).json({ templates });
   } catch (error: any) {
-    return res.status(500).json({ message: 'Sync failed' });
+    console.error('Template sync error:', error);
+    return res.status(500).json({ message: 'Sync failed', error: error?.message || error });
   }
 });
 
