@@ -145,8 +145,24 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-app.get("/health", (_req, res) => {
-  res.status(200).json({ status: "ok" });
+app.get("/health", async (_req, res) => {
+  try {
+    // Check Database Connectivity
+    await prisma.$queryRaw`SELECT 1`;
+    res.status(200).json({ 
+      status: "healthy",
+      database: "connected",
+      timestamp: new Date().toISOString(),
+      version: process.env.npm_package_version || "1.0.0"
+    });
+  } catch (error) {
+    res.status(503).json({ 
+      status: "unhealthy", 
+      database: "disconnected",
+      error: (error as Error).message,
+      timestamp: new Date().toISOString()
+    });
+  }
 });
 
 // Admin/System debug routes (no tenant needed) - Restricted to development
