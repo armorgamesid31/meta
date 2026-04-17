@@ -757,7 +757,16 @@ function normalizeWebhookPayload(body: any) {
           if (msg?.sticker) media.push({ type: 'sticker', id: msg.sticker.id ?? null, url: msg.sticker.url ?? null });
 
           const messageType = parseMetaMessageType('WHATSAPP', msg, media);
-          const channelUserId = contact?.wa_id || from || null;
+          
+          // Detect echo (outbound) for WhatsApp:
+          // In Cloud API, if the message is sent from a linked device (phone app),
+          // 'from' will match the business phone number.
+          const businessWaId = value?.metadata?.display_phone_number;
+          const isEcho = Boolean(msg?.type && from && businessWaId && from === businessWaId);
+
+          // For inbound, channelUserId is 'from'. For echo, it's 'to' (the customer).
+          const channelUserId = isEcho ? (msg?.to || null) : (contact?.wa_id || from || null);
+          
           const mediaUrls = media.map((m) => m?.url).filter(Boolean);
           const primaryMedia = media[0] || null;
           const primaryMediaId = primaryMedia?.id || null;
@@ -778,7 +787,7 @@ function normalizeWebhookPayload(body: any) {
             timestamp: Number(msg?.timestamp || Date.now()),
             eventTimestamp: toIsoFromTs(msg?.timestamp),
             senderId: from || null,
-            recipientId: value?.metadata?.phone_number_id || null,
+            recipientId: value?.metadata?.phone_number_id || (isEcho ? null : from) || null,
             externalAccountId: value?.metadata?.phone_number_id || null,
             externalBusinessId: entry?.id || null,
             channelUserId,
@@ -793,8 +802,8 @@ function normalizeWebhookPayload(body: any) {
             fetchMediaUrl: primaryMediaId ? `https://api.chakrahq.com/v1/whatsapp/v19.0/media/${primaryMediaId}/show` : null,
             actionPayload: msg?.interactive?.button_reply?.id || msg?.interactive?.list_reply?.id || null,
             actionTitle: msg?.interactive?.button_reply?.title || msg?.interactive?.list_reply?.title || null,
-            direction: 'inbound',
-            isEcho: false,
+            direction: isEcho ? 'outbound' : 'inbound',
+            isEcho,
             raw: root,
           });
         }
