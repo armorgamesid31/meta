@@ -296,11 +296,30 @@ async function sendInstagramMessage(params: {
     (typeof response.data?.message_id === 'string' && response.data.message_id.trim()) ||
     `ig_ai_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 
-  return {
+  const result = {
     providerMessageId,
     externalAccountId: senderInstagramId,
     rawResponse: response.data ?? null,
   };
+
+  // Log outbound AI message for debugging
+  void prisma.metaChannelWebhookLog.create({
+    data: {
+      channel: 'INSTAGRAM',
+      direction: 'OUTBOUND',
+      eventType: 'ai_send',
+      salonId: params.salonId,
+      conversationKey: params.conversationKey,
+      payload: {
+        recipientId: rawRecipientId,
+        text: params.text,
+        actionKind: params.actionKind,
+        response: response.data
+      },
+    }
+  }).catch(err => console.error('Error logging outbound AI IG:', err));
+
+  return result;
 }
 
 async function sendWhatsappViaChakra(params: {
@@ -398,11 +417,30 @@ async function sendWhatsappViaChakra(params: {
     (typeof response.data?.data?.id === 'string' && response.data.data.id.trim()) ||
     `wa_ai_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 
-  return {
+  const result = {
     providerMessageId,
     externalAccountId: salon.chakraPhoneNumberId || params.externalAccountId || null,
     rawResponse: response.data ?? null,
   };
+
+  // Log outbound AI message for debugging
+  void prisma.metaChannelWebhookLog.create({
+    data: {
+      channel: 'WHATSAPP',
+      direction: 'OUTBOUND',
+      eventType: 'ai_send',
+      salonId: params.salonId,
+      conversationKey: params.conversationKey,
+      payload: {
+        to,
+        text: params.text,
+        actionKind: params.actionKind,
+        response: response.data
+      },
+    }
+  }).catch(err => console.error('Error logging outbound AI WA:', err));
+
+  return result;
 }
 
 router.post('/send', async (req: any, res: any) => {

@@ -1284,6 +1284,20 @@ function handleVerification(req: any, res: any, channel?: ChannelType) {
 
 async function handleInbound(req: any, res: any, forcedChannel?: ChannelType) {
   try {
+    // Log the raw webhook for debugging
+    const channel = forcedChannel || (req.body?.object === 'whatsapp_business_account' ? 'WHATSAPP' : req.body?.object === 'instagram' ? 'INSTAGRAM' : 'WHATSAPP');
+    
+    // We try to log it background-ish so we don't slow down the response
+    void prisma.metaChannelWebhookLog.create({
+      data: {
+        channel: channel as any,
+        direction: 'INBOUND',
+        eventType: req.body?.entry?.[0]?.changes?.[0]?.value?.messages ? 'message' : 'other',
+        payload: req.body || {},
+        headers: req.headers || {},
+      }
+    }).catch(err => console.error('Error logging webhook:', err));
+
     const normalized = normalizeWebhookPayload(req.body);
     const filtered = forcedChannel ? normalized.filter((i) => i.channel === forcedChannel) : normalized;
     const processed = await processIncomingBatch(filtered);

@@ -1026,6 +1026,22 @@ model ConversationMessageEvent {
   @@index([salonId, channel, conversationKey, processingStatus], map: "idx_message_event_salon_conv_status")
 }
 
+model MetaChannelWebhookLog {
+  id              Int         @id @default(autoincrement())
+  channel         ChannelType
+  direction       String      @default("INBOUND") // INBOUND or OUTBOUND
+  eventType       String?     // e.g. "message", "status", "echo", "reply"
+  payload         Json
+  headers         Json?
+  conversationKey String?
+  salonId         Int?
+  createdAt       DateTime    @default(now()) @db.Timestamp(6)
+
+  @@index([channel, direction, createdAt])
+  @@index([conversationKey])
+  @@index([salonId, createdAt])
+}
+
 model ConversationState {
   id                    Int                        @id @default(autoincrement())
   salonId               Int

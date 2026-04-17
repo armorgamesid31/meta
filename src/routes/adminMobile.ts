@@ -8602,6 +8602,22 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
         (typeof graphResponse.data?.message_id === 'string' && graphResponse.data.message_id.trim()) ||
         `ig_out_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
       usedExternalAccountId = senderInstagramId;
+
+      // Log outbound Instagram for debugging
+      void prisma.metaChannelWebhookLog.create({
+        data: {
+          channel: 'INSTAGRAM',
+          direction: 'OUTBOUND',
+          eventType: 'reply',
+          salonId,
+          conversationKey: canonicalConversationKey,
+          payload: {
+            recipientId: rawRecipientId,
+            text,
+            response: graphResponse.data
+          },
+        }
+      }).catch(err => console.error('Error logging outbound manual IG:', err));
     } else if (channel === 'WHATSAPP') {
       const salon = await prisma.salon.findUnique({
         where: { id: salonId },
@@ -8639,6 +8655,22 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
         (Array.isArray(messages) && messages[0]?.id) ||
         `wa_out_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
       usedExternalAccountId = phoneId;
+
+      // Log outbound WhatsApp for debugging
+      void prisma.metaChannelWebhookLog.create({
+        data: {
+          channel: 'WHATSAPP',
+          direction: 'OUTBOUND',
+          eventType: 'reply',
+          salonId,
+          conversationKey: canonicalConversationKey,
+          payload: {
+            to: cleanTo,
+            text,
+            response: whatsappResponse.data
+          },
+        }
+      }).catch(err => console.error('Error logging outbound manual WA:', err));
     }
 
     const saved = await prisma.inboundMessageQueue.create({
