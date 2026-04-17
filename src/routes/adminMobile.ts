@@ -8460,8 +8460,8 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
     return res.status(400).json({ message: 'channel must be INSTAGRAM or WHATSAPP.' });
   }
 
-  if (channel !== 'INSTAGRAM') {
-    return res.status(400).json({ message: 'Manual reply is currently enabled only for Instagram.' });
+  if (channel !== 'INSTAGRAM' && channel !== 'WHATSAPP') {
+    return res.status(400).json({ message: 'Manual reply is currently enabled only for Instagram and WhatsApp.' });
   }
 
   const conversationKey = typeof req.params.conversationKey === 'string' ? req.params.conversationKey.trim() : '';
@@ -8575,36 +8575,79 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
       senderInstagramId = legacyExternal;
     }
 
-    if (!accessToken || !senderInstagramId) {
+    if (channel === "INSTAGRAM" && (!accessToken || !senderInstagramId)) {
       return res.status(400).json({ message: 'Instagram is not connected yet.' });
     }
 
-    const canonicalConversationKey = `INSTAGRAM:${rawRecipientId}`;
+    const canonicalConversationKey = `${channel}:${rawRecipientId}`;
 
-    const url = `https://graph.instagram.com/${META_GRAPH_VERSION}/${senderInstagramId}/messages`;
-    const graphResponse = await axios.post(
-      url,
-      {
-        recipient: { id: rawRecipientId },
-        message: { text },
-      },
-      {
-        params: { access_token: accessToken },
-        timeout: 20000,
-      },
-    );
+    let graphMessageId = '';
+    let usedExternalAccountId = '';
 
-    const graphMessageId =
-      (typeof graphResponse.data?.message_id === 'string' && graphResponse.data.message_id.trim()) ||
-      `ig_out_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    if (channel === 'INSTAGRAM') {
+      const url = `https://graph.instagram.com/${META_GRAPH_VERSION}/${senderInstagramId}/messages`;
+      const graphResponse = await axios.post(
+        url,
+        {
+          recipient: { id: rawRecipientId },
+          message: { text },
+        },
+        {
+          params: { access_token: accessToken },
+          timeout: 20000,
+        },
+      );
+
+      graphMessageId =
+        (typeof graphResponse.data?.message_id === 'string' && graphResponse.data.message_id.trim()) ||
+        `ig_out_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+      usedExternalAccountId = senderInstagramId;
+    } else if (channel === 'WHATSAPP') {
+      const salon = await prisma.salon.findUnique({
+        where: { id: salonId },
+        select: { id: true, chakraPluginId: true, chakraPhoneNumberId: true },
+      });
+
+      const pluginId = salon?.chakraPluginId;
+      const phoneId = salon?.chakraPhoneNumberId;
+      const token = process.env.CHAKRA_API_TOKEN;
+
+      if (!pluginId || !phoneId || !token) {
+        return res.status(400).json({ message: 'WhatsApp is not properly connected (missing Chakra configuration).' });
+      }
+
+      const cleanTo = rawRecipientId.replace(/\D/g, '');
+      const url = `https://api.chakrahq.com/v1/ext/plugin/whatsapp/${pluginId}/api/v19.0/${phoneId}/messages`;
+      
+      const whatsappResponse = await axios.post(
+        url,
+        {
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to: cleanTo,
+          type: 'text',
+          text: { body: text },
+        },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          timeout: 20000,
+        },
+      );
+
+      const messages = whatsappResponse.data?.messages || whatsappResponse.data?._data?.messages;
+      graphMessageId =
+        (Array.isArray(messages) && messages[0]?.id) ||
+        `wa_out_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+      usedExternalAccountId = phoneId;
+    }
 
     const saved = await prisma.inboundMessageQueue.create({
       data: {
         salonId,
-        channel: 'INSTAGRAM',
+        channel,
         conversationKey: canonicalConversationKey,
         providerMessageId: graphMessageId,
-        externalAccountId: senderInstagramId,
+        externalAccountId: usedExternalAccountId,
         customerName: latestInbound.customerName || null,
         messageType: 'text_outbound',
         text,
@@ -8616,17 +8659,41 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
             userId: senderUser?.id || null,
             email: senderUserEmail,
           },
-          graphResponse: graphResponse.data || null,
         } as any,
         status: 'DONE',
         processedAt: new Date(),
       },
     });
 
+    await upsertConversationMessageEvent({
+      salonId,
+      channel,
+      conversationKey: canonicalConversationKey,
+      providerMessageId: graphMessageId,
+      externalAccountId: usedExternalAccountId,
+      customerName: latestInbound.customerName || null,
+      messageType: 'text_outbound',
+      text,
+      direction: 'OUTBOUND',
+      eventTimestamp: new Date(),
+      processingStatus: 'DONE',
+      outboundSource: 'HUMAN_APP',
+      outboundSenderUserId: senderUser?.id || null,
+      outboundSenderEmail: senderUserEmail,
+      rawPayload: {
+        direction: 'outbound',
+        source: 'HUMAN_APP',
+        sentBy: {
+          userId: senderUser?.id || null,
+          email: senderUserEmail,
+        },
+      } as any,
+    });
+
     await prisma.outboundMessageTrace.upsert({
       where: {
         channel_providerMessageId: {
-          channel: 'INSTAGRAM',
+          channel,
           providerMessageId: graphMessageId,
         },
       },
