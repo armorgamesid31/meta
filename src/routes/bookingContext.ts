@@ -173,6 +173,7 @@ router.get('/context', async (req: any, res: any) => {
     wallet: [],
     enrollments: [],
     shareLinks: [],
+    completedCount: 0,
   };
 
   if (customer) {
@@ -387,8 +388,6 @@ router.get('/context', async (req: any, res: any) => {
     originDisplayPhone: originPhone,
     originProfileName,
     originInstagramId,
-    salonId,
-    salonName: salon.name,
     salonId,
     salonName: salon.name,
     isKnownCustomer,

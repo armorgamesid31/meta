@@ -5,6 +5,7 @@ import {
   AppointmentStatus,
   WaitlistOfferStatus,
   ChannelProfileFetchStatus,
+  InboundMessageStatus,
 } from '@prisma/client';
 import axios from 'axios';
 import { createHash } from 'crypto';

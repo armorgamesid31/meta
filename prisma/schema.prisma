@@ -1680,6 +1680,8 @@ enum AppointmentStatus {
   CANCELLED
   NO_SHOW
   COMPLETED
+  UPDATED
+  CONFIRMED
 }
 
 enum AppointmentLineStatus {
