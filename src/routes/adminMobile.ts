@@ -8734,7 +8734,6 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
       conversationKey: canonicalConversationKey,
       byHumanMessage: true,
     });
-    });
 
     return res.status(200).json({
       item: {
