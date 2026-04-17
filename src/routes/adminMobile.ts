@@ -1136,7 +1136,7 @@ function parseCheckoutLines(input: unknown): ParsedCheckoutLine[] {
       appointmentLineIdRaw === null || appointmentLineIdRaw === undefined || appointmentLineIdRaw === ''
         ? null
         : Number(appointmentLineIdRaw);
-    const normalizedLineId = Number.isInteger(appointmentLineId) && appointmentLineId > 0 ? appointmentLineId : null;
+    const normalizedLineId = (typeof appointmentLineId === 'number' && Number.isInteger(appointmentLineId) && appointmentLineId > 0) ? appointmentLineId : null;
     const key = `${appointmentId}:${normalizedLineId || 0}`;
     if (!Number.isInteger(appointmentId) || appointmentId <= 0 || seen.has(key)) continue;
     const closeType = parseCheckoutCloseType((row as any).closeType);
@@ -1152,7 +1152,7 @@ function parseCheckoutLines(input: unknown): ParsedCheckoutLine[] {
       appointmentLineId: normalizedLineId,
       closeType,
       paymentMethod,
-      customerPackageId: Number.isInteger(customerPackageId) && customerPackageId > 0 ? customerPackageId : null,
+      customerPackageId: (typeof customerPackageId === 'number' && Number.isInteger(customerPackageId) && customerPackageId > 0) ? customerPackageId : null,
     });
     seen.add(key);
   }
@@ -1757,11 +1757,11 @@ async function recomputeAndPersistAppointmentStatusFromLines(tx: any, appointmen
   }
   const statuses = lines.map((line: any) => String(line.status || '').toUpperCase());
   let nextStatus: 'BOOKED' | 'CANCELLED' | 'NO_SHOW' | 'COMPLETED' = 'BOOKED';
-  if (statuses.every((status) => status === 'COMPLETED')) {
+  if (statuses.every((status: string) => status === 'COMPLETED')) {
     nextStatus = 'COMPLETED';
-  } else if (statuses.every((status) => status === 'CANCELLED')) {
+  } else if (statuses.every((status: string) => status === 'CANCELLED')) {
     nextStatus = 'CANCELLED';
-  } else if (statuses.every((status) => status === 'NO_SHOW')) {
+  } else if (statuses.every((status: string) => status === 'NO_SHOW')) {
     nextStatus = 'NO_SHOW';
   } else {
     nextStatus = 'BOOKED';
@@ -2233,7 +2233,7 @@ router.post('/appointments', authenticateToken, async (req: any, res: any) => {
       return { appointments: createdAppointments };
     });
 
-    if ('error' in result) {
+    if ('error' in result && result.error) {
       return res.status(result.error.code).json({
         message: result.error.message,
         ...(result.error.conflict ? { conflict: result.error.conflict } : {}),
@@ -3264,7 +3264,7 @@ router.post('/customers/:id/packages', authenticateToken, async (req: any, res: 
         sourceType = 'TEMPLATE';
         scopeType = template.scopeType as any;
         name = name || template.name;
-        services = template.services.map((row) => ({
+        services = template.services.map((row: any) => ({
           serviceId: row.serviceId,
           initialQuota: row.initialQuota,
         }));
@@ -3354,7 +3354,7 @@ router.post('/customers/:id/packages', authenticateToken, async (req: any, res: 
       return { item: pkg };
     });
 
-    if ('error' in created) {
+    if ('error' in created && created.error) {
       return res.status(created.error.code).json({ message: created.error.message });
     }
 
@@ -3477,7 +3477,7 @@ router.post('/customers/:id/packages/:packageId/adjust', authenticateToken, asyn
       return { item };
     });
 
-    if ('error' in result) {
+    if ('error' in result && result.error) {
       return res.status(result.error.code).json({ message: result.error.message });
     }
 
@@ -3523,7 +3523,7 @@ router.get('/customers/:id/package-ledger', authenticateToken, async (req: any, 
     });
 
     return res.status(200).json({
-      items: items.map((item) => ({
+      items: items.map((item: any) => ({
         id: item.id,
         customerPackageId: item.customerPackageId,
         packageName: item.customerPackage?.name || null,
@@ -3720,7 +3720,7 @@ router.patch('/appointments/:id/status', authenticateToken, async (req: any, res
       };
     });
 
-    if ('error' in result) {
+    if ('error' in result && result.error) {
       return res.status(result.error.code).json({ message: result.error.message });
     }
 
@@ -3892,7 +3892,7 @@ router.patch('/appointment-lines/:id/status', authenticateToken, async (req: any
       };
     });
 
-    if ('error' in result) {
+    if ('error' in result && result.error) {
       return res.status(result.error.code).json({ message: result.error.message });
     }
 
@@ -4030,7 +4030,7 @@ router.post('/appointments/checkout', authenticateToken, async (req: any, res: a
       const customerIds = Array.from(
         new Set(
           appointments
-            .map((item) => (Number.isInteger(item.customerId) && item.customerId > 0 ? Number(item.customerId) : null))
+            .map((item: any) => (Number.isInteger(item.customerId) && item.customerId > 0 ? Number(item.customerId) : null))
             .filter((id): id is number => id !== null),
         ),
       );
@@ -4266,7 +4266,7 @@ router.post('/appointments/checkout', authenticateToken, async (req: any, res: a
       };
     });
 
-    if ('error' in result) {
+    if ('error' in result && result.error) {
       return res.status(result.error.code).json({ message: result.error.message });
     }
 
@@ -8875,7 +8875,7 @@ router.post('/conversations/:channel/:conversationKey/handover', authenticateTok
         channel,
         conversationKey: resolvedConversationKey,
         providerMessageId: `handover_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
-        externalAccountId: latestInbound.externalAccountId,
+        externalAccountId: latestInbound.externalAccountId || '',
         customerName: latestInbound.customerName || null,
         messageType: 'handover_request',
         text: note || 'Human handover requested.',
@@ -8894,7 +8894,7 @@ router.post('/conversations/:channel/:conversationKey/handover', authenticateTok
       channel,
       conversationKey: resolvedConversationKey,
       providerMessageId: saved.providerMessageId,
-      externalAccountId: latestInbound.externalAccountId,
+      externalAccountId: latestInbound.externalAccountId || '',
       customerName: latestInbound.customerName || null,
       messageType: 'handover_request',
       text: note || 'Human handover requested.',
@@ -9839,7 +9839,7 @@ router.post('/instagram-inbox/conversations/:conversationKey/handover', authenti
         channel: 'INSTAGRAM',
         conversationKey: resolvedConversationKey,
         providerMessageId: `handover_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
-        externalAccountId: latestInbound.externalAccountId,
+        externalAccountId: latestInbound.externalAccountId || '',
         customerName: latestInbound.customerName || null,
         messageType: 'handover_request',
         text: note || 'Human handover requested.',
@@ -9858,7 +9858,7 @@ router.post('/instagram-inbox/conversations/:conversationKey/handover', authenti
       channel: 'INSTAGRAM',
       conversationKey: resolvedConversationKey,
       providerMessageId: saved.providerMessageId,
-      externalAccountId: latestInbound.externalAccountId,
+      externalAccountId: latestInbound.externalAccountId || '',
       customerName: latestInbound.customerName || null,
       messageType: 'handover_request',
       text: note || 'Human handover requested.',
