@@ -744,6 +744,8 @@ function normalizeWebhookPayload(body: any) {
         const value = change?.value ?? {};
         const contacts = value?.contacts ?? [];
         const contactByWaId = Object.fromEntries(contacts.map((c: any) => [c?.wa_id, c]));
+        const field = String(change?.field || 'messages');
+        const isEchoField = field === 'smb_message_echoes';
 
         for (const msg of value?.messages ?? []) {
           const from = msg?.from ?? null;
@@ -762,10 +764,13 @@ function normalizeWebhookPayload(body: any) {
           // In Cloud API, if the message is sent from a linked device (phone app),
           // 'from' will match the business phone number.
           const businessWaId = value?.metadata?.display_phone_number;
-          const isEcho = Boolean(msg?.type && from && businessWaId && from === businessWaId);
+          const isEcho = isEchoField || Boolean(msg?.type && from && businessWaId && from === businessWaId);
 
           // For inbound, channelUserId is 'from'. For echo, it's 'to' (the customer).
-          const channelUserId = isEcho ? (msg?.to || null) : (contact?.wa_id || from || null);
+          // If 'to' is missing (common in smb_message_echoes), try to use the first contact's wa_id.
+          const channelUserId = isEcho 
+            ? (msg?.to || contacts[0]?.wa_id || null) 
+            : (contact?.wa_id || from || null);
           
           const mediaUrls = media.map((m) => m?.url).filter(Boolean);
           const primaryMedia = media[0] || null;
@@ -1301,6 +1306,33 @@ async function handleInbound(req: any, res: any, forcedChannel?: ChannelType) {
     const normalized = normalizeWebhookPayload(req.body);
     const filtered = forcedChannel ? normalized.filter((i) => i.channel === forcedChannel) : normalized;
     const processed = await processIncomingBatch(filtered);
+
+    // Update the log with results and salonId if possible
+    if (processed.length > 0) {
+      const first = processed[0];
+      const salonId = (first as any).salonId || null; // This might be hidden since it's a batch, but let's try to get it from results
+      
+      // Since it's a batch, we'll just log the first successful salonId or null
+      const effectiveSalonId = processed.find(p => p.success)?.salonId || processed[0]?.salonId || null;
+
+      void prisma.metaChannelWebhookLog.create({
+        data: {
+          channel: channel as any,
+          direction: 'INBOUND',
+          eventType: 'processing_result',
+          salonId: effectiveSalonId,
+          payload: {
+            summary: processed.map(p => ({
+              providerMessageId: p.providerMessageId,
+              success: p.success,
+              result: p.result,
+              isEcho: p.isEcho
+            }))
+          },
+          headers: {}
+        }
+      }).catch(() => {});
+    }
 
     for (const item of processed) {
       if (!item.success || item.isEcho) continue;
