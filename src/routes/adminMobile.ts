@@ -8665,31 +8665,6 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
       },
     });
 
-    await upsertConversationMessageEvent({
-      salonId,
-      channel,
-      conversationKey: canonicalConversationKey,
-      providerMessageId: graphMessageId,
-      externalAccountId: usedExternalAccountId,
-      customerName: latestInbound.customerName || null,
-      messageType: 'text_outbound',
-      text,
-      direction: 'OUTBOUND',
-      eventTimestamp: new Date(),
-      processingStatus: 'DONE',
-      outboundSource: 'HUMAN_APP',
-      outboundSenderUserId: senderUser?.id || null,
-      outboundSenderEmail: senderUserEmail,
-      rawPayload: {
-        direction: 'outbound',
-        source: 'HUMAN_APP',
-        sentBy: {
-          userId: senderUser?.id || null,
-          email: senderUserEmail,
-        },
-      } as any,
-    });
-
     await prisma.outboundMessageTrace.upsert({
       where: {
         channel_providerMessageId: {
@@ -8701,7 +8676,7 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
         salonId,
         conversationKey: canonicalConversationKey,
         source: 'HUMAN_APP',
-        externalAccountId: senderInstagramId,
+        externalAccountId: usedExternalAccountId,
         text,
         sourceUserId: senderUser?.id || null,
         sourceUserEmail: senderUserEmail,
@@ -8709,11 +8684,11 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
       },
       create: {
         salonId,
-        channel: 'INSTAGRAM',
+        channel,
         conversationKey: canonicalConversationKey,
         providerMessageId: graphMessageId,
         source: 'HUMAN_APP',
-        externalAccountId: senderInstagramId,
+        externalAccountId: usedExternalAccountId,
         text,
         sourceUserId: senderUser?.id || null,
         sourceUserEmail: senderUserEmail,
@@ -8723,10 +8698,10 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
 
     await upsertConversationMessageEvent({
       salonId,
-      channel: 'INSTAGRAM',
+      channel,
       conversationKey: canonicalConversationKey,
       providerMessageId: graphMessageId,
-      externalAccountId: senderInstagramId,
+      externalAccountId: usedExternalAccountId,
       customerName: latestInbound.customerName || null,
       messageType: 'text_outbound',
       text,
@@ -8743,21 +8718,22 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
           userId: senderUser?.id || null,
           email: senderUserEmail,
         },
-        graphResponse: graphResponse.data || null,
       } as any,
     });
 
     await markConversationHumanActive({
       salonId,
-      channel: 'INSTAGRAM',
+      channel,
       conversationKey: canonicalConversationKey,
       profileName: latestInbound.customerName || null,
     });
+
     await resolveHandoverAlert({
       salonId,
-      channel: 'INSTAGRAM',
+      channel,
       conversationKey: canonicalConversationKey,
       byHumanMessage: true,
+    });
     });
 
     return res.status(200).json({
