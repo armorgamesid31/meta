@@ -4,7 +4,7 @@ const prisma = new PrismaClient();
 
 async function main() {
   const log = await prisma.metaChannelWebhookLog.findUnique({
-    where: { id: 172 }
+    where: { id: 154 }
   });
 
   console.log(JSON.stringify(log?.payload, null, 2));

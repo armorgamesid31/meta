@@ -26,7 +26,7 @@ export const authenticateToken = async (req: AuthRequest, res: Response, next: N
 
   const payload = verifyToken(token);
 
-  if (!payload) return res.sendStatus(403); // Invalid token
+  if (!payload) return res.sendStatus(401); // Invalid or expired token
 
   const salonHeader = Array.isArray(salonHeaderRaw) ? salonHeaderRaw[0] : salonHeaderRaw;
   const requestedSalonId =

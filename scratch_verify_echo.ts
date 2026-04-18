@@ -4,17 +4,16 @@ const prisma = new PrismaClient();
 
 async function main() {
   const logs = await prisma.metaChannelWebhookLog.findMany({
-    where: { 
-      payload: {
-        path: ['entry', '0', 'changes', '0', 'field'],
-        equals: 'smb_message_echoes'
-      }
-    },
-    orderBy: { createdAt: 'desc' },
-    take: 10
+    orderBy: { id: 'desc' },
+    take: 5
   });
 
-  console.log('Echoes found:', logs.length);
+  console.log(JSON.stringify(logs.map(l => ({
+    id: l.id,
+    time: l.createdAt,
+    eventType: l.eventType,
+    summary: (l.payload as any).summary
+  })), null, 2));
 }
 
 main()

@@ -16,6 +16,7 @@ const listenersBySalon = new Map<number, Set<Listener>>();
 
 export function publishConversationStreamEvent(event: ConversationStreamEvent): void {
   const listeners = listenersBySalon.get(event.salonId);
+  // console.log(`[EventBus] Publishing ${event.direction} ${event.messageType} for salon ${event.salonId} (${event.channel})`);
   if (!listeners || listeners.size === 0) return;
   for (const listener of listeners) {
     try {

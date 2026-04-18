@@ -301,7 +301,7 @@ router.get('/conversations/stream', authenticateToken, async (req: any, res: any
   res.write(`event: ready\ndata: ${JSON.stringify({ ok: true, salonId, channel: channelFilter || null })}\n\n`);
 
   const unsubscribe = subscribeConversationStream(salonId, (event) => {
-    if (channelFilter && event.channel !== channelFilter) return;
+    // We send all updates for the salon to the persistent connection
     res.write(`event: conversation.update\ndata: ${JSON.stringify(event)}\n\n`);
   });
 
