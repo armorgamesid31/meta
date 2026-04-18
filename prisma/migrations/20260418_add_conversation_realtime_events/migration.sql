@@ -1,4 +1,4 @@
-﻿CREATE TABLE "ConversationRealtimeEvent" (
+CREATE TABLE "ConversationRealtimeEvent" (
   "id" SERIAL NOT NULL,
   "salonId" INTEGER NOT NULL,
   "channel" "ChannelType" NOT NULL,
