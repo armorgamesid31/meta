@@ -18,10 +18,13 @@ const HUMAN_PENDING_WAIT_TEXT = (
 ).trim();
 
 function isInternalAuthorized(req: any): boolean {
-  const configured = process.env.INTERNAL_API_KEY;
-  if (!configured) return true;
+  const configuredKeys = [
+    (process.env.INTERNAL_API_KEY || '').trim(),
+    (process.env.N8N_INTERNAL_API_KEY || '').trim(),
+  ].filter(Boolean);
+  if (configuredKeys.length === 0) return true;
   const token = req.headers['x-internal-api-key'];
-  return typeof token === 'string' && token === configured;
+  return typeof token === 'string' && configuredKeys.includes(token);
 }
 
 function asChannel(value: unknown): ChannelType | null {
