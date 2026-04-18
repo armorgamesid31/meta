@@ -1,12 +1,12 @@
 import { ChannelType } from '@prisma/client';
 
 export type ConversationStreamEvent = {
+  cursor: number;
   salonId: number;
   channel: ChannelType;
   conversationKey: string;
-  providerMessageId: string;
-  messageType: string;
-  direction: 'INBOUND' | 'OUTBOUND' | 'SYSTEM';
+  eventType: string;
+  messageEventId: number | null;
   eventTimestamp: string;
 };
 

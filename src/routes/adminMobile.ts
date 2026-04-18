@@ -9,6 +9,11 @@ import { normalizeInstagramIdentity, normalizePhoneDigits } from '../services/id
 import { upsertConversationMessageEvent } from '../services/conversationMessageEvents.js';
 import { subscribeConversationStream } from '../services/conversationEventsBus.js';
 import {
+  getLatestRealtimeCursor,
+  listRealtimeEventsSince,
+  readRealtimeSync,
+} from '../services/conversationRealtimeEvents.js';
+import {
   createNotification,
   getDefaultNotificationPolicy,
   getSalonNotificationPolicy,
@@ -291,6 +296,8 @@ router.get('/conversations/stream', authenticateToken, async (req: any, res: any
   }
 
   const channelFilter = asInboundChannel(req.query.channel);
+  const cursorRaw = typeof req.query.cursor === 'string' ? Number(req.query.cursor) : Number(req.query.cursor || 0);
+  const sinceCursor = Number.isInteger(cursorRaw) && cursorRaw > 0 ? cursorRaw : 0;
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -298,15 +305,50 @@ router.get('/conversations/stream', authenticateToken, async (req: any, res: any
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders?.();
 
-  res.write(`event: ready\ndata: ${JSON.stringify({ ok: true, salonId, channel: channelFilter || null })}\n\n`);
+  let latestCursor = await getLatestRealtimeCursor({
+    salonId,
+    channel: channelFilter || null,
+  });
+
+  if (sinceCursor > 0) {
+    const missed = await listRealtimeEventsSince({
+      salonId,
+      channel: channelFilter || null,
+      since: sinceCursor,
+      limit: 500,
+    });
+
+    for (const item of missed) {
+      latestCursor = Math.max(latestCursor, item.cursor);
+      res.write(`event: conversation.update\ndata: ${JSON.stringify(item)}\n\n`);
+    }
+  }
+
+  res.write(
+    `event: ready\ndata: ${JSON.stringify({
+      ok: true,
+      salonId,
+      channel: channelFilter || null,
+      latestCursor,
+      serverTime: new Date().toISOString(),
+    })}\n\n`,
+  );
 
   const unsubscribe = subscribeConversationStream(salonId, (event) => {
-    // We send all updates for the salon to the persistent connection
+    if (channelFilter && event.channel !== channelFilter) {
+      return;
+    }
+    latestCursor = Math.max(latestCursor, event.cursor);
     res.write(`event: conversation.update\ndata: ${JSON.stringify(event)}\n\n`);
   });
 
   const keepAlive = setInterval(() => {
-    res.write(': keep-alive\n\n');
+    res.write(
+      `event: heartbeat\ndata: ${JSON.stringify({
+        latestCursor,
+        serverTime: new Date().toISOString(),
+      })}\n\n`,
+    );
   }, 25000);
 
   req.on('close', () => {
@@ -314,6 +356,29 @@ router.get('/conversations/stream', authenticateToken, async (req: any, res: any
     unsubscribe();
     res.end();
   });
+});
+
+router.get('/conversations/realtime/sync', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const channelFilter = asInboundChannel(req.query.channel);
+
+  try {
+    const response = await readRealtimeSync({
+      salonId,
+      channel: channelFilter || null,
+      since: req.query.since,
+      limit: req.query.limit,
+    });
+
+    return res.status(200).json(response);
+  } catch (error) {
+    console.error('Conversation realtime sync error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
 });
 
 function parseIsoDate(value: unknown): Date | null {

@@ -7,6 +7,7 @@ import {
 } from '@prisma/client';
 import { prisma } from '../prisma.js';
 import { publishConversationStreamEvent } from './conversationEventsBus.js';
+import { createRealtimeEventInTx } from './conversationRealtimeEvents.js';
 
 type UpsertConversationMessageEventInput = {
   salonId: number;
@@ -34,55 +35,73 @@ export async function upsertConversationMessageEvent(
     return;
   }
 
-  await prisma.conversationMessageEvent.upsert({
-    where: {
-      channel_providerMessageId: {
-        channel: input.channel,
-        providerMessageId,
+  const realtimeEvent = await prisma.$transaction(async (tx) => {
+    const saved = await tx.conversationMessageEvent.upsert({
+      where: {
+        channel_providerMessageId: {
+          channel: input.channel,
+          providerMessageId,
+        },
       },
-    },
-    update: {
+      update: {
+        salonId: input.salonId,
+        conversationKey: input.conversationKey,
+        externalAccountId: input.externalAccountId || null,
+        customerName: input.customerName || null,
+        messageType: input.messageType,
+        text: input.text || null,
+        direction: input.direction,
+        eventTimestamp: input.eventTimestamp,
+        processingStatus: input.processingStatus || null,
+        outboundSource: input.outboundSource || null,
+        outboundSenderUserId: input.outboundSenderUserId || null,
+        outboundSenderEmail: input.outboundSenderEmail || null,
+        rawPayload: input.rawPayload,
+        updatedAt: new Date(),
+      },
+      create: {
+        salonId: input.salonId,
+        channel: input.channel,
+        conversationKey: input.conversationKey,
+        providerMessageId,
+        externalAccountId: input.externalAccountId || null,
+        customerName: input.customerName || null,
+        messageType: input.messageType,
+        text: input.text || null,
+        direction: input.direction,
+        eventTimestamp: input.eventTimestamp,
+        processingStatus: input.processingStatus || null,
+        outboundSource: input.outboundSource || null,
+        outboundSenderUserId: input.outboundSenderUserId || null,
+        outboundSenderEmail: input.outboundSenderEmail || null,
+        rawPayload: input.rawPayload,
+      },
+      select: {
+        id: true,
+        channel: true,
+        conversationKey: true,
+        eventTimestamp: true,
+        messageType: true,
+      },
+    });
+
+    return createRealtimeEventInTx(tx, {
       salonId: input.salonId,
-      conversationKey: input.conversationKey,
-      externalAccountId: input.externalAccountId || null,
-      customerName: input.customerName || null,
-      messageType: input.messageType,
-      text: input.text || null,
-      direction: input.direction,
-      eventTimestamp: input.eventTimestamp,
-      processingStatus: input.processingStatus || null,
-      outboundSource: input.outboundSource || null,
-      outboundSenderUserId: input.outboundSenderUserId || null,
-      outboundSenderEmail: input.outboundSenderEmail || null,
-      rawPayload: input.rawPayload,
-      updatedAt: new Date(),
-    },
-    create: {
-      salonId: input.salonId,
-      channel: input.channel,
-      conversationKey: input.conversationKey,
-      providerMessageId,
-      externalAccountId: input.externalAccountId || null,
-      customerName: input.customerName || null,
-      messageType: input.messageType,
-      text: input.text || null,
-      direction: input.direction,
-      eventTimestamp: input.eventTimestamp,
-      processingStatus: input.processingStatus || null,
-      outboundSource: input.outboundSource || null,
-      outboundSenderUserId: input.outboundSenderUserId || null,
-      outboundSenderEmail: input.outboundSenderEmail || null,
-      rawPayload: input.rawPayload,
-    },
+      channel: saved.channel,
+      conversationKey: saved.conversationKey,
+      eventType: saved.messageType || input.messageType,
+      messageEventId: saved.id,
+      eventTimestamp: saved.eventTimestamp,
+    });
   });
 
   publishConversationStreamEvent({
-    salonId: input.salonId,
-    channel: input.channel,
-    conversationKey: input.conversationKey,
-    providerMessageId,
-    messageType: input.messageType,
-    direction: input.direction,
-    eventTimestamp: input.eventTimestamp.toISOString(),
+    cursor: realtimeEvent.cursor,
+    salonId: realtimeEvent.salonId,
+    channel: realtimeEvent.channel,
+    conversationKey: realtimeEvent.conversationKey,
+    eventType: realtimeEvent.eventType,
+    messageEventId: realtimeEvent.messageEventId,
+    eventTimestamp: realtimeEvent.eventTimestamp,
   });
 }
