@@ -746,8 +746,9 @@ function normalizeWebhookPayload(body: any) {
         const contactByWaId = Object.fromEntries(contacts.map((c: any) => [c?.wa_id, c]));
         const field = String(change?.field || 'messages');
         const isEchoField = field === 'smb_message_echoes';
+        const messageList = (value?.messages || value?.message_echoes || []) as any[];
 
-        for (const msg of value?.messages ?? []) {
+        for (const msg of messageList) {
           const from = msg?.from ?? null;
           const contact = from ? contactByWaId[from] : null;
           const media: any[] = [];
