@@ -8480,6 +8480,98 @@ router.get('/conversations', authenticateToken, async (req: any, res: any) => {
         })
       : [];
 
+    const linkedInstagramBindingRows = linkedCustomerIds.length
+      ? await prisma.identityBinding.findMany({
+          where: {
+            salonId,
+            channel: 'INSTAGRAM',
+            customerId: {
+              in: linkedCustomerIds,
+            },
+          },
+          select: {
+            customerId: true,
+            subjectNormalized: true,
+          },
+        })
+      : [];
+
+    const linkedInstagramSubjects = Array.from(
+      new Set(
+        linkedInstagramBindingRows
+          .map((row) => normalizeInstagramIdentity(row.subjectNormalized))
+          .filter((value) => value.length > 0),
+      ),
+    );
+
+    const linkedInstagramProfileRows = linkedInstagramSubjects.length
+      ? await prisma.channelProfileCache.findMany({
+          where: {
+            salonId,
+            channel: 'INSTAGRAM',
+            subjectNormalized: {
+              in: linkedInstagramSubjects,
+            },
+          },
+          select: {
+            subjectNormalized: true,
+            profileName: true,
+            profileUsername: true,
+            profilePicUrl: true,
+          },
+        })
+      : [];
+
+    const linkedInstagramProfileBySubject = new Map<
+      string,
+      {
+        profileName: string | null;
+        profileUsername: string | null;
+        profilePicUrl: string | null;
+      }
+    >();
+    for (const row of linkedInstagramProfileRows) {
+      linkedInstagramProfileBySubject.set(row.subjectNormalized, {
+        profileName: row.profileName || null,
+        profileUsername: row.profileUsername || null,
+        profilePicUrl: row.profilePicUrl || null,
+      });
+    }
+
+    const linkedInstagramProfileByCustomerId = new Map<
+      number,
+      {
+        profileName: string | null;
+        profileUsername: string | null;
+        profilePicUrl: string | null;
+      }
+    >();
+    for (const row of linkedInstagramBindingRows) {
+      const normalized = normalizeInstagramIdentity(row.subjectNormalized);
+      if (!normalized) continue;
+      const profile = linkedInstagramProfileBySubject.get(normalized) || null;
+      if (!profile) continue;
+
+      const prev = linkedInstagramProfileByCustomerId.get(row.customerId) || null;
+      if (!prev) {
+        linkedInstagramProfileByCustomerId.set(row.customerId, profile);
+        continue;
+      }
+
+      const shouldReplace =
+        (!prev.profilePicUrl && Boolean(profile.profilePicUrl)) ||
+        (!prev.profileName && Boolean(profile.profileName)) ||
+        (!prev.profileUsername && Boolean(profile.profileUsername));
+
+      if (shouldReplace) {
+        linkedInstagramProfileByCustomerId.set(row.customerId, {
+          profileName: prev.profileName || profile.profileName || null,
+          profileUsername: prev.profileUsername || profile.profileUsername || null,
+          profilePicUrl: prev.profilePicUrl || profile.profilePicUrl || null,
+        });
+      }
+    }
+
     const linkedCustomerNameById = new Map<number, string>();
     for (const customer of linkedCustomers) {
       if (typeof customer.name === 'string' && customer.name.trim()) {
@@ -8501,12 +8593,20 @@ router.get('/conversations', authenticateToken, async (req: any, res: any) => {
         baseItem.linkedCustomerId && linkedCustomerNameById.has(baseItem.linkedCustomerId)
           ? linkedCustomerNameById.get(baseItem.linkedCustomerId) || null
           : null;
+      const linkedCustomerInstagramProfile =
+        baseItem.linkedCustomerId && linkedInstagramProfileByCustomerId.has(baseItem.linkedCustomerId)
+          ? linkedInstagramProfileByCustomerId.get(baseItem.linkedCustomerId) || null
+          : null;
 
       return {
         ...baseItem,
         customerName: linkedCustomerName || baseItem.customerName || cachedInstagramProfile?.profileName || null,
         profileUsername: baseItem.profileUsername || cachedInstagramProfile?.profileUsername || null,
-        profilePicUrl: baseItem.profilePicUrl || cachedInstagramProfile?.profilePicUrl || null,
+        profilePicUrl:
+          baseItem.profilePicUrl ||
+          cachedInstagramProfile?.profilePicUrl ||
+          linkedCustomerInstagramProfile?.profilePicUrl ||
+          null,
         linkedCustomerName,
         identityLinked: Boolean(baseItem.linkedCustomerId),
         ...serializeConversationState(stateRow),
