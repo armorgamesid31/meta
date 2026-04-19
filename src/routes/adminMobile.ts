@@ -632,6 +632,69 @@ function asObject(value: unknown): Record<string, any> {
   return value as Record<string, any>;
 }
 
+function asOptionalString(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
+function isAllowedConversationImageHost(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  if (host === 'graph.instagram.com' || host === 'graph.facebook.com' || host === 'lookaside.fbsbx.com') {
+    return true;
+  }
+  if (host.endsWith('.fbcdn.net') || host.endsWith('.cdninstagram.com')) {
+    return true;
+  }
+  if (host === 'api.chakrahq.com' || host.endsWith('.chakrahq.com')) {
+    return true;
+  }
+  return false;
+}
+
+function isInstagramGraphHost(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return host === 'graph.instagram.com' || host === 'graph.facebook.com';
+}
+
+function isChakraHost(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return host === 'api.chakrahq.com' || host.endsWith('.chakrahq.com');
+}
+
+async function getInstagramAccessTokenForSalon(salonId: number): Promise<string | null> {
+  const settings = await prisma.salonAiAgentSettings.findUnique({
+    where: { salonId },
+    select: { faqAnswers: true },
+  });
+  const faqAnswers = asObject(settings?.faqAnswers);
+  const metaDirect = asObject(faqAnswers.metaDirect);
+  const instagram = asObject(metaDirect.instagram);
+  return asOptionalString(instagram.accessToken);
+}
+
+async function tryResolveFreshInstagramProfilePicUrl(input: {
+  conversationKeyRaw: string;
+  accessToken: string;
+}): Promise<string | null> {
+  const scopedId = normalizeInstagramIdentity(input.conversationKeyRaw);
+  if (!scopedId) return null;
+
+  try {
+    const response = await axios.get(`https://graph.instagram.com/${META_GRAPH_VERSION}/${scopedId}`, {
+      params: {
+        fields: 'profile_pic',
+        access_token: input.accessToken,
+      },
+      timeout: 12000,
+    });
+    const data = asObject(response.data);
+    return asOptionalString(data.profile_pic);
+  } catch {
+    return null;
+  }
+}
+
 async function markConversationHumanActive(input: {
   salonId: number;
   channel: 'INSTAGRAM' | 'WHATSAPP';
@@ -8049,6 +8112,94 @@ async function buildConversationChannelHealth(salonId: number): Promise<Conversa
     },
   };
 }
+
+router.get('/conversations/profile-image', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+
+  const channelRaw = typeof req.query.channel === 'string' ? req.query.channel.trim().toUpperCase() : '';
+  const channel = channelRaw === 'INSTAGRAM' || channelRaw === 'WHATSAPP' ? channelRaw : null;
+  const sourceUrlRaw = asOptionalString(req.query.sourceUrl);
+  const conversationKeyInput = asOptionalString(req.query.conversationKey);
+
+  if (!channel || !sourceUrlRaw) {
+    return res.status(400).json({ message: 'channel and sourceUrl are required.' });
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(sourceUrlRaw);
+  } catch {
+    return res.status(400).json({ message: 'sourceUrl is invalid.' });
+  }
+
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    return res.status(400).json({ message: 'sourceUrl protocol is not supported.' });
+  }
+
+  if (!isAllowedConversationImageHost(parsed.hostname)) {
+    return res.status(400).json({ message: 'sourceUrl host is not allowed.' });
+  }
+
+  try {
+    const headers: Record<string, string> = {
+      Accept: 'image/*,*/*;q=0.8',
+      'User-Agent': 'KedySalon/1.0 (+https://app.berkai.shop)',
+    };
+
+    if (channel === 'INSTAGRAM') {
+      const accessToken = await getInstagramAccessTokenForSalon(salonId);
+      const conversationKeyRaw = extractRawConversationKey('INSTAGRAM', conversationKeyInput || '');
+      if (accessToken && conversationKeyRaw) {
+        const freshUrl = await tryResolveFreshInstagramProfilePicUrl({
+          conversationKeyRaw,
+          accessToken,
+        });
+        if (freshUrl) {
+          parsed = new URL(freshUrl);
+        }
+      }
+
+      if (accessToken && isInstagramGraphHost(parsed.hostname) && !parsed.searchParams.has('access_token')) {
+        parsed.searchParams.set('access_token', accessToken);
+      }
+    }
+
+    if (channel === 'WHATSAPP' && isChakraHost(parsed.hostname) && process.env.CHAKRA_API_TOKEN) {
+      headers.Authorization = `Bearer ${process.env.CHAKRA_API_TOKEN}`;
+    }
+
+    const response = await axios.get<ArrayBuffer>(parsed.toString(), {
+      responseType: 'arraybuffer',
+      timeout: 15000,
+      headers,
+      maxRedirects: 5,
+      validateStatus: (status) => status >= 200 && status < 400,
+    });
+
+    const contentTypeRaw = response.headers['content-type'];
+    const contentType = typeof contentTypeRaw === 'string' && contentTypeRaw.trim()
+      ? contentTypeRaw
+      : 'image/jpeg';
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'private, max-age=1800');
+    return res.status(200).send(Buffer.from(response.data));
+  } catch (error: any) {
+    const status = Number(error?.response?.status) || 502;
+    const detail = error?.response?.data || error?.message || 'unknown_error';
+    console.error('Conversation profile-image proxy failed:', {
+      salonId,
+      channel,
+      sourceUrl: sourceUrlRaw,
+      status,
+      detail,
+    });
+    return res.status(status === 401 || status === 403 ? 404 : 502).json({ message: 'Profile image could not be fetched.' });
+  }
+});
 
 router.get('/conversations', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
