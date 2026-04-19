@@ -22,6 +22,19 @@ type ConstraintLeave = {
   endDate: Date;
 };
 
+type ConstraintSalonClosure = {
+  id: number;
+  startAt: Date;
+  endAt: Date;
+};
+
+type ConstraintStaffTimeOff = {
+  id: number;
+  staffId: number;
+  startAt: Date;
+  endAt: Date;
+};
+
 type ConstraintLock = {
   id: string;
   startTime: Date;
@@ -179,6 +192,8 @@ class AvailabilityEngine {
   ): Promise<{
     appointments: ConstraintAppointment[];
     leaves: ConstraintLeave[];
+    salonClosures: ConstraintSalonClosure[];
+    staffTimeOffs: ConstraintStaffTimeOff[];
     locks: ConstraintLock[];
   }> {
     const startOfDay = new Date(date);
@@ -186,7 +201,7 @@ class AvailabilityEngine {
     const endOfDay = new Date(date);
     endOfDay.setHours(23, 59, 59, 999);
 
-    const [appointments, leaves, lockRows] = await Promise.all([
+    const [appointments, leaves, salonClosures, staffTimeOffs, lockRows] = await Promise.all([
       prisma.appointment.findMany({
         where: {
           salonId,
@@ -203,6 +218,22 @@ class AvailabilityEngine {
           endDate: { gte: startOfDay }
         },
         select: { id: true, staffId: true, startDate: true, endDate: true }
+      }),
+      prisma.salonClosure.findMany({
+        where: {
+          salonId,
+          startAt: { lte: endOfDay },
+          endAt: { gte: startOfDay },
+        },
+        select: { id: true, startAt: true, endAt: true },
+      }),
+      prisma.staffTimeOff.findMany({
+        where: {
+          salonId,
+          startAt: { lte: endOfDay },
+          endAt: { gte: startOfDay },
+        },
+        select: { id: true, staffId: true, startAt: true, endAt: true },
       }),
       prisma.$queryRaw<
         { id: string; tarih: string; saat: string; sure: string; expires_at: Date }[]
@@ -243,6 +274,17 @@ class AvailabilityEngine {
         startDate: l.startDate,
         endDate: l.endDate
       })),
+      salonClosures: salonClosures.map((c) => ({
+        id: c.id,
+        startAt: c.startAt,
+        endAt: c.endAt,
+      })),
+      staffTimeOffs: staffTimeOffs.map((t) => ({
+        id: t.id,
+        staffId: t.staffId,
+        startAt: t.startAt,
+        endAt: t.endAt,
+      })),
       locks
     };
   }
@@ -254,6 +296,8 @@ class AvailabilityEngine {
     constraints: {
       appointments: ConstraintAppointment[];
       leaves: ConstraintLeave[];
+      salonClosures: ConstraintSalonClosure[];
+      staffTimeOffs: ConstraintStaffTimeOff[];
       locks: ConstraintLock[];
     },
     peopleCount: number
@@ -282,9 +326,10 @@ class AvailabilityEngine {
         const conflicts = this.checkSlotConflicts(slotStart, slotEnd, constraints);
         if (conflicts.some((c) => 'expiresAt' in c)) continue;
 
-        const staffConflict = conflicts.some(
-          (c) => 'staffId' in c && c.staffId === ss.staffId
-        );
+        const salonClosed = conflicts.some((c) => 'startAt' in c && !('staffId' in c));
+        if (salonClosed) continue;
+
+        const staffConflict = conflicts.some((c) => 'staffId' in c && c.staffId === ss.staffId);
         if (staffConflict) continue;
 
         const key = `${slotStart.getTime()}-${slotEnd.getTime()}`;
@@ -313,10 +358,12 @@ class AvailabilityEngine {
     constraints: {
       appointments: ConstraintAppointment[];
       leaves: ConstraintLeave[];
+      salonClosures: ConstraintSalonClosure[];
+      staffTimeOffs: ConstraintStaffTimeOff[];
       locks: ConstraintLock[];
     }
-  ): (ConstraintAppointment | ConstraintLeave | ConstraintLock)[] {
-    const conflicts: (ConstraintAppointment | ConstraintLeave | ConstraintLock)[] = [];
+  ): (ConstraintAppointment | ConstraintLeave | ConstraintSalonClosure | ConstraintStaffTimeOff | ConstraintLock)[] {
+    const conflicts: (ConstraintAppointment | ConstraintLeave | ConstraintSalonClosure | ConstraintStaffTimeOff | ConstraintLock)[] = [];
 
     for (const apt of constraints.appointments) {
       if (this.timesOverlap(slotStart, slotEnd, apt.startTime, apt.endTime)) {
@@ -327,6 +374,18 @@ class AvailabilityEngine {
     for (const leave of constraints.leaves) {
       if (this.dateInRange(slotStart, leave.startDate, leave.endDate)) {
         conflicts.push(leave);
+      }
+    }
+
+    for (const closure of constraints.salonClosures) {
+      if (this.timesOverlap(slotStart, slotEnd, closure.startAt, closure.endAt)) {
+        conflicts.push(closure);
+      }
+    }
+
+    for (const timeOff of constraints.staffTimeOffs) {
+      if (this.timesOverlap(slotStart, slotEnd, timeOff.startAt, timeOff.endAt)) {
+        conflicts.push(timeOff);
       }
     }
 

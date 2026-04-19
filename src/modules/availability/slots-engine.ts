@@ -213,18 +213,57 @@ export class SlotsEngine {
 
     const relevantStaffIds = [...new Set(staffServices.map((row) => row.staffId))];
 
-    const workingHours = await prisma.staffWorkingHours.findMany({
-      where: {
-        staffId: { in: relevantStaffIds },
-        dayOfWeek: date.getDay(),
-      },
-      select: {
-        staffId: true,
-        dayOfWeek: true,
-        startHour: true,
-        endHour: true,
-      },
-    });
+    const [workingHours, salonClosures, staffTimeOffs, legacyLeaves] = await Promise.all([
+      prisma.staffWorkingHours.findMany({
+        where: {
+          staffId: { in: relevantStaffIds },
+          dayOfWeek: date.getDay(),
+        },
+        select: {
+          staffId: true,
+          dayOfWeek: true,
+          startHour: true,
+          endHour: true,
+        },
+      }),
+      prisma.salonClosure.findMany({
+        where: {
+          salonId: request.salonId,
+          startAt: { lte: endOfDay },
+          endAt: { gte: startOfDay },
+        },
+        select: {
+          id: true,
+          startAt: true,
+          endAt: true,
+        },
+      }),
+      prisma.staffTimeOff.findMany({
+        where: {
+          salonId: request.salonId,
+          staffId: { in: relevantStaffIds },
+          startAt: { lte: endOfDay },
+          endAt: { gte: startOfDay },
+        },
+        select: {
+          id: true,
+          staffId: true,
+          startAt: true,
+          endAt: true,
+        },
+      }),
+      prisma.leave.findMany({
+        where: {
+          staffId: { in: relevantStaffIds },
+          startDate: { lte: endOfDay },
+          endDate: { gte: startOfDay },
+        },
+        select: {
+          id: true,
+          staffId: true,
+        },
+      }),
+    ]);
 
     const indexedData: IndexedData = {
       staffServicesByService: new Map<number, StaffServiceRow[]>(),
@@ -263,7 +302,43 @@ export class SlotsEngine {
       }
     }
 
-    for (const appointment of appointments) {
+    const blockedAppointments: AppointmentRow[] = [];
+    for (const closure of salonClosures) {
+      for (const staffId of relevantStaffIds) {
+        blockedAppointments.push({
+          id: -1_000_000_000 - closure.id,
+          staffId,
+          serviceId: 0,
+          startTime: closure.startAt,
+          endTime: closure.endAt,
+          status: 'BLOCKED',
+        });
+      }
+    }
+
+    for (const timeOff of staffTimeOffs) {
+      blockedAppointments.push({
+        id: -2_000_000_000 - timeOff.id,
+        staffId: timeOff.staffId,
+        serviceId: 0,
+        startTime: timeOff.startAt,
+        endTime: timeOff.endAt,
+        status: 'BLOCKED',
+      });
+    }
+
+    for (const legacyLeave of legacyLeaves) {
+      blockedAppointments.push({
+        id: -3_000_000_000 - legacyLeave.id,
+        staffId: legacyLeave.staffId,
+        serviceId: 0,
+        startTime: startOfDay,
+        endTime: endOfDay,
+        status: 'BLOCKED',
+      });
+    }
+
+    for (const appointment of [...appointments, ...blockedAppointments]) {
       const dateKey = appointment.startTime.toISOString().split('T')[0];
       const key = `${appointment.staffId}-${dateKey}`;
       if (!indexedData.appointmentsByStaffAndDate.has(key)) {

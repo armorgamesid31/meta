@@ -42,6 +42,7 @@ import {
   releaseAppointmentCampaignApplications,
   shouldAutoSendCampaignType,
 } from '../services/campaignPricing.js';
+import { hasPermission } from '../services/accessControl.js';
 
 const router = Router();
 
@@ -466,6 +467,62 @@ async function getSalonTimezone(salonId: number): Promise<string> {
   );
   const timezone = String(rows?.[0]?.timezone || 'Europe/Istanbul').trim();
   return timezone || 'Europe/Istanbul';
+}
+
+async function ensureManagementAccess(req: any, res: any): Promise<boolean> {
+  const role = String(req.user?.role || '').toUpperCase();
+  if (role === 'OWNER' || role === 'MANAGER') {
+    return true;
+  }
+  const userId = Number(req.user?.userId);
+  const salonId = Number(req.user?.salonId);
+
+  if (!Number.isInteger(userId) || userId <= 0 || !Number.isInteger(salonId) || salonId <= 0) {
+    res.status(401).json({ message: 'Unauthorized.' });
+    return false;
+  }
+
+  try {
+    const permissionKeys = ['staff.manage', 'access.users.manage', 'access.roles.manage'];
+    const allowed = await Promise.all(
+      permissionKeys.map((permissionKey) =>
+        hasPermission({
+          salonId,
+          userId,
+          role: req.user?.role,
+          permissionKey,
+        }),
+      ),
+    );
+
+    if (allowed.some(Boolean)) {
+      return true;
+    }
+  } catch (error) {
+    console.error('ensureManagementAccess permission check error:', error);
+    res.status(500).json({ message: 'Internal server error.' });
+    return false;
+  }
+
+  res.status(403).json({ message: 'Forbidden.' });
+  return false;
+}
+
+function parseWindowRange(inputStartAt: unknown, inputEndAt: unknown): { startAt: Date; endAt: Date } | null {
+  if (typeof inputStartAt !== 'string' || typeof inputEndAt !== 'string') {
+    return null;
+  }
+
+  const startAt = new Date(inputStartAt);
+  const endAt = new Date(inputEndAt);
+  if (Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime())) {
+    return null;
+  }
+  if (startAt >= endAt) {
+    return null;
+  }
+
+  return { startAt, endAt };
 }
 
 function asPaymentMethod(value: unknown): 'CASH' | 'CARD' | 'TRANSFER' | 'OTHER' | null {
@@ -6884,6 +6941,316 @@ router.delete('/staff/:id', authenticateToken, async (req: any, res: any) => {
       return res.status(409).json({ message: 'Bu çalışan randevularda kullanıldığı için silinemez.' });
     }
     console.error('Admin staff delete error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.get('/salon-closures', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+  if (!(await ensureManagementAccess(req, res))) {
+    return;
+  }
+
+  try {
+    const items = await prisma.salonClosure.findMany({
+      where: { salonId },
+      orderBy: [{ startAt: 'asc' }, { id: 'asc' }],
+    });
+    return res.status(200).json({ items });
+  } catch (error) {
+    console.error('Admin salon closure list error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.post('/salon-closures', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+  if (!(await ensureManagementAccess(req, res))) {
+    return;
+  }
+
+  const range = parseWindowRange(req.body?.startAt, req.body?.endAt);
+  if (!range) {
+    return res.status(400).json({ message: 'startAt ve endAt geçerli ISO tarih olmalı ve startAt < endAt olmalıdır.' });
+  }
+
+  try {
+    const item = await prisma.salonClosure.create({
+      data: {
+        salonId,
+        startAt: range.startAt,
+        endAt: range.endAt,
+        reason: typeof req.body?.reason === 'string' ? req.body.reason.trim() || null : null,
+      },
+    });
+    return res.status(201).json({ item });
+  } catch (error) {
+    console.error('Admin salon closure create error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.put('/salon-closures/:id', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+  if (!(await ensureManagementAccess(req, res))) {
+    return;
+  }
+
+  const closureId = Number(req.params.id);
+  if (!Number.isInteger(closureId) || closureId <= 0) {
+    return res.status(400).json({ message: 'Invalid closure id.' });
+  }
+
+  const range = parseWindowRange(req.body?.startAt, req.body?.endAt);
+  if (!range) {
+    return res.status(400).json({ message: 'startAt ve endAt geçerli ISO tarih olmalı ve startAt < endAt olmalıdır.' });
+  }
+
+  try {
+    const exists = await prisma.salonClosure.findFirst({
+      where: { id: closureId, salonId },
+      select: { id: true },
+    });
+    if (!exists) {
+      return res.status(404).json({ message: 'Salon tatili bulunamadı.' });
+    }
+
+    const item = await prisma.salonClosure.update({
+      where: { id: closureId },
+      data: {
+        startAt: range.startAt,
+        endAt: range.endAt,
+        reason: typeof req.body?.reason === 'string' ? req.body.reason.trim() || null : null,
+      },
+    });
+    return res.status(200).json({ item });
+  } catch (error) {
+    console.error('Admin salon closure update error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.delete('/salon-closures/:id', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+  if (!(await ensureManagementAccess(req, res))) {
+    return;
+  }
+
+  const closureId = Number(req.params.id);
+  if (!Number.isInteger(closureId) || closureId <= 0) {
+    return res.status(400).json({ message: 'Invalid closure id.' });
+  }
+
+  try {
+    const exists = await prisma.salonClosure.findFirst({
+      where: { id: closureId, salonId },
+      select: { id: true },
+    });
+    if (!exists) {
+      return res.status(404).json({ message: 'Salon tatili bulunamadı.' });
+    }
+
+    await prisma.salonClosure.delete({
+      where: { id: closureId },
+    });
+    return res.status(204).send();
+  } catch (error) {
+    console.error('Admin salon closure delete error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.get('/staff-timeoff', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+  if (!(await ensureManagementAccess(req, res))) {
+    return;
+  }
+
+  try {
+    const items = await prisma.staffTimeOff.findMany({
+      where: { salonId },
+      include: {
+        staff: {
+          select: {
+            id: true,
+            name: true,
+            title: true,
+          },
+        },
+      },
+      orderBy: [{ startAt: 'asc' }, { id: 'asc' }],
+    });
+    return res.status(200).json({ items });
+  } catch (error) {
+    console.error('Admin staff time off list error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.post('/staff-timeoff', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+  if (!(await ensureManagementAccess(req, res))) {
+    return;
+  }
+
+  const staffId = Number(req.body?.staffId);
+  if (!Number.isInteger(staffId) || staffId <= 0) {
+    return res.status(400).json({ message: 'Geçerli bir staffId zorunludur.' });
+  }
+
+  const range = parseWindowRange(req.body?.startAt, req.body?.endAt);
+  if (!range) {
+    return res.status(400).json({ message: 'startAt ve endAt geçerli ISO tarih olmalı ve startAt < endAt olmalıdır.' });
+  }
+
+  try {
+    const staff = await prisma.staff.findFirst({
+      where: { id: staffId, salonId },
+      select: { id: true },
+    });
+    if (!staff) {
+      return res.status(404).json({ message: 'Personel bulunamadı.' });
+    }
+
+    const item = await prisma.staffTimeOff.create({
+      data: {
+        salonId,
+        staffId,
+        startAt: range.startAt,
+        endAt: range.endAt,
+        reason: typeof req.body?.reason === 'string' ? req.body.reason.trim() || null : null,
+      },
+      include: {
+        staff: {
+          select: {
+            id: true,
+            name: true,
+            title: true,
+          },
+        },
+      },
+    });
+    return res.status(201).json({ item });
+  } catch (error) {
+    console.error('Admin staff time off create error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.put('/staff-timeoff/:id', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+  if (!(await ensureManagementAccess(req, res))) {
+    return;
+  }
+
+  const itemId = Number(req.params.id);
+  const staffId = Number(req.body?.staffId);
+  if (!Number.isInteger(itemId) || itemId <= 0) {
+    return res.status(400).json({ message: 'Invalid staff time off id.' });
+  }
+  if (!Number.isInteger(staffId) || staffId <= 0) {
+    return res.status(400).json({ message: 'Geçerli bir staffId zorunludur.' });
+  }
+
+  const range = parseWindowRange(req.body?.startAt, req.body?.endAt);
+  if (!range) {
+    return res.status(400).json({ message: 'startAt ve endAt geçerli ISO tarih olmalı ve startAt < endAt olmalıdır.' });
+  }
+
+  try {
+    const [exists, staff] = await prisma.$transaction([
+      prisma.staffTimeOff.findFirst({
+        where: { id: itemId, salonId },
+        select: { id: true },
+      }),
+      prisma.staff.findFirst({
+        where: { id: staffId, salonId },
+        select: { id: true },
+      }),
+    ]);
+
+    if (!exists) {
+      return res.status(404).json({ message: 'Personel izin kaydı bulunamadı.' });
+    }
+    if (!staff) {
+      return res.status(404).json({ message: 'Personel bulunamadı.' });
+    }
+
+    const item = await prisma.staffTimeOff.update({
+      where: { id: itemId },
+      data: {
+        staffId,
+        startAt: range.startAt,
+        endAt: range.endAt,
+        reason: typeof req.body?.reason === 'string' ? req.body.reason.trim() || null : null,
+      },
+      include: {
+        staff: {
+          select: {
+            id: true,
+            name: true,
+            title: true,
+          },
+        },
+      },
+    });
+    return res.status(200).json({ item });
+  } catch (error) {
+    console.error('Admin staff time off update error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.delete('/staff-timeoff/:id', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) {
+    return;
+  }
+  if (!(await ensureManagementAccess(req, res))) {
+    return;
+  }
+
+  const itemId = Number(req.params.id);
+  if (!Number.isInteger(itemId) || itemId <= 0) {
+    return res.status(400).json({ message: 'Invalid staff time off id.' });
+  }
+
+  try {
+    const exists = await prisma.staffTimeOff.findFirst({
+      where: { id: itemId, salonId },
+      select: { id: true },
+    });
+    if (!exists) {
+      return res.status(404).json({ message: 'Personel izin kaydı bulunamadı.' });
+    }
+
+    await prisma.staffTimeOff.delete({
+      where: { id: itemId },
+    });
+    return res.status(204).send();
+  } catch (error) {
+    console.error('Admin staff time off delete error:', error);
     return res.status(500).json({ message: 'Internal server error.' });
   }
 });

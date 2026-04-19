@@ -174,6 +174,8 @@ describe('AvailabilityEngine', () => {
           }
         ],
         leaves: [],
+        salonClosures: [],
+        staffTimeOffs: [],
         locks: []
       };
 
@@ -193,6 +195,8 @@ describe('AvailabilityEngine', () => {
       const constraints = {
         appointments: [],
         leaves: [],
+        salonClosures: [],
+        staffTimeOffs: [],
         locks: [
           {
             expiresAt: pastExpiry,
