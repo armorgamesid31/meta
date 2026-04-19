@@ -210,6 +210,14 @@ function resolveAndroidSound(channelId: string): string {
   return 'default';
 }
 
+function resolveIosSound(channelId: string): string {
+  if (channelId === ANDROID_PUSH_CHANNEL_APPOINTMENT_ID) return 'new_appointment.caf';
+  if (channelId === ANDROID_PUSH_CHANNEL_BOOKING_CHANGE_ID) return 'booking_changed_canceled.caf';
+  if (channelId === ANDROID_PUSH_CHANNEL_REPORT_ID) return 'report.caf';
+  if (channelId === ANDROID_PUSH_CHANNEL_HANDOVER_ID) return 'handover.caf';
+  return 'default';
+}
+
 export function getPushProviderStatus(): PushProviderStatus {
   return getFirebaseApp().status;
 }
@@ -266,6 +274,16 @@ export async function sendPushMessages(inputs: PushMessageInput[]): Promise<{
             channelId,
             icon: ANDROID_PUSH_ICON_NAME,
             sound: resolveAndroidSound(channelId),
+          },
+        },
+        apns: {
+          headers: {
+            'apns-priority': '10',
+          },
+          payload: {
+            aps: {
+              sound: resolveIosSound(channelId),
+            },
           },
         },
       };
