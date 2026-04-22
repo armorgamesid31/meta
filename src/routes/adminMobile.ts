@@ -8156,16 +8156,23 @@ function extractWhatsappProviderMessageId(payload: unknown): string | null {
   const data = asObject(payload);
   const directMessageId = typeof data.messageId === 'string' ? data.messageId.trim() : '';
   if (directMessageId) return directMessageId;
+  const whatsappMessageId = typeof data.whatsappMessageId === 'string' ? data.whatsappMessageId.trim() : '';
+  if (whatsappMessageId) return whatsappMessageId;
   const directId = typeof data.id === 'string' ? data.id.trim() : '';
   if (directId) return directId;
 
   const nestedData = asObject(data.data);
+  const nestedWhatsappMessageId = typeof nestedData.whatsappMessageId === 'string' ? nestedData.whatsappMessageId.trim() : '';
+  if (nestedWhatsappMessageId) return nestedWhatsappMessageId;
   const nestedDataId = typeof nestedData.id === 'string' ? nestedData.id.trim() : '';
   if (nestedDataId) return nestedDataId;
+  const underscoreData = asObject(data._data);
+  const underscoreWhatsappMessageId = typeof underscoreData.whatsappMessageId === 'string' ? underscoreData.whatsappMessageId.trim() : '';
+  if (underscoreWhatsappMessageId) return underscoreWhatsappMessageId;
 
   const arrays = [
     data.messages,
-    asObject(data._data).messages,
+    underscoreData.messages,
     nestedData.messages,
     asObject(data.result).messages,
   ];
