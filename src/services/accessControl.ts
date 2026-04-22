@@ -271,7 +271,7 @@ export function mapAdminRouteToPermission(path: string, method: string): string 
 
   if (normalizedPath.startsWith('/access')) return null;
   if (normalizedPath.startsWith('/notification-settings')) return 'notifications.policy.manage';
-  if (normalizedPath.includes('/instagram-inbox') || normalizedPath.includes('/conversations')) return 'conversations.manage';
+  if (normalizedPath.includes('/conversations')) return 'conversations.manage';
   if (normalizedPath.startsWith('/appointments') && normalizedPath.endsWith('/payment')) return 'appointments.payment.update';
   if (normalizedPath.startsWith('/appointments')) return m === 'GET' ? 'appointments.view' : 'appointments.manage';
   if (normalizedPath.startsWith('/customers')) return m === 'GET' ? 'customers.view' : 'customers.manage';

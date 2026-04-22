@@ -264,7 +264,7 @@ router.post('/push/test', authenticateToken, async (req: any, res: any) => {
         | 'DAILY_MANAGER_REPORT';
       title: string;
       body: string;
-      route: 'instagram-inbox' | 'schedule' | 'analytics' | 'notifications';
+      route: 'conversations' | 'schedule' | 'analytics' | 'notifications';
       payloadExtras?: Record<string, unknown>;
     }
   > = {
@@ -298,7 +298,7 @@ router.post('/push/test', authenticateToken, async (req: any, res: any) => {
       eventType: 'HANDOVER_REQUIRED',
       title: 'Handover test bildirimi',
       body: 'Handover sesi test edildi.',
-      route: 'instagram-inbox',
+      route: 'conversations',
     },
   };
 

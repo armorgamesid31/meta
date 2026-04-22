@@ -25,7 +25,7 @@ export type NotificationEventType =
   | 'WAITLIST_MATCH_FOUND';
 
 type DeliveryStatus = 'PENDING' | 'SENT' | 'SKIPPED' | 'FAILED';
-type NotificationRoute = 'instagram-inbox' | 'schedule' | 'analytics' | 'notifications';
+type NotificationRoute = 'conversations' | 'schedule' | 'analytics' | 'notifications';
 
 type NotificationPolicy = {
   recipients?: Partial<Record<NotificationEventType, string[]>>;
@@ -74,12 +74,12 @@ function resolveNotificationRoute(
   payload?: Record<string, unknown> | null,
 ): NotificationRoute {
   const candidate = typeof payload?.route === 'string' ? payload.route.trim() : '';
-  if (candidate === 'instagram-inbox' || candidate === 'schedule' || candidate === 'analytics' || candidate === 'notifications') {
-    return candidate;
+  if (candidate === 'instagram-inbox' || candidate === 'conversations' || candidate === 'schedule' || candidate === 'analytics' || candidate === 'notifications') {
+    return candidate === 'instagram-inbox' ? 'conversations' : candidate;
   }
 
   if (eventType === 'HANDOVER_REQUIRED' || eventType === 'HANDOVER_REMINDER') {
-    return 'instagram-inbox';
+    return 'conversations';
   }
   if (eventType === 'SAME_DAY_APPOINTMENT_CHANGE' || eventType === 'END_OF_DAY_MISSING_DATA') {
     return 'schedule';
