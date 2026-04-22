@@ -17,7 +17,6 @@ import {
   createNotification,
   getDefaultNotificationPolicy,
   getSalonNotificationPolicy,
-  markHandoverTriggered,
   notifySameDayAppointmentChange,
   resolveHandoverAlert,
   upsertSalonNotificationPolicy,
@@ -9603,70 +9602,17 @@ router.post('/conversations/:channel/:conversationKey/handover', authenticateTok
       });
     }
 
-    const saved = await prisma.inboundMessageQueue.create({
-      data: {
-        salonId,
-        channel,
-        conversationKey: resolvedConversationKey,
-        providerMessageId: `handover_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
-        externalAccountId: latestInbound.externalAccountId || '',
-        customerName: latestInbound.customerName || null,
-        messageType: 'handover_request',
-        text: note || 'Human handover requested.',
-        eventTimestamp: new Date(),
-        rawPayload: {
-          direction: 'system',
-          handoverRequested: true,
-        } as any,
-        status: 'DONE',
-        processedAt: new Date(),
-      },
-    });
-
-    await upsertConversationMessageEvent({
-      salonId,
-      channel,
-      conversationKey: resolvedConversationKey,
-      providerMessageId: saved.providerMessageId,
-      externalAccountId: latestInbound.externalAccountId || '',
-      customerName: latestInbound.customerName || null,
-      messageType: 'handover_request',
-      text: note || 'Human handover requested.',
-      direction: 'SYSTEM',
-      eventTimestamp: saved.eventTimestamp,
-      processingStatus: InboundMessageStatus.DONE,
-      rawPayload: {
-        direction: 'system',
-        handoverRequested: true,
-      } as any,
-    });
-
     const updatedState = await markConversationHumanPending({
       salonId,
       channel,
       conversationKey: resolvedConversationKey,
-      note: note || 'Human handover requested.',
+      note: note || 'manual_handover_by_salon',
       profileName: latestInbound.customerName || null,
-    });
-    await markHandoverTriggered({
-      salonId,
-      channel,
-      conversationKey: resolvedConversationKey,
-      customerName: latestInbound.customerName || null,
     });
 
     return res.status(200).json({
       ok: true,
       alreadyRequested: false,
-      item: {
-        id: saved.id,
-        providerMessageId: saved.providerMessageId,
-        messageType: saved.messageType,
-        text: saved.text,
-        status: saved.status,
-        direction: 'system',
-        eventTimestamp: saved.eventTimestamp.toISOString(),
-      },
       state: serializeConversationState({
         channel,
         conversationKey: updatedState.conversationKey,
@@ -10567,70 +10513,17 @@ router.post('/instagram-inbox/conversations/:conversationKey/handover', authenti
       });
     }
 
-    const saved = await prisma.inboundMessageQueue.create({
-      data: {
-        salonId,
-        channel: 'INSTAGRAM',
-        conversationKey: resolvedConversationKey,
-        providerMessageId: `handover_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
-        externalAccountId: latestInbound.externalAccountId || '',
-        customerName: latestInbound.customerName || null,
-        messageType: 'handover_request',
-        text: note || 'Human handover requested.',
-        eventTimestamp: new Date(),
-        rawPayload: {
-          direction: 'system',
-          handoverRequested: true,
-        } as any,
-        status: 'DONE',
-        processedAt: new Date(),
-      },
-    });
-
-    await upsertConversationMessageEvent({
-      salonId,
-      channel: 'INSTAGRAM',
-      conversationKey: resolvedConversationKey,
-      providerMessageId: saved.providerMessageId,
-      externalAccountId: latestInbound.externalAccountId || '',
-      customerName: latestInbound.customerName || null,
-      messageType: 'handover_request',
-      text: note || 'Human handover requested.',
-      direction: 'SYSTEM',
-      eventTimestamp: saved.eventTimestamp,
-      processingStatus: InboundMessageStatus.DONE,
-      rawPayload: {
-        direction: 'system',
-        handoverRequested: true,
-      } as any,
-    });
-
     const updatedState = await markConversationHumanPending({
       salonId,
       channel: 'INSTAGRAM',
       conversationKey: resolvedConversationKey,
-      note: note || 'Human handover requested.',
+      note: note || 'manual_handover_by_salon',
       profileName: latestInbound.customerName || null,
-    });
-    await markHandoverTriggered({
-      salonId,
-      channel: 'INSTAGRAM',
-      conversationKey: resolvedConversationKey,
-      customerName: latestInbound.customerName || null,
     });
 
     return res.status(200).json({
       ok: true,
       alreadyRequested: false,
-      item: {
-        id: saved.id,
-        providerMessageId: saved.providerMessageId,
-        messageType: saved.messageType,
-        text: saved.text,
-        status: saved.status,
-        direction: 'system',
-        eventTimestamp: saved.eventTimestamp.toISOString(),
-      },
       state: serializeConversationState({
         channel: 'INSTAGRAM',
         conversationKey: updatedState.conversationKey,
