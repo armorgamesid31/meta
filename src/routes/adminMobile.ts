@@ -8147,6 +8147,26 @@ function conversationKeyCandidates(channel: 'INSTAGRAM' | 'WHATSAPP', value: str
   return Array.from(new Set([value.trim(), raw, `${channel}:${raw}`].filter(Boolean)));
 }
 
+function isInstagramWindowExpiredError(error: any): boolean {
+  const normalized = [
+    error?.response?.data?.error?.message,
+    error?.response?.data?.message,
+    error?.message,
+  ]
+    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    .map((value) => value.toLowerCase());
+
+  return normalized.some((value) =>
+    value.includes('outside of the allowed window') ||
+    value.includes('outside of allowed window') ||
+    value.includes('24 hour') ||
+    value.includes('24-hour') ||
+    value.includes('außerhalb des erlaubten fensters') ||
+    value.includes('ausserhalb des erlaubten fensters') ||
+    value.includes('erlaubten fensters'),
+  );
+}
+
 function resolveMessageDirection(messageType: string): 'inbound' | 'outbound' | 'system' {
   const normalized = (messageType || '').trim().toLowerCase();
   if (normalized === 'handover_request' || normalized === 'manual_takeover') return 'system';
@@ -9481,6 +9501,12 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
       },
     });
   } catch (error: any) {
+    if (channel === 'INSTAGRAM' && isInstagramWindowExpiredError(error)) {
+      return res.status(409).json({
+        errorCode: 'INSTAGRAM_WINDOW_EXPIRED',
+        message: 'Instagram 24 saat mesaj penceresi doldu. Yeni mesaj göndermek için müşterinin tekrar yazması gerekiyor.',
+      });
+    }
     const fbMessage =
       error?.response?.data?.error?.message ||
       error?.response?.data?.message ||
@@ -10453,6 +10479,12 @@ router.post('/instagram-inbox/conversations/:conversationKey/reply', authenticat
       },
     });
   } catch (error: any) {
+    if (isInstagramWindowExpiredError(error)) {
+      return res.status(409).json({
+        errorCode: 'INSTAGRAM_WINDOW_EXPIRED',
+        message: 'Instagram 24 saat mesaj penceresi doldu. Yeni mesaj göndermek için müşterinin tekrar yazması gerekiyor.',
+      });
+    }
     const fbMessage =
       error?.response?.data?.error?.message ||
       error?.response?.data?.message ||
