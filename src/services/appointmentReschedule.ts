@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import type { AppointmentSource } from '@prisma/client';
 import { prisma } from '../prisma.js';
+import { assertBookingAllowed } from './blacklist.js';
 
 type PreferenceMode = 'ANY' | 'SPECIFIC';
 
@@ -472,6 +473,15 @@ export async function commitAppointmentReschedule(params: RescheduleCommitParams
 
     const oldAppointments = await loadAppointments(tx as unknown as DbLike, params.salonId, appointmentIds);
     const oldById = new Map(oldAppointments.map((item) => [item.id, item]));
+
+    for (const oldAppointment of oldAppointments) {
+      await assertBookingAllowed({
+        salonId: params.salonId,
+        customerId: oldAppointment.customerId,
+        phone: oldAppointment.customerPhone,
+        channel: 'WHATSAPP',
+      });
+    }
 
     const createdAppointments: AppointmentBase[] = [];
     for (const item of preview.items) {

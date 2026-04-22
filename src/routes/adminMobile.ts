@@ -43,6 +43,16 @@ import {
   shouldAutoSendCampaignType,
 } from '../services/campaignPricing.js';
 import { hasPermission } from '../services/accessControl.js';
+import {
+  assertBookingAllowed,
+  isIdentityBanned,
+  maybeAutoBanCustomerByNoShow,
+  upsertBlacklistBan,
+} from '../services/blacklist.js';
+import {
+  getSalonCustomerRiskPolicy,
+  upsertSalonCustomerRiskPolicy,
+} from '../services/customerRiskPolicy.js';
 
 const router = Router();
 
@@ -407,6 +417,13 @@ function getSalonId(req: any, res: any): number | null {
     return null;
   }
   return req.user.salonId;
+}
+
+function sendCustomerBannedResponse(res: any, detail?: string | null) {
+  return res.status(403).json({
+    code: 'CUSTOMER_BANNED',
+    message: detail && detail.trim() ? `Müşteri yasaklı: ${detail.trim()}` : 'Müşteri yasaklı olduğu için işlem yapılamaz.',
+  });
 }
 
 function normalizeInstagramUrl(value: unknown): string | null {
@@ -2276,6 +2293,13 @@ router.post('/appointments', authenticateToken, async (req: any, res: any) => {
         return { error: { code: 400, message: 'customerPhone is required.' } };
       }
 
+      await assertBookingAllowed({
+        salonId,
+        customerId: customer.id,
+        phone: customerPhone,
+        channel: 'WHATSAPP',
+      });
+
       const serviceIds: number[] = Array.from(
         new Set<number>(servicesToCreate.map((item: any) => Number(item.serviceId)).filter((id: number) => Number.isInteger(id) && id > 0)),
       );
@@ -2454,6 +2478,9 @@ router.post('/appointments', authenticateToken, async (req: any, res: any) => {
       count: result.appointments.length,
     });
   } catch (error: any) {
+    if (error?.code === 'CUSTOMER_BANNED' || error?.message === 'CUSTOMER_BANNED') {
+      return sendCustomerBannedResponse(res, error?.ban?.reason || null);
+    }
     if (error?.code === 'P2002') {
       return res.status(409).json({ message: 'Aynı telefon numarasıyla kayıtlı müşteri zaten var.' });
     }
@@ -2889,6 +2916,38 @@ router.put('/customers/:id', authenticateToken, async (req: any, res: any) => {
   }
 });
 
+router.get('/customer-risk-policy', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) return;
+
+  try {
+    const policy = await getSalonCustomerRiskPolicy(salonId);
+    return res.status(200).json({ policy });
+  } catch (error) {
+    console.error('Admin customer risk policy read error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.put('/customer-risk-policy', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) return;
+
+  const payload = req.body || {};
+  try {
+    const policy = await upsertSalonCustomerRiskPolicy(salonId, {
+      autoBanEnabled: payload.autoBanEnabled === undefined ? undefined : Boolean(payload.autoBanEnabled),
+      noShowThreshold: payload.noShowThreshold === undefined ? undefined : Number(payload.noShowThreshold),
+      blockBookingWhenBanned:
+        payload.blockBookingWhenBanned === undefined ? undefined : Boolean(payload.blockBookingWhenBanned),
+    });
+    return res.status(200).json({ policy });
+  } catch (error) {
+    console.error('Admin customer risk policy update error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
 router.patch('/customers/:id/no-show-risk', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
   if (!salonId) {
@@ -2945,6 +3004,7 @@ router.patch('/customers/:id/no-show-risk', authenticateToken, async (req: any, 
           : typeof profile?.noShowCount === 'number'
           ? profile.noShowCount
           : noShowCountFromData;
+      const nextNoShowCount = Math.max(0, noShowCount + deltaRaw);
       const totalBookings = typeof profile?.totalBookings === 'number' ? profile.totalBookings : totalBookingsFromData;
 
       const updated = await tx.customerRiskProfile.upsert({
@@ -2954,16 +3014,16 @@ router.patch('/customers/:id/no-show-risk', authenticateToken, async (req: any, 
           salonId,
           riskScore: nextScore,
           riskLevel: nextLevel,
-          noShowCount,
-          noShows: noShowCount,
+          noShowCount: nextNoShowCount,
+          noShows: nextNoShowCount,
           totalBookings,
           lastCalculatedAt: now,
         },
         update: {
           riskScore: nextScore,
           riskLevel: nextLevel,
-          noShowCount,
-          noShows: noShowCount,
+          noShowCount: nextNoShowCount,
+          noShows: nextNoShowCount,
           totalBookings,
           lastCalculatedAt: now,
         },
@@ -2994,13 +3054,24 @@ router.patch('/customers/:id/no-show-risk', authenticateToken, async (req: any, 
       return {
         noShowRiskScore: Number(updated.riskScore || 0),
         noShowRiskLevel: (updated.riskLevel as 'LOW' | 'MEDIUM' | 'HIGH') || nextLevel,
-        noShowCount: typeof updated.noShows === 'number' ? updated.noShows : noShowCount,
+        noShowCount: typeof updated.noShows === 'number' ? updated.noShows : nextNoShowCount,
         totalBookings: typeof updated.totalBookings === 'number' ? updated.totalBookings : totalBookings,
       };
     });
 
     if (!result) {
       return res.status(404).json({ message: 'Customer not found.' });
+    }
+
+    if (deltaRaw > 0) {
+      await maybeAutoBanCustomerByNoShow({
+        salonId,
+        customerId,
+        noShowCount: Number(result.noShowCount || 0),
+        createdById: Number.isInteger(Number(req.user?.userId)) ? Number(req.user.userId) : null,
+      }).catch((error) => {
+        console.error('Auto-ban from no-show risk update failed:', error);
+      });
     }
 
     return res.status(200).json({ summary: result });
@@ -3932,6 +4003,24 @@ router.patch('/appointments/:id/status', authenticateToken, async (req: any, res
       });
     }
 
+    if (result._notify.nextStatus === 'NO_SHOW' && Number.isInteger(Number(result.customerId)) && Number(result.customerId) > 0) {
+      const noShowCount = await prisma.appointment.count({
+        where: {
+          salonId,
+          customerId: Number(result.customerId),
+          status: 'NO_SHOW',
+        },
+      });
+      await maybeAutoBanCustomerByNoShow({
+        salonId,
+        customerId: Number(result.customerId),
+        noShowCount,
+        createdById: Number.isInteger(Number(req.user?.userId)) ? Number(req.user.userId) : null,
+      }).catch((error) => {
+        console.error('Auto-ban from appointment status NO_SHOW failed:', error);
+      });
+    }
+
     try {
       const timezone = await getSalonTimezone(salonId);
       const eventType =
@@ -4071,6 +4160,7 @@ router.patch('/appointment-lines/:id/status', authenticateToken, async (req: any
         item: appointment,
         lineId: appointmentLineId,
         appointmentId: Number(line.appointmentId),
+        customerId: Number.isInteger(Number(line.customerId)) ? Number(line.customerId) : null,
         previousStatus,
         nextStatus,
         appointmentStatus: appointmentStatus || appointment.status || 'BOOKED',
@@ -4084,6 +4174,28 @@ router.patch('/appointment-lines/:id/status', authenticateToken, async (req: any
 
     if ('error' in result && result.error) {
       return res.status(result.error.code).json({ message: result.error.message });
+    }
+
+    if (
+      String(result.appointmentStatus || '').toUpperCase() === 'NO_SHOW' &&
+      Number.isInteger(Number(result.customerId)) &&
+      Number(result.customerId) > 0
+    ) {
+      const noShowCount = await prisma.appointment.count({
+        where: {
+          salonId,
+          customerId: Number(result.customerId),
+          status: 'NO_SHOW',
+        },
+      });
+      await maybeAutoBanCustomerByNoShow({
+        salonId,
+        customerId: Number(result.customerId),
+        noShowCount,
+        createdById: Number.isInteger(Number(req.user?.userId)) ? Number(req.user.userId) : null,
+      }).catch((error) => {
+        console.error('Auto-ban from appointment line NO_SHOW failed:', error);
+      });
     }
 
     return res.status(200).json(result);
@@ -4639,6 +4751,9 @@ router.post('/appointments/reschedule-commit', authenticateToken, async (req: an
       items: committed.createdAppointments,
     });
   } catch (error: any) {
+    if (error?.code === 'CUSTOMER_BANNED' || error?.message === 'CUSTOMER_BANNED') {
+      return sendCustomerBannedResponse(res, error?.ban?.reason || null);
+    }
     const message = error?.message || 'Internal server error.';
     const status = /manual specialist selection|no eligible|only booked|not found/i.test(message) ? 409 : 500;
     if (status === 500) {
@@ -4690,6 +4805,9 @@ router.patch('/appointments/:id/reschedule', authenticateToken, async (req: any,
       batchId: committed.batchId,
     });
   } catch (error: any) {
+    if (error?.code === 'CUSTOMER_BANNED' || error?.message === 'CUSTOMER_BANNED') {
+      return sendCustomerBannedResponse(res, error?.ban?.reason || null);
+    }
     const message = error?.message || 'Internal server error.';
     const status = /manual specialist selection|no eligible|only booked|not found/i.test(message) ? 409 : 500;
     if (status === 500) {
@@ -9857,6 +9975,32 @@ router.post('/conversations/:channel/:conversationKey/resume-auto', authenticate
   }
 });
 
+router.get('/blacklist/check', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) return;
+
+  const customerIdRaw = Number(req.query.customerId);
+  const customerId = Number.isInteger(customerIdRaw) && customerIdRaw > 0 ? customerIdRaw : null;
+  const phone = typeof req.query.phone === 'string' ? req.query.phone.trim() : null;
+  const channel = asInboundChannel(req.query.channel);
+  const subjectNormalized =
+    typeof req.query.subjectNormalized === 'string' ? req.query.subjectNormalized.trim() : null;
+
+  try {
+    const result = await isIdentityBanned({
+      salonId,
+      customerId,
+      phone,
+      channel,
+      subjectNormalized,
+    });
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('Admin blacklist check error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
 router.get('/blacklist', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
   if (!salonId) {
@@ -9873,6 +10017,7 @@ router.get('/blacklist', authenticateToken, async (req: any, res: any) => {
               OR: [
                 { fullName: { contains: search, mode: 'insensitive' } },
                 { phone: { contains: search } },
+                { subjectNormalized: { contains: search, mode: 'insensitive' } },
                 { reason: { contains: search, mode: 'insensitive' } },
               ],
             }
@@ -9898,23 +10043,68 @@ router.post('/blacklist', authenticateToken, async (req: any, res: any) => {
   const fullName = typeof req.body?.fullName === 'string' ? req.body.fullName.trim() : null;
   const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : null;
   const customerId = req.body?.customerId ? Number(req.body.customerId) : null;
+  const channel = asInboundChannel(req.body?.channel);
+  const subjectNormalized =
+    typeof req.body?.subjectNormalized === 'string' ? req.body.subjectNormalized.trim() : null;
 
-  if (!phone && !customerId) {
-    return res.status(400).json({ message: 'phone or customerId is required.' });
+  if (!phone && !customerId && !(channel && subjectNormalized)) {
+    return res.status(400).json({ message: 'phone, customerId or channel+subjectNormalized is required.' });
   }
 
   try {
-    const item = await prisma.blacklistEntry.create({
-      data: {
-        salonId,
-        phone,
-        fullName,
-        reason,
-        customerId: customerId && customerId > 0 ? customerId : null,
-        createdById: req.user.userId,
-        isActive: true,
-      },
+    const createdById = Number.isInteger(Number(req.user?.userId)) ? Number(req.user.userId) : null;
+    const item = await upsertBlacklistBan({
+      salonId,
+      phone,
+      fullName,
+      reason,
+      customerId: customerId && customerId > 0 ? customerId : null,
+      channel,
+      subjectNormalized,
+      createdById,
+      isActive: true,
     });
+
+    if (customerId && customerId > 0) {
+      const customer = await prisma.customer.findFirst({
+        where: { id: customerId, salonId },
+        select: { name: true, phone: true, instagram: true },
+      });
+      if (customer) {
+        await upsertBlacklistBan({
+          salonId,
+          customerId,
+          phone: customer.phone || null,
+          fullName: customer.name || fullName,
+          reason,
+          createdById,
+          isActive: true,
+        });
+        if (customer.phone) {
+          await upsertBlacklistBan({
+            salonId,
+            channel: 'WHATSAPP',
+            phone: customer.phone,
+            fullName: customer.name || fullName,
+            reason,
+            createdById,
+            isActive: true,
+          });
+        }
+        const normalizedInstagram = normalizeInstagramIdentity(customer.instagram || '');
+        if (normalizedInstagram) {
+          await upsertBlacklistBan({
+            salonId,
+            channel: 'INSTAGRAM',
+            subjectNormalized: normalizedInstagram,
+            fullName: customer.name || fullName,
+            reason,
+            createdById,
+            isActive: true,
+          });
+        }
+      }
+    }
 
     return res.status(201).json({ item });
   } catch (error) {
@@ -9935,16 +10125,26 @@ router.patch('/blacklist/:id', authenticateToken, async (req: any, res: any) => 
   }
 
   try {
-    const current = await prisma.blacklistEntry.findFirst({ where: { id, salonId } });
+    const current = await (prisma as any).blacklistEntry.findFirst({ where: { id, salonId } });
     if (!current) {
       return res.status(404).json({ message: 'Blacklist entry not found.' });
     }
 
-    const item = await prisma.blacklistEntry.update({
+    const item = await (prisma as any).blacklistEntry.update({
       where: { id },
       data: {
         ...(req.body?.isActive !== undefined ? { isActive: Boolean(req.body.isActive) } : {}),
         ...(req.body?.reason !== undefined ? { reason: req.body.reason ? String(req.body.reason).trim() : null } : {}),
+        ...(req.body?.phone !== undefined ? { phone: normalizePhoneDigits(String(req.body.phone || '')) || null } : {}),
+        ...(req.body?.channel !== undefined ? { channel: asInboundChannel(req.body.channel) } : {}),
+        ...(req.body?.subjectNormalized !== undefined
+          ? {
+              subjectNormalized:
+                asInboundChannel(req.body?.channel || current.channel) === 'INSTAGRAM'
+                  ? normalizeInstagramIdentity(String(req.body.subjectNormalized || '')) || null
+                  : String(req.body.subjectNormalized || '').trim() || null,
+            }
+          : {}),
       },
     });
 

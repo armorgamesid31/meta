@@ -28,8 +28,16 @@ import {
   registerReferralAttributionFromToken,
   releaseAppointmentCampaignApplications,
 } from '../services/campaignPricing.js';
+import { assertBookingAllowed } from '../services/blacklist.js';
 
 const router = Router();
+
+function sendCustomerBannedResponse(res: any, detail?: string | null) {
+  return res.status(403).json({
+    code: 'CUSTOMER_BANNED',
+    message: detail && detail.trim() ? `Müşteri yasaklı: ${detail.trim()}` : 'Müşteri yasaklı olduğu için işlem yapılamaz.',
+  });
+}
 
 type SameDayEvent = 'CREATED' | 'UPDATED' | 'CANCELLED';
 
@@ -235,6 +243,13 @@ async function createExactSlotBooking(input: {
   if (searchContext.salonId !== input.salonId) {
     return { status: 403, body: { message: 'Salon mismatch.' } };
   }
+
+  await assertBookingAllowed({
+    salonId: input.salonId,
+    customerId: input.customerId,
+    phone: input.customerPhone,
+    channel: 'WHATSAPP',
+  });
 
   const availabilityRequest = searchContext.data as any;
   const availabilityResult = await generateAvailability(availabilityRequest, { persistSearchContext: false });
@@ -569,6 +584,12 @@ router.post("/confirm", authenticateToken, async (req: any, res: any) => {
   const salonId = req.user.salonId;
 
   try {
+    await assertBookingAllowed({
+      salonId,
+      phone: customerPhone,
+      channel: 'WHATSAPP',
+    });
+
     const result = await prisma.$transaction(async (tx) => {
       const searchContext = await tx.searchContext.findUnique({
         where: { id: lockToken },
@@ -676,7 +697,10 @@ router.post("/confirm", authenticateToken, async (req: any, res: any) => {
       }))
     });
 
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.code === 'CUSTOMER_BANNED' || error?.message === 'CUSTOMER_BANNED') {
+      return sendCustomerBannedResponse(res, error?.ban?.reason || null);
+    }
     console.error('Error confirming booking:', error);
     res.status(500).json({ message: 'Internal server error.' });
   }
@@ -1036,6 +1060,9 @@ router.post('/reschedule-commit', async (req: any, res: any) => {
       items: committed.createdAppointments,
     });
   } catch (error: any) {
+    if (error?.code === 'CUSTOMER_BANNED' || error?.message === 'CUSTOMER_BANNED') {
+      return sendCustomerBannedResponse(res, error?.ban?.reason || null);
+    }
     const message = error?.message || 'Internal server error.';
     const status = /manual specialist selection|no eligible|only booked|not found|cannot/i.test(message) ? 409 : 500;
     if (status === 500) {
@@ -1224,10 +1251,24 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
   try {
     const modernAppointment = await prisma.appointment.findFirst({
       where: { id: bookingId, salonId },
-      select: { id: true, customerName: true, startTime: true, service: { select: { name: true } } },
+      select: {
+        id: true,
+        customerId: true,
+        customerName: true,
+        customerPhone: true,
+        startTime: true,
+        service: { select: { name: true } },
+      },
     });
 
     if (modernAppointment) {
+      await assertBookingAllowed({
+        salonId,
+        customerId: modernAppointment.customerId,
+        phone: modernAppointment.customerPhone,
+        channel: 'WHATSAPP',
+      });
+
       const parsedStart = parseIsoDate(`${newSlot.date}T${newSlot.startTime}:00`);
       if (!parsedStart) {
         return res.status(400).json({ message: 'Invalid newSlot date/time.' });
@@ -1288,6 +1329,12 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
       }
 
       const booking = bookingRecord[0];
+
+      await assertBookingAllowed({
+        salonId,
+        phone: String(booking.musteri_telefonu || ''),
+        channel: 'WHATSAPP',
+      });
 
       if (booking.hizmet_durumu === 'iptal') {
         return { status: 400, body: { message: 'Cannot reschedule a cancelled booking.' }, notify: null as null | {
@@ -1517,7 +1564,10 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
     }
     return res.status(result.status).json(result.body);
 
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.code === 'CUSTOMER_BANNED' || error?.message === 'CUSTOMER_BANNED') {
+      return sendCustomerBannedResponse(res, error?.ban?.reason || null);
+    }
     console.error('Error rescheduling booking:', error);
     res.status(500).json({ message: 'Internal server error.' });
   }
@@ -1675,6 +1725,13 @@ router.post('/', async (req: any, res: any, next: any) => {
     } = b;
 
     try {
+      await assertBookingAllowed({
+        salonId,
+        customerId,
+        phone: customerPhone,
+        channel: 'WHATSAPP',
+      });
+
       const createdAppointments = [];
       let currentStartTime = new Date(b.startTime);
       
@@ -1965,6 +2022,9 @@ router.post('/', async (req: any, res: any, next: any) => {
         },
       });
     } catch (error: any) {
+      if (error?.code === 'CUSTOMER_BANNED' || error?.message === 'CUSTOMER_BANNED') {
+        return sendCustomerBannedResponse(res, error?.ban?.reason || null);
+      }
       console.error('Booking Error Details:', {
           message: error.message,
           stack: error.stack,
@@ -2077,6 +2137,14 @@ router.post('/appointments-by-token', async (req: any, res: any) => {
     }
 
     const customerPhoneForAppointment = customer.phone || fallbackPhoneFromLink;
+
+    await assertBookingAllowed({
+      salonId,
+      customerId: customer.id,
+      phone: customerPhoneForAppointment,
+      channel: magicLink.channel as any,
+      subjectNormalized: magicLink.subjectNormalized,
+    });
 
     const appointmentDateTime = new Date(datetime);
     if (isNaN(appointmentDateTime.getTime())) {
@@ -2242,7 +2310,10 @@ router.post('/appointments-by-token', async (req: any, res: any) => {
       status: 'CONFIRMED'
     });
 
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.code === 'CUSTOMER_BANNED' || error?.message === 'CUSTOMER_BANNED') {
+      return sendCustomerBannedResponse(res, error?.ban?.reason || null);
+    }
     console.error('Error creating appointment:', error);
     res.status(500).json({ message: 'Internal server error' });
   }

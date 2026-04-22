@@ -2,8 +2,16 @@ import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { v4 as uuidv4 } from 'uuid';
 import { buildSingleServiceGroups, generateAvailability } from '../services/availabilityService.js';
+import { assertBookingAllowed } from '../services/blacklist.js';
 
 const router = Router();
+
+function sendCustomerBannedResponse(res: any, detail?: string | null) {
+  return res.status(403).json({
+    code: 'CUSTOMER_BANNED',
+    message: detail && detail.trim() ? `Müşteri yasaklı: ${detail.trim()}` : 'Müşteri yasaklı olduğu için işlem yapılamaz.',
+  });
+}
 
 interface CreateMagicLinkRequest {
   salonId: number;
@@ -321,6 +329,13 @@ router.post("/:token/confirm", async (req: any, res: any) => {
       const slotStart = new Date(`${slot.date}T${slot.startTime}`);
       const slotEnd = new Date(slotStart.getTime() + lockDuration * 60 * 1000);
 
+      await assertBookingAllowed({
+        salonId: session.salonId,
+        customerId: customer.id,
+        phone: customer.phone,
+        channel: 'WHATSAPP',
+      });
+
       const appointments = [];
       for (const staffId of slot.staffIds) {
         const appointment = await tx.appointment.create({
@@ -372,7 +387,10 @@ router.post("/:token/confirm", async (req: any, res: any) => {
         }))
       });
     });
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.code === 'CUSTOMER_BANNED' || error?.message === 'CUSTOMER_BANNED') {
+      return sendCustomerBannedResponse(res, error?.ban?.reason || null);
+    }
     console.error('Error confirming session booking:', error);
     res.status(500).json({ message: 'Internal server error.' });
   }
