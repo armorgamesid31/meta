@@ -8149,7 +8149,7 @@ function conversationKeyCandidates(channel: 'INSTAGRAM' | 'WHATSAPP', value: str
 
 function resolveMessageDirection(messageType: string): 'inbound' | 'outbound' | 'system' {
   const normalized = (messageType || '').trim().toLowerCase();
-  if (normalized === 'handover_request') return 'system';
+  if (normalized === 'handover_request' || normalized === 'manual_takeover') return 'system';
   if (normalized.includes('outbound') || normalized.startsWith('echo_')) return 'outbound';
   return 'inbound';
 }
@@ -9556,6 +9556,25 @@ router.post('/conversations/:channel/:conversationKey/handover', authenticateTok
       return res.status(404).json({ message: 'Conversation not found.' });
     }
     const resolvedConversationKey = latestInbound.conversationKey || conversationKey;
+    const senderUserId = Number.isInteger(Number(req.user?.userId)) ? Number(req.user.userId) : null;
+    const senderUser = senderUserId
+      ? await prisma.salonUser.findFirst({
+          where: {
+            id: senderUserId,
+            salonId,
+          },
+          select: {
+            id: true,
+            email: true,
+            displayName: true,
+          },
+        })
+      : null;
+    const senderUserEmail =
+      typeof senderUser?.email === 'string' && senderUser.email.trim() ? senderUser.email.trim() : null;
+    const senderUserDisplayName =
+      typeof senderUser?.displayName === 'string' && senderUser.displayName.trim() ? senderUser.displayName.trim() : null;
+    const takeoverActorLabel = senderUserDisplayName || senderUserEmail || 'Salon Ekibi';
     const stateCandidates = Array.from(
       new Set([...keyCandidates, ...conversationKeyCandidates(channel, resolvedConversationKey)]),
     );
@@ -9608,6 +9627,30 @@ router.post('/conversations/:channel/:conversationKey/handover', authenticateTok
       conversationKey: resolvedConversationKey,
       note: note || 'manual_handover_by_salon',
       profileName: latestInbound.customerName || null,
+    });
+
+    await upsertConversationMessageEvent({
+      salonId,
+      channel,
+      conversationKey: resolvedConversationKey,
+      providerMessageId: `manual_takeover_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+      externalAccountId: latestInbound.externalAccountId || '',
+      customerName: latestInbound.customerName || null,
+      messageType: 'manual_takeover',
+      text: `${takeoverActorLabel} devraldı.`,
+      direction: 'SYSTEM',
+      eventTimestamp: new Date(),
+      processingStatus: InboundMessageStatus.DONE,
+      rawPayload: {
+        direction: 'system',
+        source: 'HUMAN_APP',
+        action: 'manual_handover',
+        actor: {
+          userId: senderUser?.id || null,
+          email: senderUserEmail,
+          displayName: senderUserDisplayName,
+        },
+      } as any,
     });
 
     return res.status(200).json({
@@ -10467,6 +10510,25 @@ router.post('/instagram-inbox/conversations/:conversationKey/handover', authenti
       return res.status(404).json({ message: 'Conversation not found.' });
     }
     const resolvedConversationKey = latestInbound.conversationKey || conversationKey;
+    const senderUserId = Number.isInteger(Number(req.user?.userId)) ? Number(req.user.userId) : null;
+    const senderUser = senderUserId
+      ? await prisma.salonUser.findFirst({
+          where: {
+            id: senderUserId,
+            salonId,
+          },
+          select: {
+            id: true,
+            email: true,
+            displayName: true,
+          },
+        })
+      : null;
+    const senderUserEmail =
+      typeof senderUser?.email === 'string' && senderUser.email.trim() ? senderUser.email.trim() : null;
+    const senderUserDisplayName =
+      typeof senderUser?.displayName === 'string' && senderUser.displayName.trim() ? senderUser.displayName.trim() : null;
+    const takeoverActorLabel = senderUserDisplayName || senderUserEmail || 'Salon Ekibi';
     const stateCandidates = Array.from(
       new Set([...keyCandidates, ...conversationKeyCandidates('INSTAGRAM', resolvedConversationKey)]),
     );
@@ -10519,6 +10581,30 @@ router.post('/instagram-inbox/conversations/:conversationKey/handover', authenti
       conversationKey: resolvedConversationKey,
       note: note || 'manual_handover_by_salon',
       profileName: latestInbound.customerName || null,
+    });
+
+    await upsertConversationMessageEvent({
+      salonId,
+      channel: 'INSTAGRAM',
+      conversationKey: resolvedConversationKey,
+      providerMessageId: `manual_takeover_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+      externalAccountId: latestInbound.externalAccountId || '',
+      customerName: latestInbound.customerName || null,
+      messageType: 'manual_takeover',
+      text: `${takeoverActorLabel} devraldı.`,
+      direction: 'SYSTEM',
+      eventTimestamp: new Date(),
+      processingStatus: InboundMessageStatus.DONE,
+      rawPayload: {
+        direction: 'system',
+        source: 'HUMAN_APP',
+        action: 'manual_handover',
+        actor: {
+          userId: senderUser?.id || null,
+          email: senderUserEmail,
+          displayName: senderUserDisplayName,
+        },
+      } as any,
     });
 
     return res.status(200).json({
