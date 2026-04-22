@@ -9471,6 +9471,7 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
     return res.status(200).json({
       item: {
         id: saved.id,
+        conversationKey: canonicalConversationKey,
         providerMessageId: saved.providerMessageId,
         messageType: saved.messageType,
         text: saved.text,
@@ -9617,6 +9618,7 @@ router.post('/conversations/:channel/:conversationKey/handover', authenticateTok
       return res.status(200).json({
         ok: true,
         alreadyRequested: true,
+        conversationKey: existingState.conversationKey,
         state: serializeConversationState(existingState),
       });
     }
@@ -9656,6 +9658,7 @@ router.post('/conversations/:channel/:conversationKey/handover', authenticateTok
     return res.status(200).json({
       ok: true,
       alreadyRequested: false,
+      conversationKey: updatedState.conversationKey,
       state: serializeConversationState({
         channel,
         conversationKey: updatedState.conversationKey,
@@ -9754,6 +9757,7 @@ router.post('/conversations/:channel/:conversationKey/resume-auto', authenticate
 
     return res.status(200).json({
       ok: true,
+      conversationKey: updatedState.conversationKey,
       state: serializeConversationState({
         channel,
         conversationKey: updatedState.conversationKey,
@@ -10439,6 +10443,7 @@ router.post('/instagram-inbox/conversations/:conversationKey/reply', authenticat
     return res.status(200).json({
       item: {
         id: saved.id,
+        conversationKey: canonicalConversationKey,
         providerMessageId: saved.providerMessageId,
         messageType: saved.messageType,
         text: saved.text,
@@ -10571,6 +10576,7 @@ router.post('/instagram-inbox/conversations/:conversationKey/handover', authenti
       return res.status(200).json({
         ok: true,
         alreadyRequested: true,
+        conversationKey: existingState.conversationKey,
         state: serializeConversationState(existingState),
       });
     }
@@ -10610,6 +10616,7 @@ router.post('/instagram-inbox/conversations/:conversationKey/handover', authenti
     return res.status(200).json({
       ok: true,
       alreadyRequested: false,
+      conversationKey: updatedState.conversationKey,
       state: serializeConversationState({
         channel: 'INSTAGRAM',
         conversationKey: updatedState.conversationKey,
@@ -10694,6 +10701,7 @@ router.post('/instagram-inbox/conversations/:conversationKey/resume-auto', authe
 
     return res.status(200).json({
       ok: true,
+      conversationKey: updatedState.conversationKey,
       state: serializeConversationState({
         channel: 'INSTAGRAM',
         conversationKey: updatedState.conversationKey,
