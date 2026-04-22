@@ -2940,6 +2940,10 @@ router.put('/customer-risk-policy', authenticateToken, async (req: any, res: any
       noShowThreshold: payload.noShowThreshold === undefined ? undefined : Number(payload.noShowThreshold),
       blockBookingWhenBanned:
         payload.blockBookingWhenBanned === undefined ? undefined : Boolean(payload.blockBookingWhenBanned),
+      attendanceConfig:
+        payload.attendanceConfig && typeof payload.attendanceConfig === 'object'
+          ? payload.attendanceConfig
+          : undefined,
     });
     return res.status(200).json({ policy });
   } catch (error) {
