@@ -8152,6 +8152,46 @@ function conversationKeyCandidates(channel: 'INSTAGRAM' | 'WHATSAPP', value: str
   return Array.from(new Set([value.trim(), raw, `${channel}:${raw}`].filter(Boolean)));
 }
 
+function extractWhatsappProviderMessageId(payload: unknown): string | null {
+  const data = asObject(payload);
+  const directMessageId = typeof data.messageId === 'string' ? data.messageId.trim() : '';
+  if (directMessageId) return directMessageId;
+  const directId = typeof data.id === 'string' ? data.id.trim() : '';
+  if (directId) return directId;
+
+  const nestedData = asObject(data.data);
+  const nestedDataId = typeof nestedData.id === 'string' ? nestedData.id.trim() : '';
+  if (nestedDataId) return nestedDataId;
+
+  const arrays = [
+    data.messages,
+    asObject(data._data).messages,
+    nestedData.messages,
+    asObject(data.result).messages,
+  ];
+
+  for (const candidate of arrays) {
+    if (!Array.isArray(candidate) || candidate.length === 0) continue;
+    const first = asObject(candidate[0]);
+    const id = typeof first.id === 'string' ? first.id.trim() : '';
+    if (id) return id;
+  }
+
+  return null;
+}
+
+function extractWhatsappUpstreamError(payload: unknown): string | null {
+  const data = asObject(payload);
+  const candidate = [
+    asObject(data.error).message,
+    asObject(asObject(data.error).data).message,
+    data.message,
+    asObject(data.data).message,
+    asObject(data.result).message,
+  ].find((value) => typeof value === 'string' && value.trim());
+  return typeof candidate === 'string' ? candidate.trim() : null;
+}
+
 function isInstagramWindowExpiredError(error: any): boolean {
   const normalized = [
     error?.response?.data?.error?.message,
@@ -9080,7 +9120,7 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
     const rows = await prisma.conversationMessageEvent.findMany({
       where,
       orderBy: {
-        eventTimestamp: 'asc',
+        eventTimestamp: 'desc',
       },
       take: limit,
       select: {
@@ -9134,7 +9174,7 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
       })),
     );
 
-    const items = rows.map((row) => {
+    const items = rows.slice().reverse().map((row) => {
       const raw = asObject(row.rawPayload);
       const direction = resolveStoredEventDirection(row.direction, row.messageType);
       const outboundMeta = resolveOutboundMessageMeta({
@@ -9376,10 +9416,12 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
         },
       );
 
-      const messages = whatsappResponse.data?.messages || whatsappResponse.data?._data?.messages;
-      graphMessageId =
-        (Array.isArray(messages) && messages[0]?.id) ||
-        `wa_out_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+      const providerMessageId = extractWhatsappProviderMessageId(whatsappResponse.data);
+      if (!providerMessageId) {
+        const upstreamMessage = extractWhatsappUpstreamError(whatsappResponse.data);
+        throw new Error(upstreamMessage || 'WhatsApp provider did not return a message id.');
+      }
+      graphMessageId = providerMessageId;
       usedExternalAccountId = phoneId;
 
       // Log outbound WhatsApp for debugging
@@ -9764,6 +9806,7 @@ router.post('/conversations/:channel/:conversationKey/resume-auto', authenticate
       },
       select: {
         conversationKey: true,
+        externalAccountId: true,
         customerName: true,
       },
     });
@@ -9772,6 +9815,25 @@ router.post('/conversations/:channel/:conversationKey/resume-auto', authenticate
       return res.status(404).json({ message: 'Conversation not found.' });
     }
     const resolvedConversationKey = latestInbound.conversationKey || conversationKey;
+    const senderUserId = Number.isInteger(Number(req.user?.userId)) ? Number(req.user.userId) : null;
+    const senderUser = senderUserId
+      ? await prisma.salonUser.findFirst({
+          where: {
+            id: senderUserId,
+            salonId,
+          },
+          select: {
+            id: true,
+            email: true,
+            displayName: true,
+          },
+        })
+      : null;
+    const senderUserEmail =
+      typeof senderUser?.email === 'string' && senderUser.email.trim() ? senderUser.email.trim() : null;
+    const senderUserDisplayName =
+      typeof senderUser?.displayName === 'string' && senderUser.displayName.trim() ? senderUser.displayName.trim() : null;
+    const resumeActorLabel = senderUserDisplayName || senderUserEmail || 'Salon Ekibi';
 
     const updatedState = await markConversationAuto({
       salonId,
@@ -9784,6 +9846,29 @@ router.post('/conversations/:channel/:conversationKey/resume-auto', authenticate
       salonId,
       channel,
       conversationKey: resolvedConversationKey,
+    });
+    await upsertConversationMessageEvent({
+      salonId,
+      channel,
+      conversationKey: resolvedConversationKey,
+      providerMessageId: `manual_resume_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+      externalAccountId: latestInbound.externalAccountId || '',
+      customerName: latestInbound.customerName || null,
+      messageType: 'manual_resume',
+      text: `${resumeActorLabel} KEDY AI'ı devreye aldı.`,
+      direction: 'SYSTEM',
+      eventTimestamp: new Date(),
+      processingStatus: InboundMessageStatus.DONE,
+      rawPayload: {
+        direction: 'system',
+        source: 'HUMAN_APP',
+        action: 'manual_resume',
+        actor: {
+          userId: senderUser?.id || null,
+          email: senderUserEmail,
+          displayName: senderUserDisplayName,
+        },
+      } as any,
     });
 
     return res.status(200).json({
@@ -10145,7 +10230,7 @@ router.get('/instagram-inbox/conversations/:conversationKey/messages', authentic
     const rows = await prisma.conversationMessageEvent.findMany({
       where,
       orderBy: {
-        eventTimestamp: 'asc',
+        eventTimestamp: 'desc',
       },
       take: limit,
       select: {
@@ -10199,7 +10284,7 @@ router.get('/instagram-inbox/conversations/:conversationKey/messages', authentic
       })),
     );
 
-    const items = rows.map((row) => {
+    const items = rows.slice().reverse().map((row) => {
       const raw = asObject(row.rawPayload);
       const direction = resolveStoredEventDirection(row.direction, row.messageType);
       const outboundMeta = resolveOutboundMessageMeta({
@@ -10714,6 +10799,7 @@ router.post('/instagram-inbox/conversations/:conversationKey/resume-auto', authe
       },
       select: {
         conversationKey: true,
+        externalAccountId: true,
         customerName: true,
       },
     });
@@ -10722,6 +10808,25 @@ router.post('/instagram-inbox/conversations/:conversationKey/resume-auto', authe
       return res.status(404).json({ message: 'Conversation not found.' });
     }
     const resolvedConversationKey = latestInbound.conversationKey || conversationKey;
+    const senderUserId = Number.isInteger(Number(req.user?.userId)) ? Number(req.user.userId) : null;
+    const senderUser = senderUserId
+      ? await prisma.salonUser.findFirst({
+          where: {
+            id: senderUserId,
+            salonId,
+          },
+          select: {
+            id: true,
+            email: true,
+            displayName: true,
+          },
+        })
+      : null;
+    const senderUserEmail =
+      typeof senderUser?.email === 'string' && senderUser.email.trim() ? senderUser.email.trim() : null;
+    const senderUserDisplayName =
+      typeof senderUser?.displayName === 'string' && senderUser.displayName.trim() ? senderUser.displayName.trim() : null;
+    const resumeActorLabel = senderUserDisplayName || senderUserEmail || 'Salon Ekibi';
 
     const updatedState = await markConversationAuto({
       salonId,
@@ -10734,6 +10839,29 @@ router.post('/instagram-inbox/conversations/:conversationKey/resume-auto', authe
       salonId,
       channel: 'INSTAGRAM',
       conversationKey: resolvedConversationKey,
+    });
+    await upsertConversationMessageEvent({
+      salonId,
+      channel: 'INSTAGRAM',
+      conversationKey: resolvedConversationKey,
+      providerMessageId: `manual_resume_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+      externalAccountId: latestInbound.externalAccountId || '',
+      customerName: latestInbound.customerName || null,
+      messageType: 'manual_resume',
+      text: `${resumeActorLabel} KEDY AI'ı devreye aldı.`,
+      direction: 'SYSTEM',
+      eventTimestamp: new Date(),
+      processingStatus: InboundMessageStatus.DONE,
+      rawPayload: {
+        direction: 'system',
+        source: 'HUMAN_APP',
+        action: 'manual_resume',
+        actor: {
+          userId: senderUser?.id || null,
+          email: senderUserEmail,
+          displayName: senderUserDisplayName,
+        },
+      } as any,
     });
 
     return res.status(200).json({
