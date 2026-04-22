@@ -34,6 +34,7 @@ import {
   matchWaitlistForDate,
 } from '../services/waitlist.js';
 import { validateMobilePhone } from '../services/phoneValidation.js';
+import { backfillConversationThreadSummaryForSalon } from '../services/conversationThreadSummary.js';
 import {
   listCampaignsForSend,
   previewCampaignPricing,
@@ -8647,106 +8648,81 @@ router.get('/conversations', authenticateToken, async (req: any, res: any) => {
 
   const limit = asPositiveInt(req.query.limit, 40, 1, 100);
   const channelFilter = asInboundChannel(req.query.channel);
-  const scanLimit = Math.max(limit * 60, 300);
 
   try {
-    const [rows, channelHealth, connectedInstagramId] = await Promise.all([
-      prisma.conversationMessageEvent.findMany({
+    const [channelHealth, initialSummaryRows] = await Promise.all([
+      buildConversationChannelHealth(salonId),
+      prisma.conversationThreadSummary.findMany({
         where: {
           salonId,
           channel: channelFilter || undefined,
         },
         orderBy: {
-          eventTimestamp: 'desc',
+          lastEventTimestamp: 'desc',
         },
-        take: scanLimit,
+        take: limit + 1,
         select: {
           conversationKey: true,
           channel: true,
-          externalAccountId: true,
           customerName: true,
-          messageType: true,
-          text: true,
-          processingStatus: true,
-          eventTimestamp: true,
-          rawPayload: true,
+          profileUsername: true,
+          profilePicUrl: true,
+          lastMessageType: true,
+          lastMessageText: true,
+          lastEventTimestamp: true,
+          unreadCount: true,
+          messageCount: true,
+          hasHandoverRequest: true,
         },
       }),
-      buildConversationChannelHealth(salonId),
-      resolveConnectedInstagramAccountIdForSalon(salonId),
     ]);
 
-    const byConversation = new Map<
-      string,
-      {
-        channel: 'INSTAGRAM' | 'WHATSAPP';
-        conversationKey: string;
-        customerName: string | null;
-        profileUsername: string | null;
-        profilePicUrl: string | null;
-        lastMessageType: string;
-        lastMessageText: string | null;
-        lastEventTimestamp: Date;
-        unreadCount: number;
-        messageCount: number;
-        hasHandoverRequest: boolean;
-      }
-    >();
-
-    for (const row of rows) {
-      const canonicalConversationKey =
-        row.channel === 'INSTAGRAM'
-          ? resolveInstagramConversationKeyFromRow({
-              conversationKey: row.conversationKey,
-              messageType: row.messageType,
-              externalAccountId: row.externalAccountId,
-              rawPayload: row.rawPayload,
-              connectedAccountId: connectedInstagramId,
-            })
-          : extractRawConversationKey('WHATSAPP', row.conversationKey);
-      const key = `${row.channel}:${canonicalConversationKey}`;
-      const existing = byConversation.get(key);
-      const unread = row.processingStatus !== 'DONE' ? 1 : 0;
-      const isHandover = row.messageType === 'handover_request';
-      const profile = row.channel === 'INSTAGRAM' ? extractInstagramProfile(row.rawPayload) : null;
-      const profileName = row.customerName || profile?.name || null;
-
-      if (!existing) {
-        byConversation.set(key, {
-          channel: row.channel as 'INSTAGRAM' | 'WHATSAPP',
-          conversationKey: canonicalConversationKey,
-          customerName: profileName,
-          profileUsername: profile?.username || null,
-          profilePicUrl: profile?.profilePicUrl || null,
-          lastMessageType: row.messageType,
-          lastMessageText: row.text || null,
-          lastEventTimestamp: row.eventTimestamp,
-          unreadCount: unread,
-          messageCount: 1,
-          hasHandoverRequest: isHandover,
-        });
-        continue;
-      }
-
-      existing.unreadCount += unread;
-      existing.messageCount += 1;
-      if (!existing.hasHandoverRequest && isHandover) {
-        existing.hasHandoverRequest = true;
-      }
-      if (!existing.customerName && profileName) {
-        existing.customerName = profileName;
-      }
-      if (!existing.profileUsername && profile?.username) {
-        existing.profileUsername = profile.username;
-      }
-      if (!existing.profilePicUrl && profile?.profilePicUrl) {
-        existing.profilePicUrl = profile.profilePicUrl;
-      }
+    let summaryRows = initialSummaryRows;
+    if (summaryRows.length === 0) {
+      await backfillConversationThreadSummaryForSalon(prisma, {
+        salonId,
+        channel: channelFilter || null,
+        scanLimit: Math.max(limit * 80, 6000),
+      });
+      summaryRows = await prisma.conversationThreadSummary.findMany({
+        where: {
+          salonId,
+          channel: channelFilter || undefined,
+        },
+        orderBy: {
+          lastEventTimestamp: 'desc',
+        },
+        take: limit + 1,
+        select: {
+          conversationKey: true,
+          channel: true,
+          customerName: true,
+          profileUsername: true,
+          profilePicUrl: true,
+          lastMessageType: true,
+          lastMessageText: true,
+          lastEventTimestamp: true,
+          unreadCount: true,
+          messageCount: true,
+          hasHandoverRequest: true,
+        },
+      });
     }
 
-    const baseItems = Array.from(byConversation.values())
-      .sort((a, b) => b.lastEventTimestamp.getTime() - a.lastEventTimestamp.getTime())
-      .slice(0, limit);
+    const hasMore = summaryRows.length > limit;
+    const baseItems = summaryRows.slice(0, limit).map((row) => ({
+      channel: row.channel as 'INSTAGRAM' | 'WHATSAPP',
+      conversationKey: row.conversationKey,
+      customerName: row.customerName || null,
+      profileUsername: row.profileUsername || null,
+      profilePicUrl: row.profilePicUrl || null,
+      lastMessageType: row.lastMessageType,
+      lastMessageText: row.lastMessageText || null,
+      lastEventTimestamp: row.lastEventTimestamp,
+      unreadCount: Math.max(0, row.unreadCount || 0),
+      messageCount: Math.max(0, row.messageCount || 0),
+      hasHandoverRequest: Boolean(row.hasHandoverRequest),
+    }));
 
     const conversationStateRows = baseItems.length
       ? await prisma.conversationState.findMany({
@@ -9054,7 +9030,7 @@ router.get('/conversations', authenticateToken, async (req: any, res: any) => {
 
     return res.status(200).json({
       items,
-      hasMore: byConversation.size > limit,
+      hasMore,
       channelHealth,
     });
   } catch (error) {

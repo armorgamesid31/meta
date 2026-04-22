@@ -8,6 +8,7 @@ import {
 import { prisma } from '../prisma.js';
 import { publishConversationStreamEvent } from './conversationEventsBus.js';
 import { createRealtimeEventInTx } from './conversationRealtimeEvents.js';
+import { upsertConversationThreadSummaryInTx } from './conversationThreadSummary.js';
 
 type UpsertConversationMessageEventInput = {
   salonId: number;
@@ -36,6 +37,18 @@ export async function upsertConversationMessageEvent(
   }
 
   const realtimeEvent = await prisma.$transaction(async (tx) => {
+    const existingEvent = await tx.conversationMessageEvent.findUnique({
+      where: {
+        channel_providerMessageId: {
+          channel: input.channel,
+          providerMessageId,
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
+
     const saved = await tx.conversationMessageEvent.upsert({
       where: {
         channel_providerMessageId: {
@@ -83,6 +96,21 @@ export async function upsertConversationMessageEvent(
         eventTimestamp: true,
         messageType: true,
       },
+    });
+
+    await upsertConversationThreadSummaryInTx(tx, {
+      salonId: input.salonId,
+      channel: input.channel,
+      conversationKey: input.conversationKey,
+      externalAccountId: input.externalAccountId || null,
+      customerName: input.customerName || null,
+      messageType: input.messageType,
+      text: input.text || null,
+      direction: input.direction,
+      eventTimestamp: input.eventTimestamp,
+      processingStatus: input.processingStatus || null,
+      rawPayload: input.rawPayload,
+      incrementCounters: !existingEvent,
     });
 
     return createRealtimeEventInTx(tx, {

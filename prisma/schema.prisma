@@ -58,6 +58,7 @@ model Salon {
   channelBindings      SalonChannelBinding[]
   inboundMessages      InboundMessageQueue[]
   conversationEvents         ConversationMessageEvent[]
+  conversationThreadSummaries ConversationThreadSummary[]
   conversationRealtimeEvents ConversationRealtimeEvent[]
   conversationStates         ConversationState[]
   outboundMessages     OutboundMessageTrace[]
@@ -1056,6 +1057,30 @@ model ConversationMessageEvent {
   @@index([salonId, channel, conversationKey, eventTimestamp], map: "idx_message_event_salon_conv_ts")
   @@index([salonId, channel, eventTimestamp], map: "idx_message_event_salon_channel_ts")
   @@index([salonId, channel, conversationKey, processingStatus], map: "idx_message_event_salon_conv_status")
+}
+
+model ConversationThreadSummary {
+  id                Int       @id @default(autoincrement())
+  salonId           Int
+  channel           ChannelType
+  conversationKey   String
+  customerName      String?
+  profileUsername   String?
+  profilePicUrl     String?
+  lastMessageType   String
+  lastMessageText   String?
+  lastDirection     MessageEventDirection
+  lastEventTimestamp DateTime @db.Timestamp(6)
+  unreadCount       Int       @default(0)
+  messageCount      Int       @default(0)
+  hasHandoverRequest Boolean  @default(false)
+  createdAt         DateTime? @default(now()) @db.Timestamp(6)
+  updatedAt         DateTime? @default(now()) @updatedAt @db.Timestamp(6)
+  salon             Salon     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([salonId, channel, conversationKey], map: "uq_conv_thread_summary_salon_channel_key")
+  @@index([salonId, channel, lastEventTimestamp], map: "idx_conv_thread_summary_salon_channel_last_ts")
+  @@index([salonId, lastEventTimestamp], map: "idx_conv_thread_summary_salon_last_ts")
 }
 
 model ConversationRealtimeEvent {
@@ -2113,4 +2138,3 @@ model NotificationLog {
   @@index([appointmentId, type])
   @@index([customerId, type])
 }
-
