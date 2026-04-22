@@ -757,6 +757,7 @@ async function markConversationHumanActive(input: {
   conversationKey: string;
   profileName?: string | null;
 }) {
+  const canonicalConversationKey = extractRawConversationKey(input.channel, input.conversationKey);
   const now = new Date();
   const until = new Date(now.getTime() + DEFAULT_HUMAN_ACTIVE_MINUTES * 60 * 1000);
   return prisma.conversationState.upsert({
@@ -764,7 +765,7 @@ async function markConversationHumanActive(input: {
       salonId_channel_conversationKey: {
         salonId: input.salonId,
         channel: input.channel,
-        conversationKey: input.conversationKey,
+        conversationKey: canonicalConversationKey,
       },
     },
     update: {
@@ -778,7 +779,7 @@ async function markConversationHumanActive(input: {
     create: {
       salonId: input.salonId,
       channel: input.channel,
-      conversationKey: input.conversationKey,
+      conversationKey: canonicalConversationKey,
       mode: 'HUMAN_ACTIVE',
       manualAlways: false,
       humanPendingSince: null,
@@ -796,13 +797,14 @@ async function markConversationHumanPending(input: {
   note?: string | null;
   profileName?: string | null;
 }) {
+  const canonicalConversationKey = extractRawConversationKey(input.channel, input.conversationKey);
   const now = new Date();
   return prisma.conversationState.upsert({
     where: {
       salonId_channel_conversationKey: {
         salonId: input.salonId,
         channel: input.channel,
-        conversationKey: input.conversationKey,
+        conversationKey: canonicalConversationKey,
       },
     },
     update: {
@@ -816,7 +818,7 @@ async function markConversationHumanPending(input: {
     create: {
       salonId: input.salonId,
       channel: input.channel,
-      conversationKey: input.conversationKey,
+      conversationKey: canonicalConversationKey,
       mode: 'HUMAN_PENDING',
       humanPendingSince: now,
       notes: input.note || null,
@@ -832,12 +834,13 @@ async function markConversationAuto(input: {
   note?: string | null;
   profileName?: string | null;
 }) {
+  const canonicalConversationKey = extractRawConversationKey(input.channel, input.conversationKey);
   return prisma.conversationState.upsert({
     where: {
       salonId_channel_conversationKey: {
         salonId: input.salonId,
         channel: input.channel,
-        conversationKey: input.conversationKey,
+        conversationKey: canonicalConversationKey,
       },
     },
     update: {
@@ -851,7 +854,7 @@ async function markConversationAuto(input: {
     create: {
       salonId: input.salonId,
       channel: input.channel,
-      conversationKey: input.conversationKey,
+      conversationKey: canonicalConversationKey,
       mode: 'AUTO',
       manualAlways: false,
       humanPendingSince: null,
@@ -863,8 +866,10 @@ async function markConversationAuto(input: {
 }
 
 function serializeConversationState(state: ConversationStateSnapshot | null) {
+  const mode = state?.mode || 'AUTO';
   return {
-    automationMode: state?.mode || 'AUTO',
+    mode,
+    automationMode: mode,
     manualAlways: Boolean(state?.manualAlways),
     humanPendingSince: state?.humanPendingSince?.toISOString() || null,
     humanActiveUntil: state?.humanActiveUntil?.toISOString() || null,
