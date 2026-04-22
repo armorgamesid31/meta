@@ -41,6 +41,9 @@ import { requireInternalApiKey } from './middleware/internal.js';
 import { ensurePermissionCatalog } from './services/accessControl.js';
 import { startNotificationJobs } from './services/notifications.js';
 import { startImportRetentionJob } from './services/importWizard.js';
+import { createServer } from 'http';
+import { initConversationEventsBus } from './services/conversationEventsBus.js';
+import { initConversationRealtimeWebSocketServer } from './services/conversationRealtimeWs.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -314,8 +317,14 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
 
 const PORT = (Number(process.env.PORT) || 3000);
 const HOST = "0.0.0.0";
-app.listen(PORT, HOST, () => {
+const server = createServer(app);
+initConversationRealtimeWebSocketServer(server);
+
+server.listen(PORT, HOST, () => {
   console.log(`🚀 Server running on ${HOST}:${PORT}`);
+  initConversationEventsBus().catch((error) => {
+    console.error('Conversation events bus init warning:', error);
+  });
   ensurePermissionCatalog().catch((error) => {
     console.error('Access permission catalog bootstrap warning:', error);
   });

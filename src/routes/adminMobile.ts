@@ -343,24 +343,6 @@ router.get('/conversations/stream', authenticateToken, async (req: any, res: any
     res.write(`event: conversation.update\ndata: ${JSON.stringify(event)}\n\n`);
   });
 
-  // Cross-instance safety: poll DB cursor to catch events published on other instances/processes.
-  const pollInterval = setInterval(async () => {
-    try {
-      const missed = await listRealtimeEventsSince({
-        salonId,
-        channel: channelFilter || null,
-        since: latestCursor,
-        limit: 200,
-      });
-      for (const item of missed) {
-        latestCursor = Math.max(latestCursor, item.cursor);
-        res.write(`event: conversation.update\ndata: ${JSON.stringify(item)}\n\n`);
-      }
-    } catch (error) {
-      console.error('Conversation stream poll error:', error);
-    }
-  }, 1000);
-
   const keepAlive = setInterval(() => {
     res.write(
       `event: heartbeat\ndata: ${JSON.stringify({
@@ -371,7 +353,6 @@ router.get('/conversations/stream', authenticateToken, async (req: any, res: any
   }, 25000);
 
   req.on('close', () => {
-    clearInterval(pollInterval);
     clearInterval(keepAlive);
     unsubscribe();
     res.end();
