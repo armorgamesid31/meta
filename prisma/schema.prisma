@@ -8,81 +8,81 @@ datasource db {
 }
 
 model Salon {
-  id                   Int                              @id @default(autoincrement())
-  name                 String
-  address              String?
-  logoUrl              String?
-  chakraPluginId       String?
-  chakraPhoneNumberId  String?
-  city                 String?
-  citySlug             String?
-  district             String?
-  districtSlug         String?
-  countryCode          String?
-  tagline              String?
-  heroText             String?
-  about                String?
-  heroImageUrl         String?
-  instagramUrl         String?
-  whatsappPhone        String?
-  bookingMode          BookingMode?                     @default(INTERNAL)
-  createdAt            DateTime?                        @default(now()) @db.Timestamp(6)
-  updatedAt            DateTime?                        @default(now()) @updatedAt @db.Timestamp(6)
-  slug                 String?                          @unique(map: "salon_slug_unique")
-  appointments         Appointment[]
-  appointmentLines     AppointmentLine[]
-  customers            Customer[]
-  galleryImages        SalonGalleryImage[]
-  authSessions         MobileAuthSession[]
-  inventoryItems       InventoryItem[]
-  campaigns            Campaign[]
-  campaignApplications AppointmentCampaignApplication[]
-  campaignWallets      CustomerCampaignWallet[]
-  campaignEnrollments  CustomerCampaignEnrollment[]
-  campaignShareLinks   CampaignShareLink[]
-  campaignAttributions CampaignAttribution[]
-  automationRules      AutomationRule[]
-  packageTemplates     PackageTemplate[]
-  customerPackages     CustomerPackage[]
-  packageLedgers       PackageLedger[]
-  packageConsumptions  AppointmentPackageConsumption[]
-  analyticsPresets     AnalyticsPreset[]
-  aiAgentSettings      SalonAiAgentSettings?
-  blacklistEntries     BlacklistEntry[]
-  settings             SalonSettings?
-  waitlistEntries      WaitlistEntry[]
-  waitlistOffers       WaitlistOffer[]
-  testimonials         SalonTestimonial[]
-  messageDispatches    AppointmentMessageDispatch[]
-  messageTemplates     SalonMessageTemplate[]
-  channelBindings      SalonChannelBinding[]
-  inboundMessages      InboundMessageQueue[]
-  conversationEvents         ConversationMessageEvent[]
+  id                          Int                              @id @default(autoincrement())
+  name                        String
+  logoUrl                     String?
+  createdAt                   DateTime?                        @default(now()) @db.Timestamp(6)
+  updatedAt                   DateTime?                        @default(now()) @updatedAt @db.Timestamp(6)
+  slug                        String?                          @unique(map: "salon_slug_unique")
+  chakraPluginId              String?
+  tagline                     String?
+  about                       String?
+  heroImageUrl                String?
+  instagramUrl                String?
+  whatsappPhone               String?
+  bookingMode                 BookingMode?                     @default(INTERNAL)
+  city                        String?
+  citySlug                    String?
+  district                    String?
+  districtSlug                String?
+  countryCode                 String?
+  address                     String?
+  chakraPhoneNumberId         String?
+  heroText                    String?
+  analyticsPresets            AnalyticsPreset[]
+  appointments                Appointment[]
+  campaignApplications        AppointmentCampaignApplication[]
+  appointmentLines            AppointmentLine[]
+  messageDispatches           AppointmentMessageDispatch[]
+  packageConsumptions         AppointmentPackageConsumption[]
+  automationRules             AutomationRule[]
+  blacklistEntries            BlacklistEntry[]
+  campaigns                   Campaign[]
+  campaignAttributions        CampaignAttribution[]
+  campaignShareLinks          CampaignShareLink[]
+  channelProfiles             ChannelProfileCache[]
+  contentItems                ContentItem[]
+  conversationEvents          ConversationMessageEvent[]
+  conversationRealtimeEvents  ConversationRealtimeEvent[]
+  conversationStates          ConversationState[]
   conversationThreadSummaries ConversationThreadSummary[]
-  conversationRealtimeEvents ConversationRealtimeEvent[]
-  conversationStates         ConversationState[]
-  outboundMessages     OutboundMessageTrace[]
-  channelProfiles      ChannelProfileCache[]
-  magicLinks           MagicLink[]
-  identitySessions     IdentitySession[]
-  identityBindings     IdentityBinding[]
-  phoneVerifications   CustomerPhoneVerification[]
-  users                SalonUser[]
-  services             Service[]
-  serviceGroups        ServiceGroup[]
-  serviceRegions       ServiceRegion[]
-  ServiceCategory      ServiceCategory[]
-  contentItems         ContentItem[]
-  staff                Staff[]
-  importBatches        ImportBatch[]
-  importSourceFiles    ImportSourceFile[]
-  importRows           ImportRow[]
-  importConflicts      ImportConflict[]
-  importDecisions      ImportMappingDecision[]
-  importCommitRuns     ImportCommitRun[]
-  importExtractionRuns ImportExtractionRun[]
-  closures             SalonClosure[]
-  staffTimeOffs        StaffTimeOff[]
+  customers                   Customer[]
+  campaignEnrollments         CustomerCampaignEnrollment[]
+  campaignWallets             CustomerCampaignWallet[]
+  customerPackages            CustomerPackage[]
+  phoneVerifications          CustomerPhoneVerification[]
+  identityBindings            IdentityBinding[]
+  identitySessions            IdentitySession[]
+  importBatches               ImportBatch[]
+  importCommitRuns            ImportCommitRun[]
+  importConflicts             ImportConflict[]
+  importExtractionRuns        ImportExtractionRun[]
+  importDecisions             ImportMappingDecision[]
+  importRows                  ImportRow[]
+  importSourceFiles           ImportSourceFile[]
+  inboundMessages             InboundMessageQueue[]
+  inventoryItems              InventoryItem[]
+  magicLinks                  MagicLink[]
+  authSessions                MobileAuthSession[]
+  outboundMessages            OutboundMessageTrace[]
+  packageLedgers              PackageLedger[]
+  packageTemplates            PackageTemplate[]
+  aiAgentSettings             SalonAiAgentSettings?
+  channelBindings             SalonChannelBinding[]
+  closures                    SalonClosure[]
+  galleryImages               SalonGalleryImage[]
+  messageTemplates            SalonMessageTemplate[]
+  settings                    SalonSettings?
+  testimonials                SalonTestimonial[]
+  users                       SalonUser[]
+  services                    Service[]
+  ServiceCategory             ServiceCategory[]
+  serviceGroups               ServiceGroup[]
+  serviceRegions              ServiceRegion[]
+  staff                       Staff[]
+  staffTimeOffs               StaffTimeOff[]
+  waitlistEntries             WaitlistEntry[]
+  waitlistOffers              WaitlistOffer[]
 
   @@index([citySlug, districtSlug], map: "idx_salon_city_district_slug")
 }
@@ -92,14 +92,14 @@ model SalonSettings {
   workStartHour       Int        @default(9)
   workEndHour         Int        @default(18)
   slotInterval        Int        @default(30)
-  workingDays         Json?
-  commonQuestions     Json?
   timezone            String     @default("Europe/Istanbul")
-  contentSourceLocale LocaleCode @default(tr)
-  categoryOrder       Json? // List of category keys for custom ordering
   createdAt           DateTime?  @default(now()) @db.Timestamp(6)
   updatedAt           DateTime?  @default(now()) @updatedAt @db.Timestamp(6)
   salonId             Int        @unique
+  categoryOrder       Json?
+  contentSourceLocale LocaleCode @default(tr)
+  workingDays         Json?
+  commonQuestions     Json?
   salon               Salon      @relation(fields: [salonId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 }
 
@@ -111,34 +111,34 @@ model SalonAiAgentSettings {
   emojiUsage        String    @default("low")
   bookingGuidance   String    @default("medium")
   handoverThreshold String    @default("balanced")
-  aiDisclosure      String    @default("onQuestion")
   faqAnswers        Json?
   createdAt         DateTime? @default(now()) @db.Timestamp(6)
   updatedAt         DateTime? @default(now()) @updatedAt @db.Timestamp(6)
+  aiDisclosure      String    @default("onQuestion")
   salon             Salon     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
 
 model SalonUser {
   id                                 Int                         @id @default(autoincrement())
   email                              String
-  displayName                        String?
   passwordHash                       String
   role                               String
-  isActive                           Boolean                     @default(true)
-  passwordResetRequired              Boolean                     @default(false)
-  lastLoginAt                        DateTime?                   @db.Timestamp(6)
   createdAt                          DateTime?                   @default(now()) @db.Timestamp(6)
   updatedAt                          DateTime?                   @default(now()) @updatedAt @db.Timestamp(6)
   salonId                            Int
-  authSessions                       MobileAuthSession[]
+  displayName                        String?
+  isActive                           Boolean                     @default(true)
+  passwordResetRequired              Boolean                     @default(false)
+  lastLoginAt                        DateTime?                   @db.Timestamp(6)
   publishedContentValues             ContentLocaleValue[]
-  salon                              Salon                       @relation(fields: [salonId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  createdImportBatches               ImportBatch[]               @relation("ImportBatchCreatedBy")
-  resolvedImportConflicts            ImportConflict[]            @relation("ImportConflictResolvedBy")
-  importMappingDecisions             ImportMappingDecision[]
-  triggeredImportCommits             ImportCommitRun[]           @relation("ImportCommitTriggeredBy")
   activatedImportAiConfigs           ImportAiConfig[]            @relation("ImportAiConfigActivatedBy")
+  createdImportBatches               ImportBatch[]               @relation("ImportBatchCreatedBy")
+  triggeredImportCommits             ImportCommitRun[]           @relation("ImportCommitTriggeredBy")
+  resolvedImportConflicts            ImportConflict[]            @relation("ImportConflictResolvedBy")
   reviewedImportExtractionCandidates ImportExtractionCandidate[] @relation("ImportExtractionCandidateReviewedBy")
+  importMappingDecisions             ImportMappingDecision[]
+  authSessions                       MobileAuthSession[]
+  salon                              Salon                       @relation(fields: [salonId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 }
 
 model MobileAuthSession {
@@ -150,8 +150,8 @@ model MobileAuthSession {
   revokedAt        DateTime? @db.Timestamp(6)
   createdAt        DateTime? @default(now()) @db.Timestamp(6)
   updatedAt        DateTime? @default(now()) @updatedAt @db.Timestamp(6)
-  user             SalonUser @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   salon            Salon     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user             SalonUser @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([userId, salonId], map: "idx_mobile_auth_user_salon")
   @@index([salonId, expiresAt], map: "idx_mobile_auth_salon_expires")
@@ -160,23 +160,23 @@ model MobileAuthSession {
 model Staff {
   id                Int                 @id @default(autoincrement())
   name              String
-  title             String?
-  bio               String?
-  themeColor        String?
-  profileImageUrl   String?
   phone             String?
   createdAt         DateTime?           @default(now()) @db.Timestamp(6)
   updatedAt         DateTime?           @default(now()) @updatedAt @db.Timestamp(6)
   salonId           Int
   userId            Int?
+  title             String?
+  bio               String?
+  profileImageUrl   String?
+  themeColor        String?
   appointments      Appointment[]
   appointmentLines  AppointmentLine[]
   leaves            Leave[]
-  timeOffs          StaffTimeOff[]
+  testimonials      SalonTestimonial[]
   salon             Salon               @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   StaffService      StaffService[]
+  timeOffs          StaffTimeOff[]
   StaffWorkingHours StaffWorkingHours[]
-  testimonials      SalonTestimonial[]
 }
 
 model Leave {
@@ -221,7 +221,6 @@ model Service {
   id                   Int                              @id @default(autoincrement())
   name                 String
   description          String?
-  isActive             Boolean?                         @default(true)
   price                Float
   duration             Int
   createdAt            DateTime?                        @default(now()) @db.Timestamp(6)
@@ -230,25 +229,26 @@ model Service {
   category             String?
   requiresSpecialist   Boolean?                         @default(false)
   categoryId           Int?
-  regionId             Int?
-  serviceGroupId       Int?
   capacityOverride     Int?
   sequentialOverride   Boolean?
   bufferOverride       Int?
+  serviceGroupId       Int?
+  isActive             Boolean?                         @default(true)
+  regionId             Int?
   appointments         Appointment[]
+  campaignApplications AppointmentCampaignApplication[]
   appointmentLines     AppointmentLine[]
-  ServiceCategory      ServiceCategory?                 @relation(fields: [categoryId], references: [id], onUpdate: NoAction)
-  ServiceRegion        ServiceRegion?                   @relation(fields: [regionId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  serviceGroup         ServiceGroup?                    @relation(fields: [serviceGroupId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  salon                Salon                            @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  ServiceGender        ServiceGender[]
-  translations         ServiceTranslation[]
-  templateServices     PackageTemplateService[]
+  packageConsumptions  AppointmentPackageConsumption[]
   packageBalances      CustomerPackageServiceBalance[]
   packageLedgers       PackageLedger[]
-  packageConsumptions  AppointmentPackageConsumption[]
-  campaignApplications AppointmentCampaignApplication[]
+  templateServices     PackageTemplateService[]
+  ServiceCategory      ServiceCategory?                 @relation(fields: [categoryId], references: [id], onUpdate: NoAction)
+  ServiceRegion        ServiceRegion?                   @relation(fields: [regionId], references: [id], onUpdate: NoAction)
+  salon                Salon                            @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  serviceGroup         ServiceGroup?                    @relation(fields: [serviceGroupId], references: [id], onUpdate: NoAction)
+  ServiceGender        ServiceGender[]
   ServiceStats         ServiceStats[]
+  translations         ServiceTranslation[]
   StaffService         StaffService[]
 
   @@unique([name, salonId])
@@ -259,15 +259,15 @@ model ServiceGroup {
   salonId            Int
   name               String
   description        String?
-  isActive           Boolean?                  @default(true)
   displayOrder       Int?
   capacity           Int?                      @default(1)
   sequentialRequired Boolean?                  @default(false)
   preparationMinutes Int?                      @default(0)
   createdAt          DateTime?                 @default(now()) @db.Timestamp(6)
   updatedAt          DateTime?                 @default(now()) @updatedAt @db.Timestamp(6)
-  salon              Salon                     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  isActive           Boolean?                  @default(true)
   services           Service[]
+  salon              Salon                     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   translations       ServiceGroupTranslation[]
 
   @@unique([salonId, name], map: "uq_service_group_name_per_salon")
@@ -284,34 +284,34 @@ model Appointment {
   status                       AppointmentStatus?               @default(BOOKED)
   source                       AppointmentSource?               @default(CUSTOMER)
   notes                        String?
-  paymentMethod                PaymentMethod?
-  paymentRecordedAt            DateTime?                        @db.Timestamp(6)
-  listPrice                    Float?
-  discountTotal                Float?
-  finalPrice                   Float?
-  campaignSnapshot             Json?
-  customerRating               Int?
-  customerReview               String?
-  customerReviewedAt           DateTime?                        @db.Timestamp(6)
-  preferenceMode               AppointmentPreferenceMode?       @default(ANY)
-  preferredStaffId             Int?
-  rescheduledFromAppointmentId Int?
-  rescheduleBatchId            String?
   createdAt                    DateTime?                        @default(now()) @db.Timestamp(6)
   updatedAt                    DateTime?                        @default(now()) @updatedAt @db.Timestamp(6)
   salonId                      Int
   staffId                      Int
   serviceId                    Int
   gender                       CustomerGender                   @default(female)
+  customerRating               Int?
+  customerReview               String?
+  customerReviewedAt           DateTime?                        @db.Timestamp(6)
+  paymentMethod                PaymentMethod?
+  paymentRecordedAt            DateTime?                        @db.Timestamp(6)
+  preferenceMode               AppointmentPreferenceMode?       @default(ANY)
+  preferredStaffId             Int?
+  rescheduledFromAppointmentId Int?
+  rescheduleBatchId            String?
+  listPrice                    Float?
+  discountTotal                Float?
+  finalPrice                   Float?
+  campaignSnapshot             Json?
   customer                     Customer?                        @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  messageDispatches            AppointmentMessageDispatch[]
-  packageConsumptions          AppointmentPackageConsumption[]
-  appointmentLines             AppointmentLine[]
-  campaignApplications         AppointmentCampaignApplication[]
-  campaignAttributions         CampaignAttribution[]            @relation("CampaignAttributionFirstAppointment")
   salon                        Salon                            @relation(fields: [salonId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   service                      Service                          @relation(fields: [serviceId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   staff                        Staff                            @relation(fields: [staffId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  campaignApplications         AppointmentCampaignApplication[]
+  appointmentLines             AppointmentLine[]
+  messageDispatches            AppointmentMessageDispatch[]
+  packageConsumptions          AppointmentPackageConsumption[]
+  campaignAttributions         CampaignAttribution[]            @relation("CampaignAttributionFirstAppointment")
   notificationLogs             NotificationLog[]
 
   @@index([salonId, startTime], map: "idx_appointment_salon_start")
@@ -322,33 +322,33 @@ model Appointment {
 }
 
 model AppointmentLine {
-  id                Int                    @id @default(autoincrement())
-  appointmentId     Int
-  salonId           Int
-  customerId        Int?
-  serviceId         Int
-  specialistId      Int?
-  startTime         DateTime?              @db.Timestamp(6)
-  endTime           DateTime?              @db.Timestamp(6)
-  durationMinutes   Int?
-  listPrice         Float?
-  finalPrice        Float?
-  status            AppointmentLineStatus? @default(BOOKED)
-  paymentMethod     PaymentMethod?
-  paymentRecordedAt DateTime?              @db.Timestamp(6)
-  regionInfo        Json?
-  groupInfo         Json?
-  notes             String?
-  orderIndex        Int                    @default(0)
-  createdAt         DateTime?              @default(now()) @db.Timestamp(6)
-  updatedAt         DateTime?              @default(now()) @updatedAt @db.Timestamp(6)
-  appointment       Appointment            @relation(fields: [appointmentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  customer          Customer?              @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  salon             Salon                  @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  service           Service                @relation(fields: [serviceId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  specialist        Staff?                 @relation(fields: [specialistId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  id                  Int                             @id @default(autoincrement())
+  appointmentId       Int
+  salonId             Int
+  customerId          Int?
+  serviceId           Int
+  specialistId        Int?
+  startTime           DateTime?                       @db.Timestamp(6)
+  endTime             DateTime?                       @db.Timestamp(6)
+  durationMinutes     Int?
+  listPrice           Float?
+  finalPrice          Float?
+  status              AppointmentLineStatus?          @default(BOOKED)
+  paymentMethod       PaymentMethod?
+  paymentRecordedAt   DateTime?                       @db.Timestamp(6)
+  regionInfo          Json?
+  groupInfo           Json?
+  notes               String?
+  orderIndex          Int                             @default(0)
+  createdAt           DateTime?                       @default(now()) @db.Timestamp(6)
+  updatedAt           DateTime?                       @default(now()) @updatedAt @db.Timestamp(6)
+  appointment         Appointment                     @relation(fields: [appointmentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  customer            Customer?                       @relation(fields: [customerId], references: [id], onUpdate: NoAction)
+  salon               Salon                           @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  service             Service                         @relation(fields: [serviceId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  specialist          Staff?                          @relation(fields: [specialistId], references: [id], onUpdate: NoAction)
   packageConsumptions AppointmentPackageConsumption[]
-  packageLedgers    PackageLedger[]
+  packageLedgers      PackageLedger[]
 
   @@index([appointmentId, orderIndex], map: "idx_appointment_line_appointment_order")
   @@index([salonId, status], map: "idx_appointment_line_salon_status")
@@ -368,6 +368,10 @@ model MagicLink {
   phone             String
   type              MagicLinkType
   context           Json?
+  expiresAt         DateTime            @db.Timestamp(6)
+  usedAt            DateTime?           @db.Timestamp(6)
+  createdAt         DateTime?           @default(now()) @db.Timestamp(6)
+  updatedAt         DateTime?           @default(now()) @updatedAt @db.Timestamp(6)
   salonId           Int
   channel           ChannelType
   subjectType       IdentitySubjectType
@@ -375,13 +379,9 @@ model MagicLink {
   status            MagicLinkStatus     @default(ACTIVE)
   identitySessionId String
   usedByCustomerId  Int?
-  expiresAt         DateTime            @db.Timestamp(6)
-  usedAt            DateTime?           @db.Timestamp(6)
-  createdAt         DateTime?           @default(now()) @db.Timestamp(6)
-  updatedAt         DateTime?           @default(now()) @updatedAt @db.Timestamp(6)
   identitySession   IdentitySession     @relation(fields: [identitySessionId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   salon             Salon               @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  usedByCustomer    Customer?           @relation("MagicLinkUsedByCustomer", fields: [usedByCustomerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  usedByCustomer    Customer?           @relation("MagicLinkUsedByCustomer", fields: [usedByCustomerId], references: [id], onUpdate: NoAction)
 
   @@index([salonId, channel, subjectNormalized, status], map: "idx_magiclink_lookup")
   @@index([identitySessionId, createdAt], map: "idx_magiclink_session_created")
@@ -405,9 +405,9 @@ model IdentitySession {
   createdAt         DateTime?             @default(now()) @db.Timestamp(6)
   updatedAt         DateTime?             @default(now()) @updatedAt @db.Timestamp(6)
   bindings          IdentityBinding[]
-  customer          Customer?             @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  magicLinks        MagicLink[]
+  customer          Customer?             @relation(fields: [customerId], references: [id], onUpdate: NoAction)
   salon             Salon                 @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  magicLinks        MagicLink[]
 
   @@unique([salonId, channel, subjectNormalized], map: "uq_identity_session_subject")
   @@index([salonId, conversationKey], map: "idx_identity_session_conv")
@@ -429,7 +429,7 @@ model IdentityBinding {
   updatedAt         DateTime?             @default(now()) @updatedAt @db.Timestamp(6)
   customer          Customer              @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   salon             Salon                 @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  session           IdentitySession?      @relation(fields: [sessionId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  session           IdentitySession?      @relation(fields: [sessionId], references: [id], onUpdate: NoAction)
 
   @@unique([salonId, channel, subjectNormalized], map: "uq_identity_binding_subject")
   @@index([customerId, salonId], map: "idx_identity_binding_customer_salon")
@@ -440,32 +440,32 @@ model Customer {
   id                   Int                              @id @default(autoincrement())
   name                 String?
   phone                String
-  instagram            String?
   createdAt            DateTime?                        @default(now()) @db.Timestamp(6)
   updatedAt            DateTime?                        @default(now()) @updatedAt @db.Timestamp(6)
   salonId              Int
   gender               CustomerGender?
   birthDate            DateTime?                        @db.Date
   acceptMarketing      Boolean?                         @default(false)
+  instagram            String?
   registrationStatus   CustomerRegistrationStatus       @default(VERIFIED)
   appointments         Appointment[]
-  appointmentLines     AppointmentLine[]
-  packages             CustomerPackage[]
-  packageLedgers       PackageLedger[]
-  packageConsumptions  AppointmentPackageConsumption[]
   campaignApplications AppointmentCampaignApplication[]
-  campaignWallets      CustomerCampaignWallet[]
-  campaignEnrollments  CustomerCampaignEnrollment[]
-  campaignShareLinks   CampaignShareLink[]
-  referrerAttributions CampaignAttribution[]            @relation("CampaignAttributionReferrerCustomer")
+  appointmentLines     AppointmentLine[]
+  packageConsumptions  AppointmentPackageConsumption[]
   referredAttributions CampaignAttribution[]            @relation("CampaignAttributionReferredCustomer")
+  referrerAttributions CampaignAttribution[]            @relation("CampaignAttributionReferrerCustomer")
+  campaignShareLinks   CampaignShareLink[]
+  salon                Salon                            @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  campaignEnrollments  CustomerCampaignEnrollment[]
+  campaignWallets      CustomerCampaignWallet[]
+  packages             CustomerPackage[]
+  phoneVerifications   CustomerPhoneVerification[]
   identityBindings     IdentityBinding[]
   identitySessions     IdentitySession[]
-  salon                Salon                            @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   usedMagicLinks       MagicLink[]                      @relation("MagicLinkUsedByCustomer")
-  waitlistEntries      WaitlistEntry[]
-  phoneVerifications   CustomerPhoneVerification[]
   notificationLogs     NotificationLog[]
+  packageLedgers       PackageLedger[]
+  waitlistEntries      WaitlistEntry[]
 
   @@unique([phone, salonId])
   @@index([salonId, createdAt], map: "idx_customer_salon_created")
@@ -519,12 +519,12 @@ model ServiceStats {
   maxPrice     Float
   minDuration  Int
   maxDuration  Int
-  description  String?
-  regionId     Int?
-  regionName   String?
   calculatedAt DateTime?      @default(now()) @db.Timestamp(6)
   salonId      Int
   gender       CustomerGender @default(female)
+  description  String?
+  regionId     Int?
+  regionName   String?
   Service      Service        @relation(fields: [serviceId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@id([serviceId, salonId, gender])
@@ -558,27 +558,27 @@ model StaffWorkingHours {
 }
 
 model ServiceCategory {
-  id                   Int                @id @default(autoincrement())
+  id                   Int                 @id @default(autoincrement())
   name                 String
   salonId              Int
-  categoryId           Int?
-  isActive             Boolean?           @default(true)
+  capacity             Int?                @default(1)
+  sequentialRequired   Boolean?            @default(false)
+  bufferMinutes        Int?                @default(0)
+  createdAt            DateTime?           @default(now()) @db.Timestamp(6)
+  updatedAt            DateTime?           @default(now()) @db.Timestamp(6)
   marketingDescription String?
-  commonQuestions      Json?
   icon                 String?
-  coverImageUrl        String?
   displayOrder         Int?
-  capacity             Int?               @default(1)
-  sequentialRequired   Boolean?           @default(false)
-  bufferMinutes        Int?               @default(0)
-  createdAt            DateTime?          @default(now()) @db.Timestamp(6)
-  updatedAt            DateTime?          @default(now()) @db.Timestamp(6)
-  categoryRef          Category?          @relation(fields: [categoryId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  Service              Service[]
-  ServiceRegion        ServiceRegion[]
-  Salon                Salon              @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  testimonials         SalonTestimonial[]
+  coverImageUrl        String?
+  categoryId           Int?
+  isActive             Boolean?            @default(true)
+  commonQuestions      Json?
   salonGalleryImages   SalonGalleryImage[]
+  testimonials         SalonTestimonial[]
+  Service              Service[]
+  categoryRef          Category?           @relation(fields: [categoryId], references: [id], onUpdate: NoAction)
+  Salon                Salon               @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  ServiceRegion        ServiceRegion[]
 
   @@index([salonId, displayOrder], map: "idx_servicecategory_salon_display_order")
   @@index([salonId, categoryId, displayOrder], map: "idx_servicecategory_salon_category_display")
@@ -593,9 +593,9 @@ model ServiceRegion {
   displayOrder    Int?
   createdAt       DateTime?        @default(now()) @db.Timestamp(6)
   updatedAt       DateTime?        @default(now()) @updatedAt @db.Timestamp(6)
-  salon           Salon            @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   Service         Service[]
-  ServiceCategory ServiceCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  ServiceCategory ServiceCategory? @relation(fields: [categoryId], references: [id], onUpdate: NoAction)
+  salon           Salon            @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([salonId, name], map: "uq_service_region_name_per_salon")
   @@index([salonId, displayOrder], map: "idx_service_region_salon_display_order")
@@ -603,16 +603,16 @@ model ServiceRegion {
 }
 
 model SalonGalleryImage {
-  id           Int       @id @default(autoincrement())
+  id           Int              @id @default(autoincrement())
   salonId      Int
   imageUrl     String
   altText      String?
-  displayOrder Int?      @default(0)
+  displayOrder Int?             @default(0)
+  createdAt    DateTime?        @default(now()) @db.Timestamp(6)
+  updatedAt    DateTime?        @default(now()) @updatedAt @db.Timestamp(6)
   categoryId   Int?
-  createdAt    DateTime? @default(now()) @db.Timestamp(6)
-  updatedAt    DateTime? @default(now()) @updatedAt @db.Timestamp(6)
-  category     ServiceCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  salon        Salon     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  category     ServiceCategory? @relation(fields: [categoryId], references: [id], onUpdate: NoAction)
+  salon        Salon            @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([salonId, displayOrder], map: "idx_gallery_salon_display_order")
   @@index([categoryId], map: "idx_gallery_category")
@@ -628,9 +628,9 @@ model SalonTestimonial {
   isGenerated   Boolean?                 @default(true)
   createdAt     DateTime?                @default(now()) @db.Timestamp(6)
   updatedAt     DateTime?                @default(now()) @updatedAt @db.Timestamp(6)
+  category      ServiceCategory?         @relation(fields: [categoryId], references: [id], onUpdate: NoAction)
+  expert        Staff?                   @relation(fields: [expertId], references: [id], onUpdate: NoAction)
   salon         Salon                    @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  expert        Staff?                   @relation(fields: [expertId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  category      ServiceCategory?         @relation(fields: [categoryId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([salonId], map: "idx_testimonial_salon")
   @@index([expertId], map: "idx_testimonial_expert")
@@ -677,22 +677,22 @@ model Campaign {
   type           String
   description    String?
   config         Json?
-  priority       Int                              @default(100)
-  deliveryMode   CampaignDeliveryMode             @default(MANUAL)
-  maxGlobalUsage Int?
-  maxPerCustomer Int?
   isActive       Boolean                          @default(true)
-  publishedAt    DateTime?                        @db.Timestamp(6)
   startsAt       DateTime?                        @db.Timestamp(6)
   endsAt         DateTime?                        @db.Timestamp(6)
   createdAt      DateTime?                        @default(now()) @db.Timestamp(6)
   updatedAt      DateTime?                        @default(now()) @updatedAt @db.Timestamp(6)
-  salon          Salon                            @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  priority       Int                              @default(100)
+  deliveryMode   CampaignDeliveryMode             @default(MANUAL)
+  maxGlobalUsage Int?
+  maxPerCustomer Int?
+  publishedAt    DateTime?                        @db.Timestamp(6)
   applications   AppointmentCampaignApplication[]
-  wallets        CustomerCampaignWallet[]
-  enrollments    CustomerCampaignEnrollment[]
-  shareLinks     CampaignShareLink[]
+  salon          Salon                            @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   attributions   CampaignAttribution[]
+  shareLinks     CampaignShareLink[]
+  enrollments    CustomerCampaignEnrollment[]
+  wallets        CustomerCampaignWallet[]
 
   @@index([salonId, type, isActive], map: "idx_campaign_salon_type_active")
   @@index([salonId, priority, isActive], map: "idx_campaign_salon_priority_active")
@@ -714,11 +714,11 @@ model AppointmentCampaignApplication {
   releasedAt     DateTime?                 @db.Timestamp(6)
   createdAt      DateTime?                 @default(now()) @db.Timestamp(6)
   updatedAt      DateTime?                 @default(now()) @updatedAt @db.Timestamp(6)
-  salon          Salon                     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   appointment    Appointment               @relation(fields: [appointmentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  customer       Customer?                 @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   campaign       Campaign                  @relation(fields: [campaignId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  service        Service?                  @relation(fields: [serviceId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  customer       Customer?                 @relation(fields: [customerId], references: [id], onUpdate: NoAction)
+  salon          Salon                     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  service        Service?                  @relation(fields: [serviceId], references: [id], onUpdate: NoAction)
 
   @@index([salonId, appointmentId], map: "idx_campaign_app_salon_appointment")
   @@index([salonId, customerId, campaignId], map: "idx_campaign_app_salon_customer_campaign")
@@ -736,9 +736,9 @@ model CustomerCampaignWallet {
   metadata       Json?
   createdAt      DateTime? @default(now()) @db.Timestamp(6)
   updatedAt      DateTime? @default(now()) @updatedAt @db.Timestamp(6)
-  salon          Salon     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  customer       Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   campaign       Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  customer       Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  salon          Salon     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([salonId, customerId, campaignId], map: "uq_campaign_wallet_salon_customer_campaign")
   @@index([salonId, customerId], map: "idx_campaign_wallet_salon_customer")
@@ -755,9 +755,9 @@ model CustomerCampaignEnrollment {
   enrolledAt DateTime?                @default(now()) @db.Timestamp(6)
   createdAt  DateTime?                @default(now()) @db.Timestamp(6)
   updatedAt  DateTime?                @default(now()) @updatedAt @db.Timestamp(6)
-  salon      Salon                    @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  customer   Customer                 @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   campaign   Campaign                 @relation(fields: [campaignId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  customer   Customer                 @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  salon      Salon                    @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([salonId, customerId, campaignId], map: "uq_campaign_enrollment_salon_customer_campaign")
   @@index([salonId, status], map: "idx_campaign_enrollment_salon_status")
@@ -775,10 +775,10 @@ model CampaignShareLink {
   expiresAt    DateTime?               @db.Timestamp(6)
   createdAt    DateTime?               @default(now()) @db.Timestamp(6)
   updatedAt    DateTime?               @default(now()) @updatedAt @db.Timestamp(6)
-  salon        Salon                   @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  attributions CampaignAttribution[]
   campaign     Campaign                @relation(fields: [campaignId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   customer     Customer                @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  attributions CampaignAttribution[]
+  salon        Salon                   @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([salonId, campaignId, customerId], map: "uq_campaign_share_link_salon_campaign_customer")
   @@index([salonId, status], map: "idx_campaign_share_link_salon_status")
@@ -797,12 +797,12 @@ model CampaignAttribution {
   metadata           Json?
   createdAt          DateTime?                 @default(now()) @db.Timestamp(6)
   updatedAt          DateTime?                 @default(now()) @updatedAt @db.Timestamp(6)
-  salon              Salon                     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   campaign           Campaign                  @relation(fields: [campaignId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  shareLink          CampaignShareLink         @relation(fields: [shareLinkId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  firstAppointment   Appointment?              @relation("CampaignAttributionFirstAppointment", fields: [firstAppointmentId], references: [id], onUpdate: NoAction)
+  referredCustomer   Customer?                 @relation("CampaignAttributionReferredCustomer", fields: [referredCustomerId], references: [id], onUpdate: NoAction)
   referrerCustomer   Customer                  @relation("CampaignAttributionReferrerCustomer", fields: [referrerCustomerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  referredCustomer   Customer?                 @relation("CampaignAttributionReferredCustomer", fields: [referredCustomerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  firstAppointment   Appointment?              @relation("CampaignAttributionFirstAppointment", fields: [firstAppointmentId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  salon              Salon                     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  shareLink          CampaignShareLink         @relation(fields: [shareLinkId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([salonId, campaignId, status], map: "idx_campaign_attr_salon_campaign_status")
   @@index([shareLinkId], map: "idx_campaign_attr_share_link")
@@ -835,8 +835,8 @@ model AppointmentMessageDispatch {
   providerMessageId String?
   providerPayload   Json?
   createdAt         DateTime?                   @default(now()) @db.Timestamp(6)
-  salon             Salon                       @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   appointment       Appointment                 @relation(fields: [appointmentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  salon             Salon                       @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([salonId, appointmentId, eventType], map: "uq_msg_dispatch_salon_appointment_event")
   @@index([salonId, createdAt], map: "idx_msg_dispatch_salon_created")
@@ -851,13 +851,13 @@ model SalonMessageTemplate {
   sessionText     String?
   templateName    String?
   templateContent String?
+  isActive        Boolean                     @default(true)
+  createdAt       DateTime?                   @default(now()) @db.Timestamp(6)
+  updatedAt       DateTime?                   @default(now()) @updatedAt @db.Timestamp(6)
   externalId      String?
   metaCategory    String?
   metaStatus      String?
   lastSyncAt      DateTime?                   @db.Timestamp(6)
-  isActive        Boolean                     @default(true)
-  createdAt       DateTime?                   @default(now()) @db.Timestamp(6)
-  updatedAt       DateTime?                   @default(now()) @updatedAt @db.Timestamp(6)
   salon           Salon                       @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([salonId, eventType, locale], map: "uq_salon_message_template")
@@ -877,19 +877,19 @@ model AnalyticsPreset {
 }
 
 model BlacklistEntry {
-  id          Int       @id @default(autoincrement())
-  salonId     Int
-  customerId  Int?
-  channel     ChannelType?
+  id                Int          @id @default(autoincrement())
+  salonId           Int
+  customerId        Int?
+  phone             String?
+  fullName          String?
+  reason            String?
+  isActive          Boolean      @default(true)
+  createdAt         DateTime?    @default(now()) @db.Timestamp(6)
+  updatedAt         DateTime?    @default(now()) @updatedAt @db.Timestamp(6)
+  createdById       Int?
+  channel           ChannelType?
   subjectNormalized String?
-  phone       String?
-  fullName    String?
-  reason      String?
-  isActive    Boolean   @default(true)
-  createdAt   DateTime? @default(now()) @db.Timestamp(6)
-  updatedAt   DateTime? @default(now()) @updatedAt @db.Timestamp(6)
-  createdById Int?
-  salon       Salon     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  salon             Salon        @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([salonId, isActive], map: "idx_blacklist_salon_active")
   @@index([salonId, channel, subjectNormalized, isActive], map: "idx_blacklist_identity_active")
@@ -936,8 +936,8 @@ model ContentItem {
   metadata     Json?
   createdAt    DateTime?            @default(now()) @db.Timestamp(6)
   updatedAt    DateTime?            @default(now()) @updatedAt @db.Timestamp(6)
-  localeValues ContentLocaleValue[]
   salon        Salon?               @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  localeValues ContentLocaleValue[]
 
   @@index([surface, page, salonId], map: "idx_content_item_surface_page_salon")
   @@index([surface, page, section], map: "idx_content_item_surface_page_section")
@@ -956,7 +956,7 @@ model ContentLocaleValue {
   createdAt      DateTime?          @default(now()) @db.Timestamp(6)
   updatedAt      DateTime?          @default(now()) @updatedAt @db.Timestamp(6)
   item           ContentItem        @relation(fields: [itemId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  publisher      SalonUser?         @relation(fields: [publishedBy], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  publisher      SalonUser?         @relation(fields: [publishedBy], references: [id], onUpdate: NoAction)
 
   @@unique([itemId, locale], map: "uq_content_locale_value_item_locale")
   @@index([locale, status, version], map: "idx_content_locale_value_locale_status_version")
@@ -1063,23 +1063,23 @@ model ConversationMessageEvent {
 }
 
 model ConversationThreadSummary {
-  id                Int       @id @default(autoincrement())
-  salonId           Int
-  channel           ChannelType
-  conversationKey   String
-  customerName      String?
-  profileUsername   String?
-  profilePicUrl     String?
-  lastMessageType   String
-  lastMessageText   String?
-  lastDirection     MessageEventDirection
-  lastEventTimestamp DateTime @db.Timestamp(6)
-  unreadCount       Int       @default(0)
-  messageCount      Int       @default(0)
-  hasHandoverRequest Boolean  @default(false)
-  createdAt         DateTime? @default(now()) @db.Timestamp(6)
-  updatedAt         DateTime? @default(now()) @updatedAt @db.Timestamp(6)
-  salon             Salon     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id                 Int                   @id @default(autoincrement())
+  salonId            Int
+  channel            ChannelType
+  conversationKey    String
+  customerName       String?
+  profileUsername    String?
+  profilePicUrl      String?
+  lastMessageType    String
+  lastMessageText    String?
+  lastDirection      MessageEventDirection
+  lastEventTimestamp DateTime              @db.Timestamp(6)
+  unreadCount        Int                   @default(0)
+  messageCount       Int                   @default(0)
+  hasHandoverRequest Boolean               @default(false)
+  createdAt          DateTime?             @default(now()) @db.Timestamp(6)
+  updatedAt          DateTime?             @default(now()) @updatedAt @db.Timestamp(6)
+  salon              Salon                 @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([salonId, channel, conversationKey], map: "uq_conv_thread_summary_salon_channel_key")
   @@index([salonId, channel, lastEventTimestamp], map: "idx_conv_thread_summary_salon_channel_last_ts")
@@ -1087,15 +1087,15 @@ model ConversationThreadSummary {
 }
 
 model ConversationRealtimeEvent {
-  id              Int       @id @default(autoincrement())
+  id              Int         @id @default(autoincrement())
   salonId         Int
   channel         ChannelType
   conversationKey String
   eventType       String
   messageEventId  Int?
-  eventTimestamp  DateTime  @db.Timestamp(6)
-  createdAt       DateTime? @default(now()) @db.Timestamp(6)
-  salon           Salon     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  eventTimestamp  DateTime    @db.Timestamp(6)
+  createdAt       DateTime?   @default(now()) @db.Timestamp(6)
+  salon           Salon       @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([salonId, id], map: "idx_conv_realtime_salon_cursor")
   @@index([salonId, channel, id], map: "idx_conv_realtime_salon_channel_cursor")
@@ -1106,8 +1106,8 @@ model ConversationRealtimeEvent {
 model MetaChannelWebhookLog {
   id              Int         @id @default(autoincrement())
   channel         ChannelType
-  direction       String      @default("INBOUND") // INBOUND or OUTBOUND
-  eventType       String?     // e.g. "message", "status", "echo", "reply"
+  direction       String      @default("INBOUND")
+  eventType       String?
   payload         Json
   headers         Json?
   conversationKey String?
@@ -1152,13 +1152,13 @@ model OutboundMessageTrace {
   externalAccountId String?
   canonicalUserId   String?
   customerId        Int?
-  sourceUserId      Int?
-  sourceUserEmail   String?
   source            OutboundMessageSource
   text              String?
   sentAt            DateTime              @db.Timestamp(6)
   createdAt         DateTime?             @default(now()) @db.Timestamp(6)
   updatedAt         DateTime?             @default(now()) @updatedAt @db.Timestamp(6)
+  sourceUserEmail   String?
+  sourceUserId      Int?
   salon             Salon                 @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([channel, providerMessageId], map: "uq_outbound_trace_channel_provider_message")
@@ -1218,9 +1218,9 @@ model PackageTemplate {
   notes            String?
   createdAt        DateTime?                @default(now()) @db.Timestamp(6)
   updatedAt        DateTime?                @default(now()) @updatedAt @db.Timestamp(6)
+  customerPackages CustomerPackage[]
   salon            Salon                    @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   services         PackageTemplateService[]
-  customerPackages CustomerPackage[]
 
   @@unique([salonId, name], map: "uq_pkg_template_salon_name")
   @@index([salonId, isActive], map: "idx_pkg_template_salon_active")
@@ -1254,12 +1254,12 @@ model CustomerPackage {
   notes             String?
   createdAt         DateTime?                       @default(now()) @db.Timestamp(6)
   updatedAt         DateTime?                       @default(now()) @updatedAt @db.Timestamp(6)
+  consumptions      AppointmentPackageConsumption[]
   customer          Customer                        @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  template          PackageTemplate?                @relation(fields: [packageTemplateId], references: [id], onUpdate: NoAction)
   salon             Salon                           @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  template          PackageTemplate?                @relation(fields: [packageTemplateId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   serviceBalances   CustomerPackageServiceBalance[]
   ledgers           PackageLedger[]
-  consumptions      AppointmentPackageConsumption[]
 
   @@index([salonId, customerId, status], map: "idx_customer_pkg_salon_customer_status")
   @@index([salonId, expiresAt], map: "idx_customer_pkg_salon_expires")
@@ -1287,18 +1287,18 @@ model PackageLedger {
   customerPackageId Int?
   serviceId         Int?
   appointmentId     Int?
-  appointmentLineId Int?
   actionType        PackageActionType
   delta             Int
   balanceAfter      Int?
   reason            String?
   metadata          Json?
   createdAt         DateTime?         @default(now()) @db.Timestamp(6)
+  appointmentLineId Int?
+  appointmentLine   AppointmentLine?  @relation(fields: [appointmentLineId], references: [id], onUpdate: NoAction)
   customer          Customer          @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  customerPackage   CustomerPackage?  @relation(fields: [customerPackageId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  appointmentLine   AppointmentLine?  @relation(fields: [appointmentLineId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  customerPackage   CustomerPackage?  @relation(fields: [customerPackageId], references: [id], onUpdate: NoAction)
   salon             Salon             @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  service           Service?          @relation(fields: [serviceId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  service           Service?          @relation(fields: [serviceId], references: [id], onUpdate: NoAction)
 
   @@index([salonId, customerId, createdAt], map: "idx_pkg_ledger_salon_customer_created")
   @@index([customerPackageId, createdAt], map: "idx_pkg_ledger_customer_pkg_created")
@@ -1307,22 +1307,22 @@ model PackageLedger {
 }
 
 model AppointmentPackageConsumption {
-  id                Int             @id @default(autoincrement())
+  id                Int              @id @default(autoincrement())
   salonId           Int
   appointmentId     Int
-  appointmentLineId Int?
   customerId        Int
   customerPackageId Int
   serviceId         Int
-  consumed          Int             @default(1)
-  restoredAt        DateTime?       @db.Timestamp(6)
-  createdAt         DateTime?       @default(now()) @db.Timestamp(6)
-  appointment       Appointment     @relation(fields: [appointmentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  appointmentLine   AppointmentLine? @relation(fields: [appointmentLineId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  customer          Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  customerPackage   CustomerPackage @relation(fields: [customerPackageId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  salon             Salon           @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  service           Service         @relation(fields: [serviceId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  consumed          Int              @default(1)
+  restoredAt        DateTime?        @db.Timestamp(6)
+  createdAt         DateTime?        @default(now()) @db.Timestamp(6)
+  appointmentLineId Int?
+  appointment       Appointment      @relation(fields: [appointmentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  appointmentLine   AppointmentLine? @relation(fields: [appointmentLineId], references: [id], onUpdate: NoAction)
+  customer          Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  customerPackage   CustomerPackage  @relation(fields: [customerPackageId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  salon             Salon            @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  service           Service          @relation(fields: [serviceId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([appointmentId, appointmentLineId, serviceId], map: "uq_appointment_pkg_consumption_line")
   @@index([salonId, customerId], map: "idx_appointment_pkg_consumption_salon_customer")
@@ -1366,7 +1366,7 @@ model CustomerPhoneVerification {
   consumedAt      DateTime?                        @db.Timestamp(6)
   createdAt       DateTime?                        @default(now()) @db.Timestamp(6)
   updatedAt       DateTime?                        @default(now()) @updatedAt @db.Timestamp(6)
-  customer        Customer?                        @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  customer        Customer?                        @relation(fields: [customerId], references: [id], onUpdate: NoAction)
   salon           Salon                            @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([salonId, phone, status, expiresAt], map: "idx_customer_phone_verification_phone_status")
@@ -1384,8 +1384,6 @@ model WaitlistEntry {
   requestDate            DateTime            @db.Date
   windowStartMinute      Int
   windowEndMinute        Int
-  allowNearbyMatches     Boolean             @default(false)
-  nearbyToleranceMinutes Int                 @default(60)
   groups                 Json
   preferredStaffIds      Json?
   latestOfferId          Int?
@@ -1394,7 +1392,9 @@ model WaitlistEntry {
   notes                  String?
   createdAt              DateTime?           @default(now()) @db.Timestamp(6)
   updatedAt              DateTime?           @default(now()) @updatedAt @db.Timestamp(6)
-  customer               Customer?           @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  allowNearbyMatches     Boolean             @default(false)
+  nearbyToleranceMinutes Int                 @default(60)
+  customer               Customer?           @relation(fields: [customerId], references: [id], onUpdate: NoAction)
   salon                  Salon               @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   offers                 WaitlistOffer[]
 
@@ -1440,14 +1440,14 @@ model ImportBatch {
   completedAt     DateTime?               @db.Timestamp(6)
   createdAt       DateTime?               @default(now()) @db.Timestamp(6)
   updatedAt       DateTime?               @default(now()) @updatedAt @db.Timestamp(6)
-  salon           Salon                   @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   createdBy       SalonUser               @relation("ImportBatchCreatedBy", fields: [createdByUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  files           ImportSourceFile[]
-  rows            ImportRow[]
-  conflicts       ImportConflict[]
-  decisions       ImportMappingDecision[]
+  salon           Salon                   @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   commitRuns      ImportCommitRun[]
+  conflicts       ImportConflict[]
   extractionRuns  ImportExtractionRun[]
+  decisions       ImportMappingDecision[]
+  rows            ImportRow[]
+  files           ImportSourceFile[]
 
   @@index([salonId, status, createdAt], map: "idx_import_batch_salon_status_created")
 }
@@ -1468,10 +1468,10 @@ model ImportSourceFile {
   parsedAt         DateTime?              @db.Timestamp(6)
   createdAt        DateTime?              @default(now()) @db.Timestamp(6)
   updatedAt        DateTime?              @default(now()) @updatedAt @db.Timestamp(6)
+  extractionRuns   ImportExtractionRun[]
+  rows             ImportRow[]
   batch            ImportBatch            @relation(fields: [batchId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   salon            Salon                  @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  rows             ImportRow[]
-  extractionRuns   ImportExtractionRun[]
 
   @@index([batchId, status], map: "idx_import_source_file_batch_status")
 }
@@ -1505,11 +1505,11 @@ model ImportRow {
   failureReason           String?
   createdAt               DateTime?               @default(now()) @db.Timestamp(6)
   updatedAt               DateTime?               @default(now()) @updatedAt @db.Timestamp(6)
-  batch                   ImportBatch             @relation(fields: [batchId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  sourceFile              ImportSourceFile        @relation(fields: [sourceFileId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  salon                   Salon                   @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   conflicts               ImportConflict[]
   decisions               ImportMappingDecision[]
+  batch                   ImportBatch             @relation(fields: [batchId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  salon                   Salon                   @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  sourceFile              ImportSourceFile        @relation(fields: [sourceFileId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([batchId, sourceRowHash], map: "uq_import_row_batch_hash")
   @@index([batchId, rowStatus], map: "idx_import_row_batch_status")
@@ -1529,9 +1529,9 @@ model ImportConflict {
   createdAt        DateTime?            @default(now()) @db.Timestamp(6)
   updatedAt        DateTime?            @default(now()) @updatedAt @db.Timestamp(6)
   batch            ImportBatch          @relation(fields: [batchId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  resolvedBy       SalonUser?           @relation("ImportConflictResolvedBy", fields: [resolvedByUserId], references: [id], onUpdate: NoAction)
   row              ImportRow?           @relation(fields: [rowId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   salon            Salon                @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  resolvedBy       SalonUser?           @relation("ImportConflictResolvedBy", fields: [resolvedByUserId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([batchId, status, type], map: "idx_import_conflict_batch_status_type")
 }
@@ -1547,7 +1547,7 @@ model ImportMappingDecision {
   decisionValue Json
   createdAt     DateTime?   @default(now()) @db.Timestamp(6)
   batch         ImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  row           ImportRow?  @relation(fields: [rowId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  row           ImportRow?  @relation(fields: [rowId], references: [id], onUpdate: NoAction)
   salon         Salon       @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   user          SalonUser   @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
@@ -1590,10 +1590,10 @@ model ImportExtractionRun {
   completedAt          DateTime?                   @db.Timestamp(6)
   createdAt            DateTime?                   @default(now()) @db.Timestamp(6)
   updatedAt            DateTime?                   @default(now()) @updatedAt @db.Timestamp(6)
-  batch                ImportBatch                 @relation(fields: [batchId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  sourceFile           ImportSourceFile            @relation(fields: [sourceFileId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  salon                Salon                       @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   candidates           ImportExtractionCandidate[]
+  batch                ImportBatch                 @relation(fields: [batchId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  salon                Salon                       @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  sourceFile           ImportSourceFile            @relation(fields: [sourceFileId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([batchId, sourceFileId, createdAt], map: "idx_import_extraction_run_file_created")
   @@index([status, mode, createdAt], map: "idx_import_extraction_run_status_mode_created")
@@ -1616,7 +1616,7 @@ model ImportExtractionCandidate {
   createdAt          DateTime?           @default(now()) @db.Timestamp(6)
   updatedAt          DateTime?           @default(now()) @updatedAt @db.Timestamp(6)
   extractionRun      ImportExtractionRun @relation(fields: [extractionRunId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  reviewedBy         SalonUser?          @relation("ImportExtractionCandidateReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  reviewedBy         SalonUser?          @relation("ImportExtractionCandidateReviewedBy", fields: [reviewedByUserId], references: [id], onUpdate: NoAction)
 
   @@index([extractionRunId, isSelected, scoreTotal], map: "idx_import_extraction_candidate_run_selected_score")
 }
@@ -1635,7 +1635,7 @@ model ImportAiConfig {
   activatedByUserId     Int?
   createdAt             DateTime?  @default(now()) @db.Timestamp(6)
   updatedAt             DateTime?  @default(now()) @updatedAt @db.Timestamp(6)
-  activatedBy           SalonUser? @relation("ImportAiConfigActivatedBy", fields: [activatedByUserId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  activatedBy           SalonUser? @relation("ImportAiConfigActivatedBy", fields: [activatedByUserId], references: [id], onUpdate: NoAction)
 
   @@index([isActive, updatedAt], map: "idx_import_ai_config_active_updated")
 }
@@ -1752,6 +1752,19 @@ model AccessAuditLog {
   createdAt   DateTime? @default(now()) @db.Timestamp(6)
 
   @@index([salonId, createdAt], map: "idx_access_audit_salon_created")
+}
+
+model NotificationLog {
+  id            Int          @id @default(autoincrement())
+  appointmentId Int?
+  customerId    Int?
+  type          String
+  sentAt        DateTime     @default(now()) @db.Timestamp(6)
+  appointment   Appointment? @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  customer      Customer?    @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([appointmentId, type])
+  @@index([customerId, type])
 }
 
 enum UserRole {
@@ -2127,17 +2140,4 @@ enum MessageEventDirection {
   INBOUND
   OUTBOUND
   SYSTEM
-}
-
-model NotificationLog {
-  id            Int      @id @default(autoincrement())
-  appointmentId Int?
-  customerId    Int?
-  type          String   // e.g., REMINDER_72H, REMINDER_24H, REMINDER_2H, BIRTHDAY_7D, BIRTHDAY_TODAY, WINBACK_X
-  sentAt        DateTime @default(now()) @db.Timestamp(6)
-  appointment   Appointment? @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
-  customer      Customer?    @relation(fields: [customerId], references: [id], onDelete: Cascade)
-
-  @@index([appointmentId, type])
-  @@index([customerId, type])
 }
