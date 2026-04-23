@@ -8325,7 +8325,11 @@ function isInstagramWindowExpiredError(error: any): boolean {
 
 function resolveMessageDirection(messageType: string): 'inbound' | 'outbound' | 'system' {
   const normalized = (messageType || '').trim().toLowerCase();
-  if (normalized === 'handover_request' || normalized === 'manual_takeover') return 'system';
+  if (
+    normalized === 'handover_request' ||
+    normalized === 'manual_takeover' ||
+    normalized === 'manual_resume'
+  ) return 'system';
   if (normalized.includes('outbound') || normalized.startsWith('echo_')) return 'outbound';
   return 'inbound';
 }
@@ -9272,6 +9276,15 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
         traceUserId: row.outboundSenderUserId || null,
         traceUserEmail: row.outboundSenderEmail || null,
       });
+      const actor = asObject(raw.actor);
+      const systemActorUserId =
+        Number.isInteger(Number(actor.userId)) ? Number(actor.userId) : null;
+      const systemActorEmail =
+        typeof actor.email === 'string' && actor.email.trim() ? actor.email.trim() : null;
+      const systemActorDisplayName =
+        typeof actor.displayName === 'string' && actor.displayName.trim() ? actor.displayName.trim() : null;
+      const systemAction =
+        typeof raw.action === 'string' && raw.action.trim() ? raw.action.trim() : null;
 
       return {
         id: row.id,
@@ -9286,6 +9299,10 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
         outboundSourceLabel: outboundMeta.outboundSourceLabel,
         outboundSenderUserId: outboundMeta.outboundSenderUserId,
         outboundSenderEmail: outboundMeta.outboundSenderEmail,
+        systemAction,
+        systemActorUserId,
+        systemActorEmail,
+        systemActorDisplayName,
         eventTimestamp: row.eventTimestamp.toISOString(),
         raw,
       };
