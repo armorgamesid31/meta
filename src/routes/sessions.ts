@@ -29,10 +29,36 @@ interface LockSlotRequest {
 
 interface ConfirmBookingRequest {
   customerInfo: {
-    name: string;
+    firstName?: string;
+    lastName?: string;
+    name?: string;
     phone: string;
     email?: string;
   };
+}
+
+function normalizeNamePart(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  return value.trim().replace(/\s+/g, ' ');
+}
+
+function splitFullName(value: string): { firstName: string; lastName: string } {
+  const normalized = normalizeNamePart(value);
+  if (!normalized) return { firstName: '', lastName: '' };
+  const parts = normalized.split(' ');
+  if (parts.length === 1) return { firstName: parts[0], lastName: '' };
+  return { firstName: parts[0], lastName: parts.slice(1).join(' ') };
+}
+
+function resolveCustomerNameParts(input: { firstName?: unknown; lastName?: unknown; name?: unknown }) {
+  const firstNameRaw = normalizeNamePart(input.firstName);
+  const lastNameRaw = normalizeNamePart(input.lastName);
+  const fallbackName = normalizeNamePart(input.name);
+  const fallbackParts = !firstNameRaw && !lastNameRaw ? splitFullName(fallbackName) : { firstName: '', lastName: '' };
+  const firstName = firstNameRaw || fallbackParts.firstName;
+  const lastName = lastNameRaw || fallbackParts.lastName;
+  const fullName = `${firstName} ${lastName}`.trim() || fallbackName;
+  return { firstName, lastName, fullName };
 }
 
 // POST /api/magic-link - Create a new booking session
@@ -253,8 +279,13 @@ router.post("/:token/confirm", async (req: any, res: any) => {
   const { token } = req.params as any;
   const tokenStr = Array.isArray(token) ? token[0] : token;
   const { customerInfo } = req.body as any;
+  const normalizedName = resolveCustomerNameParts({
+    firstName: customerInfo?.firstName,
+    lastName: customerInfo?.lastName,
+    name: customerInfo?.name,
+  });
 
-  if (!customerInfo || !customerInfo.name || !customerInfo.phone) {
+  if (!customerInfo || !normalizedName.firstName || !normalizedName.lastName || !customerInfo.phone) {
     return res.status(400).json({ message: 'Customer information is required.' });
   }
 
@@ -305,7 +336,9 @@ router.post("/:token/confirm", async (req: any, res: any) => {
         customer = await tx.customer.create({
           data: {
             salonId: session.salonId,
-            name: customerInfo.name,
+            name: normalizedName.fullName,
+            firstName: normalizedName.firstName || null,
+            lastName: normalizedName.lastName || null,
             phone: customerInfo.phone,
             email: customerInfo.email,
             registrationStatus: 'PENDING'
@@ -313,11 +346,18 @@ router.post("/:token/confirm", async (req: any, res: any) => {
         });
       } else {
         // Update existing customer info if provided
-        if (customerInfo.name !== customer.name || customerInfo.email !== customer.email) {
+        if (
+          normalizedName.fullName !== customer.name ||
+          normalizedName.firstName !== (customer.firstName || '') ||
+          normalizedName.lastName !== (customer.lastName || '') ||
+          customerInfo.email !== customer.email
+        ) {
           customer = await tx.customer.update({
             where: { id: customer.id },
             data: {
-              name: customerInfo.name,
+              name: normalizedName.fullName,
+              firstName: normalizedName.firstName || null,
+              lastName: normalizedName.lastName || null,
               email: customerInfo.email
             }
           });

@@ -151,7 +151,7 @@ async function resolveCustomerLegacy(input: { salonId: number; channel: ChannelT
     if (!needle) return null;
     const list = await prisma.customer.findMany({
       where: { salonId: input.salonId },
-      select: { id: true, name: true, phone: true, instagram: true },
+      select: { id: true, name: true, firstName: true, lastName: true, phone: true, instagram: true },
       take: 4000,
     });
     return list.find((c) => normalizePhoneDigits(c.phone) === needle) || null;
@@ -164,7 +164,7 @@ async function resolveCustomerLegacy(input: { salonId: number; channel: ChannelT
       salonId: input.salonId,
       instagram: { not: null },
     },
-    select: { id: true, name: true, phone: true, instagram: true },
+    select: { id: true, name: true, firstName: true, lastName: true, phone: true, instagram: true },
     take: 4000,
   });
 
@@ -428,6 +428,20 @@ function asNullableString(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   return trimmed || null;
+}
+
+function splitCustomerName(fullName: string | null): { firstName: string | null; lastName: string | null } {
+  if (!fullName) return { firstName: null, lastName: null };
+  const normalized = fullName.trim().replace(/\s+/g, ' ');
+  if (!normalized) return { firstName: null, lastName: null };
+  const parts = normalized.split(' ');
+  if (parts.length === 1) {
+    return { firstName: parts[0], lastName: null };
+  }
+  return {
+    firstName: parts[0],
+    lastName: parts.slice(1).join(' '),
+  };
 }
 
 function normalizeInstagramScopedId(value: unknown): string {
@@ -1026,6 +1040,11 @@ async function processIncomingBatch(items: any[]) {
     const channelProfileName =
       asNullableString(row.rawProfileName) || asNullableString(instagramProfile?.name) || null;
 
+    const customerFullName = customer?.name && customer.name.trim().length > 0 ? customer.name.trim() : null;
+    const fallbackSplit = splitCustomerName(customerFullName);
+    const customerFirstName = asNullableString(customer?.firstName) || fallbackSplit.firstName;
+    const customerLastName = asNullableString(customer?.lastName) || fallbackSplit.lastName;
+
     const nameSource = customer?.id
       ? customer.name && customer.name.trim().length > 0
         ? 'customer_record'
@@ -1211,6 +1230,9 @@ async function processIncomingBatch(items: any[]) {
       customerStatus,
       canonicalUserId,
       profileName,
+      customerFirstName,
+      customerLastName,
+      customerFullName: customerFullName || profileName || null,
       profileUsername,
       profilePictureUrl,
       channelProfile: instagramProfile

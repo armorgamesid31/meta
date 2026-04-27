@@ -2491,6 +2491,33 @@ router.post('/appointments', authenticateToken, async (req: any, res: any) => {
   }
 });
 
+function normalizeNamePart(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  return value.trim().replace(/\s+/g, ' ');
+}
+
+function splitFullName(value: string): { firstName: string; lastName: string } {
+  const normalized = normalizeNamePart(value);
+  if (!normalized) return { firstName: '', lastName: '' };
+  const parts = normalized.split(' ');
+  if (parts.length === 1) return { firstName: parts[0], lastName: '' };
+  return {
+    firstName: parts[0],
+    lastName: parts.slice(1).join(' '),
+  };
+}
+
+function resolveCustomerNameParts(input: { firstName?: unknown; lastName?: unknown; name?: unknown }) {
+  const firstNameRaw = normalizeNamePart(input.firstName);
+  const lastNameRaw = normalizeNamePart(input.lastName);
+  const fallbackName = normalizeNamePart(input.name);
+  const fallback = !firstNameRaw && !lastNameRaw ? splitFullName(fallbackName) : { firstName: '', lastName: '' };
+  const firstName = firstNameRaw || fallback.firstName;
+  const lastName = lastNameRaw || fallback.lastName;
+  const fullName = `${firstName} ${lastName}`.trim() || fallbackName;
+  return { firstName, lastName, fullName };
+}
+
 router.get('/customers', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
   if (!salonId) {
@@ -2514,6 +2541,8 @@ router.get('/customers', authenticateToken, async (req: any, res: any) => {
     if (search) {
       where.OR = [
         { name: { contains: search, mode: 'insensitive' } },
+        { firstName: { contains: search, mode: 'insensitive' } },
+        { lastName: { contains: search, mode: 'insensitive' } },
         { phone: { contains: search } },
         { instagram: { contains: search, mode: 'insensitive' } },
       ];
@@ -2526,6 +2555,8 @@ router.get('/customers', authenticateToken, async (req: any, res: any) => {
       select: {
         id: true,
         name: true,
+        firstName: true,
+        lastName: true,
         phone: true,
         instagram: true,
         gender: true,
@@ -2549,6 +2580,8 @@ router.get('/customers', authenticateToken, async (req: any, res: any) => {
       items: items.map((row) => ({
         id: row.id,
         name: row.name,
+        firstName: row.firstName,
+        lastName: row.lastName,
         phone: row.phone,
         instagram: row.instagram,
         gender: row.gender,
@@ -2573,13 +2606,20 @@ router.post('/customers', authenticateToken, async (req: any, res: any) => {
     return;
   }
 
-  const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+  const normalizedName = resolveCustomerNameParts({
+    firstName: req.body?.firstName,
+    lastName: req.body?.lastName,
+    name: req.body?.name,
+  });
   const phone = typeof req.body?.phone === 'string' ? req.body.phone.trim() : '';
   const instagram = typeof req.body?.instagram === 'string' ? req.body.instagram.trim() : '';
   const gender = typeof req.body?.gender === 'string' ? req.body.gender : null;
   const acceptMarketing = Boolean(req.body?.acceptMarketing);
   const birthDateInput = req.body?.birthDate;
 
+  if (!normalizedName.firstName || !normalizedName.lastName) {
+    return res.status(400).json({ message: 'firstName and lastName are required.' });
+  }
   if (!phone) {
     return res.status(400).json({ message: 'phone is required.' });
   }
@@ -2597,7 +2637,9 @@ router.post('/customers', authenticateToken, async (req: any, res: any) => {
     const customer = await prisma.customer.create({
       data: {
         salonId,
-        name: name || null,
+        name: normalizedName.fullName || null,
+        firstName: normalizedName.firstName,
+        lastName: normalizedName.lastName,
         phone,
         instagram: instagram || null,
         gender: gender && ['male', 'female', 'other'].includes(gender) ? (gender as any) : null,
@@ -2607,6 +2649,8 @@ router.post('/customers', authenticateToken, async (req: any, res: any) => {
       select: {
         id: true,
         name: true,
+        firstName: true,
+        lastName: true,
         phone: true,
         instagram: true,
         gender: true,
@@ -2645,6 +2689,8 @@ router.get('/customers/:id', authenticateToken, async (req: any, res: any) => {
         select: {
           id: true,
           name: true,
+          firstName: true,
+          lastName: true,
           phone: true,
           instagram: true,
           gender: true,
@@ -2778,6 +2824,8 @@ router.put('/customers/:id', authenticateToken, async (req: any, res: any) => {
   }
 
   const nameInput = req.body?.name;
+  const firstNameInput = req.body?.firstName;
+  const lastNameInput = req.body?.lastName;
   const phoneInput = req.body?.phone;
   const instagramInput = req.body?.instagram;
   const birthDateInput = req.body?.birthDate;
@@ -2787,6 +2835,12 @@ router.put('/customers/:id', authenticateToken, async (req: any, res: any) => {
   if (nameInput !== undefined && nameInput !== null && typeof nameInput !== 'string') {
     return res.status(400).json({ message: 'name must be a string or null.' });
   }
+  if (firstNameInput !== undefined && firstNameInput !== null && typeof firstNameInput !== 'string') {
+    return res.status(400).json({ message: 'firstName must be a string or null.' });
+  }
+  if (lastNameInput !== undefined && lastNameInput !== null && typeof lastNameInput !== 'string') {
+    return res.status(400).json({ message: 'lastName must be a string or null.' });
+  }
   if (phoneInput !== undefined && typeof phoneInput !== 'string') {
     return res.status(400).json({ message: 'phone must be a string.' });
   }
@@ -2795,6 +2849,19 @@ router.put('/customers/:id', authenticateToken, async (req: any, res: any) => {
   }
   if (acceptMarketingInput !== undefined && typeof acceptMarketingInput !== 'boolean') {
     return res.status(400).json({ message: 'acceptMarketing must be a boolean.' });
+  }
+
+  const shouldResolveName =
+    firstNameInput !== undefined || lastNameInput !== undefined || nameInput !== undefined;
+  const normalizedName = shouldResolveName
+    ? resolveCustomerNameParts({
+        firstName: firstNameInput,
+        lastName: lastNameInput,
+        name: nameInput,
+      })
+    : null;
+  if (normalizedName && (!normalizedName.firstName || !normalizedName.lastName)) {
+    return res.status(400).json({ message: 'firstName and lastName are required.' });
   }
 
   let parsedBirthDate: Date | null | undefined = undefined;
@@ -2840,13 +2907,10 @@ router.put('/customers/:id', authenticateToken, async (req: any, res: any) => {
   }
 
   const updateData: any = {};
-  if (nameInput !== undefined) {
-    if (nameInput === null) {
-      updateData.name = null;
-    } else {
-      const trimmed = nameInput.trim();
-      updateData.name = trimmed || null;
-    }
+  if (normalizedName) {
+    updateData.name = normalizedName.fullName || null;
+    updateData.firstName = normalizedName.firstName || null;
+    updateData.lastName = normalizedName.lastName || null;
   }
   if (normalizedPhone !== undefined) {
     updateData.phone = normalizedPhone;
@@ -2898,6 +2962,8 @@ router.put('/customers/:id', authenticateToken, async (req: any, res: any) => {
       select: {
         id: true,
         name: true,
+        firstName: true,
+        lastName: true,
         phone: true,
         instagram: true,
         gender: true,

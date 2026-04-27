@@ -17,7 +17,9 @@ import {
 const router = Router();
 
 interface RegisterRequest {
-  fullName: string;
+  firstName?: string;
+  lastName?: string;
+  fullName?: string;
   rawPhone: string;
   normalizedPhone?: string;
   countryIso: string;
@@ -29,6 +31,41 @@ interface RegisterRequest {
   instagramId?: string;
   magicToken?: string;
   confirmDifferentWhatsappNumber?: boolean;
+}
+
+function normalizeNamePart(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  return value.trim().replace(/\s+/g, ' ');
+}
+
+function splitFullName(fullName: string): { firstName: string; lastName: string } {
+  const normalized = normalizeNamePart(fullName);
+  if (!normalized) {
+    return { firstName: '', lastName: '' };
+  }
+  const parts = normalized.split(' ');
+  if (parts.length === 1) {
+    return { firstName: parts[0], lastName: '' };
+  }
+  return {
+    firstName: parts[0],
+    lastName: parts.slice(1).join(' '),
+  };
+}
+
+function composeCustomerName(input: { firstName?: string; lastName?: string; fullName?: string }): {
+  firstName: string;
+  lastName: string;
+  fullName: string;
+} {
+  const rawFirstName = normalizeNamePart(input.firstName);
+  const rawLastName = normalizeNamePart(input.lastName);
+  const fallbackFullName = normalizeNamePart(input.fullName);
+  const parsed = !rawFirstName && !rawLastName ? splitFullName(fallbackFullName) : { firstName: '', lastName: '' };
+  const firstName = rawFirstName || parsed.firstName;
+  const lastName = rawLastName || parsed.lastName;
+  const fullName = `${firstName} ${lastName}`.trim() || fallbackFullName;
+  return { firstName, lastName, fullName };
 }
 
 function asChannel(value: unknown): ChannelType | null {
@@ -121,7 +158,9 @@ async function resolveMagicLinkContext(input: { salonId: number; magicToken?: st
 
 async function upsertRegisteredCustomer(input: {
   salonId: number;
-  fullName: string;
+  firstName?: string;
+  lastName?: string;
+  fullName?: string;
   phoneDigits: string;
   gender?: 'male' | 'female' | 'other';
   birthDate?: string;
@@ -149,7 +188,11 @@ async function upsertRegisteredCustomer(input: {
   }
 
   const genderVal = input.gender && ['male', 'female', 'other'].includes(input.gender) ? input.gender : null;
-  const trimmedName = input.fullName.trim();
+  const normalizedName = composeCustomerName({
+    firstName: input.firstName,
+    lastName: input.lastName,
+    fullName: input.fullName,
+  });
   const resolvedInstagramId = normalizeInstagramIdentity(input.instagramId || '') || null;
 
   const existing = await prisma.customer.findFirst({
@@ -163,7 +206,9 @@ async function upsertRegisteredCustomer(input: {
     ? await prisma.customer.update({
         where: { id: existing.id },
         data: {
-          ...(trimmedName ? { name: trimmedName } : {}),
+          ...(normalizedName.fullName ? { name: normalizedName.fullName } : {}),
+          ...(normalizedName.firstName ? { firstName: normalizedName.firstName } : {}),
+          ...(normalizedName.lastName ? { lastName: normalizedName.lastName } : {}),
           ...(genderVal ? { gender: genderVal } : {}),
           ...(birthDateVal ? { birthDate: birthDateVal } : {}),
           acceptMarketing: input.acceptMarketing,
@@ -173,7 +218,9 @@ async function upsertRegisteredCustomer(input: {
       })
     : await prisma.customer.create({
         data: {
-          name: trimmedName || null,
+          name: normalizedName.fullName || null,
+          firstName: normalizedName.firstName || null,
+          lastName: normalizedName.lastName || null,
           phone: input.phoneDigits,
           gender: genderVal,
           birthDate: birthDateVal,
@@ -239,10 +286,22 @@ async function upsertRegisteredCustomer(input: {
 router.post('/register', async (req: any, res: any) => {
   const body = req.body as RegisterRequest;
   const salonIdNum = req.salon?.id;
+  const normalizedName = composeCustomerName({
+    firstName: body.firstName,
+    lastName: body.lastName,
+    fullName: body.fullName,
+  });
 
-  if (!body.fullName || !body.rawPhone || !body.countryIso || typeof body.acceptMarketing !== 'boolean' || !salonIdNum) {
+  if (
+    !normalizedName.firstName ||
+    !normalizedName.lastName ||
+    !body.rawPhone ||
+    !body.countryIso ||
+    typeof body.acceptMarketing !== 'boolean' ||
+    !salonIdNum
+  ) {
     return res.status(400).json({
-      message: 'fullName, rawPhone, countryIso and acceptMarketing are required.',
+      message: 'firstName, lastName, rawPhone, countryIso and acceptMarketing are required.',
     });
   }
 
@@ -337,7 +396,9 @@ router.post('/register', async (req: any, res: any) => {
         countryIso: validatedPhone.countryIso,
         purpose: CustomerPhoneVerificationPurpose.BOOKING_REGISTER,
         payload: {
-          fullName: body.fullName,
+          firstName: normalizedName.firstName,
+          lastName: normalizedName.lastName || null,
+          fullName: normalizedName.fullName,
           gender: body.gender || null,
           birthDate: body.birthDate || null,
           acceptMarketing: body.acceptMarketing,
@@ -357,7 +418,9 @@ router.post('/register', async (req: any, res: any) => {
 
     const registered = await upsertRegisteredCustomer({
       salonId: salonIdNum,
-      fullName: body.fullName,
+      firstName: normalizedName.firstName,
+      lastName: normalizedName.lastName,
+      fullName: normalizedName.fullName,
       phoneDigits: validatedPhone.digits,
       gender: body.gender,
       birthDate: body.birthDate,
@@ -421,6 +484,14 @@ router.post('/verify-phone/confirm', async (req: any, res: any) => {
   try {
     const verification = await verifyPhoneCode({ verificationId, salonId, code });
     const payload = asObject(verification.payload);
+    const normalizedPayloadName = composeCustomerName({
+      firstName: typeof payload.firstName === 'string' ? payload.firstName : undefined,
+      lastName: typeof payload.lastName === 'string' ? payload.lastName : undefined,
+      fullName: typeof payload.fullName === 'string' ? payload.fullName : undefined,
+    });
+    if (!normalizedPayloadName.firstName || !normalizedPayloadName.lastName) {
+      return res.status(400).json({ message: 'firstName and lastName are required.' });
+    }
     const { magicLink } = await resolveMagicLinkContext({
       salonId,
       magicToken: typeof payload.magicToken === 'string' ? payload.magicToken : null,
@@ -444,7 +515,9 @@ router.post('/verify-phone/confirm', async (req: any, res: any) => {
 
     const registered = await upsertRegisteredCustomer({
       salonId,
-      fullName: String(payload.fullName || ''),
+      firstName: normalizedPayloadName.firstName,
+      lastName: normalizedPayloadName.lastName,
+      fullName: normalizedPayloadName.fullName,
       phoneDigits: verification.phone,
       gender: payload.gender as 'male' | 'female' | 'other' | undefined,
       birthDate: typeof payload.birthDate === 'string' ? payload.birthDate : undefined,

@@ -156,7 +156,7 @@ export async function findBoundCustomer(params: {
     },
     select: {
       customer: {
-        select: { id: true, name: true, phone: true, instagram: true },
+        select: { id: true, name: true, firstName: true, lastName: true, phone: true, instagram: true },
       },
     },
   });
