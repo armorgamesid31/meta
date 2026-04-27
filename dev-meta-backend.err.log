@@ -1,0 +1,38 @@
+
+node:internal/modules/run_main:122
+    triggerUncaughtException(
+    ^
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'redis' imported from C:\Users\berka\projeler\meta\src\services\conversationEventsBus.ts
+    at Object.getPackageJSONURL (node:internal/modules/package_json_reader:268:9)
+    at packageResolve (node:internal/modules/esm/resolve:768:81)
+    at moduleResolve (node:internal/modules/esm/resolve:854:18)
+    at defaultResolve (node:internal/modules/esm/resolve:984:11)
+    at nextResolve (node:internal/modules/esm/hooks:748:28)
+    at resolveBase (file:///C:/Users/berka/projeler/meta/node_modules/tsx/dist/esm/index.mjs?1777141982625:2:3744)
+    at resolveDirectory (file:///C:/Users/berka/projeler/meta/node_modules/tsx/dist/esm/index.mjs?1777141982625:2:4243)
+    at resolveTsPaths (file:///C:/Users/berka/projeler/meta/node_modules/tsx/dist/esm/index.mjs?1777141982625:2:4984)
+    at async resolve (file:///C:/Users/berka/projeler/meta/node_modules/tsx/dist/esm/index.mjs?1777141982625:2:5355)
+    at async nextResolve (node:internal/modules/esm/hooks:748:22) {
+  code: 'ERR_MODULE_NOT_FOUND'
+}
+
+Node.js v22.14.0
+
+node:internal/modules/run_main:122
+    triggerUncaughtException(
+    ^
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'redis' imported from C:\Users\berka\projeler\meta\src\services\conversationEventsBus.ts
+    at Object.getPackageJSONURL (node:internal/modules/package_json_reader:268:9)
+    at packageResolve (node:internal/modules/esm/resolve:768:81)
+    at moduleResolve (node:internal/modules/esm/resolve:854:18)
+    at defaultResolve (node:internal/modules/esm/resolve:984:11)
+    at nextResolve (node:internal/modules/esm/hooks:748:28)
+    at resolveBase (file:///C:/Users/berka/projeler/meta/node_modules/tsx/dist/esm/index.mjs?1777193268961:2:3744)
+    at resolveDirectory (file:///C:/Users/berka/projeler/meta/node_modules/tsx/dist/esm/index.mjs?1777193268961:2:4243)
+    at resolveTsPaths (file:///C:/Users/berka/projeler/meta/node_modules/tsx/dist/esm/index.mjs?1777193268961:2:4984)
+    at async resolve (file:///C:/Users/berka/projeler/meta/node_modules/tsx/dist/esm/index.mjs?1777193268961:2:5355)
+    at async nextResolve (node:internal/modules/esm/hooks:748:22) {
+  code: 'ERR_MODULE_NOT_FOUND'
+}
+
+Node.js v22.14.0

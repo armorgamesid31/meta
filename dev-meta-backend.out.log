@@ -1,0 +1,6 @@
+
+> salon-asistan@0.0.0 dev:backend
+> npx tsx watch src/server.ts
+
+11:47:47 [tsx] change in ./src\routes\adminMobile.ts Rerunning...
+c

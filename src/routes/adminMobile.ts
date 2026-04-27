@@ -2192,6 +2192,8 @@ router.get('/appointments', authenticateToken, async (req: any, res: any) => {
     return res.status(200).json({
       from: from.toISOString(),
       to: to.toISOString(),
+      serverNow: new Date().toISOString(),
+      dayResolved: from.toISOString(),
       items: appointments,
       count: appointments.length,
     });
