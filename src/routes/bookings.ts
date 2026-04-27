@@ -107,6 +107,37 @@ function parsePositiveIdArray(input: unknown): number[] {
     .filter((value, index, list) => Number.isInteger(value) && value > 0 && list.indexOf(value) === index);
 }
 
+function normalizeNamePart(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  return value.trim().replace(/\s+/g, ' ');
+}
+
+function splitFullName(value: string): { firstName: string; lastName: string } {
+  const normalized = normalizeNamePart(value);
+  if (!normalized) return { firstName: '', lastName: '' };
+  const parts = normalized.split(' ');
+  if (parts.length === 1) return { firstName: parts[0], lastName: '' };
+  return {
+    firstName: parts[0],
+    lastName: parts.slice(1).join(' '),
+  };
+}
+
+function resolveCustomerNameParts(input: {
+  firstName?: unknown;
+  lastName?: unknown;
+  fullName?: unknown;
+}) {
+  const firstNameRaw = normalizeNamePart(input.firstName);
+  const lastNameRaw = normalizeNamePart(input.lastName);
+  const fallbackFullName = normalizeNamePart(input.fullName);
+  const fallback = !firstNameRaw && !lastNameRaw ? splitFullName(fallbackFullName) : { firstName: '', lastName: '' };
+  const firstName = firstNameRaw || fallback.firstName;
+  const lastName = lastNameRaw || fallback.lastName;
+  const fullName = `${firstName} ${lastName}`.trim() || fallbackFullName;
+  return { firstName, lastName, fullName };
+}
+
 function buildPublicAvailabilityGroups(services: any[]): PersonGroup[] {
   const servicesByPerson = new Map<number, any[]>();
 
@@ -1723,12 +1754,57 @@ router.post('/', async (req: any, res: any, next: any) => {
       packageSelections,
       referralShareToken,
     } = b;
+    const normalizedCustomerName = resolveCustomerNameParts({
+      firstName: b.customerFirstName,
+      lastName: b.customerLastName,
+      fullName: customerName,
+    });
+    if (!normalizedCustomerName.firstName || !normalizedCustomerName.lastName) {
+      return res.status(400).json({ message: 'customerFirstName and customerLastName are required.' });
+    }
+    const normalizedCustomerPhone = String(customerPhone || '').trim();
+    if (!normalizedCustomerPhone) {
+      return res.status(400).json({ message: 'customerPhone is required.' });
+    }
 
     try {
+      const existingCustomer = await prisma.customer.findFirst({
+        where: {
+          id: customerId,
+          salonId,
+        },
+        select: {
+          id: true,
+          phone: true,
+          name: true,
+          firstName: true,
+          lastName: true,
+        },
+      });
+
+      if (!existingCustomer) {
+        return res.status(404).json({ message: 'Customer not found for salon.' });
+      }
+
+      if (
+        existingCustomer.name !== normalizedCustomerName.fullName ||
+        (existingCustomer.firstName || '') !== normalizedCustomerName.firstName ||
+        (existingCustomer.lastName || '') !== normalizedCustomerName.lastName
+      ) {
+        await prisma.customer.update({
+          where: { id: existingCustomer.id },
+          data: {
+            name: normalizedCustomerName.fullName,
+            firstName: normalizedCustomerName.firstName,
+            lastName: normalizedCustomerName.lastName,
+          },
+        });
+      }
+
       await assertBookingAllowed({
         salonId,
         customerId,
-        phone: customerPhone,
+        phone: normalizedCustomerPhone,
         channel: 'WHATSAPP',
       });
 
@@ -1750,8 +1826,8 @@ router.post('/', async (req: any, res: any, next: any) => {
         const exactResult = await createExactSlotBooking({
           salonId,
           customerId,
-          customerName,
-          customerPhone,
+          customerName: normalizedCustomerName.fullName,
+          customerPhone: normalizedCustomerPhone,
           services,
           source,
           token: typeof token === 'string' ? token : null,
@@ -1911,8 +1987,8 @@ router.post('/', async (req: any, res: any, next: any) => {
             data: {
               salonId,
               customerId,
-              customerName: customerName.trim(),
-              customerPhone: customerPhone.trim(),
+              customerName: normalizedCustomerName.fullName,
+              customerPhone: normalizedCustomerPhone,
               staffId,
               serviceId,
               startTime: start,
@@ -2006,7 +2082,7 @@ router.post('/', async (req: any, res: any, next: any) => {
             salonId,
             event: 'CREATED',
             appointmentId: Number(apt.id),
-            customerName: apt.customerName || customerName.trim(),
+            customerName: apt.customerName || normalizedCustomerName.fullName,
             serviceName: serviceNameById.get(Number(apt.serviceId)) || null,
             startTime: apt.startTime,
           }),
@@ -2120,8 +2196,17 @@ router.post('/appointments-by-token', async (req: any, res: any) => {
       });
     }
 
+    const primaryName = resolveCustomerNameParts({
+      firstName: people?.[0]?.firstName,
+      lastName: people?.[0]?.lastName,
+      fullName: people?.[0]?.name,
+    });
+    if (!primaryName.firstName || !primaryName.lastName) {
+      return res.status(400).json({ message: 'Ad ve soyad zorunludur.' });
+    }
+
     if (!customer) {
-      const customerName = people[0].name || `Customer ${fallbackPhoneFromLink}`;
+      const customerName = primaryName.fullName || `Customer ${fallbackPhoneFromLink}`;
       const fallbackInstagram = magicLink.subjectType === 'INSTAGRAM_ID'
         ? normalizeInstagramIdentity(magicLink.phone) || null
         : null;
@@ -2129,9 +2214,24 @@ router.post('/appointments-by-token', async (req: any, res: any) => {
         data: {
           phone: fallbackPhoneFromLink,
           name: customerName,
+          firstName: primaryName.firstName,
+          lastName: primaryName.lastName,
           salonId,
           registrationStatus: 'PENDING',
           instagram: fallbackInstagram,
+        },
+      });
+    } else if (
+      customer.name !== primaryName.fullName ||
+      (customer.firstName || '') !== primaryName.firstName ||
+      (customer.lastName || '') !== primaryName.lastName
+    ) {
+      customer = await prisma.customer.update({
+        where: { id: customer.id },
+        data: {
+          name: primaryName.fullName,
+          firstName: primaryName.firstName,
+          lastName: primaryName.lastName,
         },
       });
     }
@@ -2166,7 +2266,12 @@ router.post('/appointments-by-token', async (req: any, res: any) => {
       const appointments = [];
 
       for (const person of people) {
-        if (!person.name || !person.birthDate || !person.gender || !Array.isArray(person.services)) {
+        const personName = resolveCustomerNameParts({
+          firstName: person?.firstName,
+          lastName: person?.lastName,
+          fullName: person?.name,
+        });
+        if (!personName.firstName || !personName.lastName || !person.birthDate || !person.gender || !Array.isArray(person.services)) {
           throw new Error('Invalid person data');
         }
 
@@ -2231,7 +2336,7 @@ router.post('/appointments-by-token', async (req: any, res: any) => {
               staffId: serviceItem.staffId,
               serviceId: serviceItem.serviceId,
               customerId: customer.id,
-              customerName: person.name,
+              customerName: personName.fullName,
               customerPhone: customerPhoneForAppointment,
               startTime: appointmentDateTime,
               endTime: endTime,
