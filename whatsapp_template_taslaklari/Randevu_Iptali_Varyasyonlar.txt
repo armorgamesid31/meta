@@ -1,0 +1,39 @@
+# Randevu İptali Şablon Varyasyonları (30 Adet)
+# Değişkenler: {{customer_name}}, {{customer_honorific}}, {{appointment_date}}, {{appointment_time}}, {{service_name}}
+# Not: professional ve balanced varyasyonlarda {{customer_honorific}} = Bey/Hanım olacak.
+
+# --- FRIENDLY (10) ---
+1. Üzgünüz {{customer_name}}, {{appointment_date}} {{appointment_time}} randevun iptal edildi.
+2. Merhaba {{customer_name}}, {{service_name}} randevun iptal edilmiş görünüyor. Dilersen yeni saat bulalım.
+3. {{customer_name}}, plan değişikliği nedeniyle randevun kaldırıldı. Yeni randevu için buradayız.
+4. Bilgilendirme {{customer_name}}: {{appointment_date}} tarihli randevun iptal edildi.
+5. Selam {{customer_name}}, {{appointment_time}} randevun artık aktif değil.
+6. {{customer_name}}, randevu kaydın iptal edildi. Uygun olduğunda yeniden planlayabiliriz.
+7. Üzgünüz, {{customer_name}}. {{service_name}} için randevun iptal edildi.
+8. {{customer_name}}, sistemdeki randevu kaydın kaldırıldı. Destek istersen yazabilirsin.
+9. Merhaba {{customer_name}}, {{appointment_date}} randevun iptal durumuna alındı.
+10. {{customer_name}}, yeni bir tarih belirlemek istersen hemen yardımcı oluruz.
+
+# --- BALANCED (10) ---
+11. Sayın {{customer_name}} {{customer_honorific}}, {{appointment_date}} {{appointment_time}} randevunuz iptal edilmiştir.
+12. {{customer_name}} {{customer_honorific}}, {{service_name}} randevunuzun iptal bilgisi tarafınıza iletilmektedir.
+13. Bilgilendirme: {{customer_name}} {{customer_honorific}}, randevu kaydınız pasif duruma alınmıştır.
+14. {{customer_name}} {{customer_honorific}}, {{appointment_date}} tarihli rezervasyonunuz iptal edilmiştir.
+15. Sayın {{customer_name}} {{customer_honorific}}, isterseniz yeni randevu planlaması yapılabilir.
+16. {{customer_name}} {{customer_honorific}}, {{appointment_time}} randevunuz geçerli değildir.
+17. Randevu iptal bildirimi: {{customer_name}} {{customer_honorific}}, {{service_name}}.
+18. {{customer_name}} {{customer_honorific}}, yeni planlama için bizimle iletişime geçebilirsiniz.
+19. Bilgilendirme: {{customer_name}} {{customer_honorific}}, iptal işlemi başarıyla tamamlandı.
+20. {{customer_name}} {{customer_honorific}}, randevu durumunuz güncellendi: İPTAL.
+
+# --- PROFESSIONAL (10) ---
+21. Sayın {{customer_name}} {{customer_honorific}}, {{appointment_date}} {{appointment_time}} tarihli randevunuz iptal edilmiştir.
+22. Kurumsal bildirim: {{customer_name}} {{customer_honorific}}, rezervasyon kaydınız sistemden kaldırılmıştır.
+23. Sayın {{customer_name}} {{customer_honorific}}, {{service_name}} randevu planlamanız iptal durumuna alınmıştır.
+24. Bilgilendirme: {{customer_name}} {{customer_honorific}}, randevu kaydınız geçersizdir.
+25. Sayın {{customer_name}} {{customer_honorific}}, uygunluk durumuna göre yeni rezervasyon oluşturulabilir.
+26. {{customer_name}} {{customer_honorific}}, iptal işlemi sistem kayıtlarına işlenmiştir.
+27. Kurumsal hatırlatma: Yeni randevu oluşturmak için destek ekibimizle iletişime geçebilirsiniz.
+28. Sayın {{customer_name}} {{customer_honorific}}, {{appointment_date}} tarihli rezervasyonunuz sonlandırılmıştır.
+29. Bilgi mesajı: {{customer_name}} {{customer_honorific}}, randevu statüsü "İptal" olarak güncellenmiştir.
+30. Sayın {{customer_name}} {{customer_honorific}}, anlayışınız için teşekkür ederiz.

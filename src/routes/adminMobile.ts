@@ -209,7 +209,7 @@ router.post('/website/generate', authenticateToken, async (req: any, res: any) =
       where: { id: salonId },
       select: { 
         name: true, city: true, about: true, tagline: true,
-        address: true, district: true, heroText: true
+        address: true, district: true, heroText: true, googleMapsUrl: true
       },
     });
 
@@ -239,6 +239,7 @@ router.post('/website/generate', authenticateToken, async (req: any, res: any) =
             city: typeof req.body?.city === 'string' ? req.body.city : salon.city,
             district: salon.district,
             address: salon.address,
+            googleMapsUrl: salon.googleMapsUrl,
             about: salon.about,
             tagline: salon.tagline,
             heroText: salon.heroText,
@@ -5178,6 +5179,7 @@ router.get('/setup', authenticateToken, async (req: any, res: any) => {
           id: true,
           name: true,
           address: true,
+          googleMapsUrl: true,
           whatsappPhone: true,
           city: true,
           countryCode: true,
@@ -5207,6 +5209,7 @@ router.get('/setup', authenticateToken, async (req: any, res: any) => {
 
     const hasPhone = Boolean((salon.whatsappPhone || '').trim());
     const hasAddress = Boolean((salon.address || '').trim());
+    const hasGoogleMapsUrl = Boolean((salon.googleMapsUrl || '').trim());
     const hasWorkingHours =
       typeof settings?.workStartHour === 'number' && typeof settings?.workEndHour === 'number';
     const hasServices = serviceCount > 0;
@@ -5223,6 +5226,7 @@ router.get('/setup', authenticateToken, async (req: any, res: any) => {
       checklist: {
         workingHours: hasWorkingHours,
         address: hasAddress,
+        googleMapsUrl: hasGoogleMapsUrl,
         phone: hasPhone,
         service: hasServices,
         staff: hasStaff,
@@ -5253,6 +5257,7 @@ router.put('/setup', authenticateToken, async (req: any, res: any) => {
       data: {
         ...(typeof payload.name === 'string' ? { name: payload.name.trim() } : {}),
         ...(typeof payload.address === 'string' ? { address: payload.address.trim() } : {}),
+        ...(typeof payload.googleMapsUrl === 'string' ? { googleMapsUrl: payload.googleMapsUrl.trim() } : {}),
         ...(typeof payload.whatsappPhone === 'string' ? { whatsappPhone: payload.whatsappPhone.trim() } : {}),
         ...(typeof payload.city === 'string' ? { city: payload.city.trim() } : {}),
         ...(typeof payload.countryCode === 'string' ? { countryCode: payload.countryCode.trim().toUpperCase() } : {}),

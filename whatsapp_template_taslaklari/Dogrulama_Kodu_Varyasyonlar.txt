@@ -1,0 +1,39 @@
+# Doğrulama Kodu Şablon Varyasyonları (30 Adet)
+# Değişkenler: {{customer_name}}, {{customer_honorific}}, {{verification_code}}
+# Not: professional ve balanced varyasyonlarda {{customer_honorific}} = Bey/Hanım olacak.
+
+# --- FRIENDLY (10) ---
+1. Merhaba {{customer_name}}! Doğrulama kodun: {{verification_code}}
+2. {{customer_name}}, giriş kodun hazır: {{verification_code}}
+3. Selam {{customer_name}} 👋 Kodun: {{verification_code}} (kimseyle paylaşma)
+4. {{customer_name}}, işlemi tamamlamak için bu kodu gir: {{verification_code}}
+5. Güvenlik kodun geldi {{customer_name}}: {{verification_code}}
+6. {{customer_name}}, doğrulama adımı için kodun: {{verification_code}}
+7. Kısa kod mesajı {{customer_name}}: {{verification_code}}
+8. {{customer_name}}, hesabın için tek kullanımlık kod: {{verification_code}}
+9. Kodun aktif: {{verification_code}}. Güvenliğin için paylaşma.
+10. {{customer_name}}, tamamdır! Doğrulama kodu: {{verification_code}}
+
+# --- BALANCED (10) ---
+11. Sayın {{customer_name}} {{customer_honorific}}, doğrulama kodunuz: {{verification_code}}
+12. {{customer_name}} {{customer_honorific}}, işlemi tamamlamak için kodu giriniz: {{verification_code}}
+13. Bilgilendirme: {{customer_name}} {{customer_honorific}}, tek kullanımlık kodunuz {{verification_code}}
+14. {{customer_name}} {{customer_honorific}}, güvenlik nedeniyle kodunuzu paylaşmayınız: {{verification_code}}
+15. Sayın {{customer_name}} {{customer_honorific}}, giriş doğrulama kodunuz hazırdır.
+16. {{customer_name}} {{customer_honorific}}, doğrulama adımında kullanılacak kod: {{verification_code}}
+17. Güvenlik mesajı: {{customer_name}} {{customer_honorific}}, kodunuz {{verification_code}}
+18. {{customer_name}} {{customer_honorific}}, doğrulama kodunuz süreli olarak geçerlidir.
+19. Sayın {{customer_name}} {{customer_honorific}}, işlem kodu: {{verification_code}}
+20. {{customer_name}} {{customer_honorific}}, doğrulama tamamlamak için kodu ilgili alana yazınız.
+
+# --- PROFESSIONAL (10) ---
+21. Sayın {{customer_name}} {{customer_honorific}}, kimlik doğrulama kodunuz: {{verification_code}}
+22. Kurumsal bilgilendirme: {{customer_name}} {{customer_honorific}}, tek kullanımlık güvenlik kodunuz iletilmiştir.
+23. Sayın {{customer_name}} {{customer_honorific}}, doğrulama işlemi için kodu kullanınız: {{verification_code}}
+24. {{customer_name}} {{customer_honorific}}, güvenlik politikamız gereği kod paylaşımı yapılmamalıdır.
+25. Bilgilendirme: {{verification_code}} kodu yalnızca doğrulama adımında geçerlidir.
+26. Sayın {{customer_name}} {{customer_honorific}}, işlem güvenliği için kodunuzun gizliliğini koruyunuz.
+27. {{customer_name}} {{customer_honorific}}, oturum doğrulaması için kod: {{verification_code}}
+28. Kurumsal güvenlik mesajı: kod geçerlilik süresi sınırlıdır.
+29. Sayın {{customer_name}} {{customer_honorific}}, doğrulama kodu başarıyla üretilmiştir.
+30. {{customer_name}} {{customer_honorific}}, güvenli giriş için kodunuzu ilgili alana iletiniz.

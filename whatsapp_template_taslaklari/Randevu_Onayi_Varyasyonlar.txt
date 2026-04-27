@@ -1,0 +1,39 @@
+# Randevu Onayı Şablon Varyasyonları (30 Adet)
+# Değişkenler: {{customer_name}}, {{customer_honorific}}, {{appointment_date}}, {{appointment_time}}, {{service_name}}, {{location_url}}
+# Not: professional ve balanced varyasyonlarda {{customer_honorific}} = Bey/Hanım olacak.
+
+# --- FRIENDLY (10) ---
+1. Merhaba {{customer_name}}! {{appointment_date}} {{appointment_time}} için {{service_name}} randevun hazır. Konum: {{location_url}} ✨
+2. Harika! {{customer_name}}, {{appointment_date}} saat {{appointment_time}} randevun onaylandı. Yol tarifi burada: {{location_url}} 🗓️
+3. Selam {{customer_name}}! {{service_name}} randevun kesinleşti. Tarih-saat: {{appointment_date}} {{appointment_time}}. {{location_url}}
+4. Süper haber {{customer_name}}! {{appointment_date}} {{appointment_time}} için seni bekliyoruz. Konum: {{location_url}}
+5. Randevun tamam {{customer_name}}! {{service_name}} için {{appointment_date}} {{appointment_time}} görüşüyoruz. {{location_url}}
+6. {{customer_name}}, randevun onaylandı 🎉 {{appointment_date}} {{appointment_time}} için hazırız. Konum: {{location_url}}
+7. Görüşmek üzere {{customer_name}}! {{service_name}} randevun {{appointment_date}} {{appointment_time}} olarak kaydedildi. {{location_url}}
+8. Her şey hazır {{customer_name}}! {{appointment_date}} {{appointment_time}} randevunda seni bekliyoruz. {{location_url}}
+9. Kayıt tamamlandı {{customer_name}}: {{service_name}} | {{appointment_date}} {{appointment_time}}. Harita: {{location_url}}
+10. {{customer_name}}, randevu onayını iletmek istedik. {{appointment_date}} {{appointment_time}} için görüşürüz. {{location_url}}
+
+# --- BALANCED (10) ---
+11. Sayın {{customer_name}} {{customer_honorific}}, {{appointment_date}} {{appointment_time}} tarihli {{service_name}} randevunuz onaylanmıştır. Konum: {{location_url}}
+12. {{customer_name}} {{customer_honorific}}, {{service_name}} randevunuz {{appointment_date}} {{appointment_time}} için oluşturulmuştur. Yol tarifi: {{location_url}}
+13. Bilgilendirme: {{customer_name}} {{customer_honorific}}, randevunuz {{appointment_date}} {{appointment_time}} olarak planlandı. {{location_url}}
+14. {{customer_name}} {{customer_honorific}}, {{appointment_date}} saat {{appointment_time}} için rezervasyonunuz başarıyla tamamlandı. {{location_url}}
+15. Randevu onayı: {{customer_name}} {{customer_honorific}}, {{service_name}} hizmetiniz {{appointment_date}} {{appointment_time}} tarihindedir. {{location_url}}
+16. {{customer_name}} {{customer_honorific}}, randevu kaydınız alınmıştır. Tarih-saat: {{appointment_date}} {{appointment_time}}. Konum: {{location_url}}
+17. Onay bilgisi: {{customer_name}} {{customer_honorific}}, {{appointment_date}} {{appointment_time}} randevunuz aktiftir. {{location_url}}
+18. {{customer_name}} {{customer_honorific}}, planlanan randevunuz için detaylar: {{service_name}} / {{appointment_date}} {{appointment_time}}. {{location_url}}
+19. Rezervasyonunuz kesinleşmiştir {{customer_name}} {{customer_honorific}}. Görüşme zamanı: {{appointment_date}} {{appointment_time}}. {{location_url}}
+20. {{customer_name}} {{customer_honorific}}, randevu durumunuz onaylıdır. Konum bilgisi: {{location_url}}
+
+# --- PROFESSIONAL (10) ---
+21. Sayın {{customer_name}} {{customer_honorific}}, {{appointment_date}} {{appointment_time}} tarihli {{service_name}} randevunuz onaylanmıştır. Konum bağlantısı: {{location_url}}
+22. Sayın {{customer_name}} {{customer_honorific}}, rezervasyon işleminiz tamamlanmıştır. Randevu: {{appointment_date}} {{appointment_time}}. {{location_url}}
+23. Bilgilendirme: {{customer_name}} {{customer_honorific}}, {{service_name}} randevunuz sistemde onaylıdır. Detay: {{location_url}}
+24. Sayın {{customer_name}} {{customer_honorific}}, randevu kaydınız başarıyla oluşturulmuştur. Tarih-saat: {{appointment_date}} {{appointment_time}}
+25. {{customer_name}} {{customer_honorific}}, {{appointment_date}} {{appointment_time}} için randevu planlamanız tamamlanmıştır. Konum: {{location_url}}
+26. Onay bildirimi: {{customer_name}} {{customer_honorific}}, {{service_name}} randevunuz aktif durumdadır. {{location_url}}
+27. Sayın {{customer_name}} {{customer_honorific}}, hizmet randevunuz aşağıdaki tarihte gerçekleştirilecektir: {{appointment_date}} {{appointment_time}}
+28. {{customer_name}} {{customer_honorific}}, rezervasyon teyidiniz alınmıştır. Ulaşım için harita: {{location_url}}
+29. Kurumsal bildirim: {{customer_name}} {{customer_honorific}}, randevu numaranız onaylanmıştır. Saat: {{appointment_time}}, Tarih: {{appointment_date}}
+30. Sayın {{customer_name}} {{customer_honorific}}, randevu süreciniz başarıyla tamamlanmış olup detaylar bu mesajda paylaşılmıştır.

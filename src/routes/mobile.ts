@@ -121,12 +121,19 @@ router.post('/push/register', authenticateToken, async (req: any, res: any) => {
   const userId = req.user.userId;
 
   const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
+  const provider = typeof req.body?.provider === 'string' ? req.body.provider.trim().toLowerCase() : '';
   const platform = typeof req.body?.platform === 'string' ? req.body.platform.trim().toUpperCase() : '';
   const appVersion = typeof req.body?.appVersion === 'string' ? req.body.appVersion.trim() : null;
   const deviceMeta = req.body?.deviceMeta ?? null;
 
   if (!token) {
     return res.status(400).json({ message: 'token is required.' });
+  }
+  if (!provider) {
+    return res.status(400).json({ message: 'provider is required.' });
+  }
+  if (provider !== 'expo') {
+    return res.status(422).json({ message: 'provider must be expo.' });
   }
   if (!platform) {
     return res.status(400).json({ message: 'platform is required.' });
@@ -170,7 +177,10 @@ router.post('/push/unregister', authenticateToken, async (req: any, res: any) =>
   const userId = req.user.userId;
 
   const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
+  const provider = typeof req.body?.provider === 'string' ? req.body.provider.trim().toLowerCase() : '';
   if (!token) return res.status(400).json({ message: 'token is required.' });
+  if (!provider) return res.status(400).json({ message: 'provider is required.' });
+  if (provider !== 'expo') return res.status(422).json({ message: 'provider must be expo.' });
 
   try {
     await prisma.$executeRawUnsafe(

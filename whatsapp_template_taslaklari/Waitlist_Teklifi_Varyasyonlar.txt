@@ -1,0 +1,39 @@
+# Waitlist Teklifi Şablon Varyasyonları (30 Adet)
+# Değişkenler: {{customer_name}}, {{customer_honorific}}, {{appointment_date}}, {{appointment_time}}, {{service_name}}
+# Not: professional ve balanced varyasyonlarda {{customer_honorific}} = Bey/Hanım olacak.
+
+# --- FRIENDLY (10) ---
+1. Güzel haber {{customer_name}}! {{appointment_date}} {{appointment_time}} için boşluk açıldı.
+2. {{customer_name}}, bekleme listesindeki {{service_name}} için yer bulundu. Hemen değerlendirebilirsin.
+3. Selam {{customer_name}}! Sıradaki teklif sana geldi: {{appointment_date}} {{appointment_time}}.
+4. Harika! {{customer_name}}, boşalan slotu istersen hemen ayıralım.
+5. {{customer_name}}, bir iptal oldu ve sana uygun yer açıldı.
+6. Beklediğin saat için fırsat var {{customer_name}}. Onaylarsan hemen randevuya çevirelim.
+7. {{customer_name}}, {{service_name}} için müsaitlik oluştu.
+8. Hızlı bilgi: {{appointment_date}} {{appointment_time}} aralığında yerimiz var.
+9. {{customer_name}}, bekleme listesinden öncelikli teklifin hazır.
+10. Dilersen hemen al {{customer_name}}: boş slot seni bekliyor.
+
+# --- BALANCED (10) ---
+11. Sayın {{customer_name}} {{customer_honorific}}, bekleme listesi talebiniz için uygun slot oluşmuştur.
+12. {{customer_name}} {{customer_honorific}}, {{appointment_date}} {{appointment_time}} için müsaitlik mevcuttur.
+13. Bilgilendirme: {{customer_name}} {{customer_honorific}}, {{service_name}} için teklif hakkınız açıldı.
+14. {{customer_name}} {{customer_honorific}}, sıradaki uygunluk tarafınıza tahsis edilmiştir.
+15. Sayın {{customer_name}} {{customer_honorific}}, teklifi onaylamanız halinde randevu kaydı oluşturulacaktır.
+16. {{customer_name}} {{customer_honorific}}, bekleme listesi durumunuz güncellenmiştir.
+17. Uygunluk bildirimi: {{appointment_date}} {{appointment_time}}.
+18. {{customer_name}} {{customer_honorific}}, talep ettiğiniz hizmet için boşluk oluşmuştur.
+19. Sayın {{customer_name}} {{customer_honorific}}, teklif süresi dolmadan yanıt vermeniz önerilir.
+20. {{customer_name}} {{customer_honorific}}, slotu değerlendirmek isterseniz onay veriniz.
+
+# --- PROFESSIONAL (10) ---
+21. Sayın {{customer_name}} {{customer_honorific}}, bekleme listesi kapsamında size özel uygun randevu slotu açılmıştır.
+22. Kurumsal bilgilendirme: {{appointment_date}} {{appointment_time}} aralığında kapasite oluşmuştur.
+23. {{customer_name}} {{customer_honorific}}, {{service_name}} talebiniz için teklif hakkınız aktiftir.
+24. Sayın {{customer_name}} {{customer_honorific}}, yanıtınız doğrultusunda rezervasyon işlemi tamamlanacaktır.
+25. Bilgilendirme: Bekleme listesi sıralamanıza göre öncelik tarafınıza tanımlanmıştır.
+26. {{customer_name}} {{customer_honorific}}, teklif geçerlilik süresi içinde dönüş yapmanız rica olunur.
+27. Kurumsal mesaj: Müsait slot bilgisi sistem tarafından tarafınıza iletilmiştir.
+28. Sayın {{customer_name}} {{customer_honorific}}, teklif onayı alınmadığı durumda slot bir sonraki müşteriye devredilecektir.
+29. {{customer_name}} {{customer_honorific}}, uygunluk durumunu onaylamak için ilgili seçeneği kullanınız.
+30. Sayın {{customer_name}} {{customer_honorific}}, anlayışınız için teşekkür ederiz.

@@ -1,0 +1,39 @@
+# Randevu Hatırlatma 1 Gün Kala Şablon Varyasyonları (30 Adet)
+# Değişkenler: {{customer_name}}, {{customer_honorific}}, {{appointment_date}}, {{appointment_time}}, {{service_name}}
+# Butonlar: [Katılıyorum -> REMINDER_CONFIRM] [Katılamıyorum -> REMINDER_CANCEL]
+
+# --- FRIENDLY (10) | Esprili, samimi, isimle hitap ---
+1. {{customer_name}}, yarın görüşüyoruz 🎉 {{appointment_time}} için kısa bir onay bırakır mısın?
+2. Selam {{customer_name}}! Yarın {{service_name}} günü 💅 Katılımını bir tıkla seçebilirsin.
+3. {{customer_name}}, yarınki randevunu unutma diye geldim 😄 Saat {{appointment_time}}. Onaylayalım mı?
+4. Hey {{customer_name}}! Yarın takvimde biz varız. Geliyorum / gelemiyorum butonlarından birini seçebilirsin.
+5. {{customer_name}}, yarın {{appointment_time}} için seni bekliyoruz. Mini onayın yeterli 🙌
+6. Merhaba {{customer_name}}! {{appointment_date}} için randevun aktif. Katılım durumunu paylaşır mısın?
+7. {{customer_name}}, yarın {{service_name}} için hazırız ✨ Uygunsan “Katılıyorum” de.
+8. Küçük hatırlatma {{customer_name}}: Yarın buluşmamız var. Durumunu tek dokunuşla bildirebilirsin.
+9. {{customer_name}}, yarınki planımızı netleştirelim mi? Saat {{appointment_time}} için onay bekliyoruz.
+10. {{customer_name}}, seni yarın görmek istiyoruz 🌟 Müsaitsen katılımını işaretle lütfen.
+
+# --- BALANCED (10) | İsim + hitap, sıcak ama saygılı ---
+11. Sayın {{customer_name}} {{customer_honorific}}, yarın {{appointment_time}} randevunuz bulunmaktadır. Katılım durumunuzu iletebilir misiniz?
+12. {{customer_name}} {{customer_honorific}}, {{appointment_date}} tarihli randevunuz için onayınızı rica ederiz.
+13. Merhaba {{customer_name}} {{customer_honorific}}, yarınki randevunuz için katılım bilginizi paylaşabilirsiniz.
+14. {{customer_name}} {{customer_honorific}}, {{service_name}} randevunuz yarın planlanmıştır. Lütfen uygun seçeneği işaretleyiniz.
+15. Sayın {{customer_name}} {{customer_honorific}}, nazik hatırlatma: Yarın {{appointment_time}} için rezervasyonunuz aktiftir.
+16. {{customer_name}} {{customer_honorific}}, planlamayı netleştirmek için katılım durumunuzu bildirmenizi rica ederiz.
+17. Merhaba {{customer_name}} {{customer_honorific}}, randevunuz yaklaşmaktadır. Onay/iptal seçiminiz beklenmektedir.
+18. {{customer_name}} {{customer_honorific}}, yarınki randevu için kısa bir teyit alabilir miyiz?
+19. Sayın {{customer_name}} {{customer_honorific}}, hizmet planlaması için katılım bilginiz önemlidir.
+20. {{customer_name}} {{customer_honorific}}, yarınki randevunuza ilişkin teyit mesajıdır.
+
+# --- PROFESSIONAL (10) | Kurumsal, mesafeli, bilgilendirme odaklı ---
+21. Sayın {{customer_name}} {{customer_honorific}}, yarın {{appointment_time}} saatli randevunuz için katılım teyidi gerekmektedir.
+22. Kurumsal bilgilendirme: {{appointment_date}} tarihli randevunuz aktiftir. Lütfen uygun seçeneği bildiriniz.
+23. Sayın {{customer_name}} {{customer_honorific}}, operasyonel planlama kapsamında katılım durumunuz talep edilmektedir.
+24. Bilgilendirme: {{service_name}} randevunuz için onay veya iptal yanıtı vermeniz rica olunur.
+25. Sayın {{customer_name}} {{customer_honorific}}, yarınki randevu kaydınıza ilişkin teyit süreci başlatılmıştır.
+26. Kurumsal hatırlatma: Katılım bilgisinin zamanında iletilmesi planlamayı desteklemektedir.
+27. Sayın {{customer_name}} {{customer_honorific}}, randevu durumunuzu aşağıdaki seçeneklerle güncelleyebilirsiniz.
+28. Bilgilendirme mesajı: {{appointment_time}} randevusu için katılım onayı beklenmektedir.
+29. Sayın {{customer_name}} {{customer_honorific}}, teyit verilmemesi durumunda planlama gecikmesi yaşanabilir.
+30. Kurumsal bilgilendirme: Yarınki randevunuz için katılım/iptal geri dönüşünüz gereklidir.

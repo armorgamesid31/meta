@@ -1,0 +1,59 @@
+# Randevu Hatırlatma 2 Saat Kala Şablon Varyasyonları
+# Değişkenler: {{customer_name}}, {{customer_surname}}, {{customer_honorific}}, {{appointment_time}}, {{service_name}}, {{location_url}}
+# Buton: [Yol Tarifi -> {{location_url}}]
+
+# --- FRIENDLY (3) | Esprili, samimi, isimle hitap ---
+
+1. Minik hatırlatma 👀 2 saat sonra buluşuyoruz.
+
+Yol tarifi: {{location_url}}
+
+2. Her şey hazır, bir sen eksiksin 👀
+
+Randevuna 2 saat kaldı.
+Yol tarifi: {{location_url}}
+
+3. Kendine ayırdığın zaman yaklaşıyor ✨
+
+Randevu saatin: {{appointment_time}}
+Yol tarifi: {{location_url}}
+
+
+# --- BALANCED (3) | İsim + hitap, sıcak ama saygılı ---
+
+1. Merhaba {{customer_name}} {{customer_honorific}},
+
+Randevunuza yaklaşık 2 saat kaldı, sizi ağırlamak için sabırsızlanıyoruz! 🫶
+Yol tarifi: {{location_url}}
+
+2. Selamlar {{customer_name}} {{customer_honorific}},
+
+Sizi ağırlamamıza yaklaşık 2 saat kaldı. Bizi kolay bulabilmeniz için yol tarifini ekledik 🫶
+Yol tarifi: {{location_url}}
+
+3. Selamlar {{customer_name}} {{customer_honorific}},
+
+Randevunuz için son küçük hatırlatmamızı bırakalım 🫶
+Yol tarifi: {{location_url}}
+
+
+# --- PROFESSIONAL (3) | Kurumsal, mesafeli, bilgilendirme odaklı ---
+
+1. Sayın {{customer_name}} {{customer_surname}},
+
+Randevunuza yaklaşık 2 saat kalmıştır.
+Konum: {{location_url}}
+
+2. Sayın {{customer_name}} {{customer_surname}},
+
+Randevu saatiniz yaklaşmaktadır.
+
+Saat: {{appointment_time}}
+Konum: {{location_url}}
+
+3. Sayın {{customer_name}} {{customer_surname}},
+
+Bugün planlanan randevunuz için bilgilendirme:
+
+Saat: {{appointment_time}}
+Konum: {{location_url}}

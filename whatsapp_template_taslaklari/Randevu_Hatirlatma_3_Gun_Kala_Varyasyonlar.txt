@@ -1,0 +1,39 @@
+# Randevu Hatırlatma 3 Gün Kala Şablon Varyasyonları (30 Adet)
+# Değişkenler: {{customer_name}}, {{customer_honorific}}, {{appointment_date}}, {{appointment_time}}, {{service_name}}, {{late_cancellation_hours}}, {{late_reschedule_hours}}
+# Politika metni: İptal en az {{late_cancellation_hours}} saat, değişiklik en az {{late_reschedule_hours}} saat önce bildirilmelidir.
+
+# --- FRIENDLY (10) | Esprili, samimi, isimle hitap ---
+1. {{customer_name}}, randevu gününe 3 gün kaldı 🙌 Minik not: Değişiklikleri en az {{late_reschedule_hours}} saat önce haber verirsen harika olur.
+2. Selam {{customer_name}}! Takvimde geri sayım başladı ⏳ İptal gerekiyorsa en az {{late_cancellation_hours}} saat önce yaz lütfen.
+3. {{customer_name}}, 72 saat sonra görüşüyoruz. Plan değişirse erken haber ver: iptal {{late_cancellation_hours}}s, değişiklik {{late_reschedule_hours}}s.
+4. Hey {{customer_name}}! Programı birlikte sorunsuz yürütelim: Son dakika yerine erken bildirim rica ediyoruz.
+5. {{customer_name}}, küçük politika hatırlatması 💡 İptal/değişiklik için saat sınırlarımızı kaçırmamanı rica ederiz.
+6. Merhaba {{customer_name}}! Randevu yaklaşırken nazikçe hatırlatalım: İptal {{late_cancellation_hours}} saatten, değişiklik {{late_reschedule_hours}} saatten geç olmasın.
+7. {{customer_name}}, son dakikaya kalmadan haber verirsen çok mutlu oluruz 😊
+8. Selam {{customer_name}}! 3 gün sonra {{service_name}} için buluşuyoruz. Planın değişirse erkenden bildir lütfen.
+9. {{customer_name}}, no-show yaşamamak için iptal/değişiklik bilgini saat limitlerinden önce iletmeyi unutma.
+10. {{customer_name}}, rica notu: Takvim akışı için erken bilgilendirme bizim için çok kıymetli.
+
+# --- BALANCED (10) | İsim + hitap, sıcak ama saygılı ---
+11. Sayın {{customer_name}} {{customer_honorific}}, randevu tarihinize 3 gün kalmıştır. İptal taleplerinizi en az {{late_cancellation_hours}} saat önce iletmenizi rica ederiz.
+12. {{customer_name}} {{customer_honorific}}, plan değişikliklerinin en az {{late_reschedule_hours}} saat önceden bildirilmesi gerekmektedir.
+13. Merhaba {{customer_name}} {{customer_honorific}}, no-show politikasına ilişkin hatırlatma mesajıdır.
+14. {{customer_name}} {{customer_honorific}}, operasyon akışı için iptal/değişiklik taleplerinizi zamanında paylaşmanızı rica ederiz.
+15. Sayın {{customer_name}} {{customer_honorific}}, randevu planlamasında gecikme yaşanmaması adına saat sınırlarına uyulması önemlidir.
+16. {{customer_name}} {{customer_honorific}}, politika bilgilendirmesi: İptal {{late_cancellation_hours}} saat, değişiklik {{late_reschedule_hours}} saat öncesi.
+17. Merhaba {{customer_name}} {{customer_honorific}}, randevunuz yaklaşırken nazik bir hatırlatma iletmek istedik.
+18. {{customer_name}} {{customer_honorific}}, müsaitlik planlamasının korunması için erken bildirim rica olunur.
+19. Sayın {{customer_name}} {{customer_honorific}}, geç bildirimler politika ihlali olarak değerlendirilebilir.
+20. {{customer_name}} {{customer_honorific}}, teşekkür ederiz; zamanında bilgilendirmeniz süreç kalitesini artırır.
+
+# --- PROFESSIONAL (10) | Kurumsal, mesafeli, bilgilendirme odaklı ---
+21. Sayın {{customer_name}} {{customer_honorific}}, randevu tarihine 72 saat kalmıştır. İptal bildirimleri en az {{late_cancellation_hours}} saat önce yapılmalıdır.
+22. Kurumsal bilgilendirme: Değişiklik taleplerinin en az {{late_reschedule_hours}} saat önceden iletilmesi zorunludur.
+23. Sayın {{customer_name}} {{customer_honorific}}, no-show politikası kapsamında geç bildirimler ihlal statüsünde değerlendirilebilir.
+24. Bilgilendirme: Operasyonel planlamanın sürdürülebilirliği için saat limitlerine uyum gereklidir.
+25. Sayın {{customer_name}} {{customer_honorific}}, randevu yönetim prosedürleri doğrultusunda erken bilgilendirme talep edilmektedir.
+26. Kurumsal hatırlatma: İptal {{late_cancellation_hours}} saat, değişiklik {{late_reschedule_hours}} saat öncesi.
+27. Sayın {{customer_name}} {{customer_honorific}}, belirtilen sürelerin dışındaki talepler uygunluk durumuna bağlı olarak işleme alınacaktır.
+28. Bilgilendirme mesajı: Geç iptal/değişiklik talepleri, mevcut politika kuralları çerçevesinde değerlendirilmektedir.
+29. Sayın {{customer_name}} {{customer_honorific}}, randevu sürekliliği için plan değişikliklerini zamanında iletmeniz beklenmektedir.
+30. Kurumsal bilgilendirme: Politika kurallarına uyum, hizmet kalitesi ve kapasite yönetimi açısından zorunludur.

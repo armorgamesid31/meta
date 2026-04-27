@@ -27,6 +27,7 @@ model Salon {
   districtSlug                String?
   countryCode                 String?
   address                     String?
+  googleMapsUrl               String?
   chakraPhoneNumberId         String?
   heroText                    String?
   analyticsPresets            AnalyticsPreset[]

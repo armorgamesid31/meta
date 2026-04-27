@@ -40,6 +40,7 @@ router.get('/public', async (req: any, res: any) => {
         district: salon.district,
         districtSlug: salon.districtSlug,
         countryCode: salon.countryCode,
+        googleMapsUrl: salon.googleMapsUrl,
         contentSourceLocale: salon.settings?.contentSourceLocale || 'tr',
         workStartHour: salon.settings?.workStartHour || 9,
         workEndHour: salon.settings?.workEndHour || 18,
@@ -107,14 +108,15 @@ router.put('/settings', authenticateToken, async (req: any, res: any) => {
     return res.status(401).json({ message: 'Unauthorized' });
   }
 
-  const { name, phone, address, workStartHour, workEndHour, slotInterval, categoryOrder, workingDays } = req.body;
+  const { name, phone, address, googleMapsUrl, workStartHour, workEndHour, slotInterval, categoryOrder, workingDays } = req.body;
 
   try {
-    if (name || phone || address) {
+    if (name || phone || address || googleMapsUrl) {
       await prisma.salon.update({
         where: { id: req.user.salonId },
         data: {
           ...(name && { name }),
+          ...(typeof googleMapsUrl === 'string' && { googleMapsUrl }),
         }
       });
     }

@@ -1,0 +1,39 @@
+# Geri Bildirim Şablon Varyasyonları (30 Adet)
+# Değişkenler: {{customer_name}}, {{customer_honorific}}, {{service_name}}
+# Not: professional ve balanced varyasyonlarda {{customer_honorific}} = Bey/Hanım olacak.
+
+# --- FRIENDLY (10) ---
+1. Merhaba {{customer_name}}! {{service_name}} deneyimini puanlar mısın?
+2. {{customer_name}}, bugün seni ağırlamak çok güzeldi. Kısa bir yorum bırakır mısın?
+3. Selam {{customer_name}}! Deneyimini bizimle paylaşman bizi çok mutlu eder.
+4. {{customer_name}}, hizmetimiz nasıldı? 1 dakikada değerlendir.
+5. Bize puan ver {{customer_name}} 💛 Geri bildirimin çok değerli.
+6. {{customer_name}}, memnuniyetini ölçmek için kısa bir soru: Deneyimin nasıldı?
+7. Bugünkü {{service_name}} seansı için yorumunu bekliyoruz {{customer_name}}.
+8. {{customer_name}}, daha iyi hizmet için görüşüne ihtiyacımız var.
+9. Hemen mini bir değerlendirme bırakmak ister misin {{customer_name}}?
+10. Teşekkürler {{customer_name}}! Geri bildirimin ekibimize yol gösteriyor.
+
+# --- BALANCED (10) ---
+11. Sayın {{customer_name}} {{customer_honorific}}, aldığınız {{service_name}} hizmetini değerlendirmenizi rica ederiz.
+12. {{customer_name}} {{customer_honorific}}, memnuniyet anketimize kısa bir geri bildirim bırakabilirsiniz.
+13. Bilgilendirme: Hizmet kalitesini artırmak için değerlendirmenize ihtiyaç duyuyoruz.
+14. {{customer_name}} {{customer_honorific}}, yorumlarınız süreç geliştirmede kullanılmaktadır.
+15. Sayın {{customer_name}} {{customer_honorific}}, deneyiminizi puanlayarak bize destek olabilirsiniz.
+16. {{customer_name}} {{customer_honorific}}, hizmet sonu geri bildiriminiz bizim için önemlidir.
+17. Değerlendirme talebi: {{service_name}} süreciniz hakkında görüş paylaşır mısınız?
+18. {{customer_name}} {{customer_honorific}}, kısa anketi tamamlamanız yeterlidir.
+19. Sayın {{customer_name}} {{customer_honorific}}, geri bildirimleriniz ekibimiz tarafından incelenmektedir.
+20. {{customer_name}} {{customer_honorific}}, memnuniyet puanınızı iletebilirsiniz.
+
+# --- PROFESSIONAL (10) ---
+21. Sayın {{customer_name}} {{customer_honorific}}, hizmet kalitesi değerlendirme sürecine katkınızı rica ederiz.
+22. Kurumsal bildirim: {{service_name}} sonrası memnuniyet geri bildiriminiz talep edilmektedir.
+23. {{customer_name}} {{customer_honorific}}, geri bildiriminiz kalite standartlarımızın iyileştirilmesinde kullanılacaktır.
+24. Sayın {{customer_name}} {{customer_honorific}}, kısa değerlendirme formunu tamamlamanızı rica ederiz.
+25. Bilgilendirme: Müşteri deneyim puanlaması operasyonel iyileştirme için önemlidir.
+26. {{customer_name}} {{customer_honorific}}, görüşleriniz düzenli hizmet denetim süreçlerine dahil edilmektedir.
+27. Sayın {{customer_name}} {{customer_honorific}}, tarafınıza iletilen anket bağlantısı üzerinden puanlama yapabilirsiniz.
+28. Kurumsal memnuniyet süreci kapsamında değerlendirme paylaşmanız beklenmektedir.
+29. {{customer_name}} {{customer_honorific}}, zaman ayırdığınız için teşekkür ederiz.
+30. Sayın {{customer_name}} {{customer_honorific}}, geri bildiriminiz kayıt altına alınacaktır.
