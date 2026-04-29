@@ -5249,6 +5249,49 @@ router.get('/setup', authenticateToken, async (req: any, res: any) => {
   }
 });
 
+router.post('/setup/resolve-maps-link', authenticateToken, async (req: any, res: any) => {
+  const inputUrl = typeof req.body?.url === 'string' ? req.body.url.trim() : '';
+  if (!inputUrl) {
+    return res.status(400).json({ message: 'URL gerekli.' });
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(inputUrl);
+  } catch {
+    return res.status(400).json({ message: 'Geçersiz URL.' });
+  }
+
+  if (parsed.protocol !== 'https:') {
+    return res.status(400).json({ message: 'Sadece https linkleri desteklenir.' });
+  }
+
+  const host = parsed.hostname.toLowerCase();
+  const allowedHosts = ['maps.app.goo.gl', 'share.google', 'goo.gl'];
+  const isGoogleMapsHost = host.includes('google.') || allowedHosts.some((entry) => host === entry);
+  if (!isGoogleMapsHost) {
+    return res.status(400).json({ message: 'Sadece Google Maps linkleri desteklenir.' });
+  }
+
+  try {
+    const response = await axios.get(inputUrl, {
+      maxRedirects: 6,
+      timeout: 8000,
+      responseType: 'text',
+      validateStatus: () => true,
+    });
+
+    const finalUrl =
+      (response as any)?.request?.res?.responseUrl ||
+      (response.headers?.location ? new URL(response.headers.location, inputUrl).toString() : inputUrl);
+
+    return res.status(200).json({ resolvedUrl: finalUrl });
+  } catch (error) {
+    console.error('Resolve maps link error:', error);
+    return res.status(502).json({ message: 'Link çözümlenemedi.' });
+  }
+});
+
 router.put('/setup', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
   if (!salonId) {
