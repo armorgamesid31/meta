@@ -5321,8 +5321,8 @@ router.post('/setup/resolve-maps-link', authenticateToken, async (req: any, res:
 
       const city =
         findLong('locality') ||
-        findLong('administrative_area_level_2') ||
-        findLong('administrative_area_level_1');
+        findLong('administrative_area_level_1') ||
+        findLong('administrative_area_level_2');
       const district =
         findLong('administrative_area_level_3') ||
         findLong('administrative_area_level_4') ||
@@ -5350,14 +5350,14 @@ router.post('/setup/resolve-maps-link', authenticateToken, async (req: any, res:
     };
 
     const extractLatLng = (url: string) => {
-      const atMatch = url.match(/@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/);
-      if (atMatch?.[1] && atMatch?.[2]) {
-        return `${atMatch[1]},${atMatch[2]}`;
-      }
-
       const dMatch = url.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/);
       if (dMatch?.[1] && dMatch?.[2]) {
         return `${dMatch[1]},${dMatch[2]}`;
+      }
+
+      const atMatch = url.match(/@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/);
+      if (atMatch?.[1] && atMatch?.[2]) {
+        return `${atMatch[1]},${atMatch[2]}`;
       }
 
       return null;
