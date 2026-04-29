@@ -2123,6 +2123,7 @@ router.get('/appointments', authenticateToken, async (req: any, res: any) => {
   const statusFilter = typeof req.query.status === 'string' ? req.query.status.toUpperCase() : null;
   const staffId = typeof req.query.staffId === 'string' ? Number(req.query.staffId) : null;
   const limit = asPositiveInt(req.query.limit, 250, 1, 500);
+  const summaryMode = String(req.query.summary || '').trim() === '1';
 
   try {
     const where: any = {
@@ -2140,7 +2141,18 @@ router.get('/appointments', authenticateToken, async (req: any, res: any) => {
 
     const appointments = await prisma.appointment.findMany({
       where,
-      include: {
+      select: {
+        id: true,
+        customerId: true,
+        customerName: true,
+        customerPhone: true,
+        gender: true,
+        startTime: true,
+        endTime: true,
+        status: true,
+        notes: true,
+        createdAt: true,
+        updatedAt: true,
         service: {
           select: {
             id: true,
@@ -2157,14 +2169,7 @@ router.get('/appointments', authenticateToken, async (req: any, res: any) => {
             title: true,
           },
         },
-        customer: {
-          select: {
-            id: true,
-            name: true,
-            phone: true,
-          },
-        },
-        appointmentLines: {
+        appointmentLines: summaryMode ? false : {
           include: {
             service: {
               select: {
@@ -2528,6 +2533,7 @@ router.get('/customers', authenticateToken, async (req: any, res: any) => {
   const cursorRaw = typeof req.query.cursor === 'string' ? Number(req.query.cursor) : null;
   const limit = asPositiveInt(req.query.limit, 20, 1, 100);
   const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+  const withStats = String(req.query.withStats || '').trim() === '1';
 
   if (cursorRaw !== null && (!Number.isInteger(cursorRaw) || cursorRaw <= 0)) {
     return res.status(400).json({ message: 'cursor must be a positive integer.' });
@@ -2565,11 +2571,11 @@ router.get('/customers', authenticateToken, async (req: any, res: any) => {
         acceptMarketing: true,
         createdAt: true,
         updatedAt: true,
-        _count: {
+        _count: withStats ? {
           select: {
             appointments: true,
           },
-        },
+        } : false,
       },
     });
 
@@ -2588,7 +2594,7 @@ router.get('/customers', authenticateToken, async (req: any, res: any) => {
         gender: row.gender,
         birthDate: row.birthDate,
         acceptMarketing: row.acceptMarketing,
-        appointmentCount: row._count.appointments,
+        appointmentCount: withStats ? ((row as any)._count?.appointments || 0) : 0,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
       })),
