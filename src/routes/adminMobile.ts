@@ -5324,11 +5324,10 @@ router.post('/setup/resolve-maps-link', authenticateToken, async (req: any, res:
         findLong('administrative_area_level_1') ||
         findLong('administrative_area_level_2');
       const district =
+        findLong('administrative_area_level_2') ||
         findLong('administrative_area_level_3') ||
-        findLong('administrative_area_level_4') ||
         findLong('sublocality_level_1') ||
-        findLong('sublocality') ||
-        findLong('administrative_area_level_2');
+        findLong('sublocality');
 
       return {
         city: city.trim() || null,
