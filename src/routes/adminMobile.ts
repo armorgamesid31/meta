@@ -5185,6 +5185,7 @@ router.get('/setup', authenticateToken, async (req: any, res: any) => {
           id: true,
           name: true,
           address: true,
+          district: true,
           googleMapsUrl: true,
           whatsappPhone: true,
           city: true,
@@ -5285,7 +5286,70 @@ router.post('/setup/resolve-maps-link', authenticateToken, async (req: any, res:
       (response as any)?.request?.res?.responseUrl ||
       (response.headers?.location ? new URL(response.headers.location, inputUrl).toString() : inputUrl);
 
-    return res.status(200).json({ resolvedUrl: finalUrl });
+    const extractAddressFromMapsUrl = (url: string) => {
+      try {
+        const parsedUrl = new URL(url);
+        const q = parsedUrl.searchParams.get('q') || parsedUrl.searchParams.get('query') || '';
+        const place = parsedUrl.searchParams.get('place') || '';
+        const raw = decodeURIComponent((q || place).replace(/\+/g, ' ')).trim();
+        if (!raw) {
+          return null;
+        }
+        return raw.replace(/\s+/g, ' ').trim();
+      } catch {
+        return null;
+      }
+    };
+
+    const parseGoogleAddressComponents = (components: any[] | undefined) => {
+      const findLong = (type: string) =>
+        components?.find((item) => Array.isArray(item?.types) && item.types.includes(type))?.long_name || '';
+
+      const city = findLong('administrative_area_level_1') || findLong('locality');
+      const district =
+        findLong('administrative_area_level_2') ||
+        findLong('administrative_area_level_3') ||
+        findLong('sublocality_level_1') ||
+        findLong('sublocality');
+
+      return {
+        city: city.trim() || null,
+        district: district.trim() || null,
+      };
+    };
+
+    let address: string | null = extractAddressFromMapsUrl(finalUrl);
+    let city: string | null = null;
+    let district: string | null = null;
+
+    const mapsApiKey = (process.env.GOOGLE_MAPS_API_KEY || '').trim();
+    if (mapsApiKey) {
+      const geocodeTarget = finalUrl;
+      const geocodeResponse = await axios.get('https://maps.googleapis.com/maps/api/geocode/json', {
+        timeout: 8000,
+        params: {
+          address: geocodeTarget,
+          language: 'tr',
+          key: mapsApiKey,
+        },
+        validateStatus: () => true,
+      });
+
+      const result = Array.isArray(geocodeResponse.data?.results) ? geocodeResponse.data.results[0] : null;
+      if (result) {
+        const parsedComponents = parseGoogleAddressComponents(result.address_components);
+        city = parsedComponents.city;
+        district = parsedComponents.district;
+        address = (result.formatted_address || address || '').trim() || address;
+      }
+    }
+
+    return res.status(200).json({
+      resolvedUrl: finalUrl,
+      address,
+      city,
+      district,
+    });
   } catch (error) {
     console.error('Resolve maps link error:', error);
     return res.status(502).json({ message: 'Link çözümlenemedi.' });
@@ -5306,6 +5370,7 @@ router.put('/setup', authenticateToken, async (req: any, res: any) => {
       data: {
         ...(typeof payload.name === 'string' ? { name: payload.name.trim() } : {}),
         ...(typeof payload.address === 'string' ? { address: payload.address.trim() } : {}),
+        ...(typeof payload.district === 'string' ? { district: payload.district.trim() } : {}),
         ...(typeof payload.googleMapsUrl === 'string' ? { googleMapsUrl: payload.googleMapsUrl.trim() } : {}),
         ...(typeof payload.whatsappPhone === 'string' ? { whatsappPhone: payload.whatsappPhone.trim() } : {}),
         ...(typeof payload.city === 'string' ? { city: payload.city.trim() } : {}),
