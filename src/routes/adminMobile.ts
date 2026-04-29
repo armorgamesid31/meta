@@ -5305,17 +5305,48 @@ router.post('/setup/resolve-maps-link', authenticateToken, async (req: any, res:
       const findLong = (type: string) =>
         components?.find((item) => Array.isArray(item?.types) && item.types.includes(type))?.long_name || '';
 
-      const city = findLong('administrative_area_level_1') || findLong('locality');
-      const district =
+      const city =
+        findLong('locality') ||
         findLong('administrative_area_level_2') ||
+        findLong('administrative_area_level_1');
+      const district =
         findLong('administrative_area_level_3') ||
+        findLong('administrative_area_level_4') ||
         findLong('sublocality_level_1') ||
-        findLong('sublocality');
+        findLong('sublocality') ||
+        findLong('administrative_area_level_2');
 
       return {
         city: city.trim() || null,
         district: district.trim() || null,
       };
+    };
+
+    const extractPlaceId = (url: string) => {
+      try {
+        const parsedUrl = new URL(url);
+        return (
+          parsedUrl.searchParams.get('place_id') ||
+          parsedUrl.searchParams.get('query_place_id') ||
+          null
+        );
+      } catch {
+        return null;
+      }
+    };
+
+    const extractLatLng = (url: string) => {
+      const atMatch = url.match(/@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/);
+      if (atMatch?.[1] && atMatch?.[2]) {
+        return `${atMatch[1]},${atMatch[2]}`;
+      }
+
+      const dMatch = url.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/);
+      if (dMatch?.[1] && dMatch?.[2]) {
+        return `${dMatch[1]},${dMatch[2]}`;
+      }
+
+      return null;
     };
 
     let address: string | null = extractAddressFromMapsUrl(finalUrl);
@@ -5324,14 +5355,25 @@ router.post('/setup/resolve-maps-link', authenticateToken, async (req: any, res:
 
     const mapsApiKey = (process.env.GOOGLE_MAPS_API_KEY || '').trim();
     if (mapsApiKey) {
-      const geocodeTarget = finalUrl;
+      const placeId = extractPlaceId(finalUrl);
+      const latlng = extractLatLng(finalUrl);
+      const addressQuery = address || extractAddressFromMapsUrl(inputUrl) || '';
+      const params: Record<string, string> = {
+        language: 'tr',
+        key: mapsApiKey,
+      };
+
+      if (placeId) {
+        params.place_id = placeId;
+      } else if (latlng) {
+        params.latlng = latlng;
+      } else if (addressQuery) {
+        params.address = addressQuery;
+      }
+
       const geocodeResponse = await axios.get('https://maps.googleapis.com/maps/api/geocode/json', {
         timeout: 8000,
-        params: {
-          address: geocodeTarget,
-          language: 'tr',
-          key: mapsApiKey,
-        },
+        params,
         validateStatus: () => true,
       });
 
