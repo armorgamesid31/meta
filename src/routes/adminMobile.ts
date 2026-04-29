@@ -5301,6 +5301,20 @@ router.post('/setup/resolve-maps-link', authenticateToken, async (req: any, res:
       }
     };
 
+    const extractPlaceLabelFromMapsUrl = (url: string) => {
+      try {
+        const parsedUrl = new URL(url);
+        const pathParts = parsedUrl.pathname.split('/').filter(Boolean);
+        const placeIndex = pathParts.findIndex((part) => part.toLowerCase() === 'place');
+        if (placeIndex >= 0 && pathParts[placeIndex + 1]) {
+          return decodeURIComponent(pathParts[placeIndex + 1]).replace(/\+/g, ' ').trim();
+        }
+        return null;
+      } catch {
+        return null;
+      }
+    };
+
     const parseGoogleAddressComponents = (components: any[] | undefined) => {
       const findLong = (type: string) =>
         components?.find((item) => Array.isArray(item?.types) && item.types.includes(type))?.long_name || '';
@@ -5357,27 +5371,36 @@ router.post('/setup/resolve-maps-link', authenticateToken, async (req: any, res:
     if (mapsApiKey) {
       const placeId = extractPlaceId(finalUrl);
       const latlng = extractLatLng(finalUrl);
-      const addressQuery = address || extractAddressFromMapsUrl(inputUrl) || '';
-      const params: Record<string, string> = {
+      const placeLabel = extractPlaceLabelFromMapsUrl(finalUrl) || extractPlaceLabelFromMapsUrl(inputUrl) || '';
+      const addressQuery = address || extractAddressFromMapsUrl(inputUrl) || placeLabel;
+
+      const baseParams: Record<string, string> = {
         language: 'tr',
+        region: 'tr',
         key: mapsApiKey,
       };
 
+      const geocodeWith = async (params: Record<string, string>) => {
+        const geocodeResponse = await axios.get('https://maps.googleapis.com/maps/api/geocode/json', {
+          timeout: 8000,
+          params,
+          validateStatus: () => true,
+        });
+        return Array.isArray(geocodeResponse.data?.results) ? geocodeResponse.data.results[0] : null;
+      };
+
+      // Priority: place_id -> address text/place label -> latlng fallback.
+      let result: any = null;
       if (placeId) {
-        params.place_id = placeId;
-      } else if (latlng) {
-        params.latlng = latlng;
-      } else if (addressQuery) {
-        params.address = addressQuery;
+        result = await geocodeWith({ ...baseParams, place_id: placeId });
+      }
+      if (!result && addressQuery) {
+        result = await geocodeWith({ ...baseParams, address: addressQuery });
+      }
+      if (!result && latlng) {
+        result = await geocodeWith({ ...baseParams, latlng });
       }
 
-      const geocodeResponse = await axios.get('https://maps.googleapis.com/maps/api/geocode/json', {
-        timeout: 8000,
-        params,
-        validateStatus: () => true,
-      });
-
-      const result = Array.isArray(geocodeResponse.data?.results) ? geocodeResponse.data.results[0] : null;
       if (result) {
         const parsedComponents = parseGoogleAddressComponents(result.address_components);
         city = parsedComponents.city;
