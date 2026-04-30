@@ -377,8 +377,8 @@ async function sendWhatsappViaChakra(params: {
     to,
   };
 
-  // WhatsApp interactive button for human pending cancel.
-  // Booking uses text + link and optional quick action reply label for consistent UX.
+  // Human pending uses quick-reply cancel button.
+  // Booking uses URL CTA button so magic link is embedded in the button action.
   if (params.actionKind === 'cancel') {
     payload.type = 'interactive';
     payload.interactive = {
@@ -401,20 +401,16 @@ async function sendWhatsappViaChakra(params: {
   } else if (params.actionKind === 'booking' && bookingUrl) {
     payload.type = 'interactive';
     payload.interactive = {
-      type: 'button',
+      type: 'cta_url',
       body: {
-        text: `${params.text}\n\n${bookingUrl}`,
+        text: params.text,
       },
       action: {
-        buttons: [
-          {
-            type: 'reply',
-            reply: {
-              id: 'BOOKING_INTENT',
-              title: 'Randevu Oluştur',
-            },
-          },
-        ],
+        name: 'cta_url',
+        parameters: {
+          display_text: 'Randevu Oluştur',
+          url: bookingUrl,
+        },
       },
     };
   } else {
