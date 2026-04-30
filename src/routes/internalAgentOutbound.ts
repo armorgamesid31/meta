@@ -373,8 +373,7 @@ async function sendWhatsappViaChakra(params: {
   const bookingUrl = params.magicLinkUrl && params.magicLinkUrl.trim() ? params.magicLinkUrl.trim() : null;
 
   const payload: Record<string, any> = {
-    pluginId: salon.chakraPluginId,
-    phoneNumberId,
+    messaging_product: 'whatsapp',
     to,
   };
 
@@ -420,7 +419,7 @@ async function sendWhatsappViaChakra(params: {
     };
   } else {
     payload.type = 'text';
-    payload.text = params.text;
+    payload.text = { body: params.text };
   }
 
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
