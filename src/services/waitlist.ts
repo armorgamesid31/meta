@@ -9,6 +9,7 @@ import { buildWaitlistOfferUrl } from '../utils/waitlistOfferUrl.js';
 const OFFER_TTL_MINUTES = 15;
 const CHAKRA_WHATSAPP_SEND_URL = (process.env.CHAKRA_WHATSAPP_SEND_URL || '').trim();
 const CHAKRA_API_TOKEN = (process.env.CHAKRA_API_TOKEN || '').trim();
+const CHAKRA_API_BASE = (process.env.CHAKRA_API_BASE || 'https://api.chakrahq.com').trim().replace(/\/+$/, '');
 
 export type WaitlistChannel = 'WHATSAPP' | 'WEB_LINK';
 
@@ -207,6 +208,22 @@ function generateOfferToken(): string {
   return randomBytes(18).toString('base64url');
 }
 
+function buildChakraWhatsappSendUrl(pluginId: string, phoneNumberId: string): string {
+  if (CHAKRA_WHATSAPP_SEND_URL) {
+    const hasPlaceholders =
+      CHAKRA_WHATSAPP_SEND_URL.includes('{pluginId}') ||
+      CHAKRA_WHATSAPP_SEND_URL.includes('{whatsappPhoneNumberId}');
+    if (hasPlaceholders) {
+      return CHAKRA_WHATSAPP_SEND_URL
+        .replaceAll('{pluginId}', encodeURIComponent(pluginId))
+        .replaceAll('{whatsappPhoneNumberId}', encodeURIComponent(phoneNumberId));
+    }
+    return CHAKRA_WHATSAPP_SEND_URL;
+  }
+
+  return `${CHAKRA_API_BASE}/v1/ext/plugin/whatsapp/${encodeURIComponent(pluginId)}/api/v19.0/${encodeURIComponent(phoneNumberId)}/messages`;
+}
+
 async function resolveCustomer(input: { salonId: number; customer: WaitlistCustomerInput }) {
   const explicitId = Number(input.customer.customerId || 0);
   if (Number.isInteger(explicitId) && explicitId > 0) {
@@ -281,13 +298,13 @@ async function sendWhatsappOffer(params: {
   customerName: string;
   offerUrl: string;
 }) {
-  if (!CHAKRA_WHATSAPP_SEND_URL) {
-    throw new Error('CHAKRA_WHATSAPP_SEND_URL is missing');
-  }
-
   const salon = await resolveSalonOfferMeta(params.salonId);
   if (!salon?.chakraPluginId) {
     throw new Error('Chakra plugin is not connected');
+  }
+  const phoneNumberId = trimText(salon.chakraPhoneNumberId);
+  if (!phoneNumberId) {
+    throw new Error('Chakra phone number is not connected');
   }
 
   const to = normalizeDigits(params.customerPhone);
@@ -297,7 +314,7 @@ async function sendWhatsappOffer(params: {
 
   const payload: Record<string, any> = {
     pluginId: salon.chakraPluginId,
-    phoneNumberId: salon.chakraPhoneNumberId || null,
+    phoneNumberId,
     to,
     type: 'text',
     text: `Merhaba ${params.customerName}, bekleme listeniz icin uygun bir saat acildi. 15 dakika icinde onaylamak icin: ${params.offerUrl}`,
@@ -308,7 +325,8 @@ async function sendWhatsappOffer(params: {
     headers.Authorization = `Bearer ${CHAKRA_API_TOKEN}`;
   }
 
-  const response = await axios.post(CHAKRA_WHATSAPP_SEND_URL, payload, { headers, timeout: 25000 });
+  const sendUrl = buildChakraWhatsappSendUrl(salon.chakraPluginId, phoneNumberId);
+  const response = await axios.post(sendUrl, payload, { headers, timeout: 25000 });
   return (
     trimText(response.data?.messageId) ||
     trimText(response.data?.id) ||

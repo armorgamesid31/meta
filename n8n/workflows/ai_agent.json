@@ -1224,7 +1224,7 @@
         "headers": {
           "host": "n8n.berkai.shop",
           "user-agent": "axios/1.13.3",
-          "content-length": "2843",
+          "content-length": "2592",
           "accept": "application/json, text/plain, */*",
           "accept-encoding": "gzip, compress, deflate, br",
           "content-type": "application/json",
@@ -1240,19 +1240,19 @@
         "query": {},
         "body": {
           "channel": "WHATSAPP",
-          "providerMessageId": "wamid.HBgMOTA1NDQ5ODE4MTExFQIAEhggQTUxRTYxQ0M2Q0M1NzYwNTUzOURGODM3NTAyNkQzMjYA",
+          "providerMessageId": "wamid.HBgMOTA1MzEyMDA2ODA3FQIAEhggQUNGNjJFMjhEMjE0QTlFODA2M0Q5OTc3RUVDOTdEM0QA",
           "messageType": "text",
           "routeMessageType": "text",
-          "text": "Ajja",
-          "timestamp": 1776521217,
-          "eventTimestamp": "2026-04-18T14:06:57.000Z",
-          "senderId": "905449818111",
+          "text": "Bbgbn",
+          "timestamp": 1777534678,
+          "eventTimestamp": "2026-04-30T07:37:58.000Z",
+          "senderId": "905312006807",
           "recipientId": "1009188595600173",
           "externalAccountId": "1009188595600173",
           "externalBusinessId": "1415103333558991",
-          "channelUserId": "905449818111",
-          "channelConversationKey": "WHATSAPP:905449818111",
-          "rawProfileName": "PALMNAILBEAUTYBAR",
+          "channelUserId": "905312006807",
+          "channelConversationKey": "WHATSAPP:905312006807",
+          "rawProfileName": "Berkay",
           "media": [],
           "mediaUrls": [],
           "primaryMediaUrl": null,
@@ -1280,20 +1280,20 @@
                       "contacts": [
                         {
                           "profile": {
-                            "name": "PALMNAILBEAUTYBAR"
+                            "name": "Berkay"
                           },
-                          "wa_id": "905449818111",
-                          "user_id": "TR.926286476876563"
+                          "wa_id": "905312006807",
+                          "user_id": "TR.925599630278581"
                         }
                       ],
                       "messages": [
                         {
-                          "from": "905449818111",
-                          "from_user_id": "TR.926286476876563",
-                          "id": "wamid.HBgMOTA1NDQ5ODE4MTExFQIAEhggQTUxRTYxQ0M2Q0M1NzYwNTUzOURGODM3NTAyNkQzMjYA",
-                          "timestamp": "1776521217",
+                          "from": "905312006807",
+                          "from_user_id": "TR.925599630278581",
+                          "id": "wamid.HBgMOTA1MzEyMDA2ODA3FQIAEhggQUNGNjJFMjhEMjE0QTlFODA2M0Q5OTc3RUVDOTdEM0QA",
+                          "timestamp": "1777534678",
                           "text": {
-                            "body": "Ajja"
+                            "body": "Bbgbn"
                           },
                           "type": "text"
                         }
@@ -1305,11 +1305,14 @@
               }
             ]
           },
-          "salonId": 2,
+          "salonId": 8,
           "customerId": null,
           "customerStatus": "unregistered",
-          "canonicalUserId": "WHATSAPP:905449818111",
-          "profileName": "PALMNAILBEAUTYBAR",
+          "canonicalUserId": "WHATSAPP:905312006807",
+          "profileName": "Berkay",
+          "customerFirstName": null,
+          "customerLastName": null,
+          "customerFullName": "Berkay",
           "profileUsername": null,
           "profilePictureUrl": null,
           "channelProfile": null,
@@ -1319,15 +1322,16 @@
           "identityLinked": false,
           "canGenerateMagicLinkDirectly": false,
           "salonInfo": {
-            "salonId": 2,
-            "name": "Palm Beauty",
+            "salonId": 8,
+            "name": "Test Kolay Salon",
             "city": "Ankara",
-            "district": null,
-            "address": "Kentkoop Mh. 1844. Sk 6/15",
+            "district": "Yenimahalle",
+            "address": "Tepealtı, Ragıp Tüzün Cd. No:279 D:A, 06170 Yenimahalle/Ankara, Türkiye",
+            "googleMapsUrl": "https://share.google/cpfPv8ludE7g85iXF",
             "instagramUrl": null,
             "whatsappPhone": null,
-            "tagline": "Palm Beauty: Işıltınız Bizimle Başlar!",
-            "about": "Ankara Kentkoop'ta yer alan Palm Beauty, uzman ekibi ve lüks atmosferiyle güzelliğinize değer katıyor. Merkezi konumumuz ve üstün hijyen standartlarımızla, size özel hizmet anlayışımızla tanışmaya davetlisiniz.",
+            "tagline": null,
+            "about": null,
             "timezone": "Europe/Istanbul",
             "workStartHour": 9,
             "workEndHour": 18,
@@ -1340,20 +1344,7 @@
               "FRI",
               "SAT"
             ],
-            "commonQuestions": [
-              {
-                "answer": "",
-                "question": "Kredi kartı geçerli mi?"
-              },
-              {
-                "answer": "",
-                "question": "Otopark var mı?"
-              },
-              {
-                "answer": "",
-                "question": "Evcil hayvan kabul ediliyor mu?"
-              }
-            ]
+            "commonQuestions": null
           },
           "agentSettings": {
             "tone": "balanced",
@@ -1369,7 +1360,7 @@
             "responsePolicy": "normal"
           },
           "userAction": null,
-          "conversationKey": "WHATSAPP:905449818111",
+          "conversationKey": "WHATSAPP:905312006807",
           "customer_status": "unregistered",
           "can_generate_magic_link_directly": false,
           "profile_username": null,

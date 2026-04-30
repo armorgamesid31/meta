@@ -649,6 +649,14 @@ function asCampaignDeliveryMode(value: unknown): 'AUTO' | 'MANUAL' | null {
   return null;
 }
 
+function normalizeCampaignType(value: unknown): string {
+  const normalized = typeof value === 'string' ? value.trim().toUpperCase() : '';
+  if (normalized === 'OFF_PEAK_FILL') {
+    return 'OFF_PEAK';
+  }
+  return normalized;
+}
+
 function toPercentDelta(current: number, previous: number): number {
   if (previous <= 0) {
     return current > 0 ? 100 : 0;
@@ -7790,7 +7798,7 @@ router.post('/campaigns', authenticateToken, async (req: any, res: any) => {
   }
 
   const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
-  const type = typeof req.body?.type === 'string' ? req.body.type.trim() : '';
+  const type = normalizeCampaignType(req.body?.type);
 
   if (!name || !type) {
     return res.status(400).json({ message: 'name and type are required.' });
@@ -7882,7 +7890,7 @@ router.patch('/campaigns/:id', authenticateToken, async (req: any, res: any) => 
     data.name = trimmed;
   }
   if (typeof req.body?.type === 'string') {
-    const trimmed = req.body.type.trim();
+    const trimmed = normalizeCampaignType(req.body.type);
     if (!trimmed) {
       return res.status(400).json({ message: 'type cannot be empty.' });
     }

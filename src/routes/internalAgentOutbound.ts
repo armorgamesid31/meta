@@ -12,6 +12,7 @@ const router = Router();
 const META_GRAPH_VERSION = (process.env.META_GRAPH_VERSION || 'v23.0').trim();
 const CHAKRA_WHATSAPP_SEND_URL = (process.env.CHAKRA_WHATSAPP_SEND_URL || '').trim();
 const CHAKRA_API_TOKEN = (process.env.CHAKRA_API_TOKEN || '').trim();
+const CHAKRA_API_BASE = (process.env.CHAKRA_API_BASE || 'https://api.chakrahq.com').trim().replace(/\/+$/, '');
 const HUMAN_PENDING_WAIT_TEXT = (
   process.env.HUMAN_PENDING_WAIT_TEXT ||
   'Talebinizi ekip arkadaşlarımıza ilettim. Kısa süre içinde size dönüş yapacağız. Beklemek istemiyorsanız “İptal Et” seçeneğini kullanabilirsiniz.'
@@ -106,6 +107,24 @@ function asBoolean(value: unknown): boolean {
     return v === 'true' || v === '1' || v === 'yes' || v === 'y';
   }
   return false;
+}
+
+function buildChakraWhatsappSendUrl(pluginId: string, phoneNumberId: string): string {
+  if (CHAKRA_WHATSAPP_SEND_URL) {
+    const hasPlaceholders =
+      CHAKRA_WHATSAPP_SEND_URL.includes('{pluginId}') ||
+      CHAKRA_WHATSAPP_SEND_URL.includes('{whatsappPhoneNumberId}');
+
+    if (hasPlaceholders) {
+      return CHAKRA_WHATSAPP_SEND_URL
+        .replaceAll('{pluginId}', encodeURIComponent(pluginId))
+        .replaceAll('{whatsappPhoneNumberId}', encodeURIComponent(phoneNumberId));
+    }
+
+    return CHAKRA_WHATSAPP_SEND_URL;
+  }
+
+  return `${CHAKRA_API_BASE}/v1/ext/plugin/whatsapp/${encodeURIComponent(pluginId)}/api/v19.0/${encodeURIComponent(phoneNumberId)}/messages`;
 }
 
 async function findPendingMagicLink(params: {
@@ -333,10 +352,6 @@ async function sendWhatsappViaChakra(params: {
   magicLinkUrl?: string | null;
   externalAccountId?: string | null;
 }) {
-  if (!CHAKRA_WHATSAPP_SEND_URL) {
-    throw new Error('CHAKRA_WHATSAPP_SEND_URL is missing');
-  }
-
   const salon = await prisma.salon.findUnique({
     where: { id: params.salonId },
     select: {
@@ -349,13 +364,17 @@ async function sendWhatsappViaChakra(params: {
   if (!salon?.chakraPluginId) {
     throw new Error('Chakra plugin is not connected');
   }
+  const phoneNumberId = typeof salon.chakraPhoneNumberId === 'string' ? salon.chakraPhoneNumberId.trim() : '';
+  if (!phoneNumberId) {
+    throw new Error('Chakra phone number is not connected');
+  }
 
   const to = extractRawConversationKey('WHATSAPP', params.conversationKey);
   const bookingUrl = params.magicLinkUrl && params.magicLinkUrl.trim() ? params.magicLinkUrl.trim() : null;
 
   const payload: Record<string, any> = {
     pluginId: salon.chakraPluginId,
-    phoneNumberId: salon.chakraPhoneNumberId || params.externalAccountId || null,
+    phoneNumberId,
     to,
   };
 
@@ -409,7 +428,8 @@ async function sendWhatsappViaChakra(params: {
     headers.Authorization = `Bearer ${CHAKRA_API_TOKEN}`;
   }
 
-  const response = await axios.post(CHAKRA_WHATSAPP_SEND_URL, payload, {
+  const sendUrl = buildChakraWhatsappSendUrl(salon.chakraPluginId, phoneNumberId);
+  const response = await axios.post(sendUrl, payload, {
     headers,
     timeout: 25000,
   });
@@ -422,7 +442,7 @@ async function sendWhatsappViaChakra(params: {
 
   const result = {
     providerMessageId,
-    externalAccountId: salon.chakraPhoneNumberId || params.externalAccountId || null,
+    externalAccountId: phoneNumberId,
     rawResponse: response.data ?? null,
   };
 
