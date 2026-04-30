@@ -1,0 +1,3 @@
+ALTER TABLE "WaitlistEntry"
+  ADD COLUMN IF NOT EXISTS "allowNearbyMatches" BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS "nearbyToleranceMinutes" INTEGER NOT NULL DEFAULT 60;

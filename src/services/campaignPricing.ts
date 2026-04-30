@@ -1,3 +1,4 @@
+import { CampaignType } from '@prisma/client';
 import { prisma } from '../prisma.js';
 
 type DiscountKind = 'PERCENT' | 'FIXED';
@@ -6,7 +7,7 @@ type CampaignRow = {
   id: number;
   salonId: number;
   name: string;
-  type: string;
+  type: CampaignType;
   config: Record<string, any>;
   priority: number;
   maxGlobalUsage: number | null;
@@ -28,9 +29,26 @@ export type CampaignPricingInput = {
 
 export type AppliedCampaignDetail = {
   campaignId: number;
-  campaignType: string;
+  campaignType: CampaignType;
   campaignName: string;
   amount: number;
+};
+
+export type SkippedCampaignDetail = {
+  campaignId: number;
+  campaignType: CampaignType;
+  campaignName: string;
+  reasonCode:
+    | 'GLOBAL_LIMIT_REACHED'
+    | 'CUSTOMER_LIMIT_REACHED'
+    | 'MULTI_SERVICE_NOT_ELIGIBLE'
+    | 'BIRTHDAY_NOT_ELIGIBLE'
+    | 'WINBACK_NOT_ELIGIBLE'
+    | 'FIRST_VISIT_NOT_ELIGIBLE'
+    | 'OFF_PEAK_NOT_ELIGIBLE'
+    | 'WALLET_EMPTY'
+    | 'SERVICE_NOT_ELIGIBLE'
+    | 'INVALID_DISCOUNT_CONFIG';
 };
 
 export type CampaignPricingLineResult = {
@@ -39,6 +57,7 @@ export type CampaignPricingLineResult = {
   discountTotal: number;
   finalPrice: number;
   appliedCampaigns: AppliedCampaignDetail[];
+  skippedCampaigns: SkippedCampaignDetail[];
   packageCovered: boolean;
 };
 
@@ -49,6 +68,10 @@ export type CampaignPricingResult = {
   finalTotal: number;
   lines: CampaignPricingLineResult[];
   appliedCampaigns: AppliedCampaignDetail[];
+  evaluationMeta: {
+    snapshotVersion: number;
+    skippedReasons: Array<{ reasonCode: SkippedCampaignDetail['reasonCode']; count: number }>;
+  };
 };
 
 function asObject(value: unknown): Record<string, any> {
@@ -117,7 +140,7 @@ function normalizeCampaignRow(row: any): CampaignRow {
     id: Number(row.id),
     salonId: Number(row.salonId),
     name: String(row.name || row.type || `Campaign ${row.id}`),
-    type: String(row.type || '').trim().toUpperCase(),
+    type: String(row.type || '').trim().toUpperCase() as CampaignType,
     config: asObject(row.config),
     priority: Number.isFinite(Number(row.priority)) ? Number(row.priority) : 100,
     maxGlobalUsage: normalizeUsageLimit(row.maxGlobalUsage),
@@ -305,21 +328,37 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
         discountTotal: 0,
         finalPrice: 0,
         appliedCampaigns: [],
+        skippedCampaigns: [],
         packageCovered,
       };
     }
 
     let running = base;
     const appliedCampaigns: AppliedCampaignDetail[] = [];
+    const skippedCampaigns: SkippedCampaignDetail[] = [];
+    const skip = (campaign: CampaignRow, reasonCode: SkippedCampaignDetail['reasonCode']) => {
+      skippedCampaigns.push({
+        campaignId: campaign.id,
+        campaignType: campaign.type,
+        campaignName: campaign.name,
+        reasonCode,
+      });
+    };
 
     for (const campaign of sortedCampaigns) {
       if (campaign.maxGlobalUsage !== null) {
         const used = usage.global.get(campaign.id) || 0;
-        if (used >= campaign.maxGlobalUsage) continue;
+        if (used >= campaign.maxGlobalUsage) {
+          skip(campaign, 'GLOBAL_LIMIT_REACHED');
+          continue;
+        }
       }
       if (campaign.maxPerCustomer !== null && input.customerId) {
         const usedByCustomer = usage.perCustomer.get(campaign.id) || 0;
-        if (usedByCustomer >= campaign.maxPerCustomer) continue;
+        if (usedByCustomer >= campaign.maxPerCustomer) {
+          skip(campaign, 'CUSTOMER_LIMIT_REACHED');
+          continue;
+        }
       }
 
       const cfg = campaign.config;
@@ -327,31 +366,52 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
 
       if (type === 'MULTI_SERVICE_DISCOUNT') {
         const minCount = Math.max(2, Number(cfg.minServiceCount || 2));
-        if (eligibleServiceCount < minCount) continue;
+        if (eligibleServiceCount < minCount) {
+          skip(campaign, 'MULTI_SERVICE_NOT_ELIGIBLE');
+          continue;
+        }
       }
 
       if (type === 'BIRTHDAY') {
         const validDays = Math.max(1, Number(cfg.validDaysAfterBirthday || 7));
-        if (!isBirthdayEligible(stats.birthDate, startTime, validDays)) continue;
+        if (!isBirthdayEligible(stats.birthDate, startTime, validDays)) {
+          skip(campaign, 'BIRTHDAY_NOT_ELIGIBLE');
+          continue;
+        }
       }
 
       if (type === 'WINBACK') {
         const threshold = Math.max(1, Number(cfg.inactiveDaysThreshold || 30));
-        if (!stats.lastAppointmentAt) continue;
+        if (!stats.lastAppointmentAt) {
+          skip(campaign, 'WINBACK_NOT_ELIGIBLE');
+          continue;
+        }
         const diffDays = Math.floor((startTime.getTime() - stats.lastAppointmentAt.getTime()) / (24 * 60 * 60 * 1000));
-        if (diffDays < threshold) continue;
+        if (diffDays < threshold) {
+          skip(campaign, 'WINBACK_NOT_ELIGIBLE');
+          continue;
+        }
       }
 
       if (type === 'WELCOME_FIRST_VISIT') {
-        if (stats.completedCount > 0) continue;
+        if (stats.completedCount > 0) {
+          skip(campaign, 'FIRST_VISIT_NOT_ELIGIBLE');
+          continue;
+        }
       }
 
       if (type === 'OFF_PEAK') {
         const weekdays = Array.isArray(cfg.weekdays) ? cfg.weekdays.map((w: any) => String(w).toUpperCase()) : ['MON', 'TUE', 'WED', 'THU'];
-        if (!weekdays.includes(weekdayKey)) continue;
+        if (!weekdays.includes(weekdayKey)) {
+          skip(campaign, 'OFF_PEAK_NOT_ELIGIBLE');
+          continue;
+        }
         const startMinute = toMinute(cfg.startHour) ?? toMinute('12:00')!;
         const endMinute = toMinute(cfg.endHour) ?? toMinute('16:00')!;
-        if (!(minuteOfDay >= startMinute && minuteOfDay < endMinute)) continue;
+        if (!(minuteOfDay >= startMinute && minuteOfDay < endMinute)) {
+          skip(campaign, 'OFF_PEAK_NOT_ELIGIBLE');
+          continue;
+        }
       }
 
       let amount = 0;
@@ -359,17 +419,25 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
 
       if (type === 'LOYALTY' || type === 'REFERRAL') {
         const walletAmount = walletByCampaign.get(campaign.id) || 0;
-        if (walletAmount <= 0) continue;
+        if (walletAmount <= 0) {
+          skip(campaign, 'WALLET_EMPTY');
+          continue;
+        }
         amount = Math.min(running, walletAmount);
       } else if (rewardType === 'free_service') {
         if (Number(cfg.rewardServiceId) === Number(line.serviceId)) {
           amount = running;
         } else {
+          skip(campaign, 'SERVICE_NOT_ELIGIBLE');
           continue;
         }
       } else {
         const kind = parseDiscountKind(cfg);
         const value = parseDiscountValue(cfg);
+        if (value <= 0) {
+          skip(campaign, 'INVALID_DISCOUNT_CONFIG');
+          continue;
+        }
         amount = computeDiscount(running, kind, value);
       }
 
@@ -392,6 +460,7 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
       discountTotal,
       finalPrice: Number(running.toFixed(2)),
       appliedCampaigns,
+      skippedCampaigns,
       packageCovered,
     };
   });
@@ -400,6 +469,13 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
   const discountTotal = Number(lines.reduce((acc, line) => acc + line.discountTotal, 0).toFixed(2));
   const finalTotal = Number(lines.reduce((acc, line) => acc + line.finalPrice, 0).toFixed(2));
   const appliedCampaigns = aggregateApplied(lines.flatMap((line) => line.appliedCampaigns));
+  const skippedReasonMap = new Map<SkippedCampaignDetail['reasonCode'], number>();
+  for (const line of lines) {
+    for (const skipped of line.skippedCampaigns) {
+      skippedReasonMap.set(skipped.reasonCode, (skippedReasonMap.get(skipped.reasonCode) || 0) + 1);
+    }
+  }
+  const skippedReasons = Array.from(skippedReasonMap.entries()).map(([reasonCode, count]) => ({ reasonCode, count }));
 
   return {
     currency: 'TRY',
@@ -408,6 +484,10 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
     finalTotal,
     lines,
     appliedCampaigns,
+    evaluationMeta: {
+      snapshotVersion: 1,
+      skippedReasons,
+    },
   };
 }
 

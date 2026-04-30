@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import axios from 'axios';
-import { InboundMessageStatus, OutboundMessageSource, type CustomerGender } from '@prisma/client';
+import { CampaignType, InboundMessageStatus, OutboundMessageSource, type CustomerGender } from '@prisma/client';
 import { prisma } from '../prisma.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { ensureSalonServiceCategories } from '../services/salonCategorySetup.js';
@@ -42,6 +42,11 @@ import {
   releaseAppointmentCampaignApplications,
   shouldAutoSendCampaignType,
 } from '../services/campaignPricing.js';
+import {
+  normalizeCampaignType as normalizeCampaignTypeStrict,
+  normalizePositiveLimit,
+  validateCampaignConfig,
+} from '../services/campaignDomain.js';
 import { hasPermission } from '../services/accessControl.js';
 import {
   assertBookingAllowed,
@@ -649,12 +654,17 @@ function asCampaignDeliveryMode(value: unknown): 'AUTO' | 'MANUAL' | null {
   return null;
 }
 
-function normalizeCampaignType(value: unknown): string {
-  const normalized = typeof value === 'string' ? value.trim().toUpperCase() : '';
-  if (normalized === 'OFF_PEAK_FILL') {
-    return 'OFF_PEAK';
-  }
-  return normalized;
+function normalizeCampaignType(value: unknown): CampaignType | null {
+  return normalizeCampaignTypeStrict(value);
+}
+
+function parseUsageLimitStrict(value: unknown): { ok: true; value: number | null } | { ok: false; message: string } {
+  if (value === undefined) return { ok: true, value: null };
+  if (value === null || value === '') return { ok: true, value: null };
+  const n = Number(value);
+  if (!Number.isFinite(n)) return { ok: false, message: 'Usage limit must be a number.' };
+  if (n <= 0) return { ok: false, message: 'Usage limit must be greater than 0 or null.' };
+  return { ok: true, value: normalizePositiveLimit(n) };
 }
 
 function toPercentDelta(current: number, previous: number): number {
@@ -7801,7 +7811,7 @@ router.post('/campaigns', authenticateToken, async (req: any, res: any) => {
   const type = normalizeCampaignType(req.body?.type);
 
   if (!name || !type) {
-    return res.status(400).json({ message: 'name and type are required.' });
+    return res.status(422).json({ message: 'name and valid type are required.' });
   }
 
   try {
@@ -7809,6 +7819,19 @@ router.post('/campaigns', authenticateToken, async (req: any, res: any) => {
     const endsAt = parseCampaignDateInput(req.body?.endsAt);
     if (startsAt === undefined || endsAt === undefined) {
       return res.status(400).json({ message: 'Invalid startsAt or endsAt date.' });
+    }
+
+    const configValidation = validateCampaignConfig(type, req.body?.config ?? null);
+    if (!configValidation.ok) {
+      return res.status(422).json({ message: 'message' in configValidation ? configValidation.message : 'Invalid campaign config.' });
+    }
+    const maxGlobalUsageParsed = parseUsageLimitStrict(req.body?.maxGlobalUsage);
+    if (!maxGlobalUsageParsed.ok) {
+      return res.status(422).json({ message: 'message' in maxGlobalUsageParsed ? maxGlobalUsageParsed.message : 'Invalid maxGlobalUsage.' });
+    }
+    const maxPerCustomerParsed = parseUsageLimitStrict(req.body?.maxPerCustomer);
+    if (!maxPerCustomerParsed.ok) {
+      return res.status(422).json({ message: 'message' in maxPerCustomerParsed ? maxPerCustomerParsed.message : 'Invalid maxPerCustomer.' });
     }
 
     const campaign = await prisma.campaign.create({
@@ -7819,10 +7842,11 @@ router.post('/campaigns', authenticateToken, async (req: any, res: any) => {
         description: typeof req.body?.description === 'string' ? req.body.description.trim() : null,
         config: req.body?.config ?? null,
         isActive: req.body?.isActive !== undefined ? Boolean(req.body.isActive) : true,
+        lifecycleStatus: req.body?.isActive !== false ? 'ACTIVE' : 'DRAFT',
         priority: Number.isFinite(Number(req.body?.priority)) ? Number(req.body.priority) : 100,
         deliveryMode: asCampaignDeliveryMode(req.body?.deliveryMode) || (shouldAutoSendCampaignType(type) ? 'AUTO' : 'MANUAL'),
-        maxGlobalUsage: Number.isFinite(Number(req.body?.maxGlobalUsage)) ? Number(req.body.maxGlobalUsage) : null,
-        maxPerCustomer: Number.isFinite(Number(req.body?.maxPerCustomer)) ? Number(req.body.maxPerCustomer) : null,
+        maxGlobalUsage: maxGlobalUsageParsed.value,
+        maxPerCustomer: maxPerCustomerParsed.value,
         startsAt,
         endsAt,
       },
@@ -7892,7 +7916,7 @@ router.patch('/campaigns/:id', authenticateToken, async (req: any, res: any) => 
   if (typeof req.body?.type === 'string') {
     const trimmed = normalizeCampaignType(req.body.type);
     if (!trimmed) {
-      return res.status(400).json({ message: 'type cannot be empty.' });
+      return res.status(422).json({ message: 'type is invalid.' });
     }
     data.type = trimmed;
   }
@@ -7920,15 +7944,22 @@ router.patch('/campaigns/:id', authenticateToken, async (req: any, res: any) => 
     data.deliveryMode = deliveryMode;
   }
   if (req.body?.maxGlobalUsage !== undefined) {
-    const maxGlobalUsage = Number(req.body.maxGlobalUsage);
-    data.maxGlobalUsage = Number.isFinite(maxGlobalUsage) && maxGlobalUsage > 0 ? Math.floor(maxGlobalUsage) : null;
+    const parsed = parseUsageLimitStrict(req.body.maxGlobalUsage);
+    if (!parsed.ok) {
+      return res.status(422).json({ message: 'message' in parsed ? parsed.message : 'Invalid maxGlobalUsage.' });
+    }
+    data.maxGlobalUsage = parsed.value;
   }
   if (req.body?.maxPerCustomer !== undefined) {
-    const maxPerCustomer = Number(req.body.maxPerCustomer);
-    data.maxPerCustomer = Number.isFinite(maxPerCustomer) && maxPerCustomer > 0 ? Math.floor(maxPerCustomer) : null;
+    const parsed = parseUsageLimitStrict(req.body.maxPerCustomer);
+    if (!parsed.ok) {
+      return res.status(422).json({ message: 'message' in parsed ? parsed.message : 'Invalid maxPerCustomer.' });
+    }
+    data.maxPerCustomer = parsed.value;
   }
   if (req.body?.isActive !== undefined) {
     data.isActive = Boolean(req.body.isActive);
+    data.lifecycleStatus = Boolean(req.body.isActive) ? 'ACTIVE' : 'PAUSED';
   }
   if (req.body?.startsAt !== undefined) {
     const startsAt = parseCampaignDateInput(req.body.startsAt);
@@ -7951,10 +7982,20 @@ router.patch('/campaigns/:id', authenticateToken, async (req: any, res: any) => 
         id: campaignId,
         salonId,
       },
-      select: { id: true },
+      select: { id: true, type: true, config: true },
     });
     if (!existing) {
       return res.status(404).json({ message: 'Campaign not found.' });
+    }
+
+    const nextType = (data.type as CampaignType | undefined) || normalizeCampaignType(existing.type);
+    if (!nextType) {
+      return res.status(422).json({ message: 'Campaign type is invalid.' });
+    }
+    const nextConfig = req.body?.config !== undefined ? req.body.config ?? null : existing.config ?? null;
+    const configValidation = validateCampaignConfig(nextType, nextConfig);
+    if (!configValidation.ok) {
+      return res.status(422).json({ message: 'message' in configValidation ? configValidation.message : 'Invalid campaign config.' });
     }
 
     const campaign = await prisma.campaign.update({
@@ -8060,6 +8101,7 @@ router.post('/campaigns/:id/publish', authenticateToken, async (req: any, res: a
       where: { id: campaignId },
       data: {
         isActive: true,
+        lifecycleStatus: 'ACTIVE',
         publishedAt: new Date(),
       },
     });
@@ -8081,6 +8123,8 @@ router.post('/campaigns/:id/send', authenticateToken, async (req: any, res: any)
   }
 
   try {
+    const executionKey = `cmp_send_${salonId}_${campaignId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const startedAt = new Date();
     const campaign = await prisma.campaign.findFirst({
       where: { id: campaignId, salonId },
       select: { id: true, name: true, type: true },
@@ -8091,6 +8135,21 @@ router.post('/campaigns/:id/send', authenticateToken, async (req: any, res: any)
 
     const recipients = await listCampaignsForSend(salonId, campaignId);
     const recipientUserIds = recipients.map((row) => row.customerId).filter((id) => Number.isInteger(id) && id > 0);
+
+    const execution = await prisma.campaignSendExecution.create({
+      data: {
+        salonId,
+        campaignId: campaign.id,
+        executionKey,
+        status: 'COMPLETED',
+        audienceSize: recipientUserIds.length,
+        successCount: recipientUserIds.length,
+        failureCount: 0,
+        startedAt,
+        completedAt: new Date(),
+      },
+      select: { id: true, executionKey: true },
+    });
 
     await createNotification({
       salonId,
@@ -8109,9 +8168,43 @@ router.post('/campaigns/:id/send', authenticateToken, async (req: any, res: any)
       sent: true,
       campaignId: campaign.id,
       audienceSize: recipientUserIds.length,
+      executionId: execution.id,
+      executionKey: execution.executionKey,
     });
   } catch (error) {
+    await prisma.campaignSendExecution.create({
+      data: {
+        salonId,
+        campaignId,
+        executionKey: `cmp_send_${salonId}_${campaignId}_${Date.now()}_error`,
+        status: 'FAILED',
+        errorMessage: (error as any)?.message || 'send_failed',
+        completedAt: new Date(),
+      },
+    }).catch(() => undefined);
     console.error('Admin campaign send error:', error);
+    return res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
+router.get('/campaigns/:id/send-executions', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  if (!salonId) return;
+
+  const campaignId = Number(req.params.id);
+  if (!Number.isInteger(campaignId) || campaignId <= 0) {
+    return res.status(400).json({ message: 'Invalid campaign id.' });
+  }
+
+  try {
+    const items = await prisma.campaignSendExecution.findMany({
+      where: { salonId, campaignId },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+    return res.status(200).json({ items });
+  } catch (error) {
+    console.error('Admin campaign send-executions error:', error);
     return res.status(500).json({ message: 'Internal server error.' });
   }
 });

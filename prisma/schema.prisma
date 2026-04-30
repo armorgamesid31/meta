@@ -41,6 +41,7 @@ model Salon {
   campaigns                   Campaign[]
   campaignAttributions        CampaignAttribution[]
   campaignShareLinks          CampaignShareLink[]
+  campaignSendExecutions      CampaignSendExecution[]
   channelProfiles             ChannelProfileCache[]
   contentItems                ContentItem[]
   conversationEvents          ConversationMessageEvent[]
@@ -677,10 +678,11 @@ model Campaign {
   id             Int                              @id @default(autoincrement())
   salonId        Int
   name           String
-  type           String
+  type           CampaignType
   description    String?
   config         Json?
   isActive       Boolean                          @default(true)
+  lifecycleStatus CampaignLifecycleStatus         @default(DRAFT)
   startsAt       DateTime?                        @db.Timestamp(6)
   endsAt         DateTime?                        @db.Timestamp(6)
   createdAt      DateTime?                        @default(now()) @db.Timestamp(6)
@@ -696,9 +698,30 @@ model Campaign {
   shareLinks     CampaignShareLink[]
   enrollments    CustomerCampaignEnrollment[]
   wallets        CustomerCampaignWallet[]
+  sendExecutions CampaignSendExecution[]
 
   @@index([salonId, type, isActive], map: "idx_campaign_salon_type_active")
   @@index([salonId, priority, isActive], map: "idx_campaign_salon_priority_active")
+}
+
+model CampaignSendExecution {
+  id           Int       @id @default(autoincrement())
+  salonId      Int
+  campaignId   Int
+  executionKey String    @unique(map: "uq_campaign_send_execution_key")
+  status       String
+  audienceSize Int       @default(0)
+  successCount Int       @default(0)
+  failureCount Int       @default(0)
+  errorMessage String?
+  startedAt    DateTime? @default(now()) @db.Timestamp(6)
+  completedAt  DateTime? @db.Timestamp(6)
+  createdAt    DateTime? @default(now()) @db.Timestamp(6)
+  updatedAt    DateTime? @default(now()) @updatedAt @db.Timestamp(6)
+  campaign     Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  salon        Salon     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([salonId, campaignId, createdAt], map: "idx_campaign_send_exec_salon_campaign_created")
 }
 
 model AppointmentCampaignApplication {
@@ -1855,6 +1878,24 @@ enum NotificationEventType {
 enum CampaignDeliveryMode {
   AUTO
   MANUAL
+}
+
+enum CampaignType {
+  BIRTHDAY
+  WINBACK
+  WELCOME_FIRST_VISIT
+  LOYALTY
+  MULTI_SERVICE_DISCOUNT
+  OFF_PEAK
+  REFERRAL
+}
+
+enum CampaignLifecycleStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  ENDED
+  ARCHIVED
 }
 
 enum CampaignApplicationStatus {
