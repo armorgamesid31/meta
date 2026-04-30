@@ -105,6 +105,13 @@ function toMinute(value: unknown): number | null {
   return h * 60 + m;
 }
 
+function normalizeUsageLimit(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.floor(n);
+}
+
 function normalizeCampaignRow(row: any): CampaignRow {
   return {
     id: Number(row.id),
@@ -113,8 +120,8 @@ function normalizeCampaignRow(row: any): CampaignRow {
     type: String(row.type || '').trim().toUpperCase(),
     config: asObject(row.config),
     priority: Number.isFinite(Number(row.priority)) ? Number(row.priority) : 100,
-    maxGlobalUsage: row.maxGlobalUsage !== null && row.maxGlobalUsage !== undefined ? Number(row.maxGlobalUsage) : null,
-    maxPerCustomer: row.maxPerCustomer !== null && row.maxPerCustomer !== undefined ? Number(row.maxPerCustomer) : null,
+    maxGlobalUsage: normalizeUsageLimit(row.maxGlobalUsage),
+    maxPerCustomer: normalizeUsageLimit(row.maxPerCustomer),
   };
 }
 
