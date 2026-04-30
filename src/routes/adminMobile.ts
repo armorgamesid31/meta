@@ -7801,6 +7801,40 @@ router.get('/campaigns', authenticateToken, async (req: any, res: any) => {
   }
 });
 
+async function validateCampaignServiceScope(salonId: number, config: unknown): Promise<string | null> {
+  if (!config || typeof config !== 'object' || Array.isArray(config)) {
+    return null;
+  }
+
+  const raw = config as Record<string, unknown>;
+  const eligible = Array.isArray(raw.eligibleServiceIds) ? raw.eligibleServiceIds : [];
+  const excluded = Array.isArray(raw.excludedServiceIds) ? raw.excludedServiceIds : [];
+  const allServiceIds = Array.from(
+    new Set(
+      [...eligible, ...excluded]
+        .map((entry) => Number(entry))
+        .filter((entry) => Number.isInteger(entry) && entry > 0),
+    ),
+  );
+
+  if (!allServiceIds.length) {
+    return null;
+  }
+
+  const count = await prisma.service.count({
+    where: {
+      salonId,
+      id: { in: allServiceIds },
+    },
+  });
+
+  if (count !== allServiceIds.length) {
+    return 'eligible/excluded service list contains invalid service ids for this salon.';
+  }
+
+  return null;
+}
+
 router.post('/campaigns', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
   if (!salonId) {
@@ -7825,6 +7859,10 @@ router.post('/campaigns', authenticateToken, async (req: any, res: any) => {
     if (!configValidation.ok) {
       return res.status(422).json({ message: 'message' in configValidation ? configValidation.message : 'Invalid campaign config.' });
     }
+    const serviceScopeError = await validateCampaignServiceScope(salonId, configValidation.config);
+    if (serviceScopeError) {
+      return res.status(422).json({ message: serviceScopeError });
+    }
     const maxGlobalUsageParsed = parseUsageLimitStrict(req.body?.maxGlobalUsage);
     if (!maxGlobalUsageParsed.ok) {
       return res.status(422).json({ message: 'message' in maxGlobalUsageParsed ? maxGlobalUsageParsed.message : 'Invalid maxGlobalUsage.' });
@@ -7840,7 +7878,7 @@ router.post('/campaigns', authenticateToken, async (req: any, res: any) => {
         name,
         type,
         description: typeof req.body?.description === 'string' ? req.body.description.trim() : null,
-        config: req.body?.config ?? null,
+        config: configValidation.config as any,
         isActive: req.body?.isActive !== undefined ? Boolean(req.body.isActive) : true,
         lifecycleStatus: req.body?.isActive !== false ? 'ACTIVE' : 'DRAFT',
         priority: Number.isFinite(Number(req.body?.priority)) ? Number(req.body.priority) : 100,
@@ -7996,6 +8034,13 @@ router.patch('/campaigns/:id', authenticateToken, async (req: any, res: any) => 
     const configValidation = validateCampaignConfig(nextType, nextConfig);
     if (!configValidation.ok) {
       return res.status(422).json({ message: 'message' in configValidation ? configValidation.message : 'Invalid campaign config.' });
+    }
+    const serviceScopeError = await validateCampaignServiceScope(salonId, configValidation.config);
+    if (serviceScopeError) {
+      return res.status(422).json({ message: serviceScopeError });
+    }
+    if (req.body?.config !== undefined) {
+      data.config = configValidation.config as any;
     }
 
     const campaign = await prisma.campaign.update({

@@ -128,6 +128,32 @@ function toMinute(value: unknown): number | null {
   return h * 60 + m;
 }
 
+function toServiceIdSet(value: unknown): Set<number> | null {
+  if (value === undefined || value === null) return null;
+  if (!Array.isArray(value)) return null;
+
+  const ids = value
+    .map((entry) => Number(entry))
+    .filter((entry) => Number.isInteger(entry) && entry > 0);
+
+  if (ids.length !== value.length) return null;
+  return new Set(ids);
+}
+
+function isServiceEligibleByScope(config: Record<string, any>, serviceId: number): boolean {
+  const excluded = toServiceIdSet(config.excludedServiceIds);
+  if (excluded?.has(serviceId)) {
+    return false;
+  }
+
+  const eligible = toServiceIdSet(config.eligibleServiceIds);
+  if (eligible && eligible.size > 0) {
+    return eligible.has(serviceId);
+  }
+
+  return true;
+}
+
 function normalizeUsageLimit(value: unknown): number | null {
   if (value === null || value === undefined) return null;
   const n = Number(value);
@@ -363,6 +389,20 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
 
       const cfg = campaign.config;
       const type = campaign.type;
+
+      if (
+        (type === 'WELCOME_FIRST_VISIT' ||
+          type === 'BIRTHDAY' ||
+          type === 'WINBACK' ||
+          type === 'REFERRAL' ||
+          type === 'LOYALTY' ||
+          type === 'MULTI_SERVICE_DISCOUNT' ||
+          type === 'OFF_PEAK') &&
+        !isServiceEligibleByScope(cfg, Number(line.serviceId))
+      ) {
+        skip(campaign, 'SERVICE_NOT_ELIGIBLE');
+        continue;
+      }
 
       if (type === 'MULTI_SERVICE_DISCOUNT') {
         const minCount = Math.max(2, Number(cfg.minServiceCount || 2));

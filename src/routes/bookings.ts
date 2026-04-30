@@ -248,6 +248,36 @@ async function resolveMagicTokenCustomer(input: { token: string; salonId: number
   return { customerId: customer.id, customerPhone: customer.phone };
 }
 
+async function resolveActiveReferralCampaign(input: { salonId: number; campaignId: number }) {
+  const campaign = await prisma.campaign.findFirst({
+    where: {
+      id: input.campaignId,
+      salonId: input.salonId,
+      isActive: true,
+      type: 'REFERRAL',
+    },
+    select: {
+      id: true,
+      startsAt: true,
+      endsAt: true,
+    },
+  });
+
+  if (!campaign) {
+    return { error: 'Referral campaign not found or inactive.', code: 404 as const };
+  }
+
+  const now = new Date();
+  if (campaign.startsAt && campaign.startsAt > now) {
+    return { error: 'Referral campaign has not started yet.', code: 409 as const };
+  }
+  if (campaign.endsAt && campaign.endsAt < now) {
+    return { error: 'Referral campaign has ended.', code: 409 as const };
+  }
+
+  return { campaignId: campaign.id };
+}
+
 async function createExactSlotBooking(input: {
   salonId: number;
   customerId: number;
@@ -896,6 +926,11 @@ router.post('/reschedule-preview', async (req: any, res: any) => {
   }
 
   try {
+    const campaignResolved = await resolveActiveReferralCampaign({ salonId, campaignId });
+    if ('error' in campaignResolved) {
+      return res.status(campaignResolved.code).json({ message: campaignResolved.error });
+    }
+
     const resolved = await resolveMagicTokenCustomer({ token, salonId });
     if ('error' in resolved) {
       return res.status(resolved.code).json({ message: resolved.error });
@@ -959,6 +994,11 @@ router.post('/reschedule-options', async (req: any, res: any) => {
   }
 
   try {
+    const campaignResolved = await resolveActiveReferralCampaign({ salonId, campaignId });
+    if ('error' in campaignResolved) {
+      return res.status(campaignResolved.code).json({ message: campaignResolved.error });
+    }
+
     const resolved = await resolveMagicTokenCustomer({ token, salonId });
     if ('error' in resolved) {
       return res.status(resolved.code).json({ message: resolved.error });

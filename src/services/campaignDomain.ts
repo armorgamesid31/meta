@@ -15,6 +15,21 @@ function asObject(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+function normalizeServiceScopeList(value: unknown): number[] | null {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) return null;
+
+  const normalized = value
+    .map((entry) => Number(entry))
+    .filter((entry) => Number.isInteger(entry) && entry > 0);
+
+  if (normalized.length !== value.length) {
+    return null;
+  }
+
+  return Array.from(new Set(normalized));
+}
+
 export function normalizeCampaignType(value: unknown): CampaignType | null {
   if (typeof value !== 'string') return null;
   const normalized = value.trim().toUpperCase();
@@ -34,7 +49,7 @@ export function parseCampaignConfig(value: unknown): Record<string, unknown> {
 }
 
 export function validateCampaignConfig(type: CampaignType, rawConfig: unknown): { ok: true; config: Record<string, unknown> } | { ok: false; message: string } {
-  const config = parseCampaignConfig(rawConfig);
+  const config = { ...parseCampaignConfig(rawConfig) };
   const num = (v: unknown) => Number(v);
   const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
 
@@ -86,6 +101,32 @@ export function validateCampaignConfig(type: CampaignType, rawConfig: unknown): 
     if (!rewardValue) {
       return { ok: false, message: 'config.rewardValue must be a positive number.' };
     }
+  }
+
+  if (
+    type === 'WELCOME_FIRST_VISIT' ||
+    type === 'BIRTHDAY' ||
+    type === 'WINBACK' ||
+    type === 'REFERRAL' ||
+    type === 'LOYALTY' ||
+    type === 'MULTI_SERVICE_DISCOUNT' ||
+    type === 'OFF_PEAK'
+  ) {
+    const eligible = normalizeServiceScopeList(config.eligibleServiceIds);
+    if (eligible === null) {
+      return { ok: false, message: 'config.eligibleServiceIds must be an array of positive service ids.' };
+    }
+
+    const excluded = normalizeServiceScopeList(config.excludedServiceIds);
+    if (excluded === null) {
+      return { ok: false, message: 'config.excludedServiceIds must be an array of positive service ids.' };
+    }
+
+    const excludedSet = new Set<number>(excluded);
+    const filteredEligible = eligible.filter((serviceId) => !excludedSet.has(serviceId));
+
+    config.eligibleServiceIds = filteredEligible;
+    config.excludedServiceIds = excluded;
   }
 
   return { ok: true, config };
