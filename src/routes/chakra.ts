@@ -728,6 +728,9 @@ async function updateSalonChakraState(
     chakraPluginId?: string | null;
     chakraPhoneNumberId?: string | null;
   },
+  options?: {
+    allowOwnershipTransfer?: boolean;
+  },
 ) {
   const normalizeExternalId = (value?: string | null): string | null => {
     if (typeof value !== 'string') return null;
@@ -743,6 +746,26 @@ async function updateSalonChakraState(
     });
 
     if (!nextWhatsappPhoneNumberId) return;
+
+    const allowOwnershipTransfer = options?.allowOwnershipTransfer !== false;
+    if (!allowOwnershipTransfer) {
+      const currentOwner = await prisma.salonChannelBinding.findUnique({
+        where: {
+          channel_externalAccountId: {
+            channel: 'WHATSAPP',
+            externalAccountId: nextWhatsappPhoneNumberId,
+          },
+        },
+        select: {
+          salonId: true,
+          isActive: true,
+        },
+      });
+
+      if (currentOwner && currentOwner.isActive && currentOwner.salonId !== salonId) {
+        return;
+      }
+    }
 
     await prisma.salonChannelBinding.upsert({
       where: {
@@ -900,6 +923,8 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
         if (shouldSyncAnswers) {
           await updateSalonChakraState(salon.id, {
             chakraPhoneNumberId: liveWhatsappPhoneNumberId || whatsappPhoneNumberId || null,
+          }, {
+            allowOwnershipTransfer: false,
           });
           await upsertSalonAiAgentFaqAnswers(salon.id, {
             whatsappPluginActive: pluginActive,
