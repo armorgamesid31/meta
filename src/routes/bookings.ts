@@ -498,6 +498,7 @@ async function createExactSlotBooking(input: {
               customerId: input.customerId,
               serviceId,
               line: pricingResult.lines[pricingLineIndex],
+              db: tx,
             });
             await consumeWalletBalances({
               salonId: input.salonId,
@@ -926,11 +927,6 @@ router.post('/reschedule-preview', async (req: any, res: any) => {
   }
 
   try {
-    const campaignResolved = await resolveActiveReferralCampaign({ salonId, campaignId });
-    if ('error' in campaignResolved) {
-      return res.status(campaignResolved.code).json({ message: campaignResolved.error });
-    }
-
     const resolved = await resolveMagicTokenCustomer({ token, salonId });
     if ('error' in resolved) {
       return res.status(resolved.code).json({ message: resolved.error });
@@ -994,11 +990,6 @@ router.post('/reschedule-options', async (req: any, res: any) => {
   }
 
   try {
-    const campaignResolved = await resolveActiveReferralCampaign({ salonId, campaignId });
-    if ('error' in campaignResolved) {
-      return res.status(campaignResolved.code).json({ message: campaignResolved.error });
-    }
-
     const resolved = await resolveMagicTokenCustomer({ token, salonId });
     if ('error' in resolved) {
       return res.status(resolved.code).json({ message: resolved.error });

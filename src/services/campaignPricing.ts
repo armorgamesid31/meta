@@ -537,13 +537,17 @@ export async function persistAppointmentCampaignApplication(input: {
   customerId?: number | null;
   serviceId?: number | null;
   line: CampaignPricingLineResult;
+  db?: {
+    $executeRawUnsafe: (...args: any[]) => Promise<any>;
+  };
 }): Promise<void> {
   if (!input.line.appliedCampaigns.length) {
     return;
   }
+  const db = input.db ?? prisma;
 
   for (const campaign of input.line.appliedCampaigns) {
-    await prisma.$executeRawUnsafe(
+    await db.$executeRawUnsafe(
       `
         INSERT INTO "AppointmentCampaignApplication"
           ("salonId", "appointmentId", "customerId", "campaignId", "serviceId", "status", "listPrice", "discountAmount", "finalPrice", "metadata", "appliedAt", "createdAt", "updatedAt")
