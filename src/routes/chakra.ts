@@ -871,6 +871,16 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
           : null;
     let liveHasAuth = false;
     let liveHasEnabledPhone = false;
+    const activeWhatsappBinding = await prisma.salonChannelBinding.findFirst({
+      where: {
+        salonId: salon.id,
+        channel: 'WHATSAPP',
+        isActive: true,
+      },
+      select: {
+        externalAccountId: true,
+      },
+    });
 
     if (salon.chakraPluginId && CHAKRA_API_TOKEN) {
       try {
@@ -923,7 +933,10 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
 
     // ÖNEMLİ: status endpoint'i plugin active state'ini mutate etmez.
     // Böylece paneldeki aktif/pasif toggle kullanıcının verdiği değeri korur.
-    const connected = Boolean(salon.chakraPluginId) && (pluginActive || hasConnectionSignal);
+    const hasActiveBinding =
+      typeof activeWhatsappBinding?.externalAccountId === 'string' &&
+      activeWhatsappBinding.externalAccountId.trim().length > 0;
+    const connected = Boolean(salon.chakraPluginId) && hasActiveBinding && (pluginActive || hasConnectionSignal);
 
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.setHeader('Pragma', 'no-cache');
@@ -938,6 +951,7 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
       connected,
       isActive: pluginActive,
       whatsappPhoneNumberId,
+      hasActiveBinding,
       sdkUrl: CHAKRA_SDK_URL,
     });
   } catch (error: any) {

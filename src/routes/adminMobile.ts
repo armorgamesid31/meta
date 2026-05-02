@@ -8954,6 +8954,7 @@ type ConversationChannelHealth = {
     connected: boolean;
     isActive: boolean;
     hasPlugin: boolean;
+    bindingReady: boolean;
     whatsappPhoneNumberId: string | null;
     message: string;
     missingRequirements: string[];
@@ -8994,13 +8995,6 @@ async function buildConversationChannelHealth(salonId: number): Promise<Conversa
 
   const instagramStatusRaw = typeof instagramMeta.status === 'string' ? instagramMeta.status.trim().toUpperCase() : 'NOT_CONNECTED';
   const instagramStatus = instagramStatusRaw || 'NOT_CONNECTED';
-  const instagramConnected = instagramStatus === 'CONNECTED';
-  const instagramMessage =
-    typeof instagramMeta.message === 'string' && instagramMeta.message.trim()
-      ? instagramMeta.message.trim()
-      : instagramConnected
-        ? 'Instagram connected.'
-        : 'Instagram not connected.';
   const instagramBindings = bindings
     .filter((item) => item.channel === 'INSTAGRAM')
     .map((item) => (typeof item.externalAccountId === 'string' ? item.externalAccountId.trim() : ''))
@@ -9008,6 +9002,16 @@ async function buildConversationChannelHealth(salonId: number): Promise<Conversa
   const instagramHasToken =
     typeof instagramMeta.accessToken === 'string' && instagramMeta.accessToken.trim().length > 0;
   const instagramBindingReady = instagramBindings.length > 0 && instagramHasToken;
+  const instagramConnected =
+    instagramStatus === 'CONNECTED' ||
+    instagramStatus === 'DEGRADED' ||
+    instagramBindingReady;
+  const instagramMessage =
+    typeof instagramMeta.message === 'string' && instagramMeta.message.trim()
+      ? instagramMeta.message.trim()
+      : instagramConnected
+        ? 'Instagram connected.'
+        : 'Instagram not connected.';
   const instagramMissingRequirements = [
     ...(instagramConnected ? [] : ['not_connected']),
     ...(instagramHasToken ? [] : ['missing_access_token']),
@@ -9025,7 +9029,8 @@ async function buildConversationChannelHealth(salonId: number): Promise<Conversa
     (typeof faq.whatsappPhoneNumberId === 'string' && faq.whatsappPhoneNumberId.trim()) ||
     whatsappBindings[0] ||
     null;
-  const whatsappConnected = Boolean(hasPlugin && (isActive || whatsappBindings.length > 0 || whatsappPhoneNumberId));
+  const whatsappBindingReady = whatsappBindings.length > 0;
+  const whatsappConnected = Boolean(hasPlugin && whatsappBindingReady && (isActive || whatsappPhoneNumberId));
   const whatsappMessage = whatsappConnected
     ? 'WhatsApp connected.'
     : hasPlugin
@@ -9049,6 +9054,7 @@ async function buildConversationChannelHealth(salonId: number): Promise<Conversa
       connected: whatsappConnected,
       isActive,
       hasPlugin,
+      bindingReady: whatsappBindingReady,
       whatsappPhoneNumberId,
       message: whatsappMessage,
       missingRequirements: whatsappMissingRequirements,

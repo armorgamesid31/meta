@@ -1013,6 +1013,10 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
     const igWebhookSubscribedLikely =
       store.instagram.status === 'CONNECTED' &&
       !store.instagram.lastError;
+    const igConnected =
+      (store.instagram.status === 'CONNECTED' || store.instagram.status === 'DEGRADED') &&
+      igBindingIds.length > 0 &&
+      igTokenLikelyValid;
     const igMissingRequirements: string[] = [];
     if (!store.instagram.accessToken) igMissingRequirements.push('missing_access_token');
     if (!igBindingIds.length) igMissingRequirements.push('missing_binding');
@@ -1020,10 +1024,16 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
     if (!store.instagram.lastWebhookAt) igMissingRequirements.push('webhook_not_observed');
     if (!igWebhookSubscribedLikely) igMissingRequirements.push('webhook_subscription_unconfirmed');
 
+    const waTokenLikelyValid = Boolean(store.whatsapp.accessToken && store.whatsapp.lastProbeOk);
+    const waConnected =
+      (store.whatsapp.status === 'CONNECTED' || store.whatsapp.status === 'DEGRADED') &&
+      waBindingIds.length > 0 &&
+      waTokenLikelyValid;
+
     return res.status(200).json({
       instagram: {
         ...store.instagram,
-        connected: store.instagram.status === 'CONNECTED',
+        connected: igConnected,
         bindingReady: igBindingIds.length > 0 && igTokenLikelyValid,
         activeBindingIds: igBindingIds,
         diagnostics: {
@@ -1036,16 +1046,17 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
       },
       whatsapp: {
         ...store.whatsapp,
-        connected: store.whatsapp.status === 'CONNECTED',
-        bindingReady: waBindingIds.length > 0,
+        connected: waConnected,
+        bindingReady: waBindingIds.length > 0 && waTokenLikelyValid,
         activeBindingIds: waBindingIds,
         diagnostics: {
-          tokenValid: Boolean(store.whatsapp.accessToken && store.whatsapp.lastProbeOk),
+          tokenValid: waTokenLikelyValid,
           bindingExists: waBindingIds.length > 0,
           lastWebhookAt: null,
           webhookSubscribedLikely: null,
           missingRequirements: [
             ...(store.whatsapp.accessToken ? [] : ['missing_access_token']),
+            ...(waTokenLikelyValid ? [] : ['token_not_verified']),
             ...(waBindingIds.length > 0 ? [] : ['missing_binding']),
           ],
         },
