@@ -6,20 +6,20 @@ import { UserRole } from '@prisma/client';
 import { createAuthTokens, revokeRefreshToken, rotateRefreshToken } from '../services/mobileAuth.js';
 import { ensureSalonServiceCategories } from '../services/salonCategorySetup.js';
 import { ensureSalonAccessSeed } from '../services/accessControl.js';
+import { activateInvite, validateInvite } from '../services/inviteService.js';
+import { createPhoneVerification, verifyPhoneCode } from '../services/phoneVerification.js';
+import { normalizeDigitsOnly } from '../services/phoneValidation.js';
 
 const router = Router();
 
-// Test route to verify auth routes are loaded
 router.get('/test', (req, res) => {
   res.json({ message: 'Auth routes working' });
 });
 
-// Test POST route
 router.post('/test-post', (req, res) => {
   res.json({ message: 'POST routes working', body: req.body });
 });
 
-// POST /auth/register-salon - Register a new salon
 router.post('/register-salon', async (req: any, res: any) => {
   const { email, password, salonName } = req.body;
 
@@ -30,7 +30,7 @@ router.post('/register-salon', async (req: any, res: any) => {
   try {
     const existingUser = await prisma.salonUser.findFirst({ where: { email } });
     if (existingUser) {
-      return res.status(409).json({ message: 'Bu email adresi ile zaten bir kullanıcı var.' });
+      return res.status(409).json({ message: 'Bu email adresi ile zaten bir kullanici var.' });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -62,10 +62,10 @@ router.post('/register-salon', async (req: any, res: any) => {
       console.error('Salon access seed warning:', accessSeedError);
     }
 
-    const ownerUser = salon.users.find(user => user.role === UserRole.OWNER);
+    const ownerUser = salon.users.find((user) => user.role === UserRole.OWNER);
 
     if (!ownerUser) {
-      return res.status(500).json({ message: 'Sahip kullanıcısı oluşturulamadı.' });
+      return res.status(500).json({ message: 'Sahip kullanicisi olusturulamadi.' });
     }
 
     const { accessToken, refreshToken } = await createAuthTokens({
@@ -82,33 +82,62 @@ router.post('/register-salon', async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Salon registration error:', error);
-    res.status(500).json({ message: 'Sunucu hatası.' });
+    res.status(500).json({ message: 'Sunucu hatasi.' });
   }
 });
 
-// POST /auth/login - Login a user
 router.post('/login', async (req: any, res: any) => {
-  const { email, password } = req.body;
+  const identifier = String(req.body?.identifier || req.body?.email || '').trim();
+  const password = String(req.body?.password || '');
 
-  if (!email || !password) {
-    return res.status(400).json({ message: 'Email and password are required.' });
+  if (!identifier || !password) {
+    return res.status(400).json({ message: 'identifier and password are required.' });
   }
 
   try {
-    const user = await prisma.salonUser.findFirst({
-      where: { email },
+    const normalizedEmail = identifier.toLowerCase();
+    const normalizedPhone = normalizeDigitsOnly(identifier);
+    const users = await prisma.salonUser.findMany({
+      where: {
+        OR: [{ email: normalizedEmail }, ...(normalizedPhone ? [{ phone: normalizedPhone }] : [])],
+      },
+      orderBy: { id: 'asc' },
     });
 
-    if (!user) {
-      return res.status(401).json({ message: 'Hatalı giriş bilgileri.' });
+    if (!users.length) {
+      return res.status(401).json({ message: 'Hatali giris bilgileri.' });
     }
-    if (!user.isActive) {
+
+    const activeUsers = users.filter((u) => u.isActive);
+    if (!activeUsers.length) {
       return res.status(403).json({ message: 'User account is inactive.' });
     }
 
-    const passwordMatch = await bcrypt.compare(password, user.passwordHash);
-    if (!passwordMatch) {
-      return res.status(401).json({ message: 'Hatalı giriş bilgileri.' });
+    const passwordValidUsers: typeof activeUsers = [];
+    for (const u of activeUsers) {
+      const ok = await bcrypt.compare(password, u.passwordHash);
+      if (ok) passwordValidUsers.push(u);
+    }
+    if (!passwordValidUsers.length) {
+      return res.status(401).json({ message: 'Hatali giris bilgileri.' });
+    }
+
+    if (passwordValidUsers.length > 1 && !req.body?.salonId) {
+      return res.status(200).json({
+        requiresSalonSelection: true,
+        salons: passwordValidUsers.map((u) => ({
+          salonId: u.salonId,
+          role: u.role,
+          email: u.email,
+          userId: u.id,
+        })),
+      });
+    }
+
+    const requestedSalonId = Number(req.body?.salonId || 0);
+    const user = requestedSalonId > 0 ? passwordValidUsers.find((u) => u.salonId === requestedSalonId) || null : passwordValidUsers[0];
+    if (!user) {
+      return res.status(404).json({ message: 'Selected salon membership was not found.' });
     }
 
     await prisma.salonUser.update({
@@ -123,7 +152,7 @@ router.post('/login', async (req: any, res: any) => {
     } as any);
     await ensureSalonAccessSeed(user.salonId);
 
-    res.status(200).json({
+    return res.status(200).json({
       token: accessToken,
       accessToken,
       refreshToken,
@@ -133,15 +162,165 @@ router.post('/login', async (req: any, res: any) => {
         role: user.role,
         salonId: user.salonId,
         passwordResetRequired: user.passwordResetRequired === true,
-      }
+      },
+      salons: passwordValidUsers.map((u) => ({ salonId: u.salonId, role: u.role, email: u.email, userId: u.id })),
     });
   } catch (error) {
     console.error('Login error:', error);
-    res.status(500).json({ message: 'Sunucu hatası.' });
+    return res.status(500).json({ message: 'Sunucu hatasi.' });
   }
 });
 
-// POST /auth/refresh - Rotate refresh token and issue new access token
+router.post('/invites/validate', async (req: any, res: any) => {
+  try {
+    const payload = await validateInvite({ code: req.body?.code, token: req.body?.token });
+    if (!payload) {
+      return res.status(404).json({ message: 'Invite not found or expired.' });
+    }
+    return res.status(200).json(payload);
+  } catch (error: any) {
+    return res.status(400).json({ message: error?.message || 'Invite validation failed.' });
+  }
+});
+
+router.post('/invites/send-otp', async (req: any, res: any) => {
+  try {
+    const validated = await validateInvite({ code: req.body?.code, token: req.body?.token });
+    if (!validated) {
+      return res.status(404).json({ message: 'Invite not found or expired.' });
+    }
+    const phone = normalizeDigitsOnly(req.body?.phone || validated.user.phone || '');
+    if (!phone) {
+      return res.status(400).json({ message: 'phone is required.' });
+    }
+    const verification = await createPhoneVerification({
+      salonId: validated.salon.id,
+      phone,
+      countryIso: String(req.body?.countryIso || 'TR').trim().toUpperCase(),
+      purpose: 'BOOKING_REGISTER',
+      payload: { authFlow: 'invite_activation', inviteId: validated.inviteId },
+      customerId: null,
+    });
+    return res.status(200).json({ verificationId: verification.id });
+  } catch (error: any) {
+    return res.status(400).json({ message: error?.message || 'Unable to send OTP.' });
+  }
+});
+
+router.post('/invites/verify-otp', async (req: any, res: any) => {
+  const verificationId = String(req.body?.verificationId || '');
+  const code = String(req.body?.code || '');
+  if (!verificationId || !code) {
+    return res.status(400).json({ message: 'verificationId and code are required.' });
+  }
+  try {
+    const verificationRef = await prisma.customerPhoneVerification.findUnique({
+      where: { id: verificationId },
+      select: { salonId: true },
+    });
+    if (!verificationRef) {
+      return res.status(404).json({ message: 'Verification not found.' });
+    }
+    const verification = await verifyPhoneCode({ verificationId, salonId: verificationRef.salonId, code });
+    return res.status(200).json({ verified: true, verificationId: verification.id });
+  } catch (error: any) {
+    return res.status(400).json({ message: error?.message || 'OTP verification failed.' });
+  }
+});
+
+router.post('/invites/activate', async (req: any, res: any) => {
+  try {
+    const verificationId = String(req.body?.verificationId || '').trim();
+    if (!verificationId) {
+      return res.status(400).json({ message: 'verificationId is required.' });
+    }
+    const verification = await prisma.customerPhoneVerification.findUnique({ where: { id: verificationId } });
+    if (!verification || verification.status !== 'VERIFIED') {
+      return res.status(400).json({ message: 'Phone verification is required before activation.' });
+    }
+
+    const result = await activateInvite({
+      code: req.body?.code,
+      token: req.body?.token,
+      password: req.body?.password,
+      firstName: req.body?.firstName,
+      lastName: req.body?.lastName,
+      phone: req.body?.phone,
+      email: req.body?.email,
+    });
+    const user = await prisma.salonUser.findUnique({ where: { id: result.userId } });
+    if (!user) {
+      return res.status(404).json({ message: 'Activated user not found.' });
+    }
+    const tokens = await createAuthTokens({ id: user.id, salonId: user.salonId, role: user.role as string } as any);
+    return res.status(200).json({
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      user: { id: user.id, email: user.email, role: user.role, salonId: user.salonId },
+    });
+  } catch (error: any) {
+    return res.status(400).json({ message: error?.message || 'Invite activation failed.' });
+  }
+});
+
+router.post('/password/forgot/start', async (req: any, res: any) => {
+  const phone = normalizeDigitsOnly(req.body?.phone || '');
+  if (!phone) {
+    return res.status(400).json({ message: 'phone is required.' });
+  }
+  const user = await prisma.salonUser.findFirst({ where: { phone, isActive: true }, select: { id: true, salonId: true } });
+  if (!user) {
+    return res.status(404).json({ message: 'User not found for phone.' });
+  }
+  try {
+    const verification = await createPhoneVerification({
+      salonId: user.salonId,
+      phone,
+      countryIso: String(req.body?.countryIso || 'TR').trim().toUpperCase(),
+      purpose: 'BOOKING_REGISTER',
+      payload: { authFlow: 'password_reset', userId: user.id },
+      customerId: null,
+    });
+    return res.status(200).json({ verificationId: verification.id });
+  } catch (error: any) {
+    return res.status(400).json({ message: error?.message || 'Unable to send verification code.' });
+  }
+});
+
+router.post('/password/forgot/verify', async (req: any, res: any) => {
+  try {
+    const verificationId = String(req.body?.verificationId || '');
+    const verificationRef = await prisma.customerPhoneVerification.findUnique({ where: { id: verificationId }, select: { salonId: true } });
+    if (!verificationRef) {
+      return res.status(404).json({ message: 'Verification not found.' });
+    }
+    const verification = await verifyPhoneCode({ verificationId, salonId: verificationRef.salonId, code: String(req.body?.code || '') });
+    return res.status(200).json({ verified: true, verificationId: verification.id });
+  } catch (error: any) {
+    return res.status(400).json({ message: error?.message || 'Verification failed.' });
+  }
+});
+
+router.post('/password/forgot/complete', async (req: any, res: any) => {
+  const verificationId = String(req.body?.verificationId || '');
+  const newPassword = String(req.body?.newPassword || '');
+  if (!verificationId || newPassword.length < 8) {
+    return res.status(400).json({ message: 'verificationId and min 8-char newPassword are required.' });
+  }
+  const verification = await prisma.customerPhoneVerification.findUnique({ where: { id: verificationId } });
+  if (!verification || verification.status !== 'VERIFIED') {
+    return res.status(400).json({ message: 'Verification is not completed.' });
+  }
+  const payload = (verification.payload || {}) as any;
+  const userId = Number(payload.userId || 0);
+  if (!userId) {
+    return res.status(400).json({ message: 'Invalid verification payload.' });
+  }
+  const hashedPassword = await bcrypt.hash(newPassword, 10);
+  await prisma.salonUser.update({ where: { id: userId }, data: { passwordHash: hashedPassword, passwordResetRequired: false } });
+  return res.status(200).json({ ok: true });
+});
+
 router.post('/refresh', async (req: any, res: any) => {
   const { refreshToken } = req.body || {};
   const startedAt = Date.now();
@@ -174,14 +353,12 @@ router.post('/refresh', async (req: any, res: any) => {
         passwordResetRequired: rotated.user.passwordResetRequired === true,
       },
     });
-
   } catch (error) {
     console.error(`[auth/refresh] failed latencyMs=${Date.now() - startedAt} reason=exception`, error);
     return res.status(500).json({ message: 'Internal server error.', code: 'AUTH_RECOVERY_FAILED' });
   }
 });
 
-// POST /auth/logout - Revoke refresh token
 router.post('/logout', async (req: any, res: any) => {
   const { refreshToken } = req.body || {};
 
@@ -198,16 +375,12 @@ router.post('/logout', async (req: any, res: any) => {
   }
 });
 
-// GET /auth/me - Protected route to get authenticated user info
 router.get('/me', authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
     return res.status(401).json({ message: 'Unauthorized.' });
   }
   try {
-    const user = await prisma.salonUser.findUnique({
-      where: { id: req.user.userId },
-      select: { id: true, email: true, role: true, salonId: true },
-    });
+    const user = await prisma.salonUser.findUnique({ where: { id: req.user.userId }, select: { id: true, email: true, role: true, salonId: true } });
 
     if (!user) {
       return res.status(404).json({ message: 'User not found.' });

@@ -33,6 +33,10 @@ import internalAgentOutboundRoutes from './routes/internalAgentOutbound.js';
 import internalImportsRoutes from './routes/internalImports.js';
 import internalWebsiteRoutes from './routes/internalWebsite.js';
 import channelWebhooksRoutes from './routes/channelWebhooks.js';
+import internalBillingRoutes from './routes/internalBilling.js';
+import billingRoutes from './routes/billing.js';
+import publicRoutes from './routes/public.js';
+import { processStripeWebhook } from './services/stripeBilling.js';
 import { multiTenantMiddleware } from './middleware/multiTenant.js';
 import { authenticateToken } from './middleware/auth.js';
 import { requireAdminRoutePermission } from './middleware/access.js';
@@ -139,6 +143,21 @@ const corsOptions: cors.CorsOptions = {
 };
 
 app.use(cors(corsOptions));
+
+app.post('/api/billing/stripe/webhook', express.raw({ type: 'application/json' }), async (req: any, res) => {
+  const signature = String(req.headers['stripe-signature'] || '').trim();
+  if (!signature) {
+    return res.status(400).json({ message: 'Missing stripe-signature header.' });
+  }
+  try {
+    const result = await processStripeWebhook(req.body, signature);
+    return res.status(200).json({ ok: true, ...result });
+  } catch (error: any) {
+    console.error('Stripe webhook processing failed:', error);
+    return res.status(400).json({ message: error?.message || 'Webhook verification failed.' });
+  }
+});
+
 app.use((req, res, next) => {
   if (req.originalUrl.includes('/website/generate')) {
     console.log(`[GLOBAL_DEBUG] Incoming ${req.method} to ${req.originalUrl} from ${req.ip}`);
@@ -208,6 +227,7 @@ app.use('/api/internal/outbound', internalOutboundRoutes);
 app.use('/api/internal/agent-outbound', internalAgentOutboundRoutes);
 app.use('/api/internal/imports', internalImportsRoutes);
 app.use('/api/internal/website', internalWebsiteRoutes);
+app.use('/api/internal/billing', internalBillingRoutes);
 app.use('/api/webhooks', channelWebhooksRoutes);
 
 // Apply tenant middleware to ALL other API routes
@@ -230,6 +250,8 @@ app.use('/api/bookings', bookingRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/booking', bookingContextRoutes);
 app.use('/api/waitlist', waitlistRoutes);
+app.use('/api/public', publicRoutes);
+app.use('/api/billing', billingRoutes);
 app.use('/api/app/chakra', chakraRoutes);
 app.use('/api/app/meta-direct', metaDirectRoutes);
 app.use('/availability', availabilityRoutes);
