@@ -99,3 +99,20 @@
 [dotenv@17.2.3] injecting env (0) from .env -- tip: 🗂️ backup and recover secrets: https://dotenvx.com/ops
 [conversation-realtime-ws] websocket server initialized at /api/admin/conversations/ws
 🚀 Server running on 0.0.0.0:3000
+06:42:18 [tsx] change in ./src\server.ts Restarting...
+c06:43:05 [tsx] change in ./src\routes\auth.ts Rerunning...
+c06:43:14 [tsx] change in ./src\routes\auth.ts Rerunning...
+c06:48:55 [tsx] change in ./src\services\stripeBilling.ts Rerunning...
+c[dotenv@17.2.3] injecting env (0) from .env -- tip: 🔐 prevent committing .env to code: https://dotenvx.com/precommit
+[dotenv@17.2.3] injecting env (0) from .env -- tip: ⚙️  override existing env vars with { override: true }
+[conversation-realtime-ws] websocket server initialized at /api/admin/conversations/ws
+06:54:53 [tsx] change in ./src\routes\auth.ts Rerunning...
+c[dotenv@17.2.3] injecting env (0) from .env -- tip: 📡 add observability to secrets: https://dotenvx.com/ops
+[dotenv@17.2.3] injecting env (0) from .env -- tip: ⚙️  write to custom object with { processEnv: myObject }
+[conversation-realtime-ws] websocket server initialized at /api/admin/conversations/ws
+🚀 Server running on 0.0.0.0:3000
+06:55:42 [tsx] change in ./src\services\inviteService.ts Restarting...
+c[dotenv@17.2.3] injecting env (0) from .env -- tip: 👥 sync secrets across teammates & machines: https://dotenvx.com/ops
+[dotenv@17.2.3] injecting env (0) from .env -- tip: 🔑 add access controls to secrets: https://dotenvx.com/ops
+[conversation-realtime-ws] websocket server initialized at /api/admin/conversations/ws
+🚀 Server running on 0.0.0.0:3000
