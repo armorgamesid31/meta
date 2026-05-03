@@ -917,7 +917,7 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
           : null;
     let liveHasAuth = false;
     let liveHasEnabledPhone = false;
-    const activeWhatsappBinding = await prisma.salonChannelBinding.findFirst({
+    let activeWhatsappBinding = await prisma.salonChannelBinding.findFirst({
       where: {
         salonId: salon.id,
         channel: 'WHATSAPP',
@@ -942,6 +942,13 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
 
         pluginActive = liveActive;
         whatsappPhoneNumberId = liveWhatsappPhoneNumberId || whatsappPhoneNumberId;
+        const hasActiveBindingBeforeSync =
+          typeof activeWhatsappBinding?.externalAccountId === 'string' &&
+          activeWhatsappBinding.externalAccountId.trim().length > 0;
+        const needsBindingBackfill =
+          !hasActiveBindingBeforeSync &&
+          typeof whatsappPhoneNumberId === 'string' &&
+          whatsappPhoneNumberId.trim().length > 0;
 
         if (shouldSyncAnswers) {
           await updateSalonChakraState(salon.id, {
@@ -954,7 +961,28 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
             whatsappPhoneNumberId,
             whatsappConnectedAt: pluginActive ? new Date().toISOString() : null,
           });
+        } else if (needsBindingBackfill) {
+          await updateSalonChakraState(
+            salon.id,
+            {
+              chakraPhoneNumberId: whatsappPhoneNumberId,
+            },
+            {
+              allowOwnershipTransfer: false,
+            },
+          );
         }
+
+        activeWhatsappBinding = await prisma.salonChannelBinding.findFirst({
+          where: {
+            salonId: salon.id,
+            channel: 'WHATSAPP',
+            isActive: true,
+          },
+          select: {
+            externalAccountId: true,
+          },
+        });
       } catch (liveStatusError: any) {
         if (isPluginNotFoundError(liveStatusError)) {
           await updateSalonChakraState(salon.id, {
