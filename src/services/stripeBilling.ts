@@ -2,6 +2,7 @@ import Stripe from 'stripe';
 import { prisma } from '../prisma.js';
 import { createOwnerPendingProvisioning } from './inviteService.js';
 import { getPlanByKey } from './billingCatalog.js';
+import { attachReferredSalon } from './referralService.js';
 
 let stripeClient: Stripe | null = null;
 
@@ -21,6 +22,7 @@ export async function createSubscriptionCheckoutSession(input: {
   ownerEmail: string;
   ownerPhone: string;
   salonNameDraft?: string;
+  referralCode?: string;
   locale?: string;
   successUrl: string;
   cancelUrl: string;
@@ -49,6 +51,7 @@ export async function createSubscriptionCheckoutSession(input: {
       ownerEmail: input.ownerEmail,
       ownerPhone: input.ownerPhone,
       salonNameDraft: input.salonNameDraft || '',
+      referralCode: String(input.referralCode || '').trim().toUpperCase(),
     },
   });
   return { checkoutUrl: session.url || '', sessionId: session.id };
@@ -84,6 +87,7 @@ export async function processStripeWebhook(rawBody: Buffer, signature: string) {
     const ownerName = String(md.ownerName || '').trim();
     const planKey = String(md.planKey || '').trim().toLowerCase();
     const salonNameDraft = String(md.salonNameDraft || '').trim();
+    const referralCode = String(md.referralCode || '').trim().toUpperCase();
 
     if (!ownerEmail || !ownerPhone || !ownerName || !planKey) {
       throw new Error('CHECKOUT_METADATA_MISSING');
@@ -106,6 +110,13 @@ export async function processStripeWebhook(rawBody: Buffer, signature: string) {
         status: 'pending_activation',
       },
     });
+
+    if (referralCode) {
+      await attachReferredSalon({
+        referralCode,
+        referredSalonId: provisioned.salonId,
+      });
+    }
   }
 
   if (event.type === 'customer.subscription.updated' || event.type === 'customer.subscription.deleted') {

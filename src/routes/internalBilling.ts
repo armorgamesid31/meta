@@ -10,6 +10,7 @@ router.post('/checkout/session', async (req: any, res: any) => {
   const ownerEmail = String(req.body?.ownerEmail || '').trim().toLowerCase();
   const ownerPhone = String(req.body?.ownerPhone || '').trim();
   const salonNameDraft = String(req.body?.salonNameDraft || '').trim();
+  const referralCode = String(req.body?.referralCode || '').trim().toUpperCase();
   const locale = String(req.body?.locale || 'tr').trim().toLowerCase();
   const successUrl = String(req.body?.successUrl || '').trim();
   const cancelUrl = String(req.body?.cancelUrl || '').trim();
@@ -28,6 +29,7 @@ router.post('/checkout/session', async (req: any, res: any) => {
       ownerEmail,
       ownerPhone,
       salonNameDraft,
+      referralCode,
       locale,
       successUrl,
       cancelUrl,
@@ -40,4 +42,3 @@ router.post('/checkout/session', async (req: any, res: any) => {
 });
 
 export default router;
-

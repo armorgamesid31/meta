@@ -80,6 +80,10 @@ model Salon {
   users                       SalonUser[]
   subscriptions               SalonSubscription[]
   invites                     Invite[]
+  referralCodes               ReferralCode[]                  @relation("ReferrerSalon")
+  referralInvitesSent         ReferralInvite[]                @relation("ReferrerSalonInvites")
+  referredInvites             ReferralInvite[]                @relation("ReferredSalon")
+  referralRewards             ReferralReward[]
   services                    Service[]
   ServiceCategory             ServiceCategory[]
   serviceGroups               ServiceGroup[]
@@ -211,6 +215,51 @@ model StripeWebhookEvent {
   eventId     String   @unique
   eventType   String
   processedAt DateTime @default(now()) @db.Timestamp(6)
+}
+
+model ReferralCode {
+  id             Int       @id @default(autoincrement())
+  salonId        Int
+  code           String    @unique
+  isActive       Boolean   @default(true)
+  createdAt      DateTime? @default(now()) @db.Timestamp(6)
+  updatedAt      DateTime? @default(now()) @updatedAt @db.Timestamp(6)
+  referrerSalon  Salon     @relation("ReferrerSalon", fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  invites        ReferralInvite[]
+
+  @@index([salonId, isActive], map: "idx_referral_code_salon_active")
+}
+
+model ReferralInvite {
+  id               Int                  @id @default(autoincrement())
+  referralCodeId   Int
+  referrerSalonId  Int
+  referredSalonId  Int
+  status           ReferralInviteStatus @default(QUALIFIED)
+  createdAt        DateTime?            @default(now()) @db.Timestamp(6)
+  updatedAt        DateTime?            @default(now()) @updatedAt @db.Timestamp(6)
+  referralCode     ReferralCode         @relation(fields: [referralCodeId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  referrerSalon    Salon                @relation("ReferrerSalonInvites", fields: [referrerSalonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  referredSalon    Salon                @relation("ReferredSalon", fields: [referredSalonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  rewards          ReferralReward[]
+
+  @@unique([referredSalonId], map: "uq_referral_invite_referred_salon")
+  @@index([referrerSalonId, status], map: "idx_referral_invite_referrer_status")
+}
+
+model ReferralReward {
+  id               Int                  @id @default(autoincrement())
+  referralInviteId Int
+  salonId          Int
+  status           ReferralRewardStatus @default(PENDING)
+  rewardType       String               @default("FREE_MONTH")
+  notes            String?
+  createdAt        DateTime?            @default(now()) @db.Timestamp(6)
+  updatedAt        DateTime?            @default(now()) @updatedAt @db.Timestamp(6)
+  referralInvite   ReferralInvite       @relation(fields: [referralInviteId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  salon            Salon                @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([salonId, status], map: "idx_referral_reward_salon_status")
 }
 
 model Staff {
@@ -1867,6 +1916,18 @@ enum SalonLifecycleStatus {
   PENDING
   ACTIVE
   SUSPENDED
+}
+
+enum ReferralInviteStatus {
+  QUALIFIED
+  REWARDED
+  REJECTED
+}
+
+enum ReferralRewardStatus {
+  PENDING
+  APPLIED
+  CANCELLED
 }
 
 enum ChannelProfileFetchStatus {

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import { prisma } from '../prisma.js';
 import { createPortalSession } from '../services/stripeBilling.js';
+import { ensureSalonReferralCode } from '../services/referralService.js';
 
 const router = Router();
 
@@ -54,5 +55,25 @@ router.post('/subscription/portal-link', authenticateToken, async (req: any, res
   }
 });
 
-export default router;
+router.get('/referrals/me', authenticateToken, async (req: any, res: any) => {
+  if (!req.user?.salonId) {
+    return res.status(401).json({ message: 'Unauthorized.' });
+  }
+  const salonId = Number(req.user.salonId);
+  const referralCode = await ensureSalonReferralCode(salonId);
 
+  const [qualifiedCount, rewardedCount, pendingRewardCount] = await Promise.all([
+    prisma.referralInvite.count({ where: { referrerSalonId: salonId, status: 'QUALIFIED' } }),
+    prisma.referralInvite.count({ where: { referrerSalonId: salonId, status: 'REWARDED' } }),
+    prisma.referralReward.count({ where: { salonId, status: 'PENDING' } }),
+  ]);
+
+  return res.status(200).json({
+    referralCode,
+    qualifiedCount,
+    rewardedCount,
+    pendingRewardCount,
+  });
+});
+
+export default router;
