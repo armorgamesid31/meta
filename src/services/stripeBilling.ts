@@ -103,6 +103,7 @@ export async function createSubscriptionCheckoutSession(input: {
     mode: 'subscription',
     line_items: [{ price: plan.stripePriceId, quantity: 1 }],
     ...(discounts ? { discounts } : {}),
+    allow_promotion_codes: true,
     success_url: input.successUrl,
     cancel_url: input.cancelUrl,
     customer_email: input.ownerEmail,
