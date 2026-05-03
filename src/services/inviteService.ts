@@ -34,10 +34,11 @@ export async function createOwnerPendingProvisioning(input: {
   const ownerName = String(input.ownerName || '').trim();
   const salonName = String(input.salonName || '').trim();
 
-  const existingByEmail = await prisma.salonUser.findFirst({ where: { email: ownerEmail } });
   const existingByPhone = ownerPhone ? await prisma.salonUser.findFirst({ where: { phone: ownerPhone } }) : null;
-  if (existingByEmail || existingByPhone) {
-    throw new Error('OWNER_ALREADY_EXISTS');
+  // Email can already exist in another salon/user record in current model.
+  // Hard-block only phone collisions because phone is unique at DB level.
+  if (existingByPhone) {
+    throw new Error('OWNER_PHONE_ALREADY_EXISTS');
   }
 
   const inviteCode = randomBytes(4).toString('hex').toUpperCase();

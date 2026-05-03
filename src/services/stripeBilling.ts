@@ -165,6 +165,23 @@ export async function processStripeWebhook(rawBody: Buffer, signature: string) {
       failureReason: null,
     });
 
+    const stripeSubscriptionId = typeof session.subscription === 'string' ? session.subscription : null;
+    if (stripeSubscriptionId) {
+      const existingSubscription = await prisma.salonSubscription.findFirst({
+        where: { stripeSubscriptionId },
+        select: { id: true },
+      });
+      if (existingSubscription) {
+        await prisma.stripeWebhookEvent.create({
+          data: {
+            eventId: event.id,
+            eventType: event.type,
+          },
+        });
+        return { duplicate: false, eventType: event.type };
+      }
+    }
+
     const provisioned = await createOwnerPendingProvisioning({
       salonName: salonNameDraft || `${ownerName} Salonu`,
       ownerName,
