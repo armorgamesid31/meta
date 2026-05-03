@@ -16,6 +16,68 @@ function getStripe(): Stripe {
   return stripeClient;
 }
 
+type CheckoutAttemptStatus = 'PENDING' | 'COMPLETED' | 'ABANDONED' | 'FAILED';
+
+async function upsertCheckoutAttempt(
+  session: Stripe.Checkout.Session,
+  patch: {
+    status?: CheckoutAttemptStatus;
+    failureReason?: string | null;
+    completedAt?: Date | null;
+    failedAt?: Date | null;
+    abandonedAt?: Date | null;
+  } = {},
+) {
+  const md = session.metadata || {};
+  const planKey = String(md.planKey || '').trim().toLowerCase();
+  const ownerName = String(md.ownerName || '').trim();
+  const ownerEmail = String(md.ownerEmail || session.customer_details?.email || '').trim().toLowerCase();
+  const ownerPhone = String(md.ownerPhone || '').trim();
+  const salonNameDraft = String(md.salonNameDraft || '').trim();
+  const referralCode = String(md.referralCode || '').trim().toUpperCase();
+  const expiresAtUnix = Number(session.expires_at || 0);
+
+  if (!session.id || !planKey || !ownerName || !ownerEmail || !ownerPhone) {
+    return;
+  }
+
+  await prisma.stripeCheckoutAttempt.upsert({
+    where: { stripeCheckoutSessionId: session.id },
+    create: {
+      stripeCheckoutSessionId: session.id,
+      stripeCustomerId: typeof session.customer === 'string' ? session.customer : null,
+      stripeSubscriptionId: typeof session.subscription === 'string' ? session.subscription : null,
+      planKey,
+      ownerName,
+      ownerEmail,
+      ownerPhone,
+      salonNameDraft: salonNameDraft || null,
+      referralCode: referralCode || null,
+      status: patch.status || 'PENDING',
+      paymentStatus: String(session.payment_status || '').trim() || null,
+      amountTotal: typeof session.amount_total === 'number' ? session.amount_total : null,
+      currency: session.currency ? String(session.currency).toUpperCase() : null,
+      expiresAt: expiresAtUnix > 0 ? new Date(expiresAtUnix * 1000) : null,
+      completedAt: patch.completedAt || null,
+      failedAt: patch.failedAt || null,
+      abandonedAt: patch.abandonedAt || null,
+      failureReason: patch.failureReason || null,
+    },
+    update: {
+      stripeCustomerId: typeof session.customer === 'string' ? session.customer : null,
+      stripeSubscriptionId: typeof session.subscription === 'string' ? session.subscription : null,
+      paymentStatus: String(session.payment_status || '').trim() || null,
+      amountTotal: typeof session.amount_total === 'number' ? session.amount_total : null,
+      currency: session.currency ? String(session.currency).toUpperCase() : null,
+      status: patch.status,
+      completedAt: patch.completedAt,
+      failedAt: patch.failedAt,
+      abandonedAt: patch.abandonedAt,
+      failureReason: patch.failureReason === undefined ? undefined : patch.failureReason,
+    },
+  });
+}
+
 export async function createSubscriptionCheckoutSession(input: {
   planKey: string;
   ownerName: string;
@@ -54,6 +116,7 @@ export async function createSubscriptionCheckoutSession(input: {
       referralCode: String(input.referralCode || '').trim().toUpperCase(),
     },
   });
+  await upsertCheckoutAttempt(session, { status: 'PENDING' });
   return { checkoutUrl: session.url || '', sessionId: session.id };
 }
 
@@ -93,6 +156,14 @@ export async function processStripeWebhook(rawBody: Buffer, signature: string) {
       throw new Error('CHECKOUT_METADATA_MISSING');
     }
 
+    await upsertCheckoutAttempt(session, {
+      status: 'COMPLETED',
+      completedAt: new Date(),
+      failedAt: null,
+      abandonedAt: null,
+      failureReason: null,
+    });
+
     const provisioned = await createOwnerPendingProvisioning({
       salonName: salonNameDraft || `${ownerName} Salonu`,
       ownerName,
@@ -119,6 +190,24 @@ export async function processStripeWebhook(rawBody: Buffer, signature: string) {
     }
   }
 
+  if (event.type === 'checkout.session.expired') {
+    const session = event.data.object as Stripe.Checkout.Session;
+    await upsertCheckoutAttempt(session, {
+      status: 'ABANDONED',
+      abandonedAt: new Date(),
+      failureReason: 'checkout_session_expired',
+    });
+  }
+
+  if (event.type === 'checkout.session.async_payment_failed') {
+    const session = event.data.object as Stripe.Checkout.Session;
+    await upsertCheckoutAttempt(session, {
+      status: 'FAILED',
+      failedAt: new Date(),
+      failureReason: 'checkout_session_async_payment_failed',
+    });
+  }
+
   if (event.type === 'customer.subscription.updated' || event.type === 'customer.subscription.deleted') {
     const subscription = event.data.object as Stripe.Subscription;
     const nextStatus = String(subscription.status || '').toLowerCase();
@@ -133,6 +222,23 @@ export async function processStripeWebhook(rawBody: Buffer, signature: string) {
           : null,
       },
     });
+  }
+
+  if (event.type === 'invoice.payment_failed' || event.type === 'invoice.payment_action_required') {
+    const invoice = event.data.object as Stripe.Invoice;
+    const subscriptionValue = (invoice as any)?.subscription;
+    const stripeSubscriptionId =
+      typeof subscriptionValue === 'string' ? subscriptionValue : null;
+    if (stripeSubscriptionId) {
+      await prisma.stripeCheckoutAttempt.updateMany({
+        where: { stripeSubscriptionId },
+        data: {
+          status: 'FAILED',
+          failedAt: new Date(),
+          failureReason: event.type,
+        },
+      });
+    }
   }
 
   await prisma.stripeWebhookEvent.create({

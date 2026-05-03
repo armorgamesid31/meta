@@ -217,6 +217,34 @@ model StripeWebhookEvent {
   processedAt DateTime @default(now()) @db.Timestamp(6)
 }
 
+model StripeCheckoutAttempt {
+  id                      Int       @id @default(autoincrement())
+  stripeCheckoutSessionId String    @unique
+  stripeCustomerId        String?
+  stripeSubscriptionId    String?
+  planKey                 String
+  ownerName               String
+  ownerEmail              String
+  ownerPhone              String
+  salonNameDraft          String?
+  referralCode            String?
+  status                  String
+  paymentStatus           String?
+  amountTotal             Int?
+  currency                String?
+  expiresAt               DateTime? @db.Timestamp(6)
+  completedAt             DateTime? @db.Timestamp(6)
+  failedAt                DateTime? @db.Timestamp(6)
+  abandonedAt             DateTime? @db.Timestamp(6)
+  failureReason           String?
+  createdAt               DateTime  @default(now()) @db.Timestamp(6)
+  updatedAt               DateTime  @updatedAt @db.Timestamp(6)
+
+  @@index([status, createdAt], map: "idx_stripe_checkout_attempt_status_created")
+  @@index([ownerEmail, createdAt], map: "idx_stripe_checkout_attempt_owner_email_created")
+  @@index([stripeSubscriptionId], map: "idx_stripe_checkout_attempt_subscription")
+}
+
 model ReferralCode {
   id             Int       @id @default(autoincrement())
   salonId        Int
