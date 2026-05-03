@@ -43,3 +43,59 @@
 [dotenv@17.2.3] injecting env (0) from .env -- tip: 🔄 add secrets lifecycle management: https://dotenvx.com/ops
 [conversation-realtime-ws] websocket server initialized at /api/admin/conversations/ws
 🚀 Server running on 0.0.0.0:3000
+03:17:17 [tsx] change in ./src\routes\adminMobile.ts Restarting...
+c[dotenv@17.2.3] injecting env (0) from .env -- tip: 🗂️ backup and recover secrets: https://dotenvx.com/ops
+[dotenv@17.2.3] injecting env (0) from .env -- tip: 🛠️  run anywhere with `dotenvx run -- yourcommand`
+[conversation-realtime-ws] websocket server initialized at /api/admin/conversations/ws
+🚀 Server running on 0.0.0.0:3000
+03:17:31 [tsx] change in ./src\routes\adminMobile.ts Restarting...
+c[dotenv@17.2.3] injecting env (0) from .env -- tip: 🔐 prevent committing .env to code: https://dotenvx.com/precommit
+[dotenv@17.2.3] injecting env (0) from .env -- tip: ⚙️  suppress all logs with { quiet: true }
+[conversation-realtime-ws] websocket server initialized at /api/admin/conversations/ws
+03:18:19 [tsx] change in ./src\routes\adminMobile.ts Rerunning...
+c[dotenv@17.2.3] injecting env (0) from .env -- tip: ⚙️  load multiple .env files with { path: ['.env.local', '.env'] }
+[dotenv@17.2.3] injecting env (0) from .env -- tip: ⚙️  load multiple .env files with { path: ['.env.local', '.env'] }
+[conversation-realtime-ws] websocket server initialized at /api/admin/conversations/ws
+🚀 Server running on 0.0.0.0:3000
+03:18:31 [tsx] change in ./src\routes\adminMobile.ts Restarting...
+c[dotenv@17.2.3] injecting env (0) from .env -- tip: 🔑 add access controls to secrets: https://dotenvx.com/ops
+[dotenv@17.2.3] injecting env (0) from .env -- tip: ⚙️  suppress all logs with { quiet: true }
+[conversation-realtime-ws] websocket server initialized at /api/admin/conversations/ws
+🚀 Server running on 0.0.0.0:3000
+03:18:40 [tsx] change in ./src\routes\adminMobile.ts Restarting...
+c[dotenv@17.2.3] injecting env (0) from .env -- tip: 🗂️ backup and recover secrets: https://dotenvx.com/ops
+[dotenv@17.2.3] injecting env (0) from .env -- tip: 🔐 prevent committing .env to code: https://dotenvx.com/precommit
+[conversation-realtime-ws] websocket server initialized at /api/admin/conversations/ws
+03:18:50 [tsx] change in ./src\routes\adminMobile.ts Rerunning...
+c[dotenv@17.2.3] injecting env (0) from .env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
+[dotenv@17.2.3] injecting env (0) from .env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
+[conversation-realtime-ws] websocket server initialized at /api/admin/conversations/ws
+🚀 Server running on 0.0.0.0:3000
+03:18:59 [tsx] change in ./src\server.ts Restarting...
+c[dotenv@17.2.3] injecting env (0) from .env -- tip: ⚙️  suppress all logs with { quiet: true }
+[dotenv@17.2.3] injecting env (0) from .env -- tip: 🔑 add access controls to secrets: https://dotenvx.com/ops
+[conversation-realtime-ws] websocket server initialized at /api/admin/conversations/ws
+🚀 Server running on 0.0.0.0:3000
+03:39:19 [tsx] change in ./src\routes\auth.ts Restarting...
+c[dotenv@17.2.3] injecting env (0) from .env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
+[dotenv@17.2.3] injecting env (0) from .env -- tip: 🔐 encrypt with Dotenvx: https://dotenvx.com
+[conversation-realtime-ws] websocket server initialized at /api/admin/conversations/ws
+03:39:58 [tsx] change in ./src\routes\adminMobile.ts Rerunning...
+c[dotenv@17.2.3] injecting env (0) from .env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
+[dotenv@17.2.3] injecting env (0) from .env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
+[conversation-realtime-ws] websocket server initialized at /api/admin/conversations/ws
+🚀 Server running on 0.0.0.0:3000
+03:40:12 [tsx] unlink in ./src\routes\adminMobile.ts Restarting...
+c[dotenv@17.2.3] injecting env (0) from .env -- tip: ✅ audit secrets and track compliance: https://dotenvx.com/ops
+[dotenv@17.2.3] injecting env (0) from .env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
+[conversation-realtime-ws] websocket server initialized at /api/admin/conversations/ws
+03:40:19 [tsx] change in ./src\routes\adminMobile.ts Rerunning...
+c[dotenv@17.2.3] injecting env (0) from .env -- tip: 🔐 encrypt with Dotenvx: https://dotenvx.com
+[dotenv@17.2.3] injecting env (0) from .env -- tip: 🔑 add access controls to secrets: https://dotenvx.com/ops
+[conversation-realtime-ws] websocket server initialized at /api/admin/conversations/ws
+🚀 Server running on 0.0.0.0:3000
+03:40:31 [tsx] change in ./src\server.ts Restarting...
+c[dotenv@17.2.3] injecting env (0) from .env -- tip: ⚙️  enable debug logging with { debug: true }
+[dotenv@17.2.3] injecting env (0) from .env -- tip: 🗂️ backup and recover secrets: https://dotenvx.com/ops
+[conversation-realtime-ws] websocket server initialized at /api/admin/conversations/ws
+🚀 Server running on 0.0.0.0:3000
