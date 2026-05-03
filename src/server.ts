@@ -155,9 +155,11 @@ app.get("/health", async (_req, res) => {
     const dbStartedAt = Date.now();
     await prisma.$queryRaw`SELECT 1`;
     const dbLatencyMs = Date.now() - dbStartedAt;
+    const dbStatus = dbLatencyMs > 800 ? 'degraded' : 'healthy';
     res.status(200).json({ 
       status: "healthy",
       database: "connected",
+      dbStatus,
       dbLatencyMs,
       latencyMs: Date.now() - startedAt,
       timestamp: new Date().toISOString(),

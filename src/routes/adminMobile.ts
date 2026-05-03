@@ -2625,6 +2625,7 @@ router.get('/customers', authenticateToken, async (req: any, res: any) => {
     const nextCursor = hasMore ? String(items[items.length - 1]?.id || '') : null;
 
     const latencyMs = Date.now() - startedAt;
+    res.setHeader('x-response-time-ms', String(latencyMs));
     console.info(
       `[admin/customers] requestId=${requestId} salonId=${salonId} limit=${limit} cursor=${cursorRaw || ''} search=${JSON.stringify(search)} withStats=${withStats} rows=${items.length} hasMore=${hasMore} latencyMs=${latencyMs}`,
     );
@@ -2658,9 +2659,10 @@ router.get('/customers', authenticateToken, async (req: any, res: any) => {
       return res.status(504).json({
         message: 'Müşteri listesi zaman aşımına uğradı. Lütfen tekrar deneyin.',
         requestId,
+        code: 'CUSTOMERS_QUERY_TIMEOUT',
       });
     }
-    return res.status(500).json({ message: 'Internal server error.' });
+    return res.status(500).json({ message: 'Internal server error.', requestId, code: 'UPSTREAM_UNAVAILABLE' });
   }
 });
 

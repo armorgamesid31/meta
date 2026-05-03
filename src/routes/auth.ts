@@ -144,20 +144,24 @@ router.post('/login', async (req: any, res: any) => {
 // POST /auth/refresh - Rotate refresh token and issue new access token
 router.post('/refresh', async (req: any, res: any) => {
   const { refreshToken } = req.body || {};
+  const startedAt = Date.now();
 
   if (!refreshToken || typeof refreshToken !== 'string') {
-    return res.status(400).json({ message: 'refreshToken is required.' });
+    return res.status(400).json({ message: 'refreshToken is required.', code: 'AUTH_RECOVERY_FAILED' });
   }
 
   try {
     const rotated = await rotateRefreshToken(refreshToken);
     if (!rotated) {
-      return res.status(401).json({ message: 'Invalid refresh token.' });
+      console.warn(`[auth/refresh] rejected latencyMs=${Date.now() - startedAt} reason=invalid-refresh-token`);
+      return res.status(401).json({ message: 'Invalid refresh token.', code: 'AUTH_RECOVERY_FAILED' });
     }
     if (!rotated.user.isActive) {
-      return res.status(403).json({ message: 'User account is inactive.' });
+      console.warn(`[auth/refresh] rejected latencyMs=${Date.now() - startedAt} reason=user-inactive userId=${rotated.user.id}`);
+      return res.status(403).json({ message: 'User account is inactive.', code: 'AUTH_RECOVERY_FAILED' });
     }
 
+    console.info(`[auth/refresh] success latencyMs=${Date.now() - startedAt} userId=${rotated.user.id} salonId=${rotated.user.salonId}`);
     return res.status(200).json({
       token: rotated.accessToken,
       accessToken: rotated.accessToken,
@@ -172,8 +176,8 @@ router.post('/refresh', async (req: any, res: any) => {
     });
 
   } catch (error) {
-    console.error('Refresh token error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    console.error(`[auth/refresh] failed latencyMs=${Date.now() - startedAt} reason=exception`, error);
+    return res.status(500).json({ message: 'Internal server error.', code: 'AUTH_RECOVERY_FAILED' });
   }
 });
 
