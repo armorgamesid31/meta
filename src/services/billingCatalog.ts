@@ -16,9 +16,8 @@ function readPlan(planKey: string, envKey: string, fallbackLabel: string): Billi
 
 export function getBillingPlans(): BillingPlanConfig[] {
   return [
-    readPlan('launch', 'STRIPE_PRICE_LAUNCH', 'Launch'),
-    readPlan('studio', 'STRIPE_PRICE_STUDIO', 'Studio'),
-    readPlan('signature', 'STRIPE_PRICE_SIGNATURE', 'Signature'),
+    readPlan('temel', 'STRIPE_PRICE_TEMEL', 'Temel'),
+    readPlan('profesyonel_plus', 'STRIPE_PRICE_PROFESSIONAL_PLUS', 'Profesyonel+'),
   ].filter((item): item is BillingPlanConfig => Boolean(item));
 }
 
@@ -27,4 +26,3 @@ export function getPlanByKey(planKey: string): BillingPlanConfig | null {
   if (!normalized) return null;
   return getBillingPlans().find((item) => item.planKey === normalized) || null;
 }
-

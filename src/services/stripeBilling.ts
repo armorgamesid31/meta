@@ -30,9 +30,15 @@ export async function createSubscriptionCheckoutSession(input: {
     throw new Error('PLAN_NOT_FOUND');
   }
   const stripe = getStripe();
+  const proIntroCouponId = String(process.env.STRIPE_COUPON_PROFESSIONAL_PLUS_INTRO || '').trim();
+  const discounts =
+    plan.planKey === 'profesyonel_plus' && proIntroCouponId
+      ? [{ coupon: proIntroCouponId }]
+      : undefined;
   const session = await stripe.checkout.sessions.create({
     mode: 'subscription',
     line_items: [{ price: plan.stripePriceId, quantity: 1 }],
+    ...(discounts ? { discounts } : {}),
     success_url: input.successUrl,
     cancel_url: input.cancelUrl,
     customer_email: input.ownerEmail,
