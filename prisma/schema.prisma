@@ -473,6 +473,7 @@ model Customer {
 
   @@unique([phone, salonId])
   @@index([salonId, createdAt], map: "idx_customer_salon_created")
+  @@index([salonId, id], map: "idx_customer_salon_id")
 }
 
 model CustomerBehaviorLog {
