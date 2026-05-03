@@ -116,3 +116,23 @@
 [dotenv@17.2.3] injecting env (0) from .env -- tip: 🔑 add access controls to secrets: https://dotenvx.com/ops
 [conversation-realtime-ws] websocket server initialized at /api/admin/conversations/ws
 🚀 Server running on 0.0.0.0:3000
+17:20:50 [tsx] change in ./src\services\billingCatalog.ts Restarting...
+c[dotenv@17.2.3] injecting env (0) from .env -- tip: ⚙️  suppress all logs with { quiet: true }
+17:20:55 [tsx] change in ./src\services\stripeBilling.ts Restarting...
+c[dotenv@17.2.3] injecting env (0) from .env -- tip: 🛠️  run anywhere with `dotenvx run -- yourcommand`
+[dotenv@17.2.3] injecting env (0) from .env -- tip: 🗂️ backup and recover secrets: https://dotenvx.com/ops
+[conversation-realtime-ws] websocket server initialized at /api/admin/conversations/ws
+🚀 Server running on 0.0.0.0:3000
+18:01:17 [tsx] change in ./src\routes\internalBilling.ts Restarting...
+c[dotenv@17.2.3] injecting env (0) from .env -- tip: ✅ audit secrets and track compliance: https://dotenvx.com/ops
+[dotenv@17.2.3] injecting env (0) from .env -- tip: ⚙️  load multiple .env files with { path: ['.env.local', '.env'] }
+[conversation-realtime-ws] websocket server initialized at /api/admin/conversations/ws
+🚀 Server running on 0.0.0.0:3000
+18:01:28 [tsx] change in ./src\services\stripeBilling.ts Restarting...
+c[dotenv@17.2.3] injecting env (0) from .env -- tip: 👥 sync secrets across teammates & machines: https://dotenvx.com/ops
+[dotenv@17.2.3] injecting env (0) from .env -- tip: 👥 sync secrets across teammates & machines: https://dotenvx.com/ops
+[conversation-realtime-ws] websocket server initialized at /api/admin/conversations/ws
+18:02:25 [tsx] change in ./src\routes\billing.ts Rerunning...
+c[dotenv@17.2.3] injecting env (0) from .env -- tip: 🔐 encrypt with Dotenvx: https://dotenvx.com
+[dotenv@17.2.3] injecting env (0) from .env -- tip: 🔐 prevent committing .env to code: https://dotenvx.com/precommit
+[conversation-realtime-ws] websocket server initialized at /api/admin/conversations/ws

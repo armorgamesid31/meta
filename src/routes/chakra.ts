@@ -732,6 +732,7 @@ async function updateSalonChakraState(
     allowOwnershipTransfer?: boolean;
   },
 ) {
+  const allowOwnershipTransfer = options?.allowOwnershipTransfer !== false;
   const normalizeExternalId = (value?: string | null): string | null => {
     if (typeof value !== 'string') return null;
     const trimmed = value.trim();
@@ -790,6 +791,7 @@ async function updateSalonChakraState(
   const data: Record<string, any> = {};
   let shouldSyncWhatsappBinding = false;
   let nextWhatsappPhoneNumberId: string | null = null;
+  let skipWhatsappPhoneNumberIdUpdate = false;
 
   if (patch.chakraPluginId !== undefined) {
     data.chakraPluginId = patch.chakraPluginId;
@@ -797,8 +799,29 @@ async function updateSalonChakraState(
 
   if (patch.chakraPhoneNumberId !== undefined) {
     nextWhatsappPhoneNumberId = normalizeExternalId(patch.chakraPhoneNumberId);
-    data.chakraPhoneNumberId = nextWhatsappPhoneNumberId;
-    shouldSyncWhatsappBinding = true;
+    if (nextWhatsappPhoneNumberId && !allowOwnershipTransfer) {
+      const currentOwner = await prisma.salonChannelBinding.findUnique({
+        where: {
+          channel_externalAccountId: {
+            channel: 'WHATSAPP',
+            externalAccountId: nextWhatsappPhoneNumberId,
+          },
+        },
+        select: {
+          salonId: true,
+          isActive: true,
+        },
+      });
+
+      if (currentOwner && currentOwner.isActive && currentOwner.salonId !== salonId) {
+        skipWhatsappPhoneNumberIdUpdate = true;
+      }
+    }
+
+    if (!skipWhatsappPhoneNumberIdUpdate) {
+      data.chakraPhoneNumberId = nextWhatsappPhoneNumberId;
+      shouldSyncWhatsappBinding = true;
+    }
   }
 
   if (Object.keys(data).length > 0) {
