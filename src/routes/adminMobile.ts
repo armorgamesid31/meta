@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import axios from 'axios';
+import { randomUUID } from 'node:crypto';
 import { CampaignType, InboundMessageStatus, OutboundMessageSource, type CustomerGender } from '@prisma/client';
 import { prisma } from '../prisma.js';
 import { authenticateToken } from '../middleware/auth.js';
@@ -600,6 +601,20 @@ function toRiskLevel(score: number): 'LOW' | 'MEDIUM' | 'HIGH' {
     return 'MEDIUM';
   }
   return 'LOW';
+}
+
+async function withSoftTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
 }
 
 function asCustomerGender(value: unknown): 'male' | 'female' | 'other' | null {
@@ -2557,6 +2572,10 @@ router.get('/customers', authenticateToken, async (req: any, res: any) => {
     return res.status(400).json({ message: 'cursor must be a positive integer.' });
   }
 
+  const requestId = randomUUID();
+  const startedAt = Date.now();
+  res.setHeader('x-request-id', requestId);
+
   try {
     const where: any = { salonId };
 
@@ -2573,33 +2592,42 @@ router.get('/customers', authenticateToken, async (req: any, res: any) => {
       ];
     }
 
-    const rows = await prisma.customer.findMany({
-      where,
-      orderBy: { id: 'desc' },
-      take: limit + 1,
-      select: {
-        id: true,
-        name: true,
-        firstName: true,
-        lastName: true,
-        phone: true,
-        instagram: true,
-        gender: true,
-        birthDate: true,
-        acceptMarketing: true,
-        createdAt: true,
-        updatedAt: true,
-        _count: withStats ? {
-          select: {
-            appointments: true,
-          },
-        } : false,
-      },
-    });
+    const rows = await withSoftTimeout(
+      prisma.customer.findMany({
+        where,
+        orderBy: { id: 'desc' },
+        take: limit + 1,
+        select: {
+          id: true,
+          name: true,
+          firstName: true,
+          lastName: true,
+          phone: true,
+          instagram: true,
+          gender: true,
+          birthDate: true,
+          acceptMarketing: true,
+          createdAt: true,
+          updatedAt: true,
+          _count: withStats ? {
+            select: {
+              appointments: true,
+            },
+          } : false,
+        },
+      }),
+      10_000,
+      'CUSTOMERS_QUERY_TIMEOUT',
+    );
 
     const hasMore = rows.length > limit;
     const items = hasMore ? rows.slice(0, limit) : rows;
     const nextCursor = hasMore ? String(items[items.length - 1]?.id || '') : null;
+
+    const latencyMs = Date.now() - startedAt;
+    console.info(
+      `[admin/customers] requestId=${requestId} salonId=${salonId} limit=${limit} cursor=${cursorRaw || ''} search=${JSON.stringify(search)} withStats=${withStats} rows=${items.length} hasMore=${hasMore} latencyMs=${latencyMs}`,
+    );
 
     return res.status(200).json({
       items: items.map((row) => ({
@@ -2620,7 +2648,18 @@ router.get('/customers', authenticateToken, async (req: any, res: any) => {
       hasMore,
     });
   } catch (error) {
-    console.error('Admin customers cursor query error:', error);
+    const latencyMs = Date.now() - startedAt;
+    const message = error instanceof Error ? error.message : 'UNKNOWN_ERROR';
+    console.error(
+      `[admin/customers] requestId=${requestId} salonId=${salonId} limit=${limit} cursor=${cursorRaw || ''} search=${JSON.stringify(search)} withStats=${withStats} latencyMs=${latencyMs} error=${message}`,
+      error,
+    );
+    if (message === 'CUSTOMERS_QUERY_TIMEOUT') {
+      return res.status(504).json({
+        message: 'Müşteri listesi zaman aşımına uğradı. Lütfen tekrar deneyin.',
+        requestId,
+      });
+    }
     return res.status(500).json({ message: 'Internal server error.' });
   }
 });

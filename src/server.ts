@@ -149,12 +149,17 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 app.get("/health", async (_req, res) => {
+  const startedAt = Date.now();
   try {
     // Check Database Connectivity
+    const dbStartedAt = Date.now();
     await prisma.$queryRaw`SELECT 1`;
+    const dbLatencyMs = Date.now() - dbStartedAt;
     res.status(200).json({ 
       status: "healthy",
       database: "connected",
+      dbLatencyMs,
+      latencyMs: Date.now() - startedAt,
       timestamp: new Date().toISOString(),
       version: process.env.npm_package_version || "1.0.0"
     });
@@ -162,6 +167,7 @@ app.get("/health", async (_req, res) => {
     res.status(503).json({ 
       status: "unhealthy", 
       database: "disconnected",
+      latencyMs: Date.now() - startedAt,
       error: (error as Error).message,
       timestamp: new Date().toISOString()
     });
