@@ -108,6 +108,14 @@ export function normalizeRole(rawRole: unknown): FixedRole {
   return 'STAFF';
 }
 
+export function normalizeRoles(rawRoles: unknown): FixedRole[] {
+  if (!Array.isArray(rawRoles)) {
+    return [];
+  }
+  const normalized = rawRoles.map((role) => normalizeRole(role));
+  return Array.from(new Set(normalized));
+}
+
 export async function ensurePermissionCatalog(): Promise<void> {
   for (const item of PERMISSION_CATALOG) {
     await prisma.permissionDefinition.upsert({
@@ -194,16 +202,28 @@ export async function getEffectivePermissionSet(input: {
   userId: number;
   role: string;
 }): Promise<Set<string>> {
-  const role = normalizeRole(input.role);
+  const fallbackRole = normalizeRole(input.role);
   await ensureSalonAccessSeed(input.salonId);
 
-  if (role === 'OWNER') {
+  const user = await prisma.salonUser.findFirst({
+    where: { id: input.userId, salonId: input.salonId },
+    select: { role: true, secondaryRoles: true },
+  });
+
+  const roles = Array.from(
+    new Set<FixedRole>([
+      normalizeRole(user?.role || fallbackRole),
+      ...normalizeRoles(user?.secondaryRoles),
+    ]),
+  );
+
+  if (roles.includes('OWNER')) {
     return new Set(PERMISSION_CATALOG.map((item) => item.key));
   }
 
   const [roleRows, overrides, permissionRows] = await Promise.all([
     prisma.salonRolePermission.findMany({
-      where: { salonId: input.salonId, role, granted: true },
+      where: { salonId: input.salonId, role: { in: roles }, granted: true },
       select: { permissionId: true },
     }),
     prisma.userPermissionOverride.findMany({

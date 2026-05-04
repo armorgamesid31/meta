@@ -133,6 +133,7 @@ model SalonUser {
   phone                              String?                     @unique(map: "uq_salon_user_phone")
   passwordHash                       String
   role                               String
+  secondaryRoles                     Json?
   firstName                          String?
   lastName                           String?
   activationCompletedAt              DateTime?                   @db.Timestamp(6)

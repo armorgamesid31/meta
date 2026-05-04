@@ -1,0 +1,1 @@
+ALTER TABLE "SalonUser" ADD COLUMN IF NOT EXISTS "secondaryRoles" JSONB;

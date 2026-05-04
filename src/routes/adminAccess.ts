@@ -9,6 +9,7 @@ import {
   ensureSalonAccessSeed,
   getPermissionCatalogWithGrants,
   normalizeRole,
+  normalizeRoles,
   writeAccessAudit,
 } from '../services/accessControl.js';
 
@@ -32,6 +33,17 @@ function randomTempPassword(): string {
     value += alphabet[Math.floor(Math.random() * alphabet.length)];
   }
   return value;
+}
+
+function resolveStaffDisplayName(input: { displayName?: string | null; email?: string | null }, fallback?: string | null): string {
+  const fromDisplayName = typeof input.displayName === 'string' ? input.displayName.trim() : '';
+  if (fromDisplayName) return fromDisplayName;
+  const fromEmail = typeof input.email === 'string' ? input.email.trim() : '';
+  if (fromEmail) {
+    const local = fromEmail.split('@')[0]?.trim();
+    if (local) return local;
+  }
+  return (fallback || '').trim() || 'Ekip Üyesi';
 }
 
 router.get('/permissions', authenticateToken, requirePermissionKey('access.roles.manage'), async (req: any, res: any) => {
@@ -119,6 +131,7 @@ router.get('/users', authenticateToken, requirePermissionKey('access.users.manag
         email: true,
         displayName: true,
         role: true,
+        secondaryRoles: true,
         isActive: true,
         passwordResetRequired: true,
         lastLoginAt: true,
@@ -143,6 +156,7 @@ router.get('/users', authenticateToken, requirePermissionKey('access.users.manag
       items: users.map((user) => ({
         ...user,
         role: normalizeRole(user.role),
+        roles: Array.from(new Set([normalizeRole(user.role), ...normalizeRoles(user.secondaryRoles)])).sort(),
         linkedStaff: staffByUserId.get(user.id) || null,
       })),
     });
@@ -158,7 +172,9 @@ router.post('/users', authenticateToken, requirePermissionKey('access.users.mana
 
   const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
   const displayName = typeof req.body?.displayName === 'string' ? req.body.displayName.trim() : '';
-  const role = normalizeRole(req.body?.role);
+  const requestedRoles = Array.isArray(req.body?.roles) ? normalizeRoles(req.body.roles) : [];
+  const role = requestedRoles[0] || normalizeRole(req.body?.role);
+  const secondaryRoles = requestedRoles.slice(1);
   const staffId = Number.isInteger(Number(req.body?.staffId)) && Number(req.body.staffId) > 0 ? Number(req.body.staffId) : null;
   const rawPassword = typeof req.body?.password === 'string' && req.body.password.trim() ? req.body.password.trim() : randomTempPassword();
 
@@ -186,6 +202,7 @@ router.post('/users', authenticateToken, requirePermissionKey('access.users.mana
           email,
           displayName: displayName || null,
           role,
+          secondaryRoles: secondaryRoles as any,
           passwordHash,
           isActive: true,
           passwordResetRequired: true,
@@ -193,8 +210,10 @@ router.post('/users', authenticateToken, requirePermissionKey('access.users.mana
         select: {
           id: true,
           email: true,
+          phone: true,
           displayName: true,
           role: true,
+          secondaryRoles: true,
           isActive: true,
           passwordResetRequired: true,
           createdAt: true,
@@ -202,7 +221,16 @@ router.post('/users', authenticateToken, requirePermissionKey('access.users.mana
       });
 
       if (staffId) {
-        await tx.staff.update({ where: { id: staffId }, data: { userId: user.id } });
+        const staff = await tx.staff.findFirst({ where: { id: staffId, salonId: auth.salonId } });
+        if (!staff) throw new Error('STAFF_NOT_FOUND');
+        await tx.staff.update({
+          where: { id: staffId },
+          data: {
+            userId: user.id,
+            name: resolveStaffDisplayName({ displayName: user.displayName, email: user.email }, staff.name),
+            phone: user.phone || staff.phone || null,
+          },
+        });
       }
 
       return user;
@@ -214,7 +242,7 @@ router.post('/users', authenticateToken, requirePermissionKey('access.users.mana
       action: 'USER_CREATED',
       targetType: 'USER',
       targetId: String(created.id),
-      metadata: { role, staffId },
+      metadata: { role, secondaryRoles, staffId },
     });
 
     return res.status(201).json({ item: created, temporaryPassword: rawPassword });
@@ -236,7 +264,9 @@ router.put('/users/:id', authenticateToken, requirePermissionKey('access.users.m
     return res.status(400).json({ message: 'Invalid user id.' });
   }
 
-  const role = normalizeRole(req.body?.role);
+  const requestedRoles = Array.isArray(req.body?.roles) ? normalizeRoles(req.body.roles) : [];
+  const role = requestedRoles[0] || normalizeRole(req.body?.role);
+  const secondaryRoles = requestedRoles.slice(1);
   const displayName = typeof req.body?.displayName === 'string' ? req.body.displayName.trim() : undefined;
   const isActive = req.body?.isActive !== false;
   const staffIdRaw = req.body?.staffId;
@@ -251,6 +281,7 @@ router.put('/users/:id', authenticateToken, requirePermissionKey('access.users.m
         where: { id: targetUserId },
         data: {
           role,
+          secondaryRoles: secondaryRoles as any,
           isActive,
           ...(displayName !== undefined ? { displayName: displayName || null } : {}),
         },
@@ -261,7 +292,14 @@ router.put('/users/:id', authenticateToken, requirePermissionKey('access.users.m
         if (staffId !== null) {
           const staff = await tx.staff.findFirst({ where: { id: staffId, salonId: auth.salonId } });
           if (!staff) throw new Error('STAFF_NOT_FOUND');
-          await tx.staff.update({ where: { id: staffId }, data: { userId: targetUserId } });
+          await tx.staff.update({
+            where: { id: staffId },
+            data: {
+              userId: targetUserId,
+              name: resolveStaffDisplayName({ displayName, email: user.email }, staff.name),
+              phone: user.phone || staff.phone || null,
+            },
+          });
         }
       }
 
@@ -279,6 +317,7 @@ router.put('/users/:id', authenticateToken, requirePermissionKey('access.users.m
           email: true,
           displayName: true,
           role: true,
+          secondaryRoles: true,
           isActive: true,
           passwordResetRequired: true,
           lastLoginAt: true,
@@ -294,7 +333,7 @@ router.put('/users/:id', authenticateToken, requirePermissionKey('access.users.m
       action: 'USER_UPDATED',
       targetType: 'USER',
       targetId: String(targetUserId),
-      metadata: { role, isActive, staffId: staffId === undefined ? 'unchanged' : staffId },
+      metadata: { role, secondaryRoles, isActive, staffId: staffId === undefined ? 'unchanged' : staffId },
     });
 
     return res.status(200).json({ item: updated });
