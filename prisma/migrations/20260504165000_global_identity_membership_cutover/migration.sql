@@ -1,4 +1,4 @@
-﻿CREATE TABLE IF NOT EXISTS "UserIdentity" (
+CREATE TABLE IF NOT EXISTS "UserIdentity" (
   "id" SERIAL PRIMARY KEY,
   "phone" TEXT,
   "email" TEXT,
