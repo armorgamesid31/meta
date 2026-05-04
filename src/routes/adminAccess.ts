@@ -55,6 +55,31 @@ function resolveStaffDisplayName(input: { displayName?: string | null; email?: s
   return (fallback || '').trim() || 'Ekip Ãœyesi';
 }
 
+function buildInviteShareText(input: {
+  salonName: string;
+  inviteCode: string;
+  appStoreUrl?: string | null;
+  playStoreUrl?: string | null;
+}) {
+  const appStore = (input.appStoreUrl || '').trim() || 'Yakında';
+  const playStore = (input.playStoreUrl || '').trim() || 'Yakında';
+  return (
+    `Merhaba 👋\n\n` +
+    `Seni ${input.salonName} ekibimize davet ediyoruz. ✨\n\n` +
+    `Hesabını oluşturmak veya mevcut Kedy hesabına salonumuzu eklemek için aşağıdaki bilgileri kullanabilirsin:\n\n` +
+    `Davet Kodu: ${input.inviteCode}\n` +
+    `Bağlantı: Kedy uygulamasında Davet Kodu alanına bu kodu gir.\n\n` +
+    `Uygulama İndirme Linkleri:\n` +
+    `🍎 Apple Store: ${appStore}\n` +
+    `🤖 Google Play: ${playStore}\n\n` +
+    `Not:\n` +
+    `- Daha önce Kedy hesabın varsa, aynı telefon/e-posta ile giriş yaparak bu salonu hesabına ekleyebilirsin.\n` +
+    `- İlk kez kayıt olacaksan, kısa profil adımlarını tamamladıktan sonra hesabın aktif olacaktır. ✅\n\n` +
+    `Yardıma ihtiyacın olursa bize yazabilirsin.\n` +
+    `Teşekkür ederiz 🙌`
+  );
+}
+
 async function generateDefaultTeamMemberName(salonId: number): Promise<string> {
   const users = await prisma.salonUser.findMany({
     where: {
@@ -321,7 +346,6 @@ router.post('/users', authenticateToken, requirePermissionKey('access.users.mana
       item: created,
       invite: {
         code: inviteCode,
-        token: inviteToken,
         expiresAt: expiresAt.toISOString(),
       },
     });
@@ -585,6 +609,10 @@ router.post('/users/:id/invite', authenticateToken, requirePermissionKey('access
   }
 
   try {
+    const salon = await prisma.salon.findUnique({
+      where: { id: auth.salonId },
+      select: { name: true },
+    });
     const membership = await prisma.salonMembership.findFirst({
       where: { id: targetMembershipId, salonId: auth.salonId },
       include: { identity: { select: { phone: true, email: true } } },
@@ -645,10 +673,20 @@ router.post('/users/:id/invite', authenticateToken, requirePermissionKey('access
       metadata: {},
     });
 
+    const baseUrl = (process.env.APP_BASE_URL || process.env.PUBLIC_APP_URL || '').trim() || 'https://app.kedy.com';
+    const inviteUrl = `${baseUrl}/auth/invite-code?code=${encodeURIComponent(inviteCode)}`;
+    const shareText = buildInviteShareText({
+      salonName: (salon?.name || 'Salonumuz').trim(),
+      inviteCode,
+      appStoreUrl: process.env.APPLE_STORE_URL || null,
+      playStoreUrl: process.env.GOOGLE_PLAY_URL || null,
+    });
+
     return res.status(200).json({
       invite: {
         code: inviteCode,
-        token: inviteToken,
+        url: inviteUrl,
+        shareText,
         expiresAt: expiresAt.toISOString(),
       },
     });
