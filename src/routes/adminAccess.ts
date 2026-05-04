@@ -575,6 +575,89 @@ router.post('/users/:id/reset-password', authenticateToken, requirePermissionKey
   }
 });
 
+router.post('/users/:id/invite', authenticateToken, requirePermissionKey('access.users.manage'), async (req: any, res: any) => {
+  const auth = getAuth(req, res);
+  if (!auth) return;
+
+  const targetMembershipId = Number(req.params.id);
+  if (!Number.isInteger(targetMembershipId) || targetMembershipId <= 0) {
+    return res.status(400).json({ message: 'Gecersiz kullanici kimligi.' });
+  }
+
+  try {
+    const membership = await prisma.salonMembership.findFirst({
+      where: { id: targetMembershipId, salonId: auth.salonId },
+      include: { identity: { select: { phone: true, email: true } } },
+    });
+    if (!membership) {
+      return res.status(404).json({ message: 'Kullanici bulunamadi.' });
+    }
+
+    let legacyUserId = membership.legacySalonUserId || 0;
+    if (!legacyUserId) {
+      const fallbackEmail =
+        membership.identity.email ||
+        buildSystemEmail({ salonId: auth.salonId, role: membership.role });
+      const fallbackPasswordHash = await bcrypt.hash(randomTempPassword(), 10);
+      const legacyUser = await prisma.salonUser.create({
+        data: {
+          salonId: auth.salonId,
+          email: fallbackEmail,
+          phone: membership.identity.phone || null,
+          role: membership.role,
+          secondaryRoles: membership.secondaryRoles || null,
+          isActive: membership.isActive,
+          passwordResetRequired: membership.passwordResetRequired,
+          passwordHash: fallbackPasswordHash,
+        },
+      });
+      legacyUserId = legacyUser.id;
+      await prisma.salonMembership.update({
+        where: { id: membership.id },
+        data: { legacySalonUserId: legacyUser.id },
+      });
+    }
+
+    const inviteCode = randomBytes(4).toString('hex').toUpperCase();
+    const inviteToken = randomBytes(24).toString('hex');
+    const expiresAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+
+    await prisma.invite.create({
+      data: {
+        salonId: auth.salonId,
+        invitedUserId: legacyUserId,
+        invitedMembershipId: membership.id,
+        invitedIdentityPhone: membership.identity.phone || null,
+        invitedIdentityEmail: membership.identity.email || null,
+        inviteCodeHash: hashPlainToken(inviteCode),
+        inviteTokenHash: hashPlainToken(inviteToken),
+        expiresAt,
+        createdBy: auth.userId || null,
+      },
+    });
+
+    await writeAccessAudit({
+      salonId: auth.salonId,
+      actorUserId: auth.userId,
+      action: 'USER_INVITE_CREATED',
+      targetType: 'USER',
+      targetId: String(targetMembershipId),
+      metadata: {},
+    });
+
+    return res.status(200).json({
+      invite: {
+        code: inviteCode,
+        token: inviteToken,
+        expiresAt: expiresAt.toISOString(),
+      },
+    });
+  } catch (error) {
+    console.error('Access user invite create error:', error);
+    return res.status(500).json({ message: 'Sunucu hatasi.' });
+  }
+});
+
 router.get('/audit', authenticateToken, requirePermissionKey('access.audit.view'), async (req: any, res: any) => {
   const auth = getAuth(req, res);
   if (!auth) return;
