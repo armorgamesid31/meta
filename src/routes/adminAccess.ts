@@ -1,4 +1,4 @@
-import { Router } from 'express';
+﻿import { Router } from 'express';
 import bcrypt from 'bcrypt';
 import { prisma } from '../prisma.js';
 import { authenticateToken } from '../middleware/auth.js';
@@ -17,7 +17,7 @@ const router = Router();
 
 function getAuth(req: any, res: any) {
   if (!req.user?.salonId || !req.user?.userId) {
-    res.status(401).json({ message: 'Unauthorized.' });
+    res.status(401).json({ message: 'Yetkisiz erisim.' });
     return null;
   }
   return {
@@ -43,7 +43,7 @@ function resolveStaffDisplayName(input: { displayName?: string | null; email?: s
     const local = fromEmail.split('@')[0]?.trim();
     if (local) return local;
   }
-  return (fallback || '').trim() || 'Ekip Üyesi';
+  return (fallback || '').trim() || 'Ekip Ãœyesi';
 }
 
 router.get('/permissions', authenticateToken, requirePermissionKey('access.roles.manage'), async (req: any, res: any) => {
@@ -59,7 +59,7 @@ router.get('/permissions', authenticateToken, requirePermissionKey('access.roles
     });
   } catch (error) {
     console.error('Access permissions list error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    return res.status(500).json({ message: 'Sunucu hatasi.' });
   }
 });
 
@@ -115,7 +115,7 @@ router.put('/roles/:role/permissions', authenticateToken, requirePermissionKey('
     return res.status(200).json({ ok: true, role, permissionKeys: definitions.map((item) => item.key).sort() });
   } catch (error) {
     console.error('Access role permissions update error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    return res.status(500).json({ message: 'Sunucu hatasi.' });
   }
 });
 
@@ -162,7 +162,7 @@ router.get('/users', authenticateToken, requirePermissionKey('access.users.manag
     });
   } catch (error) {
     console.error('Access users list error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    return res.status(500).json({ message: 'Sunucu hatasi.' });
   }
 });
 
@@ -179,13 +179,13 @@ router.post('/users', authenticateToken, requirePermissionKey('access.users.mana
   const rawPassword = typeof req.body?.password === 'string' && req.body.password.trim() ? req.body.password.trim() : randomTempPassword();
 
   if (!email || !rawPassword) {
-    return res.status(400).json({ message: 'email and password are required.' });
+    return res.status(400).json({ message: 'E-posta ve sifre zorunludur.' });
   }
 
   try {
     const existing = await prisma.salonUser.findFirst({ where: { email } });
     if (existing) {
-      return res.status(409).json({ message: 'Email is already in use.' });
+      return res.status(409).json({ message: 'Bu e-posta zaten kullanimda.' });
     }
 
     const passwordHash = await bcrypt.hash(rawPassword, 10);
@@ -248,10 +248,10 @@ router.post('/users', authenticateToken, requirePermissionKey('access.users.mana
     return res.status(201).json({ item: created, temporaryPassword: rawPassword });
   } catch (error: any) {
     if (error?.message === 'STAFF_NOT_FOUND') {
-      return res.status(404).json({ message: 'Linked staff not found.' });
+      return res.status(404).json({ message: 'Bagli uzman bulunamadi.' });
     }
     console.error('Access user create error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    return res.status(500).json({ message: 'Sunucu hatasi.' });
   }
 });
 
@@ -261,7 +261,7 @@ router.put('/users/:id', authenticateToken, requirePermissionKey('access.users.m
 
   const targetUserId = Number(req.params.id);
   if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
-    return res.status(400).json({ message: 'Invalid user id.' });
+    return res.status(400).json({ message: 'Gecersiz kullanici kimligi.' });
   }
 
   const requestedRoles = Array.isArray(req.body?.roles) ? normalizeRoles(req.body.roles) : [];
@@ -339,13 +339,13 @@ router.put('/users/:id', authenticateToken, requirePermissionKey('access.users.m
     return res.status(200).json({ item: updated });
   } catch (error: any) {
     if (error?.message === 'USER_NOT_FOUND') {
-      return res.status(404).json({ message: 'User not found.' });
+      return res.status(404).json({ message: 'Kullanici bulunamadi.' });
     }
     if (error?.message === 'STAFF_NOT_FOUND') {
-      return res.status(404).json({ message: 'Linked staff not found.' });
+      return res.status(404).json({ message: 'Bagli uzman bulunamadi.' });
     }
     console.error('Access user update error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    return res.status(500).json({ message: 'Sunucu hatasi.' });
   }
 });
 
@@ -355,7 +355,7 @@ router.put('/users/:id/overrides', authenticateToken, requirePermissionKey('acce
 
   const targetUserId = Number(req.params.id);
   if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
-    return res.status(400).json({ message: 'Invalid user id.' });
+    return res.status(400).json({ message: 'Gecersiz kullanici kimligi.' });
   }
 
   const overrides = Array.isArray(req.body?.overrides)
@@ -416,7 +416,7 @@ router.put('/users/:id/overrides', authenticateToken, requirePermissionKey('acce
     return res.status(200).json({ ok: true });
   } catch (error) {
     console.error('Access user overrides update error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    return res.status(500).json({ message: 'Sunucu hatasi.' });
   }
 });
 
@@ -426,7 +426,7 @@ router.post('/users/:id/reset-password', authenticateToken, requirePermissionKey
 
   const targetUserId = Number(req.params.id);
   if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
-    return res.status(400).json({ message: 'Invalid user id.' });
+    return res.status(400).json({ message: 'Gecersiz kullanici kimligi.' });
   }
 
   const rawPassword = typeof req.body?.password === 'string' && req.body.password.trim() ? req.body.password.trim() : randomTempPassword();
@@ -434,7 +434,7 @@ router.post('/users/:id/reset-password', authenticateToken, requirePermissionKey
   try {
     const target = await prisma.salonUser.findFirst({ where: { id: targetUserId, salonId: auth.salonId } });
     if (!target) {
-      return res.status(404).json({ message: 'User not found.' });
+      return res.status(404).json({ message: 'Kullanici bulunamadi.' });
     }
 
     const passwordHash = await bcrypt.hash(rawPassword, 10);
@@ -463,7 +463,7 @@ router.post('/users/:id/reset-password', authenticateToken, requirePermissionKey
     return res.status(200).json({ ok: true, temporaryPassword: rawPassword });
   } catch (error) {
     console.error('Access user reset-password error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    return res.status(500).json({ message: 'Sunucu hatasi.' });
   }
 });
 
@@ -492,7 +492,7 @@ router.get('/audit', authenticateToken, requirePermissionKey('access.audit.view'
     return res.status(200).json({ items: rows });
   } catch (error) {
     console.error('Access audit list error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    return res.status(500).json({ message: 'Sunucu hatasi.' });
   }
 });
 
@@ -501,3 +501,4 @@ router.get('/default-catalog', authenticateToken, async (_req: any, res: any) =>
 });
 
 export default router;
+

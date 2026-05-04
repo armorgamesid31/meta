@@ -1,4 +1,4 @@
-import { prisma } from '../prisma.js';
+﻿import { prisma } from '../prisma.js';
 
 export const ACCESS_VERSION = 1;
 
@@ -13,33 +13,33 @@ export type PermissionSeed = {
 };
 
 export const PERMISSION_CATALOG: PermissionSeed[] = [
-  { key: 'dashboard.view', module: 'dashboard', description: 'View business dashboard' },
-  { key: 'appointments.view', module: 'appointments', description: 'View appointments' },
-  { key: 'appointments.manage', module: 'appointments', description: 'Create and update appointments' },
-  { key: 'appointments.payment.update', module: 'appointments', description: 'Update payment method', isCritical: true },
-  { key: 'customers.view', module: 'customers', description: 'View customers' },
-  { key: 'customers.manage', module: 'customers', description: 'Create and update customers' },
-  { key: 'services.manage', module: 'services', description: 'Manage services and categories' },
-  { key: 'staff.manage', module: 'staff', description: 'Manage staff records' },
-  { key: 'packages.manage', module: 'packages', description: 'Manage package templates and balances' },
-  { key: 'analytics.view', module: 'analytics', description: 'View analytics' },
-  { key: 'inventory.manage', module: 'inventory', description: 'Manage inventory' },
-  { key: 'campaigns.manage', module: 'campaigns', description: 'Manage campaigns' },
-  { key: 'campaigns.publish', module: 'campaigns', description: 'Publish/send campaigns', isCritical: true },
-  { key: 'automations.manage', module: 'automations', description: 'Manage automations' },
-  { key: 'blacklist.manage', module: 'blacklist', description: 'Manage blacklist entries' },
-  { key: 'conversations.manage', module: 'conversations', description: 'Manage conversations and replies' },
-  { key: 'instagram_inbox.manage', module: 'conversations', description: 'Manage Instagram inbox' },
-  { key: 'notifications.inbox.view', module: 'notifications', description: 'View own notifications' },
-  { key: 'notifications.preferences.manage', module: 'notifications', description: 'Manage own notification preferences' },
-  { key: 'notifications.policy.manage', module: 'notifications', description: 'Manage notification role matrix', isCritical: true },
-  { key: 'website.manage', module: 'website', description: 'Manage website content' },
-  { key: 'meta_direct.manage', module: 'integrations', description: 'Manage Meta Direct integration' },
-  { key: 'imports.manage', module: 'imports', description: 'Manage data import wizard and commit jobs' },
-  { key: 'access.roles.manage', module: 'access', description: 'Manage role permission matrix', isCritical: true },
-  { key: 'access.users.manage', module: 'access', description: 'Manage team users and roles', isCritical: true },
-  { key: 'access.permission_overrides.edit', module: 'access', description: 'Edit user permission overrides', isCritical: true },
-  { key: 'access.audit.view', module: 'access', description: 'View access audit logs' },
+  { key: 'dashboard.view', module: 'dashboard', description: 'Isletme panelini goruntule' },
+  { key: 'appointments.view', module: 'appointments', description: 'Randevulari goruntule' },
+  { key: 'appointments.manage', module: 'appointments', description: 'Randevu olustur ve guncelle' },
+  { key: 'appointments.payment.update', module: 'appointments', description: 'Odeme yontemini guncelle', isCritical: true },
+  { key: 'customers.view', module: 'customers', description: 'Musterileri goruntule' },
+  { key: 'customers.manage', module: 'customers', description: 'Musteri olustur ve guncelle' },
+  { key: 'services.manage', module: 'services', description: 'Hizmet ve kategori yonetimi' },
+  { key: 'staff.manage', module: 'staff', description: 'Uzman kayitlarini yonet' },
+  { key: 'packages.manage', module: 'packages', description: 'Paket sablonlari ve bakiyeleri yonet' },
+  { key: 'analytics.view', module: 'analytics', description: 'Analitik goruntule' },
+  { key: 'inventory.manage', module: 'inventory', description: 'Envanteri yonet' },
+  { key: 'campaigns.manage', module: 'campaigns', description: 'Kampanyalari yonet' },
+  { key: 'campaigns.publish', module: 'campaigns', description: 'Kampanya yayimla ve gonder', isCritical: true },
+  { key: 'automations.manage', module: 'automations', description: 'Otomasyonlari yonet' },
+  { key: 'blacklist.manage', module: 'blacklist', description: 'Kara liste kayitlarini yonet' },
+  { key: 'conversations.manage', module: 'conversations', description: 'Konusma ve yanitlari yonet' },
+  { key: 'instagram_inbox.manage', module: 'conversations', description: 'Instagram gelen kutusunu yonet' },
+  { key: 'notifications.inbox.view', module: 'notifications', description: 'Kendi bildirimlerini goruntule' },
+  { key: 'notifications.preferences.manage', module: 'notifications', description: 'Kendi bildirim tercihlerini yonet' },
+  { key: 'notifications.policy.manage', module: 'notifications', description: 'Bildirim rol matrisini yonet', isCritical: true },
+  { key: 'website.manage', module: 'website', description: 'Web sitesi icerigini yonet' },
+  { key: 'meta_direct.manage', module: 'integrations', description: 'Meta Direct entegrasyonunu yonet' },
+  { key: 'imports.manage', module: 'imports', description: 'Veri aktarim sihirbazi ve aktarim islemlerini yonet' },
+  { key: 'access.roles.manage', module: 'access', description: 'Rol yetki matrisini yonet', isCritical: true },
+  { key: 'access.users.manage', module: 'access', description: 'Ekip kullanicilari ve rolleri yonet', isCritical: true },
+  { key: 'access.permission_overrides.edit', module: 'access', description: 'Kullanici yetki istisnalarini duzenle', isCritical: true },
+  { key: 'access.audit.view', module: 'access', description: 'Erisim denetim kayitlarini goruntule' },
 ] as const;
 
 const DEFAULT_ROLE_PERMISSIONS: Record<FixedRole, string[]> = {
@@ -312,3 +312,4 @@ export function mapAdminRouteToPermission(path: string, method: string): string 
   if (normalizedPath.startsWith('/setup')) return 'website.manage';
   return 'dashboard.view';
 }
+
