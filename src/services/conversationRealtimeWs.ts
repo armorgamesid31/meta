@@ -58,6 +58,7 @@ type ServerMessage =
 
 type AuthenticatedSocketUser = {
   userId: number;
+  membershipId: number;
   salonId: number;
   role: UserRole;
 };
@@ -100,24 +101,26 @@ async function authenticateSocketUser(authToken: string): Promise<AuthenticatedS
   const payload = verifyToken(authToken);
   if (!payload) return null;
 
-  const user = await prisma.salonUser.findUnique({
-    where: { id: payload.userId },
-    select: { id: true, salonId: true, role: true, isActive: true },
+  const membership = await prisma.salonMembership.findUnique({
+    where: { id: Number(payload.membershipId || 0) },
+    include: {
+      identity: { select: { isActive: true } },
+    },
   });
 
-  if (!user || !user.isActive) {
+  if (!membership || !membership.isActive || !membership.identity.isActive) {
     return null;
   }
 
   const tokenSalonId = payload.salonId;
-  if (!tokenSalonId || tokenSalonId !== user.salonId) {
+  if (!tokenSalonId || tokenSalonId !== membership.salonId) {
     return null;
   }
 
-  const resolvedRole = normalizeRole(user.role);
+  const resolvedRole = normalizeRole(membership.role);
   const hasConversationPermission = await hasPermission({
-    salonId: user.salonId,
-    userId: user.id,
+    salonId: membership.salonId,
+    membershipId: membership.id,
     role: resolvedRole,
     permissionKey: 'conversations.manage',
   });
@@ -127,8 +130,9 @@ async function authenticateSocketUser(authToken: string): Promise<AuthenticatedS
   }
 
   return {
-    userId: user.id,
-    salonId: user.salonId,
+    userId: Number(membership.legacySalonUserId || payload.userId),
+    membershipId: membership.id,
+    salonId: membership.salonId,
     role: resolvedRole,
   };
 }

@@ -8,6 +8,8 @@ const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '1h';
 
 interface TokenPayload {
   userId: number;
+  identityId?: number;
+  membershipId?: number;
   salonId: number;
   role: 'OWNER' | 'MANAGER' | 'STAFF' | 'RECEPTION' | 'FINANCE'; // Updated for new roles
   roles?: string[]; // New RBAC roles

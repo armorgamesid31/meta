@@ -1,5 +1,4 @@
 import { randomBytes, createHash } from 'crypto';
-import type { SalonUser } from '@prisma/client';
 import { prisma } from '../prisma.js';
 import { generateToken } from '../utils/jwt.js';
 
@@ -19,29 +18,41 @@ function createRefreshToken(): string {
   return randomBytes(48).toString('hex');
 }
 
-export function toAccessTokenPayload(user: Pick<SalonUser, 'id' | 'salonId' | 'role'>) {
+type AuthMembershipInput = {
+  membershipId: number;
+  identityId: number;
+  legacyUserId: number;
+  salonId: number;
+  role: string;
+};
+
+export function toAccessTokenPayload(input: AuthMembershipInput) {
   return {
-    userId: user.id,
-    salonId: user.salonId,
-    role: user.role as any,
+    userId: input.legacyUserId,
+    identityId: input.identityId,
+    membershipId: input.membershipId,
+    salonId: input.salonId,
+    role: input.role as any,
   };
 }
 
-export async function createAuthTokens(user: Pick<SalonUser, 'id' | 'salonId' | 'role'>) {
-  const accessToken = generateToken(toAccessTokenPayload(user));
+export async function createAuthTokens(input: AuthMembershipInput) {
+  const accessToken = generateToken(toAccessTokenPayload(input));
   const refreshToken = createRefreshToken();
 
   await prisma.$transaction([
     prisma.mobileAuthSession.create({
       data: {
-        userId: user.id,
-        salonId: user.salonId,
+        userId: input.legacyUserId,
+        identityId: input.identityId,
+        membershipId: input.membershipId,
+        salonId: input.salonId,
         refreshTokenHash: hashToken(refreshToken),
         expiresAt: getTokenExpiry(REFRESH_TOKEN_TTL_DAYS),
       },
     }),
-    prisma.salonUser.update({
-      where: { id: user.id },
+    prisma.salonMembership.update({
+      where: { id: input.membershipId },
       data: { lastLoginAt: new Date() },
     }),
   ]);
@@ -64,11 +75,12 @@ export async function rotateRefreshToken(refreshToken: string) {
         expiresAt: { gt: now },
       },
       include: {
-        user: true,
+        membership: true,
+        identity: true,
       },
     });
 
-    if (!session) {
+    if (!session || !session.membership || !session.identity || !session.membershipId || !session.identityId) {
       return null;
     }
 
@@ -83,23 +95,43 @@ export async function rotateRefreshToken(refreshToken: string) {
     await tx.mobileAuthSession.create({
       data: {
         userId: session.userId,
+        identityId: session.identityId,
+        membershipId: session.membershipId,
         salonId: session.salonId,
         refreshTokenHash: newRefreshTokenHash,
         expiresAt: getTokenExpiry(REFRESH_TOKEN_TTL_DAYS),
       },
     });
 
-    await tx.salonUser.update({
-      where: { id: session.userId },
+    await tx.salonMembership.update({
+      where: { id: session.membershipId },
       data: { lastLoginAt: now },
     });
 
-    const accessToken = generateToken(toAccessTokenPayload(session.user));
+    const accessToken = generateToken(
+      toAccessTokenPayload({
+        legacyUserId: session.userId,
+        identityId: session.identityId,
+        membershipId: session.membershipId,
+        salonId: session.salonId,
+        role: session.membership.role,
+      }),
+    );
 
     return {
       accessToken,
       refreshToken: newRefreshToken,
-      user: session.user,
+      user: {
+        id: session.identity.id,
+        email: session.identity.email,
+        role: session.membership.role,
+        salonId: session.salonId,
+        passwordResetRequired: session.membership.passwordResetRequired === true,
+        isActive: session.membership.isActive === true && session.identity.isActive === true,
+      },
+      membershipId: session.membershipId,
+      identityId: session.identityId,
+      legacyUserId: session.userId,
     };
   });
 }

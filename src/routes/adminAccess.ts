@@ -1,5 +1,6 @@
 ﻿import { Router } from 'express';
 import bcrypt from 'bcrypt';
+import { randomBytes } from 'crypto';
 import { prisma } from '../prisma.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { requirePermissionKey } from '../middleware/access.js';
@@ -12,17 +13,20 @@ import {
   normalizeRoles,
   writeAccessAudit,
 } from '../services/accessControl.js';
+import { hashPlainToken } from '../services/inviteService.js';
 
 const router = Router();
 
 function getAuth(req: any, res: any) {
-  if (!req.user?.salonId || !req.user?.userId) {
+  if (!req.user?.salonId || !req.user?.userId || !req.user?.membershipId) {
     res.status(401).json({ message: 'Yetkisiz erisim.' });
     return null;
   }
   return {
     salonId: Number(req.user.salonId),
     userId: Number(req.user.userId),
+    membershipId: Number(req.user.membershipId),
+    identityId: Number(req.user.identityId || 0),
   };
 }
 
@@ -35,6 +39,11 @@ function randomTempPassword(): string {
   return value;
 }
 
+function buildSystemEmail(input: { salonId: number; role: string }): string {
+  const nonce = randomBytes(4).toString('hex');
+  return `team-${input.salonId}-${String(input.role || 'staff').toLowerCase()}-${Date.now()}-${nonce}@kedy.local`;
+}
+
 function resolveStaffDisplayName(input: { displayName?: string | null; email?: string | null }, fallback?: string | null): string {
   const fromDisplayName = typeof input.displayName === 'string' ? input.displayName.trim() : '';
   if (fromDisplayName) return fromDisplayName;
@@ -44,6 +53,27 @@ function resolveStaffDisplayName(input: { displayName?: string | null; email?: s
     if (local) return local;
   }
   return (fallback || '').trim() || 'Ekip Ãœyesi';
+}
+
+async function generateDefaultTeamMemberName(salonId: number): Promise<string> {
+  const users = await prisma.salonUser.findMany({
+    where: {
+      salonId,
+      displayName: { startsWith: 'Ekip Üyesi' },
+    },
+    select: { displayName: true },
+  });
+
+  let maxIndex = 0;
+  for (const user of users) {
+    const value = String(user.displayName || '').trim();
+    const match = value.match(/^Ekip Üyesi\s+(\d+)$/i);
+    if (!match) continue;
+    const index = Number(match[1]);
+    if (Number.isFinite(index) && index > maxIndex) maxIndex = index;
+  }
+
+  return `Ekip Üyesi ${maxIndex + 1}`;
 }
 
 router.get('/permissions', authenticateToken, requirePermissionKey('access.roles.manage'), async (req: any, res: any) => {
@@ -124,40 +154,49 @@ router.get('/users', authenticateToken, requirePermissionKey('access.users.manag
   if (!auth) return;
 
   try {
-    const users = await prisma.salonUser.findMany({
+    const users = await prisma.salonMembership.findMany({
       where: { salonId: auth.salonId },
-      select: {
-        id: true,
-        email: true,
-        displayName: true,
-        role: true,
-        secondaryRoles: true,
-        isActive: true,
-        passwordResetRequired: true,
-        lastLoginAt: true,
-        createdAt: true,
-        updatedAt: true,
+      include: {
+        identity: {
+          select: {
+            id: true,
+            email: true,
+            phone: true,
+            displayName: true,
+            firstName: true,
+            lastName: true,
+            isActive: true,
+          },
+        },
       },
       orderBy: [{ createdAt: 'desc' }],
     });
 
     const staff = await prisma.staff.findMany({
-      where: { salonId: auth.salonId, userId: { not: null } },
-      select: { id: true, name: true, userId: true },
+      where: { salonId: auth.salonId, membershipId: { not: null } },
+      select: { id: true, name: true, membershipId: true },
     });
-    const staffByUserId = new Map<number, { id: number; name: string }>();
+    const staffByMembershipId = new Map<number, { id: number; name: string }>();
     for (const row of staff) {
-      if (typeof row.userId === 'number') {
-        staffByUserId.set(row.userId, { id: row.id, name: row.name });
+      if (typeof row.membershipId === 'number') {
+        staffByMembershipId.set(row.membershipId, { id: row.id, name: row.name });
       }
     }
 
     return res.status(200).json({
-      items: users.map((user) => ({
-        ...user,
-        role: normalizeRole(user.role),
-        roles: Array.from(new Set([normalizeRole(user.role), ...normalizeRoles(user.secondaryRoles)])).sort(),
-        linkedStaff: staffByUserId.get(user.id) || null,
+      items: users.map((membership) => ({
+        id: membership.id,
+        identityId: membership.identity.id,
+        email: membership.identity.email || '',
+        displayName: membership.identity.displayName,
+        role: normalizeRole(membership.role),
+        roles: Array.from(new Set([normalizeRole(membership.role), ...normalizeRoles(membership.secondaryRoles)])).sort(),
+        isActive: membership.isActive && membership.identity.isActive,
+        passwordResetRequired: membership.passwordResetRequired,
+        lastLoginAt: membership.lastLoginAt,
+        createdAt: membership.createdAt,
+        updatedAt: membership.updatedAt,
+        linkedStaff: staffByMembershipId.get(membership.id) || null,
       })),
     });
   } catch (error) {
@@ -170,25 +209,21 @@ router.post('/users', authenticateToken, requirePermissionKey('access.users.mana
   const auth = getAuth(req, res);
   if (!auth) return;
 
-  const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
-  const displayName = typeof req.body?.displayName === 'string' ? req.body.displayName.trim() : '';
+  const emailInput = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+  const displayNameInput = typeof req.body?.displayName === 'string' ? req.body.displayName.trim() : '';
   const requestedRoles = Array.isArray(req.body?.roles) ? normalizeRoles(req.body.roles) : [];
   const role = requestedRoles[0] || normalizeRole(req.body?.role);
   const secondaryRoles = requestedRoles.slice(1);
   const staffId = Number.isInteger(Number(req.body?.staffId)) && Number(req.body.staffId) > 0 ? Number(req.body.staffId) : null;
   const rawPassword = typeof req.body?.password === 'string' && req.body.password.trim() ? req.body.password.trim() : randomTempPassword();
 
-  if (!email || !rawPassword) {
-    return res.status(400).json({ message: 'E-posta ve sifre zorunludur.' });
-  }
-
   try {
-    const existing = await prisma.salonUser.findFirst({ where: { email } });
-    if (existing) {
-      return res.status(409).json({ message: 'Bu e-posta zaten kullanimda.' });
-    }
-
+    const email = emailInput || null;
     const passwordHash = await bcrypt.hash(rawPassword, 10);
+    const inviteCode = randomBytes(4).toString('hex').toUpperCase();
+    const inviteToken = randomBytes(24).toString('hex');
+    const expiresAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+    const hintPhone = typeof req.body?.phone === 'string' ? req.body.phone.replace(/\D/g, '') : '';
 
     const created = await prisma.$transaction(async (tx) => {
       if (staffId) {
@@ -196,27 +231,53 @@ router.post('/users', authenticateToken, requirePermissionKey('access.users.mana
         if (!staff) throw new Error('STAFF_NOT_FOUND');
       }
 
-      const user = await tx.salonUser.create({
+      const resolvedDisplayName = displayNameInput || (await generateDefaultTeamMemberName(auth.salonId));
+
+      const identity = await tx.userIdentity.create({
+        data: {
+          email,
+          phone: hintPhone || null,
+          displayName: resolvedDisplayName,
+          passwordHash,
+          isActive: true,
+        },
+      });
+      const legacyUser = await tx.salonUser.create({
         data: {
           salonId: auth.salonId,
-          email,
-          displayName: displayName || null,
+          email: email || buildSystemEmail({ salonId: auth.salonId, role }),
+          phone: hintPhone || null,
+          displayName: resolvedDisplayName,
           role,
           secondaryRoles: secondaryRoles as any,
           passwordHash,
           isActive: true,
           passwordResetRequired: true,
         },
-        select: {
-          id: true,
-          email: true,
-          phone: true,
-          displayName: true,
-          role: true,
-          secondaryRoles: true,
+      });
+      const membership = await tx.salonMembership.create({
+        data: {
+          salonId: auth.salonId,
+          identityId: identity.id,
+          role,
+          secondaryRoles: secondaryRoles as any,
           isActive: true,
           passwordResetRequired: true,
-          createdAt: true,
+          legacySalonUserId: legacyUser.id,
+        },
+      });
+
+      await tx.invite.create({
+        data: {
+          salonId: auth.salonId,
+          invitedUserId: legacyUser.id,
+          invitedMembershipId: membership.id,
+          invitedIdentityPhone: hintPhone || null,
+          invitedIdentityEmail: email,
+          inviteCodeHash: hashPlainToken(inviteCode),
+          inviteTokenHash: hashPlainToken(inviteToken),
+          expiresAt,
+          createdBy: auth.userId || null,
         },
       });
 
@@ -224,16 +285,27 @@ router.post('/users', authenticateToken, requirePermissionKey('access.users.mana
         const staff = await tx.staff.findFirst({ where: { id: staffId, salonId: auth.salonId } });
         if (!staff) throw new Error('STAFF_NOT_FOUND');
         await tx.staff.update({
-          where: { id: staffId },
-          data: {
-            userId: user.id,
-            name: resolveStaffDisplayName({ displayName: user.displayName, email: user.email }, staff.name),
-            phone: user.phone || staff.phone || null,
+            where: { id: staffId },
+            data: {
+            membershipId: membership.id,
+            userId: legacyUser.id,
+            name: resolveStaffDisplayName({ displayName: identity.displayName, email: identity.email }, staff.name),
+            phone: identity.phone || staff.phone || null,
           },
         });
       }
 
-      return user;
+      return {
+        id: membership.id,
+        identityId: identity.id,
+        email: identity.email,
+        displayName: identity.displayName,
+        role: membership.role,
+        secondaryRoles: membership.secondaryRoles,
+        isActive: membership.isActive,
+        passwordResetRequired: membership.passwordResetRequired,
+        createdAt: membership.createdAt,
+      };
     });
 
     await writeAccessAudit({
@@ -245,7 +317,14 @@ router.post('/users', authenticateToken, requirePermissionKey('access.users.mana
       metadata: { role, secondaryRoles, staffId },
     });
 
-    return res.status(201).json({ item: created, temporaryPassword: rawPassword });
+    return res.status(201).json({
+      item: created,
+      invite: {
+        code: inviteCode,
+        token: inviteToken,
+        expiresAt: expiresAt.toISOString(),
+      },
+    });
   } catch (error: any) {
     if (error?.message === 'STAFF_NOT_FOUND') {
       return res.status(404).json({ message: 'Bagli uzman bulunamadi.' });
@@ -259,8 +338,8 @@ router.put('/users/:id', authenticateToken, requirePermissionKey('access.users.m
   const auth = getAuth(req, res);
   if (!auth) return;
 
-  const targetUserId = Number(req.params.id);
-  if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
+  const targetMembershipId = Number(req.params.id);
+  if (!Number.isInteger(targetMembershipId) || targetMembershipId <= 0) {
     return res.status(400).json({ message: 'Gecersiz kullanici kimligi.' });
   }
 
@@ -274,30 +353,50 @@ router.put('/users/:id', authenticateToken, requirePermissionKey('access.users.m
 
   try {
     const updated = await prisma.$transaction(async (tx) => {
-      const user = await tx.salonUser.findFirst({ where: { id: targetUserId, salonId: auth.salonId } });
-      if (!user) throw new Error('USER_NOT_FOUND');
+      const membership = await tx.salonMembership.findFirst({ where: { id: targetMembershipId, salonId: auth.salonId } });
+      if (!membership) throw new Error('USER_NOT_FOUND');
+      const identity = await tx.userIdentity.findUnique({ where: { id: membership.identityId } });
+      if (!identity) throw new Error('USER_NOT_FOUND');
 
-      await tx.salonUser.update({
-        where: { id: targetUserId },
+      await tx.salonMembership.update({
+        where: { id: targetMembershipId },
         data: {
           role,
           secondaryRoles: secondaryRoles as any,
           isActive,
-          ...(displayName !== undefined ? { displayName: displayName || null } : {}),
+          ...(displayName !== undefined ? { } : {}),
         },
       });
+      if (displayName !== undefined) {
+        await tx.userIdentity.update({ where: { id: identity.id }, data: { displayName: displayName || null } });
+      }
+      if (membership.legacySalonUserId) {
+        await tx.salonUser.update({
+          where: { id: membership.legacySalonUserId },
+          data: {
+            role,
+            secondaryRoles: secondaryRoles as any,
+            isActive,
+            ...(displayName !== undefined ? { displayName: displayName || null } : {}),
+          },
+        });
+      }
 
       if (staffId !== undefined) {
-        await tx.staff.updateMany({ where: { salonId: auth.salonId, userId: targetUserId }, data: { userId: null } });
+        await tx.staff.updateMany({
+          where: { salonId: auth.salonId, OR: [{ membershipId: targetMembershipId }, { userId: membership.legacySalonUserId || 0 }] },
+          data: { userId: null, membershipId: null },
+        });
         if (staffId !== null) {
           const staff = await tx.staff.findFirst({ where: { id: staffId, salonId: auth.salonId } });
           if (!staff) throw new Error('STAFF_NOT_FOUND');
           await tx.staff.update({
             where: { id: staffId },
             data: {
-              userId: targetUserId,
-              name: resolveStaffDisplayName({ displayName, email: user.email }, staff.name),
-              phone: user.phone || staff.phone || null,
+              membershipId: targetMembershipId,
+              userId: membership.legacySalonUserId || null,
+              name: resolveStaffDisplayName({ displayName: displayName ?? identity.displayName, email: identity.email }, staff.name),
+              phone: identity.phone || staff.phone || null,
             },
           });
         }
@@ -305,26 +404,29 @@ router.put('/users/:id', authenticateToken, requirePermissionKey('access.users.m
 
       if (!isActive) {
         await tx.mobileAuthSession.updateMany({
-          where: { userId: targetUserId, revokedAt: null },
+          where: { membershipId: targetMembershipId, revokedAt: null },
           data: { revokedAt: new Date() },
         });
       }
 
-      return tx.salonUser.findUnique({
-        where: { id: targetUserId },
-        select: {
-          id: true,
-          email: true,
-          displayName: true,
-          role: true,
-          secondaryRoles: true,
-          isActive: true,
-          passwordResetRequired: true,
-          lastLoginAt: true,
-          createdAt: true,
-          updatedAt: true,
-        },
+      const nextMembership = await tx.salonMembership.findUnique({
+        where: { id: targetMembershipId },
+        include: { identity: { select: { email: true, displayName: true } } },
       });
+      return nextMembership
+        ? {
+            id: nextMembership.id,
+            email: nextMembership.identity.email || '',
+            displayName: nextMembership.identity.displayName,
+            role: nextMembership.role,
+            secondaryRoles: nextMembership.secondaryRoles,
+            isActive: nextMembership.isActive,
+            passwordResetRequired: nextMembership.passwordResetRequired,
+            lastLoginAt: nextMembership.lastLoginAt,
+            createdAt: nextMembership.createdAt,
+            updatedAt: nextMembership.updatedAt,
+          }
+        : null;
     });
 
     await writeAccessAudit({
@@ -332,7 +434,7 @@ router.put('/users/:id', authenticateToken, requirePermissionKey('access.users.m
       actorUserId: auth.userId,
       action: 'USER_UPDATED',
       targetType: 'USER',
-      targetId: String(targetUserId),
+      targetId: String(targetMembershipId),
       metadata: { role, secondaryRoles, isActive, staffId: staffId === undefined ? 'unchanged' : staffId },
     });
 
@@ -353,8 +455,8 @@ router.put('/users/:id/overrides', authenticateToken, requirePermissionKey('acce
   const auth = getAuth(req, res);
   if (!auth) return;
 
-  const targetUserId = Number(req.params.id);
-  if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
+  const targetMembershipId = Number(req.params.id);
+  if (!Number.isInteger(targetMembershipId) || targetMembershipId <= 0) {
     return res.status(400).json({ message: 'Gecersiz kullanici kimligi.' });
   }
 
@@ -380,7 +482,7 @@ router.put('/users/:id/overrides', authenticateToken, requirePermissionKey('acce
     const idByKey = new Map(permissions.map((p) => [p.key, p.id]));
 
     await prisma.$transaction(async (tx) => {
-      await tx.userPermissionOverride.deleteMany({ where: { salonId: auth.salonId, userId: targetUserId } });
+      await tx.userPermissionOverride.deleteMany({ where: { salonId: auth.salonId, membershipId: targetMembershipId } });
 
       if (overrides.length > 0) {
         await tx.userPermissionOverride.createMany({
@@ -390,7 +492,8 @@ router.put('/users/:id/overrides', authenticateToken, requirePermissionKey('acce
               if (!permissionId) return null;
               return {
                 salonId: auth.salonId,
-                userId: targetUserId,
+                userId: targetMembershipId,
+                membershipId: targetMembershipId,
                 permissionId,
                 granted: item.granted,
                 reason: item.reason,
@@ -409,7 +512,7 @@ router.put('/users/:id/overrides', authenticateToken, requirePermissionKey('acce
       actorUserId: auth.userId,
       action: 'USER_OVERRIDES_UPDATED',
       targetType: 'USER',
-      targetId: String(targetUserId),
+      targetId: String(targetMembershipId),
       metadata: { count: overrides.length },
     });
 
@@ -424,30 +527,35 @@ router.post('/users/:id/reset-password', authenticateToken, requirePermissionKey
   const auth = getAuth(req, res);
   if (!auth) return;
 
-  const targetUserId = Number(req.params.id);
-  if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
+  const targetMembershipId = Number(req.params.id);
+  if (!Number.isInteger(targetMembershipId) || targetMembershipId <= 0) {
     return res.status(400).json({ message: 'Gecersiz kullanici kimligi.' });
   }
 
   const rawPassword = typeof req.body?.password === 'string' && req.body.password.trim() ? req.body.password.trim() : randomTempPassword();
 
   try {
-    const target = await prisma.salonUser.findFirst({ where: { id: targetUserId, salonId: auth.salonId } });
+    const target = await prisma.salonMembership.findFirst({ where: { id: targetMembershipId, salonId: auth.salonId } });
     if (!target) {
       return res.status(404).json({ message: 'Kullanici bulunamadi.' });
     }
 
     const passwordHash = await bcrypt.hash(rawPassword, 10);
-    await prisma.salonUser.update({
-      where: { id: targetUserId },
-      data: {
-        passwordHash,
-        passwordResetRequired: true,
-      },
-    });
+    const identityId = target.identityId;
+    await prisma.userIdentity.update({ where: { id: identityId }, data: { passwordHash } });
+    await prisma.salonMembership.update({ where: { id: targetMembershipId }, data: { passwordResetRequired: true } });
+    if (target.legacySalonUserId) {
+      await prisma.salonUser.update({
+        where: { id: target.legacySalonUserId },
+        data: {
+          passwordHash,
+          passwordResetRequired: true,
+        },
+      });
+    }
 
     await prisma.mobileAuthSession.updateMany({
-      where: { userId: targetUserId, revokedAt: null },
+      where: { membershipId: targetMembershipId, revokedAt: null },
       data: { revokedAt: new Date() },
     });
 
@@ -456,7 +564,7 @@ router.post('/users/:id/reset-password', authenticateToken, requirePermissionKey
       actorUserId: auth.userId,
       action: 'USER_PASSWORD_RESET',
       targetType: 'USER',
-      targetId: String(targetUserId),
+      targetId: String(targetMembershipId),
       metadata: {},
     });
 

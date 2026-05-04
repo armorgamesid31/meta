@@ -25,6 +25,7 @@ export const PERMISSION_CATALOG: PermissionSeed[] = [
   { key: 'analytics.view', module: 'analytics', description: 'Analitik goruntule' },
   { key: 'inventory.manage', module: 'inventory', description: 'Envanteri yonet' },
   { key: 'campaigns.manage', module: 'campaigns', description: 'Kampanyalari yonet' },
+  { key: 'campaigns.view', module: 'campaigns', description: 'Kampanyalari goruntule' },
   { key: 'campaigns.publish', module: 'campaigns', description: 'Kampanya yayimla ve gonder', isCritical: true },
   { key: 'automations.manage', module: 'automations', description: 'Otomasyonlari yonet' },
   { key: 'blacklist.manage', module: 'blacklist', description: 'Kara liste kayitlarini yonet' },
@@ -36,6 +37,9 @@ export const PERMISSION_CATALOG: PermissionSeed[] = [
   { key: 'website.manage', module: 'website', description: 'Web sitesi icerigini yonet' },
   { key: 'meta_direct.manage', module: 'integrations', description: 'Meta Direct entegrasyonunu yonet' },
   { key: 'imports.manage', module: 'imports', description: 'Veri aktarim sihirbazi ve aktarim islemlerini yonet' },
+  { key: 'timeoff.manage', module: 'staff', description: 'Tatil ve izin planlamasini yonet' },
+  { key: 'salon.faq.manage', module: 'website', description: 'Salon SSS icerigini yonet' },
+  { key: 'referrals.view', module: 'settings', description: 'Referans programini goruntule' },
   { key: 'access.roles.manage', module: 'access', description: 'Rol yetki matrisini yonet', isCritical: true },
   { key: 'access.users.manage', module: 'access', description: 'Ekip kullanicilari ve rolleri yonet', isCritical: true },
   { key: 'access.permission_overrides.edit', module: 'access', description: 'Kullanici yetki istisnalarini duzenle', isCritical: true },
@@ -44,61 +48,42 @@ export const PERMISSION_CATALOG: PermissionSeed[] = [
 
 const DEFAULT_ROLE_PERMISSIONS: Record<FixedRole, string[]> = {
   OWNER: PERMISSION_CATALOG.map((item) => item.key),
-  MANAGER: [
-    'dashboard.view',
-    'appointments.view',
-    'appointments.manage',
-    'appointments.payment.update',
-    'customers.view',
-    'customers.manage',
-    'services.manage',
-    'staff.manage',
-    'packages.manage',
-    'analytics.view',
-    'inventory.manage',
-    'campaigns.manage',
-    'automations.manage',
-    'blacklist.manage',
-    'conversations.manage',
-    'instagram_inbox.manage',
-    'notifications.inbox.view',
-    'notifications.preferences.manage',
-    'website.manage',
-    'meta_direct.manage',
-    'imports.manage',
-  ],
+  MANAGER: PERMISSION_CATALOG.map((item) => item.key),
   RECEPTION: [
-    'dashboard.view',
     'appointments.view',
     'appointments.manage',
     'customers.view',
     'customers.manage',
+    'campaigns.view',
     'packages.manage',
     'blacklist.manage',
     'conversations.manage',
     'instagram_inbox.manage',
+    'imports.manage',
+    'timeoff.manage',
+    'salon.faq.manage',
+    'referrals.view',
     'notifications.inbox.view',
     'notifications.preferences.manage',
   ],
   STAFF: [
-    'dashboard.view',
     'appointments.view',
     'appointments.manage',
     'customers.view',
     'customers.manage',
+    'campaigns.view',
+    'blacklist.manage',
     'conversations.manage',
     'notifications.inbox.view',
     'notifications.preferences.manage',
   ],
   FINANCE: [
-    'dashboard.view',
     'analytics.view',
     'inventory.manage',
-    'appointments.view',
-    'appointments.payment.update',
+    'campaigns.manage',
+    'campaigns.view',
     'notifications.inbox.view',
     'notifications.preferences.manage',
-    'access.audit.view',
   ],
 };
 
@@ -199,21 +184,21 @@ export async function getPermissionCatalogWithGrants(salonId: number): Promise<{
 
 export async function getEffectivePermissionSet(input: {
   salonId: number;
-  userId: number;
+  membershipId: number;
   role: string;
 }): Promise<Set<string>> {
   const fallbackRole = normalizeRole(input.role);
   await ensureSalonAccessSeed(input.salonId);
 
-  const user = await prisma.salonUser.findFirst({
-    where: { id: input.userId, salonId: input.salonId },
+  const membership = await prisma.salonMembership.findFirst({
+    where: { id: input.membershipId, salonId: input.salonId },
     select: { role: true, secondaryRoles: true },
   });
 
   const roles = Array.from(
     new Set<FixedRole>([
-      normalizeRole(user?.role || fallbackRole),
-      ...normalizeRoles(user?.secondaryRoles),
+      normalizeRole(membership?.role || fallbackRole),
+      ...normalizeRoles(membership?.secondaryRoles),
     ]),
   );
 
@@ -229,8 +214,10 @@ export async function getEffectivePermissionSet(input: {
     prisma.userPermissionOverride.findMany({
       where: {
         salonId: input.salonId,
-        userId: input.userId,
-        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+        AND: [
+          { OR: [{ membershipId: input.membershipId }, { userId: input.membershipId }] },
+          { OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
+        ],
       },
       select: { permissionId: true, granted: true },
     }),
@@ -257,7 +244,7 @@ export async function getEffectivePermissionSet(input: {
 
 export async function hasPermission(input: {
   salonId: number;
-  userId: number;
+  membershipId: number;
   role: string;
   permissionKey: string;
 }): Promise<boolean> {
@@ -301,7 +288,7 @@ export function mapAdminRouteToPermission(path: string, method: string): string 
   if (normalizedPath.startsWith('/inventory')) return 'inventory.manage';
   if (normalizedPath.startsWith('/campaigns')) {
     if (normalizedPath.includes('/publish') || normalizedPath.includes('/send')) return 'campaigns.publish';
-    return 'campaigns.manage';
+    return m === 'GET' ? 'campaigns.view' : 'campaigns.manage';
   }
   if (normalizedPath.startsWith('/automations')) return 'automations.manage';
   if (normalizedPath.startsWith('/blacklist')) return 'blacklist.manage';

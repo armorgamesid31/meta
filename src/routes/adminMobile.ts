@@ -479,10 +479,10 @@ async function ensureManagementAccess(req: any, res: any): Promise<boolean> {
   if (role === 'OWNER' || role === 'MANAGER') {
     return true;
   }
-  const userId = Number(req.user?.userId);
+  const membershipId = Number(req.user?.membershipId || req.user?.userId);
   const salonId = Number(req.user?.salonId);
 
-  if (!Number.isInteger(userId) || userId <= 0 || !Number.isInteger(salonId) || salonId <= 0) {
+  if (!Number.isInteger(membershipId) || membershipId <= 0 || !Number.isInteger(salonId) || salonId <= 0) {
     res.status(401).json({ message: 'Unauthorized.' });
     return false;
   }
@@ -493,7 +493,7 @@ async function ensureManagementAccess(req: any, res: any): Promise<boolean> {
       permissionKeys.map((permissionKey) =>
         hasPermission({
           salonId,
-          userId,
+          membershipId,
           role: req.user?.role,
           permissionKey,
         }),

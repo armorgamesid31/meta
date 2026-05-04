@@ -7,6 +7,8 @@ import { hasPermission, normalizeRole } from '../services/accessControl.js';
 interface AuthRequest extends Request {
   user?: {
     userId: number;
+    identityId?: number;
+    membershipId?: number;
     salonId: number;
     role: UserRole;
   };
@@ -37,15 +39,28 @@ export const authenticateToken = async (req: AuthRequest, res: Response, next: N
   }
 
   try {
-    const user = await prisma.salonUser.findUnique({
-      where: { id: payload.userId },
-      select: { salonId: true, role: true, isActive: true },
-    });
-
-    if (!user) {
+    const membershipId = Number(payload.membershipId || 0);
+    const identityId = Number(payload.identityId || 0);
+    if (!membershipId || !identityId) {
       return res.sendStatus(401);
     }
-    if (!user.isActive) {
+
+    const membership = await prisma.salonMembership.findUnique({
+      where: { id: membershipId },
+      select: {
+        salonId: true,
+        role: true,
+        isActive: true,
+        identityId: true,
+        legacySalonUserId: true,
+        identity: { select: { isActive: true } },
+      },
+    });
+
+    if (!membership || membership.identityId !== identityId) {
+      return res.sendStatus(401);
+    }
+    if (!membership.isActive || !membership.identity.isActive) {
       return res.status(403).json({ message: 'Account is inactive.' });
     }
 
@@ -55,7 +70,7 @@ export const authenticateToken = async (req: AuthRequest, res: Response, next: N
       if (resolvedSalonId && resolvedSalonId !== requestedSalonId) {
         return res.status(403).json({ message: 'x-salon-id does not match token scope.' });
       }
-      if (user.salonId !== requestedSalonId) {
+      if (membership.salonId !== requestedSalonId) {
         return res.status(403).json({ message: 'x-salon-id is outside user scope.' });
       }
       resolvedSalonId = requestedSalonId;
@@ -67,7 +82,10 @@ export const authenticateToken = async (req: AuthRequest, res: Response, next: N
 
     req.user = {
       ...payload,
-      role: normalizeRole(user.role),
+      userId: Number(membership.legacySalonUserId || payload.userId),
+      identityId,
+      membershipId,
+      role: normalizeRole(membership.role),
       salonId: resolvedSalonId,
     };
     next();
@@ -92,12 +110,12 @@ export const requirePermission = (permissionKey: string) => {
       return res.status(401).json({ message: 'Unauthorized' });
     }
 
-    const { userId, salonId, role } = req.user;
+    const { membershipId, salonId, role } = req.user;
 
     try {
       const allowed = await hasPermission({
         salonId,
-        userId,
+        membershipId: Number(membershipId || 0),
         role,
         permissionKey,
       });

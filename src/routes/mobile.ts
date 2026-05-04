@@ -51,8 +51,8 @@ router.get('/bootstrap', authenticateToken, async (req: any, res: any) => {
     await ensureSalonAccessSeed(user.salon.id);
     const effectivePermissionSet = await getEffectivePermissionSet({
       salonId: user.salon.id,
-      userId: user.id,
-      role: user.role,
+      membershipId: Number(req.user.membershipId || req.user.userId),
+      role: String(req.user.role || user.role),
     });
     const permissions = Array.from(effectivePermissionSet).sort();
 

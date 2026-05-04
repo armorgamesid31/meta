@@ -78,6 +78,7 @@ model Salon {
   settings                    SalonSettings?
   testimonials                SalonTestimonial[]
   users                       SalonUser[]
+  memberships                 SalonMembership[]
   subscriptions               SalonSubscription[]
   invites                     Invite[]
   referralCodes               ReferralCode[]                  @relation("ReferrerSalon")
@@ -130,7 +131,7 @@ model SalonAiAgentSettings {
 model SalonUser {
   id                                 Int                         @id @default(autoincrement())
   email                              String
-  phone                              String?                     @unique(map: "uq_salon_user_phone")
+  phone                              String?
   passwordHash                       String
   role                               String
   secondaryRoles                     Json?
@@ -155,11 +156,54 @@ model SalonUser {
   createdInvites                     Invite[]                    @relation("InviteCreatedBy")
   salon                              Salon                       @relation(fields: [salonId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   invitedTo                          Invite[]                    @relation("InviteTargetUser")
+
+  @@index([phone], map: "idx_salon_user_phone")
+}
+
+model UserIdentity {
+  id                Int                @id @default(autoincrement())
+  phone             String?            @unique(map: "uq_user_identity_phone")
+  email             String?            @unique(map: "uq_user_identity_email")
+  passwordHash      String
+  firstName         String?
+  lastName          String?
+  displayName       String?
+  isActive          Boolean            @default(true)
+  createdAt         DateTime?          @default(now()) @db.Timestamp(6)
+  updatedAt         DateTime?          @default(now()) @updatedAt @db.Timestamp(6)
+  memberships       SalonMembership[]
+  authSessions      MobileAuthSession[]
+}
+
+model SalonMembership {
+  id                    Int                    @id @default(autoincrement())
+  salonId               Int
+  identityId            Int
+  role                  String
+  secondaryRoles        Json?
+  isActive              Boolean                @default(true)
+  passwordResetRequired Boolean                @default(false)
+  lastLoginAt           DateTime?              @db.Timestamp(6)
+  legacySalonUserId     Int?
+  createdAt             DateTime?              @default(now()) @db.Timestamp(6)
+  updatedAt             DateTime?              @default(now()) @updatedAt @db.Timestamp(6)
+  salon                 Salon                  @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  identity              UserIdentity           @relation(fields: [identityId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  invites               Invite[]               @relation("InviteMembershipTarget")
+  staffMembers          Staff[]
+  permissionOverrides   UserPermissionOverride[]
+  authSessions          MobileAuthSession[]
+
+  @@unique([salonId, identityId], map: "uq_membership_salon_identity")
+  @@index([identityId, isActive], map: "idx_membership_identity_active")
+  @@index([salonId, role], map: "idx_membership_salon_role")
 }
 
 model MobileAuthSession {
   id               Int       @id @default(autoincrement())
   userId           Int
+  identityId       Int?
+  membershipId     Int?
   salonId          Int
   refreshTokenHash String    @unique(map: "uq_mobile_auth_refresh_token_hash")
   expiresAt        DateTime  @db.Timestamp(6)
@@ -168,6 +212,8 @@ model MobileAuthSession {
   updatedAt        DateTime? @default(now()) @updatedAt @db.Timestamp(6)
   salon            Salon     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   user             SalonUser @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  identity         UserIdentity?   @relation(fields: [identityId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  membership       SalonMembership? @relation(fields: [membershipId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([userId, salonId], map: "idx_mobile_auth_user_salon")
   @@index([salonId, expiresAt], map: "idx_mobile_auth_salon_expires")
@@ -194,6 +240,9 @@ model Invite {
   id              Int          @id @default(autoincrement())
   salonId         Int
   invitedUserId   Int
+  invitedMembershipId Int?
+  invitedIdentityPhone String?
+  invitedIdentityEmail String?
   inviteCodeHash  String       @unique
   inviteTokenHash String       @unique
   status          InviteStatus @default(PENDING)
@@ -205,6 +254,7 @@ model Invite {
   updatedAt       DateTime?    @default(now()) @updatedAt @db.Timestamp(6)
   salon           Salon        @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   invitedUser     SalonUser    @relation("InviteTargetUser", fields: [invitedUserId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  invitedMembership SalonMembership? @relation("InviteMembershipTarget", fields: [invitedMembershipId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   createdByUser   SalonUser?   @relation("InviteCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([salonId, status], map: "idx_invite_salon_status")
@@ -299,6 +349,7 @@ model Staff {
   updatedAt         DateTime?           @default(now()) @updatedAt @db.Timestamp(6)
   salonId           Int
   userId            Int?
+  membershipId      Int?
   title             String?
   bio               String?
   profileImageUrl   String?
@@ -308,6 +359,7 @@ model Staff {
   leaves            Leave[]
   testimonials      SalonTestimonial[]
   salon             Salon               @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  membership        SalonMembership?    @relation(fields: [membershipId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   StaffService      StaffService[]
   timeOffs          StaffTimeOff[]
   StaffWorkingHours StaffWorkingHours[]
@@ -1888,6 +1940,7 @@ model UserPermissionOverride {
   id              Int       @id @default(autoincrement())
   salonId         Int
   userId          Int
+  membershipId    Int?
   permissionId    Int
   granted         Boolean
   reason          String?
@@ -1895,6 +1948,7 @@ model UserPermissionOverride {
   updatedByUserId Int?
   createdAt       DateTime? @default(now()) @db.Timestamp(6)
   updatedAt       DateTime? @default(now()) @updatedAt @db.Timestamp(6)
+  membership      SalonMembership? @relation(fields: [membershipId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@unique([salonId, userId, permissionId], map: "uq_user_permission_override")
   @@index([salonId, userId], map: "idx_user_permission_override_salon_user")
@@ -1904,6 +1958,8 @@ model AccessAuditLog {
   id          Int       @id @default(autoincrement())
   salonId     Int
   actorUserId Int?
+  actorMembershipId Int?
+  actorIdentityId Int?
   action      String
   targetType  String
   targetId    String?

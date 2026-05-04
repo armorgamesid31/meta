@@ -4,6 +4,7 @@ import { getEffectivePermissionSet, hasPermission, mapAdminRouteToPermission } f
 interface AccessRequest {
   user?: {
     userId: number;
+    membershipId?: number;
     salonId: number;
     role: string;
   };
@@ -34,7 +35,7 @@ export function requirePermissionKey(permissionKey: string) {
 
     const allowed = await hasPermission({
       salonId: req.user.salonId,
-      userId: req.user.userId,
+      membershipId: Number(req.user.membershipId || req.user.userId),
       role: req.user.role,
       permissionKey,
     });
@@ -60,7 +61,7 @@ export async function attachEffectivePermissions(req: AccessRequest, _res: Respo
   }
   const set = await getEffectivePermissionSet({
     salonId: req.user.salonId,
-    userId: req.user.userId,
+    membershipId: Number(req.user.membershipId || req.user.userId),
     role: req.user.role,
   });
   req.effectivePermissions = Array.from(set).sort();
@@ -79,7 +80,7 @@ export async function requireAdminRoutePermission(req: AccessRequest, res: Respo
 
   const allowed = await hasPermission({
     salonId: req.user.salonId,
-    userId: req.user.userId,
+    membershipId: Number(req.user.membershipId || req.user.userId),
     role: req.user.role,
     permissionKey,
   });
