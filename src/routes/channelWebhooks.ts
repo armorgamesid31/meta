@@ -710,6 +710,7 @@ async function getOrFetchInstagramProfileOnce(input: {
       channel: ChannelType.INSTAGRAM,
       conversationKey: subjectNormalized,
       sourceUrl: fetched.profilePic,
+      instagramAccessToken: input.accessToken,
     });
     const profilePicToPersist = storedProfilePicUrl || fetched.profilePic;
     await prisma.channelProfileCache.update({
@@ -938,6 +939,7 @@ async function processIncomingBatch(items: any[]) {
     }
 
     let instagramProfile: InstagramScopedProfile | null = null;
+    let instagramAccessTokenForAvatar: string | null = null;
     if (channel === 'INSTAGRAM' && !row.isEcho) {
       const scopedUserId = normalizeInstagramScopedId(
         typeof row.channelUserId === 'string' ? row.channelUserId : '',
@@ -950,6 +952,7 @@ async function processIncomingBatch(items: any[]) {
         }
 
         const connectedAccountId = normalizeInstagramScopedId(credentials?.externalAccountId || '');
+        instagramAccessTokenForAvatar = credentials?.accessToken || null;
         if (credentials?.accessToken && (!connectedAccountId || connectedAccountId !== scopedUserId)) {
           const cacheKey = `${salonId}:${scopedUserId}`;
           if (instagramProfileBySubject.has(cacheKey)) {
@@ -1078,6 +1081,7 @@ async function processIncomingBatch(items: any[]) {
       channel,
       conversationKey,
       sourceUrl: instagramProfile?.profilePic || null,
+      instagramAccessToken: channel === 'INSTAGRAM' ? instagramAccessTokenForAvatar : null,
     });
     const profilePictureUrl = storedProfilePictureUrl || asNullableString(instagramProfile?.profilePic);
     if (instagramProfile && profilePictureUrl) {

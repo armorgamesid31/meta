@@ -16,6 +16,20 @@ const R2_FORCE_PATH_STYLE = (process.env.IMPORTS_R2_FORCE_PATH_STYLE || 'true').
 const MAX_IMAGE_BYTES = 6 * 1024 * 1024;
 
 let clientSingleton: S3Client | null | undefined;
+const R2_ENDPOINT_HOST = (() => {
+  try {
+    return new URL(R2_ENDPOINT).hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+})();
+const R2_PUBLIC_BASE_HOST = (() => {
+  try {
+    return new URL(R2_PUBLIC_BASE_URL).hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+})();
 
 function isConfigured() {
   return Boolean(R2_ENABLED && R2_BUCKET && R2_ENDPOINT && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY);
@@ -59,6 +73,7 @@ export async function storeConversationAvatarFromUrl(input: {
   channel: ChannelType;
   conversationKey: string;
   sourceUrl: string | null | undefined;
+  instagramAccessToken?: string | null;
 }): Promise<string | null> {
   const client = getClient();
   const sourceUrl = typeof input.sourceUrl === 'string' ? input.sourceUrl.trim() : '';
@@ -73,6 +88,20 @@ export async function storeConversationAvatarFromUrl(input: {
 
   if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
     return null;
+  }
+  const parsedHost = parsed.hostname.toLowerCase();
+  if ((R2_ENDPOINT_HOST && parsedHost === R2_ENDPOINT_HOST) || (R2_PUBLIC_BASE_HOST && parsedHost === R2_PUBLIC_BASE_HOST)) {
+    return sourceUrl;
+  }
+  if (
+    input.channel === 'INSTAGRAM' &&
+    (parsedHost === 'graph.instagram.com' || parsedHost === 'graph.facebook.com') &&
+    !parsed.searchParams.has('access_token')
+  ) {
+    const token = (input.instagramAccessToken || '').trim();
+    if (token) {
+      parsed.searchParams.set('access_token', token);
+    }
   }
 
   try {
