@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { createWaitlistEntry, getWaitlistOfferByToken, acceptWaitlistOffer, rejectWaitlistOffer } from '../services/waitlist.js';
 import type { PersonGroup } from '../modules/availability/types.js';
-import { validateMobilePhone } from '../services/phoneValidation.js';
+import { normalizeDigitsOnly } from '../services/phoneValidation.js';
 
 const router = Router();
 
@@ -22,9 +22,6 @@ router.post('/', async (req: any, res: any) => {
   const customerId = Number(req.body?.customerId);
   const customerName = typeof req.body?.customerName === 'string' ? req.body.customerName.trim() : '';
   const customerPhone = typeof req.body?.customerPhone === 'string' ? req.body.customerPhone.trim() : '';
-  const customerCountryIso = typeof req.body?.customerCountryIso === 'string' ? req.body.customerCountryIso.trim() : '';
-  const customerRawPhone = typeof req.body?.customerRawPhone === 'string' ? req.body.customerRawPhone.trim() : customerPhone;
-  const customerNormalizedPhone = typeof req.body?.customerNormalizedPhone === 'string' ? req.body.customerNormalizedPhone.trim() : customerPhone;
   const notes = typeof req.body?.notes === 'string' ? req.body.notes.trim() : null;
   const allowNearbyMatches = Boolean(req.body?.allowNearbyMatches);
   const nearbyToleranceMinutes = Number(req.body?.nearbyToleranceMinutes);
@@ -34,11 +31,10 @@ router.post('/', async (req: any, res: any) => {
   }
 
   try {
-    const validatedPhone = validateMobilePhone({
-      rawPhone: customerRawPhone,
-      countryIso: customerCountryIso,
-      normalizedPhone: customerNormalizedPhone,
-    });
+    const normalizedPhone = normalizeDigitsOnly(customerPhone);
+    if (!normalizedPhone) {
+      return res.status(400).json({ message: 'phone_required' });
+    }
     const item = await createWaitlistEntry({
       salonId,
       date,
@@ -51,7 +47,7 @@ router.post('/', async (req: any, res: any) => {
       customer: {
         customerId: Number.isInteger(customerId) && customerId > 0 ? customerId : null,
         customerName,
-        customerPhone: validatedPhone.digits,
+        customerPhone: normalizedPhone,
       },
       notes,
     });
