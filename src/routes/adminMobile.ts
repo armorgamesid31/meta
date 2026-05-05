@@ -727,6 +727,26 @@ function asOptionalString(value: unknown): string | null {
   return trimmed || null;
 }
 
+const IMPORTS_R2_ENDPOINT_HOST = (() => {
+  try {
+    const endpoint = (process.env.IMPORTS_R2_ENDPOINT || '').trim();
+    if (!endpoint) return null;
+    return new URL(endpoint).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+})();
+
+const IMPORTS_R2_PUBLIC_BASE_HOST = (() => {
+  try {
+    const baseUrl = (process.env.IMPORTS_R2_PUBLIC_BASE_URL || '').trim();
+    if (!baseUrl) return null;
+    return new URL(baseUrl).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+})();
+
 function isAllowedConversationImageHost(hostname: string): boolean {
   const host = hostname.toLowerCase();
   if (host === 'graph.instagram.com' || host === 'graph.facebook.com' || host === 'lookaside.fbsbx.com') {
@@ -736,6 +756,12 @@ function isAllowedConversationImageHost(hostname: string): boolean {
     return true;
   }
   if (host === 'api.chakrahq.com' || host.endsWith('.chakrahq.com')) {
+    return true;
+  }
+  if (IMPORTS_R2_ENDPOINT_HOST && host === IMPORTS_R2_ENDPOINT_HOST) {
+    return true;
+  }
+  if (IMPORTS_R2_PUBLIC_BASE_HOST && host === IMPORTS_R2_PUBLIC_BASE_HOST) {
     return true;
   }
   return false;

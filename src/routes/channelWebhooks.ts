@@ -19,6 +19,7 @@ import {
   upsertIdentitySession,
 } from '../services/identityService.js';
 import { upsertConversationMessageEvent } from '../services/conversationMessageEvents.js';
+import { storeConversationAvatarFromUrl } from '../services/conversationAvatarStorage.js';
 
 const router = Router();
 
@@ -704,17 +705,24 @@ async function getOrFetchInstagramProfileOnce(input: {
   });
 
   if (fetched) {
+    const storedProfilePicUrl = await storeConversationAvatarFromUrl({
+      salonId: input.salonId,
+      channel: ChannelType.INSTAGRAM,
+      conversationKey: subjectNormalized,
+      sourceUrl: fetched.profilePic,
+    });
+    const profilePicToPersist = storedProfilePicUrl || fetched.profilePic;
     await prisma.channelProfileCache.update({
       where: uniqueWhere,
       data: {
         profileName: fetched.name,
         profileUsername: fetched.username,
-        profilePicUrl: fetched.profilePic,
+        profilePicUrl: profilePicToPersist,
         rawProfile: {
           id: fetched.id,
           name: fetched.name,
           username: fetched.username,
-          profile_pic: fetched.profilePic,
+          profile_pic: profilePicToPersist,
           follower_count: fetched.followerCount,
           is_user_follow_business: fetched.isUserFollowBusiness,
           is_business_follow_user: fetched.isBusinessFollowUser,
@@ -724,7 +732,10 @@ async function getOrFetchInstagramProfileOnce(input: {
         lastError: null,
       },
     });
-    return fetched;
+    return {
+      ...fetched,
+      profilePic: profilePicToPersist,
+    };
   }
 
   await prisma.channelProfileCache.update({
@@ -1062,7 +1073,16 @@ async function processIncomingBatch(items: any[]) {
       : channelProfileName;
 
     const profileUsername = asNullableString(instagramProfile?.username);
-    const profilePictureUrl = asNullableString(instagramProfile?.profilePic);
+    const storedProfilePictureUrl = await storeConversationAvatarFromUrl({
+      salonId,
+      channel,
+      conversationKey,
+      sourceUrl: instagramProfile?.profilePic || null,
+    });
+    const profilePictureUrl = storedProfilePictureUrl || asNullableString(instagramProfile?.profilePic);
+    if (instagramProfile && profilePictureUrl) {
+      instagramProfile.profilePic = profilePictureUrl;
+    }
     const rawPayloadForStorage = enrichRawPayloadWithInstagramProfile(row.raw, instagramProfile);
 
     const eventDate = toEventDate(row);
