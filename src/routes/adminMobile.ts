@@ -3646,6 +3646,14 @@ router.post('/customers/:id/packages', authenticateToken, async (req: any, res: 
       : Number(templateIdRaw);
 
   const now = new Date();
+  const actorUserId = Number.isInteger(Number(req.user?.userId)) ? Number(req.user.userId) : null;
+  const actorMembershipId = Number.isInteger(Number(req.user?.membershipId)) ? Number(req.user.membershipId) : null;
+  const actorDisplayName =
+    typeof req.user?.displayName === 'string' && req.user.displayName.trim()
+      ? req.user.displayName.trim()
+      : typeof req.user?.email === 'string' && req.user.email.trim()
+        ? req.user.email.trim()
+        : null;
 
   try {
     const customer = await prisma.customer.findFirst({
@@ -3771,6 +3779,10 @@ router.post('/customers/:id/packages', authenticateToken, async (req: any, res: 
             reason: sourceType === 'TEMPLATE' ? 'template_assignment' : 'custom_assignment',
             metadata: {
               sourceType,
+              adjustedAt: now.toISOString(),
+              adjustedByUserId: actorUserId,
+              adjustedByMembershipId: actorMembershipId,
+              adjustedByDisplayName: actorDisplayName,
             },
           },
         });
@@ -3807,6 +3819,14 @@ router.post('/customers/:id/packages/:packageId/adjust', authenticateToken, asyn
   const serviceId = Number(req.body?.serviceId);
   const delta = Number(req.body?.delta);
   const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
+  const actorUserId = Number.isInteger(Number(req.user?.userId)) ? Number(req.user.userId) : null;
+  const actorMembershipId = Number.isInteger(Number(req.user?.membershipId)) ? Number(req.user.membershipId) : null;
+  const actorDisplayName =
+    typeof req.user?.displayName === 'string' && req.user.displayName.trim()
+      ? req.user.displayName.trim()
+      : typeof req.user?.email === 'string' && req.user.email.trim()
+        ? req.user.email.trim()
+        : null;
 
   if (!Number.isInteger(customerId) || customerId <= 0) {
     return res.status(400).json({ message: 'Invalid customer id.' });
@@ -3882,6 +3902,9 @@ router.post('/customers/:id/packages/:packageId/adjust', authenticateToken, asyn
           reason,
           metadata: {
             adjustedAt: now.toISOString(),
+            adjustedByUserId: actorUserId,
+            adjustedByMembershipId: actorMembershipId,
+            adjustedByDisplayName: actorDisplayName,
           },
         },
       });
