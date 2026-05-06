@@ -177,7 +177,7 @@ router.get('/:slug/homepage', async (req: any, res: any) => {
                 id: 'generated-1',
                   templateType: 'GENERIC',
                   generatedText:
-                    'Professional team, clean environment, and excellent service quality. Highly recommended.',
+                    'Profesyonel ekip, hijyenik ortam ve yüksek hizmet kalitesiyle çok memnun kaldım. Kesinlikle tavsiye ederim.',
                   isGenerated: true,
                   expert: null,
                   category: null,
@@ -194,7 +194,7 @@ router.get('/:slug/homepage', async (req: any, res: any) => {
               generated.push({
                 id: `generated-${index + 1}`,
                 templateType: 'CATEGORY_EXPERT',
-                generatedText: `${expert.name} was incredibly professional and attentive. I highly recommend this salon for ${category.name} treatments.`,
+                generatedText: `${expert.name} çok ilgili ve profesyoneldi. ${category.name} hizmeti için bu salonu gönül rahatlığıyla tavsiye ederim.`,
                 isGenerated: true,
                 expert: {
                   id: expert.id,

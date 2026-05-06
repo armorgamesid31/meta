@@ -4,29 +4,83 @@ type CanonicalCategory = {
   key: string;
   defaultName: string;
   defaultSlug: string;
+  defaultDescription: string;
   displayOrder: number;
 };
 
 const CANONICAL_CATEGORIES: CanonicalCategory[] = [
-  { key: 'FACIAL', defaultName: 'Yüz ve Cilt Bakımı', defaultSlug: 'yuz-cilt-bakimi', displayOrder: 1 },
-  { key: 'MEDICAL', defaultName: 'Medikal Estetik', defaultSlug: 'medikal-estetik', displayOrder: 2 },
-  { key: 'LASER', defaultName: 'Lazer Epilasyon', defaultSlug: 'lazer-epilasyon', displayOrder: 3 },
-  { key: 'WAX', defaultName: 'Ağda', defaultSlug: 'agda', displayOrder: 4 },
+  {
+    key: 'FACIAL',
+    defaultName: 'Yüz ve Cilt Bakımı',
+    defaultSlug: 'yuz-cilt-bakimi',
+    defaultDescription:
+      'Cildinizin ihtiyaçlarına özel bakım uygulamalarıyla daha canlı, dengeli ve sağlıklı bir görünüm hedeflenir.',
+    displayOrder: 1,
+  },
+  {
+    key: 'MEDICAL',
+    defaultName: 'Medikal Estetik',
+    defaultSlug: 'medikal-estetik',
+    defaultDescription:
+      'Uzman değerlendirmesiyle planlanan medikal estetik uygulamalar, doğal sonuç ve güvenli süreç odaklı sunulur.',
+    displayOrder: 2,
+  },
+  {
+    key: 'LASER',
+    defaultName: 'Lazer Epilasyon',
+    defaultSlug: 'lazer-epilasyon',
+    defaultDescription:
+      'Cilt ve kıl yapınıza uygun lazer epilasyon protokolleriyle düzenli seanslarda konforlu ve etkili sonuçlar amaçlanır.',
+    displayOrder: 3,
+  },
+  {
+    key: 'WAX',
+    defaultName: 'Ağda',
+    defaultSlug: 'agda',
+    defaultDescription:
+      'Hassas ciltlere uygun ürünlerle hijyenik ve konforlu ağda uygulamaları, pürüzsüz bir cilt deneyimi için planlanır.',
+    displayOrder: 4,
+  },
   {
     key: 'BODY',
     defaultName: 'Vücut Şekillendirme ve Masaj',
     defaultSlug: 'vucut-sekillendirme-masaj',
+    defaultDescription:
+      'Bölgesel incelme, sıkılaşma ve rahatlama hedeflerine yönelik vücut uygulamaları uzman ekip tarafından kişiselleştirilir.',
     displayOrder: 5,
   },
-  { key: 'NAIL', defaultName: 'El, Ayak ve Tırnak', defaultSlug: 'el-ayak-tirnak', displayOrder: 6 },
-  { key: 'HAIR', defaultName: 'Saç ve Kuaför', defaultSlug: 'sac-kuafor', displayOrder: 7 },
+  {
+    key: 'NAIL',
+    defaultName: 'El, Ayak ve Tırnak',
+    defaultSlug: 'el-ayak-tirnak',
+    defaultDescription:
+      'Manikür, pedikür ve tırnak bakım uygulamalarıyla estetik görünüm ve uzun süreli bakım bir arada sunulur.',
+    displayOrder: 6,
+  },
+  {
+    key: 'HAIR',
+    defaultName: 'Saç ve Kuaför',
+    defaultSlug: 'sac-kuafor',
+    defaultDescription:
+      'Kesim, renklendirme ve bakım işlemleri saç yapınıza uygun tekniklerle uygulanarak güçlü ve bakımlı görünüm desteklenir.',
+    displayOrder: 7,
+  },
   {
     key: 'CONSULTATION',
     defaultName: 'Danışmanlık ve Paketler',
     defaultSlug: 'danismanlik-paketler',
+    defaultDescription:
+      'Hedeflerinize uygun hizmet planları ve paket önerileriyle bütçe, süre ve beklenti dengesini sağlayan yönlendirme sunulur.',
     displayOrder: 8,
   },
-  { key: 'OTHER', defaultName: 'Diğer Hizmetler', defaultSlug: 'diger-hizmetler', displayOrder: 9 },
+  {
+    key: 'OTHER',
+    defaultName: 'Diğer Hizmetler',
+    defaultSlug: 'diger-hizmetler',
+    defaultDescription:
+      'Kategori dışı özel uygulamalar ve tamamlayıcı hizmetler, ihtiyacınıza göre planlanarak esnek seçenekler sunar.',
+    displayOrder: 9,
+  },
 ];
 
 const LEGACY_ASCII_NAMES_BY_KEY: Record<string, string[]> = {
@@ -57,6 +111,7 @@ async function ensureGlobalCategories() {
       update: {
         defaultName: category.defaultName,
         defaultSlug: category.defaultSlug,
+        defaultDescription: category.defaultDescription,
         displayOrder: category.displayOrder,
         isActive: true,
       },
@@ -64,6 +119,7 @@ async function ensureGlobalCategories() {
         key: category.key,
         defaultName: category.defaultName,
         defaultSlug: category.defaultSlug,
+        defaultDescription: category.defaultDescription,
         displayOrder: category.displayOrder,
         isActive: true,
       },
@@ -72,6 +128,7 @@ async function ensureGlobalCategories() {
         key: true,
         defaultName: true,
         displayOrder: true,
+        defaultDescription: true,
       },
     });
 
@@ -113,6 +170,7 @@ export async function ensureSalonServiceCategories(salonId: number) {
     salonId: number;
     categoryId: number;
     name: string;
+    marketingDescription: string;
     isActive: boolean;
     displayOrder: number;
     capacity: number;
@@ -129,6 +187,7 @@ export async function ensureSalonServiceCategories(salonId: number) {
         salonId,
         categoryId: category.id,
         name: category.defaultName,
+        marketingDescription: category.defaultDescription,
         isActive: true,
         displayOrder: category.displayOrder,
         capacity: 1,
