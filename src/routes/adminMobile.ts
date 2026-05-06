@@ -6605,7 +6605,6 @@ router.post('/services', authenticateToken, async (req: any, res: any) => {
   const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
   const duration = Number(req.body?.duration);
   const price = Number(req.body?.price);
-  const category = typeof req.body?.category === 'string' && req.body.category.trim() ? req.body.category.trim() : 'OTHER';
   const description = typeof req.body?.description === 'string' ? req.body.description.trim() : null;
   const requiresSpecialist = Boolean(req.body?.requiresSpecialist);
   const isActive = req.body?.isActive === undefined ? true : Boolean(req.body?.isActive);
@@ -6638,8 +6637,8 @@ router.post('/services', authenticateToken, async (req: any, res: any) => {
   if (!name || !Number.isFinite(duration) || duration <= 0 || !Number.isFinite(price) || price < 0) {
     return res.status(400).json({ message: 'name, duration and price are required.' });
   }
-  if (categoryId !== null && (!Number.isInteger(categoryId) || categoryId <= 0)) {
-    return res.status(400).json({ message: 'categoryId must be a positive integer.' });
+  if (categoryId === null || !Number.isInteger(categoryId) || categoryId <= 0) {
+    return res.status(400).json({ message: 'categoryId is required and must be a positive integer.' });
   }
   if (regionId !== null && (!Number.isInteger(regionId) || regionId <= 0)) {
     return res.status(400).json({ message: 'regionId must be a positive integer.' });
@@ -6655,6 +6654,21 @@ router.post('/services', authenticateToken, async (req: any, res: any) => {
   }
 
   try {
+    const categoryExists = await prisma.serviceCategory.findFirst({
+      where: { id: categoryId, salonId },
+      select: {
+        id: true,
+        categoryRef: {
+          select: {
+            key: true,
+          },
+        },
+      },
+    });
+    if (!categoryExists) {
+      return res.status(400).json({ message: 'categoryId is not valid for this salon.' });
+    }
+
     if (serviceGroupId !== null) {
       const groupExists = await prisma.serviceGroup.findFirst({
         where: { id: serviceGroupId, salonId },
@@ -6681,7 +6695,7 @@ router.post('/services', authenticateToken, async (req: any, res: any) => {
           name,
           duration: Math.round(duration),
           price,
-          category,
+          category: categoryExists.categoryRef?.key || 'OTHER',
           description,
           isActive,
           requiresSpecialist,
@@ -6785,9 +6799,6 @@ router.put('/services/:id', authenticateToken, async (req: any, res: any) => {
   if (typeof req.body?.description === 'string') {
     updates.description = req.body.description.trim() || null;
   }
-  if (typeof req.body?.category === 'string') {
-    updates.category = req.body.category.trim() || 'OTHER';
-  }
   if (req.body?.duration !== undefined) {
     const duration = Number(req.body.duration);
     if (!Number.isFinite(duration) || duration <= 0) {
@@ -6810,7 +6821,7 @@ router.put('/services/:id', authenticateToken, async (req: any, res: any) => {
   }
   if (req.body?.categoryId !== undefined) {
     if (req.body.categoryId === null || req.body.categoryId === '') {
-      updates.categoryId = null;
+      return res.status(400).json({ message: 'categoryId cannot be empty.' });
     } else {
       const categoryId = Number(req.body.categoryId);
       if (!Number.isInteger(categoryId) || categoryId <= 0) {
@@ -6885,6 +6896,24 @@ router.put('/services/:id', authenticateToken, async (req: any, res: any) => {
     });
     if (!exists) {
       return res.status(404).json({ message: 'Service not found.' });
+    }
+
+    if (updates.categoryId !== undefined) {
+      const categoryExists = await prisma.serviceCategory.findFirst({
+        where: { id: updates.categoryId, salonId },
+        select: {
+          id: true,
+          categoryRef: {
+            select: {
+              key: true,
+            },
+          },
+        },
+      });
+      if (!categoryExists) {
+        return res.status(400).json({ message: 'categoryId is not valid for this salon.' });
+      }
+      updates.category = categoryExists.categoryRef?.key || 'OTHER';
     }
 
     if (updates.serviceGroupId !== undefined && updates.serviceGroupId !== null) {
