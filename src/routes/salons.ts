@@ -4,6 +4,32 @@ import { prisma } from '../prisma.js';
 const router = Router();
 const DEFAULT_GALLERY_IMAGES = ['/placeholder.jpg', '/placeholder.jpg?slide=2', '/placeholder.jpg?slide=3'];
 const DEFAULT_WORKING_DAYS = [1, 2, 3, 4, 5, 6];
+const GENERIC_TESTIMONIAL_TEMPLATES = [
+  'Çok tatlı bir ekip var, insan kendini gerçekten rahat hissediyor. Ben çok sevdim 😊',
+  'İlk kez gittim ama sanki daha önce gitmişim gibi rahat ettim. Çok güzel ilgilendiler.',
+  'Temiz, düzenli ve ilgili bir salon. Genel olarak iyi bir deneyimdi.',
+  'Randevu süreci de hizmet de sorunsuz geçti. Bence gayet iyi bir yer.',
+  'Memnun kaldım, özellikle çalışanların ilgisi güzeldi.',
+];
+const SERVICE_ONLY_TESTIMONIAL_TEMPLATES = [
+  '{service} hizmetinden gerçekten çok memnun kaldım. Sonuç beklediğimden de güzel oldu.',
+  '{service} için iyi ki burayı tercih etmişim dedim. Sonuç tam içime sindi.',
+  'Açıkçası {service} bu kadar iyi olur mu diye düşünüyordum ama çok beğendim.',
+  '{service} hizmeti beklentimin üstündeydi. Çıkarken gerçekten mutlu ayrıldım.',
+  '{service} için gittim, çok güzel ilgilendiler. Ortam da baya rahattı 😊',
+  '{service} süreci çok rahat geçti, hiç kasılmadan hizmet aldım diyebilirim.',
+  '{service} hizmetinden memnun kaldım. Süreç gayet temiz ve özenliydi.',
+  'Genel olarak {service} deneyimim güzeldi. Tekrar tercih edebilirim.',
+  '{service} için geldim, valla beklediğimden çok daha güzel oldu. Ellerine sağlık 🌸',
+  '{service} sonucuna bayıldım desem abartmış olmam. Çok tatlı ilgilendiler, çok memnun kaldım.',
+];
+const SERVICE_EXPERT_TESTIMONIAL_TEMPLATES = [
+  '{expert} gerçekten harika ilgilendi. {service} sonucu tam istediğim gibi oldu, çok beğendim 😊',
+  '{expert} o kadar tatlı ve özenliydi ki süreç çok rahat geçti. {service} için kesinlikle yine gelirim.',
+  '{expert} ne istediğimi hemen anladı, {service} sonucunu da baya beğendim. Ellerine sağlık.',
+  '{expert} sağolsun çok güzel ilgilendi. {service} beklediğimden daha iyi oldu, içime sindi.',
+  '{expert} hem çok samimiydi hem de işini gerçekten güzel yaptı. {service} sonucuna bayıldım ✨',
+];
 
 function normalizeWhatsappPhone(phone?: string | null): string {
   if (!phone) return '';
@@ -30,6 +56,12 @@ function formatExpertReferenceForTestimonial(expert: {
     return firstName;
   }
   return String(expert?.name || 'Uzman').trim() || 'Uzman';
+}
+
+function fillTemplate(template: string, values: { expert?: string; service?: string }): string {
+  return template
+    .replaceAll('{expert}', values.expert || 'Uzman')
+    .replaceAll('{service}', values.service || 'hizmet');
 }
 
 router.get('/:slug/homepage', async (req: any, res: any) => {
@@ -227,12 +259,20 @@ router.get('/:slug/homepage', async (req: any, res: any) => {
               const expert = fallbackExperts[index % fallbackExperts.length];
               const preferredServiceName = normalizeServiceNameForCopy(category.Service[0]?.name);
               const expertReference = formatExpertReferenceForTestimonial(expert);
+              const useServiceExpert = Boolean(preferredServiceName) && index % 2 === 0;
+              const template = useServiceExpert
+                ? SERVICE_EXPERT_TESTIMONIAL_TEMPLATES[index % SERVICE_EXPERT_TESTIMONIAL_TEMPLATES.length]
+                : preferredServiceName
+                  ? SERVICE_ONLY_TESTIMONIAL_TEMPLATES[index % SERVICE_ONLY_TESTIMONIAL_TEMPLATES.length]
+                  : GENERIC_TESTIMONIAL_TEMPLATES[index % GENERIC_TESTIMONIAL_TEMPLATES.length];
+
               generated.push({
                 id: `generated-${index + 1}`,
-                templateType: 'CATEGORY_EXPERT',
-                generatedText: preferredServiceName
-                  ? `${expertReference} çok ilgili ve profesyoneldi. ${preferredServiceName} hizmeti için bu salonu gönül rahatlığıyla tavsiye ederim.`
-                  : `${expertReference} çok ilgili ve profesyoneldi. Bu salonu gönül rahatlığıyla tavsiye ederim.`,
+                templateType: useServiceExpert ? 'SERVICE_EXPERT' : preferredServiceName ? 'SERVICE_ONLY' : 'GENERIC',
+                generatedText: fillTemplate(template, {
+                  expert: expertReference,
+                  service: preferredServiceName || 'hizmet',
+                }),
                 isGenerated: true,
                 expert: {
                   id: expert.id,

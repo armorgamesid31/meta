@@ -3,19 +3,87 @@
 # Kaynak: src/routes/salons.ts
 # Not: Köşeli parantez alanları değişken placeholder'dır.
 
-Toplam şablon tipi: 2
-Toplam metin varyantı: 3
+Toplam şablon tipi: 3
+Toplam metin varyantı: 20
+
+# --------------------------------------------------
+# GENERIC - 5 adet
+# Dağılım: 2 çok samimi, 2 iyi, 1 memnun
+# --------------------------------------------------
 
 [1] TEMPLATE_TYPE = GENERIC
-Profesyonel ekip, hijyenik ortam ve yüksek hizmet kalitesiyle çok memnun kaldım. Kesinlikle tavsiye ederim.
+Çok tatlı bir ekip var, insan kendini gerçekten rahat hissediyor. Ben çok sevdim 😊
 
-[2] TEMPLATE_TYPE = CATEGORY_EXPERT (hizmet adı mevcutsa)
-[UZMAN_ADI] çok ilgili ve profesyoneldi. [HIZMET_ADI_kuçuk_harf] hizmeti için bu salonu gönül rahatlığıyla tavsiye ederim.
+[2] TEMPLATE_TYPE = GENERIC
+İlk kez gittim ama sanki daha önce gitmişim gibi rahat ettim. Çok güzel ilgilendiler.
 
-[3] TEMPLATE_TYPE = CATEGORY_EXPERT (hizmet adı yoksa fallback)
-[UZMAN_ADI] çok ilgili ve profesyoneldi. Bu salonu gönül rahatlığıyla tavsiye ederim.
+[3] TEMPLATE_TYPE = GENERIC
+Temiz, düzenli ve ilgili bir salon. Genel olarak iyi bir deneyimdi.
 
-# Düzenleme Kuralları
-# - [UZMAN_ADI] ve [HIZMET_ADI_kuçuk_harf] placeholder'larını koru.
-# - HIZMET_ADI runtime'da küçük harfe normalize ediliyor.
-# - Her satır tek bir şablon cümlesi olacak şekilde düzenleyebilirsin.
+[4] TEMPLATE_TYPE = GENERIC
+Randevu süreci de hizmet de sorunsuz geçti. Bence gayet iyi bir yer.
+
+[5] TEMPLATE_TYPE = GENERIC
+Memnun kaldım, özellikle çalışanların ilgisi güzeldi.
+
+# --------------------------------------------------
+# SERVICE_ONLY - 10 adet
+# Placeholder: [HIZMET_ADI_kuçuk_harf]
+# Dağılım:
+# 4 aşırı memnuniyet
+# 2 samimi
+# 2 memnun
+# 2 aşırı memnun + samimi
+# --------------------------------------------------
+
+[6] TEMPLATE_TYPE = SERVICE_ONLY
+[HIZMET_ADI_kuçuk_harf] hizmetinden gerçekten çok memnun kaldım. Sonuç beklediğimden de güzel oldu.
+
+[7] TEMPLATE_TYPE = SERVICE_ONLY
+[HIZMET_ADI_kuçuk_harf] için iyi ki burayı tercih etmişim dedim. Sonuç tam içime sindi.
+
+[8] TEMPLATE_TYPE = SERVICE_ONLY
+Açıkçası [HIZMET_ADI_kuçuk_harf] bu kadar iyi olur mu diye düşünüyordum ama çok beğendim.
+
+[9] TEMPLATE_TYPE = SERVICE_ONLY
+[HIZMET_ADI_kuçuk_harf] hizmeti beklentimin üstündeydi. Çıkarken gerçekten mutlu ayrıldım.
+
+[10] TEMPLATE_TYPE = SERVICE_ONLY
+[HIZMET_ADI_kuçuk_harf] için gittim, çok güzel ilgilendiler. Ortam da baya rahattı 😊
+
+[11] TEMPLATE_TYPE = SERVICE_ONLY
+[HIZMET_ADI_kuçuk_harf] süreci çok rahat geçti, hiç kasılmadan hizmet aldım diyebilirim.
+
+[12] TEMPLATE_TYPE = SERVICE_ONLY
+[HIZMET_ADI_kuçuk_harf] hizmetinden memnun kaldım. Süreç gayet temiz ve özenliydi.
+
+[13] TEMPLATE_TYPE = SERVICE_ONLY
+Genel olarak [HIZMET_ADI_kuçuk_harf] deneyimim güzeldi. Tekrar tercih edebilirim.
+
+[14] TEMPLATE_TYPE = SERVICE_ONLY
+[HIZMET_ADI_kuçuk_harf] için geldim, valla beklediğimden çok daha güzel oldu. Ellerine sağlık 🌸
+
+[15] TEMPLATE_TYPE = SERVICE_ONLY
+[HIZMET_ADI_kuçuk_harf] sonucuna bayıldım desem abartmış olmam. Çok tatlı ilgilendiler, çok memnun kaldım.
+
+# --------------------------------------------------
+# SERVICE_EXPERT - 5 adet
+# Placeholder: [UZMAN_HITAP], [HIZMET_ADI_kuçuk_harf]
+# [UZMAN_HITAP] = kadın: "Ad Hanım", erkek: "Ad Bey", other: "Ad"
+# Ton: daha samimi, olumlu, beğeni odaklı
+# --------------------------------------------------
+
+[16] TEMPLATE_TYPE = SERVICE_EXPERT
+[UZMAN_HITAP] gerçekten harika ilgilendi. [HIZMET_ADI_kuçuk_harf] sonucu tam istediğim gibi oldu, çok beğendim 😊
+
+[17] TEMPLATE_TYPE = SERVICE_EXPERT
+[UZMAN_HITAP] o kadar tatlı ve özenliydi ki süreç çok rahat geçti. [HIZMET_ADI_kuçuk_harf] için kesinlikle yine gelirim.
+
+[18] TEMPLATE_TYPE = SERVICE_EXPERT
+[UZMAN_HITAP] ne istediğimi hemen anladı, [HIZMET_ADI_kuçuk_harf] sonucunu da baya beğendim. Ellerine sağlık.
+
+[19] TEMPLATE_TYPE = SERVICE_EXPERT
+[UZMAN_HITAP] sağolsun çok güzel ilgilendi. [HIZMET_ADI_kuçuk_harf] beklediğimden daha iyi oldu, içime sindi.
+
+[20] TEMPLATE_TYPE = SERVICE_EXPERT
+[UZMAN_HITAP] hem çok samimiydi hem de işini gerçekten güzel yaptı. [HIZMET_ADI_kuçuk_harf] sonucuna bayıldım ✨
