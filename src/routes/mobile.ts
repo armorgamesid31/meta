@@ -56,6 +56,23 @@ router.get('/bootstrap', authenticateToken, async (req: any, res: any) => {
     });
     const permissions = Array.from(effectivePermissionSet).sort();
 
+    const membershipId = Number(req.user.membershipId || 0);
+    const linkedStaff =
+      membershipId > 0
+        ? await prisma.staff.findFirst({
+            where: {
+              salonId: user.salon.id,
+              membershipId,
+            },
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              gender: true,
+            },
+          })
+        : null;
+
     const [settings, serviceCount, staffCount] = await prisma.$transaction([
       prisma.salonSettings.findUnique({
         where: { salonId: user.salon.id },
@@ -103,6 +120,13 @@ router.get('/bootstrap', authenticateToken, async (req: any, res: any) => {
         slotInterval: settings?.slotInterval ?? null,
         workingDays: settings?.workingDays ?? null,
       },
+      staffProfile: {
+        linkedStaffId: linkedStaff?.id ?? null,
+        firstName: linkedStaff?.firstName ?? null,
+        lastName: linkedStaff?.lastName ?? null,
+        gender: linkedStaff?.gender ?? null,
+        completionRequired: Boolean(linkedStaff && (!linkedStaff.firstName || !linkedStaff.gender)),
+      },
       notifications: {
         defaults: getDefaultNotificationPolicy(),
       },
@@ -113,6 +137,86 @@ router.get('/bootstrap', authenticateToken, async (req: any, res: any) => {
     console.error('Mobile bootstrap error:', error);
     return res.status(500).json({ message: 'Internal server error.' });
   }
+});
+
+router.get('/staff-profile', authenticateToken, async (req: any, res: any) => {
+  if (!req.user) return res.status(401).json({ message: 'Unauthorized.' });
+  const salonId = req.user.salonId;
+  const membershipId = Number(req.user.membershipId || 0);
+  if (!membershipId) {
+    return res.status(403).json({ message: 'Membership required.' });
+  }
+
+  const staff = await prisma.staff.findFirst({
+    where: { salonId, membershipId },
+    select: {
+      id: true,
+      name: true,
+      firstName: true,
+      lastName: true,
+      gender: true,
+      title: true,
+      bio: true,
+      profileImageUrl: true,
+    },
+  });
+  if (!staff) {
+    return res.status(404).json({ message: 'Linked staff profile not found.' });
+  }
+
+  return res.status(200).json({ item: staff });
+});
+
+router.put('/staff-profile', authenticateToken, async (req: any, res: any) => {
+  if (!req.user) return res.status(401).json({ message: 'Unauthorized.' });
+  const salonId = req.user.salonId;
+  const membershipId = Number(req.user.membershipId || 0);
+  if (!membershipId) {
+    return res.status(403).json({ message: 'Membership required.' });
+  }
+
+  const firstName = typeof req.body?.firstName === 'string' ? req.body.firstName.trim() : '';
+  const lastNameRaw = typeof req.body?.lastName === 'string' ? req.body.lastName.trim() : '';
+  const genderRaw = typeof req.body?.gender === 'string' ? req.body.gender.trim().toLowerCase() : '';
+
+  if (!firstName) {
+    return res.status(400).json({ message: 'firstName is required.' });
+  }
+  if (!(genderRaw === 'female' || genderRaw === 'male' || genderRaw === 'other')) {
+    return res.status(400).json({ message: 'gender must be female, male or other.' });
+  }
+
+  const staff = await prisma.staff.findFirst({
+    where: { salonId, membershipId },
+    select: { id: true },
+  });
+  if (!staff) {
+    return res.status(404).json({ message: 'Linked staff profile not found.' });
+  }
+
+  const lastName = lastNameRaw || null;
+  const name = [firstName, lastName].filter(Boolean).join(' ').trim();
+  const updated = await prisma.staff.update({
+    where: { id: staff.id },
+    data: {
+      firstName,
+      lastName,
+      gender: genderRaw as any,
+      name,
+    },
+    select: {
+      id: true,
+      name: true,
+      firstName: true,
+      lastName: true,
+      gender: true,
+      title: true,
+      bio: true,
+      profileImageUrl: true,
+    },
+  });
+
+  return res.status(200).json({ item: updated });
 });
 
 router.post('/push/register', authenticateToken, async (req: any, res: any) => {

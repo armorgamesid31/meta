@@ -1,0 +1,21 @@
+# Müşteri Yorumu Otomatik Üretim Taslakları
+# Repo: meta
+# Kaynak: src/routes/salons.ts
+# Not: Köşeli parantez alanları değişken placeholder'dır.
+
+Toplam şablon tipi: 2
+Toplam metin varyantı: 3
+
+[1] TEMPLATE_TYPE = GENERIC
+Profesyonel ekip, hijyenik ortam ve yüksek hizmet kalitesiyle çok memnun kaldım. Kesinlikle tavsiye ederim.
+
+[2] TEMPLATE_TYPE = CATEGORY_EXPERT (hizmet adı mevcutsa)
+[UZMAN_ADI] çok ilgili ve profesyoneldi. [HIZMET_ADI_kuçuk_harf] hizmeti için bu salonu gönül rahatlığıyla tavsiye ederim.
+
+[3] TEMPLATE_TYPE = CATEGORY_EXPERT (hizmet adı yoksa fallback)
+[UZMAN_ADI] çok ilgili ve profesyoneldi. Bu salonu gönül rahatlığıyla tavsiye ederim.
+
+# Düzenleme Kuralları
+# - [UZMAN_ADI] ve [HIZMET_ADI_kuçuk_harf] placeholder'larını koru.
+# - HIZMET_ADI runtime'da küçük harfe normalize ediliyor.
+# - Her satır tek bir şablon cümlesi olacak şekilde düzenleyebilirsin.

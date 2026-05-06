@@ -1292,6 +1292,18 @@ function normalizeThemeColor(value: unknown): string | null {
   return null;
 }
 
+function splitStaffNameParts(name: string): { firstName: string; lastName: string | null } {
+  const normalized = String(name || '').replace(/\s+/g, ' ').trim();
+  if (!normalized) {
+    return { firstName: 'Uzman', lastName: null };
+  }
+  const [first, ...rest] = normalized.split(' ');
+  return {
+    firstName: first || 'Uzman',
+    lastName: rest.length > 0 ? rest.join(' ') : null,
+  };
+}
+
 function parseStaffServiceAssignments(input: unknown) {
   if (!Array.isArray(input)) {
     return [];
@@ -2140,6 +2152,9 @@ function mapStaffForMobile(staff: any) {
   return {
     id: staff.id,
     name: staff.name,
+    firstName: staff.firstName,
+    lastName: staff.lastName,
+    gender: staff.gender,
     title: staff.title,
     bio: staff.bio,
     phone: staff.phone,
@@ -7059,6 +7074,9 @@ router.get('/staff', authenticateToken, async (req: any, res: any) => {
       select: {
         id: true,
         name: true,
+        firstName: true,
+        lastName: true,
+        gender: true,
         title: true,
         bio: true,
         phone: true,
@@ -7136,6 +7154,9 @@ router.post('/staff', authenticateToken, async (req: any, res: any) => {
         data: {
           salonId,
           name,
+          firstName: splitStaffNameParts(name).firstName,
+          lastName: splitStaffNameParts(name).lastName,
+          gender: 'other',
           title: typeof req.body?.title === 'string' ? req.body.title.trim() : null,
           bio: typeof req.body?.bio === 'string' ? req.body.bio.trim() : null,
           phone: typeof req.body?.phone === 'string' ? req.body.phone.trim() : null,
@@ -7183,6 +7204,9 @@ router.post('/staff', authenticateToken, async (req: any, res: any) => {
       select: {
         id: true,
         name: true,
+        firstName: true,
+        lastName: true,
+        gender: true,
         title: true,
         bio: true,
         phone: true,
@@ -7253,6 +7277,8 @@ router.put('/staff/:id', authenticateToken, async (req: any, res: any) => {
       return res.status(400).json({ message: 'name cannot be empty.' });
     }
     updates.name = name;
+    updates.firstName = splitStaffNameParts(name).firstName;
+    updates.lastName = splitStaffNameParts(name).lastName;
   }
   if (req.body?.title !== undefined) {
     updates.title = typeof req.body.title === 'string' ? req.body.title.trim() || null : null;
@@ -7347,6 +7373,9 @@ router.put('/staff/:id', authenticateToken, async (req: any, res: any) => {
       select: {
         id: true,
         name: true,
+        firstName: true,
+        lastName: true,
+        gender: true,
         title: true,
         bio: true,
         phone: true,

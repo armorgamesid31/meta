@@ -8,6 +8,16 @@ import { resolveServiceTranslations } from '../services/serviceTranslations.js';
 
 const router = Router();
 
+function splitStaffNameParts(name: string): { firstName: string; lastName: string | null } {
+  const normalized = String(name || '').replace(/\s+/g, ' ').trim();
+  if (!normalized) return { firstName: 'Uzman', lastName: null };
+  const [firstName, ...rest] = normalized.split(' ');
+  return {
+    firstName: firstName || 'Uzman',
+    lastName: rest.length ? rest.join(' ') : null,
+  };
+}
+
 // GET /api/salon/public - Get salon info (public for tenant subdomain)
 router.get('/public', async (req: any, res: any) => {
   const salonId = req.salon?.id;
@@ -510,9 +520,14 @@ router.post('/staff', authenticateToken, async (req: any, res: any) => {
   }
 
   try {
+    const normalizedName = name.trim();
+    const parts = splitStaffNameParts(normalizedName);
     const staff = await prisma.staff.create({
       data: {
-        name: name.trim(),
+        name: normalizedName,
+        firstName: parts.firstName,
+        lastName: parts.lastName,
+        gender: 'other',
         salonId: req.user.salonId,
       },
     });
@@ -545,10 +560,18 @@ router.put('/staff/:id', authenticateToken, async (req: any, res: any) => {
       return res.status(404).json({ message: 'Staff member not found' });
     }
 
+    const normalizedName = typeof name === 'string' ? name.trim() : '';
+    if (!normalizedName) {
+      return res.status(400).json({ message: 'Name is required and must be a non-empty string' });
+    }
+    const parts = splitStaffNameParts(normalizedName);
+
     const updatedStaff = await prisma.staff.update({
       where: { id: parseInt(id) },
       data: {
-        name: name.trim(),
+        name: normalizedName,
+        firstName: parts.firstName,
+        lastName: parts.lastName,
       },
     });
 

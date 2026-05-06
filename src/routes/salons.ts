@@ -18,6 +18,20 @@ function normalizeServiceNameForCopy(name?: string | null): string {
   return value;
 }
 
+function formatExpertReferenceForTestimonial(expert: {
+  name?: string | null;
+  firstName?: string | null;
+  gender?: 'female' | 'male' | 'other' | null;
+}): string {
+  const firstName = String(expert?.firstName || '').trim();
+  if (firstName) {
+    if (expert.gender === 'female') return `${firstName} Hanım`;
+    if (expert.gender === 'male') return `${firstName} Bey`;
+    return firstName;
+  }
+  return String(expert?.name || 'Uzman').trim() || 'Uzman';
+}
+
 router.get('/:slug/homepage', async (req: any, res: any) => {
   const { slug } = req.params;
 
@@ -82,6 +96,8 @@ router.get('/:slug/homepage', async (req: any, res: any) => {
           select: {
             id: true,
             name: true,
+            firstName: true,
+            gender: true,
             title: true,
             bio: true,
             profileImageUrl: true,
@@ -210,12 +226,13 @@ router.get('/:slug/homepage', async (req: any, res: any) => {
               const fallbackExperts = matchedExperts.length > 0 ? matchedExperts : experts;
               const expert = fallbackExperts[index % fallbackExperts.length];
               const preferredServiceName = normalizeServiceNameForCopy(category.Service[0]?.name);
+              const expertReference = formatExpertReferenceForTestimonial(expert);
               generated.push({
                 id: `generated-${index + 1}`,
                 templateType: 'CATEGORY_EXPERT',
                 generatedText: preferredServiceName
-                  ? `${expert.name} çok ilgili ve profesyoneldi. ${preferredServiceName} hizmeti için bu salonu gönül rahatlığıyla tavsiye ederim.`
-                  : `${expert.name} çok ilgili ve profesyoneldi. Bu salonu gönül rahatlığıyla tavsiye ederim.`,
+                  ? `${expertReference} çok ilgili ve profesyoneldi. ${preferredServiceName} hizmeti için bu salonu gönül rahatlığıyla tavsiye ederim.`
+                  : `${expertReference} çok ilgili ve profesyoneldi. Bu salonu gönül rahatlığıyla tavsiye ederim.`,
                 isGenerated: true,
                 expert: {
                   id: expert.id,

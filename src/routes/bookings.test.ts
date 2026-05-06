@@ -51,7 +51,10 @@ describe('Booking Routes', () => {
     const staff = await prisma.staff.create({
       data: {
         salonId,
-        name: 'Test Staff'
+        name: 'Test Staff',
+        firstName: 'Test',
+        lastName: 'Staff',
+        gender: 'other',
       }
     });
     staffId = staff.id;
@@ -192,7 +195,10 @@ describe('Booking Routes', () => {
       const staff2 = await prisma.staff.create({
         data: {
           salonId,
-          name: 'Test Staff 2'
+          name: 'Test Staff 2',
+          firstName: 'Test',
+          lastName: 'Staff 2',
+          gender: 'other',
         }
       });
 
@@ -617,7 +623,10 @@ describe('POST /api/bookings/reschedule', () => {
     const staff2 = await prisma.staff.create({
       data: {
         salonId,
-        name: 'Test Staff 3'
+        name: 'Test Staff 3',
+        firstName: 'Test',
+        lastName: 'Staff 3',
+        gender: 'other',
       }
     });
 

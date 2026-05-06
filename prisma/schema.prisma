@@ -344,6 +344,9 @@ model ReferralReward {
 model Staff {
   id                Int                 @id @default(autoincrement())
   name              String
+  firstName         String
+  lastName          String?
+  gender            CustomerGender
   phone             String?
   createdAt         DateTime?           @default(now()) @db.Timestamp(6)
   updatedAt         DateTime?           @default(now()) @updatedAt @db.Timestamp(6)

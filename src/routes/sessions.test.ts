@@ -39,7 +39,10 @@ describe('Session Routes', () => {
     const staff = await prisma.staff.create({
       data: {
         salonId,
-        name: 'Test Staff'
+        name: 'Test Staff',
+        firstName: 'Test',
+        lastName: 'Staff',
+        gender: 'other',
       }
     });
     staffId = staff.id;
