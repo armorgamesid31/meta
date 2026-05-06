@@ -10,6 +10,14 @@ function normalizeWhatsappPhone(phone?: string | null): string {
   return phone.replace(/[^\d]/g, '');
 }
 
+function normalizeServiceNameForCopy(name?: string | null): string {
+  const value = (name || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLocaleLowerCase('tr-TR');
+  return value;
+}
+
 router.get('/:slug/homepage', async (req: any, res: any) => {
   const { slug } = req.params;
 
@@ -55,6 +63,16 @@ router.get('/:slug/homepage', async (req: any, res: any) => {
             _count: {
               select: {
                 Service: true,
+              },
+            },
+            Service: {
+              where: {
+                isActive: true,
+              },
+              orderBy: [{ id: 'asc' }],
+              select: {
+                id: true,
+                name: true,
               },
             },
           },
@@ -191,10 +209,13 @@ router.get('/:slug/homepage', async (req: any, res: any) => {
               );
               const fallbackExperts = matchedExperts.length > 0 ? matchedExperts : experts;
               const expert = fallbackExperts[index % fallbackExperts.length];
+              const preferredServiceName = normalizeServiceNameForCopy(category.Service[0]?.name);
               generated.push({
                 id: `generated-${index + 1}`,
                 templateType: 'CATEGORY_EXPERT',
-                generatedText: `${expert.name} çok ilgili ve profesyoneldi. ${category.name} hizmeti için bu salonu gönül rahatlığıyla tavsiye ederim.`,
+                generatedText: preferredServiceName
+                  ? `${expert.name} çok ilgili ve profesyoneldi. ${preferredServiceName} hizmeti için bu salonu gönül rahatlığıyla tavsiye ederim.`
+                  : `${expert.name} çok ilgili ve profesyoneldi. Bu salonu gönül rahatlığıyla tavsiye ederim.`,
                 isGenerated: true,
                 expert: {
                   id: expert.id,
