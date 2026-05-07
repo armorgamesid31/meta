@@ -236,8 +236,8 @@ router.post('/push/register', authenticateToken, async (req: any, res: any) => {
   if (!provider) {
     return res.status(400).json({ message: 'provider is required.' });
   }
-  if (provider !== 'expo') {
-    return res.status(422).json({ message: 'provider must be expo.' });
+  if (provider !== 'expo' && provider !== 'fcm') {
+    return res.status(422).json({ message: 'provider must be expo or fcm.' });
   }
   if (!platform) {
     return res.status(400).json({ message: 'platform is required.' });
@@ -284,7 +284,7 @@ router.post('/push/unregister', authenticateToken, async (req: any, res: any) =>
   const provider = typeof req.body?.provider === 'string' ? req.body.provider.trim().toLowerCase() : '';
   if (!token) return res.status(400).json({ message: 'token is required.' });
   if (!provider) return res.status(400).json({ message: 'provider is required.' });
-  if (provider !== 'expo') return res.status(422).json({ message: 'provider must be expo.' });
+  if (provider !== 'expo' && provider !== 'fcm') return res.status(422).json({ message: 'provider must be expo or fcm.' });
 
   try {
     await prisma.$executeRawUnsafe(
