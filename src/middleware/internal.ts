@@ -6,16 +6,19 @@ import { Request, Response, NextFunction } from 'express';
  * to avoid breaking deployments during migration. In production, this key MUST be set.
  */
 export function requireInternalApiKey(req: Request, res: Response, next: NextFunction) {
-  const configuredKey = process.env.INTERNAL_API_KEY;
+  const acceptedKeys = [
+    String(process.env.INTERNAL_API_KEY || '').trim(),
+    String(process.env.N8N_INTERNAL_API_KEY || '').trim(),
+  ].filter(Boolean);
 
-  if (!configuredKey) {
-    console.warn('[SECURITY WARNING] INTERNAL_API_KEY is not set. Internal routes are currently unprotected!');
+  if (acceptedKeys.length === 0) {
+    console.warn('[SECURITY WARNING] INTERNAL_API_KEY/N8N_INTERNAL_API_KEY is not set. Internal routes are currently unprotected!');
     return next();
   }
 
-  const incomingKey = req.headers['x-internal-api-key'];
+  const incomingKey = String(req.headers['x-internal-api-key'] || '').trim();
 
-  if (!incomingKey || typeof incomingKey !== 'string' || incomingKey !== configuredKey) {
+  if (!incomingKey || !acceptedKeys.includes(incomingKey)) {
     console.error(`[SECURITY] Unauthorized internal access attempt from ${req.ip}`);
     return res.status(401).json({ 
       ok: false, 
