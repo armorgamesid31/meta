@@ -152,6 +152,7 @@ router.get('/:slug/homepage', async (req: any, res: any) => {
             imageUrl: true,
             altText: true,
             displayOrder: true,
+            categoryId: true,
           },
         },
         testimonials: {
@@ -289,6 +290,14 @@ router.get('/:slug/homepage', async (req: any, res: any) => {
             return generated;
           })();
 
+    const coverImageByCategoryId = new Map<number, string>();
+    for (const image of salon.galleryImages) {
+      if (!image.categoryId) continue;
+      if (!coverImageByCategoryId.has(image.categoryId)) {
+        coverImageByCategoryId.set(image.categoryId, image.imageUrl);
+      }
+    }
+
     res.status(200).json({
       salon: {
         id: salon.id,
@@ -311,7 +320,7 @@ router.get('/:slug/homepage', async (req: any, res: any) => {
         name: category.name,
         marketingDescription: category.marketingDescription,
         icon: category.icon,
-        coverImageUrl: category.coverImageUrl,
+        coverImageUrl: category.coverImageUrl || coverImageByCategoryId.get(category.id) || null,
         displayOrder: category.displayOrder,
         serviceCount: category._count.Service,
       })),
