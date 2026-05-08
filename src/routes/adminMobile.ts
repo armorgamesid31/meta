@@ -692,6 +692,7 @@ function toPercentDelta(current: number, previous: number): number {
 const ANALYTICS_TIMEZONE = 'Europe/Istanbul';
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const META_GRAPH_VERSION = (process.env.META_GRAPH_VERSION || 'v23.0').trim();
+const MANUAL_REPLY_WINDOW_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_HUMAN_ACTIVE_MINUTES = Number(process.env.CONVERSATION_HUMAN_ACTIVE_MINUTES || 360);
 const DEFAULT_WORKING_DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'] as const;
 type WorkingDayKey = (typeof DEFAULT_WORKING_DAYS)[number] | 'SUN';
@@ -9996,6 +9997,39 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
     }
 
     const canonicalConversationKey = `${channel}:${rawRecipientId}`;
+    const manualReplyStateRows = await prisma.conversationState.findMany({
+      where: {
+        salonId,
+        channel,
+        conversationKey: {
+          in: Array.from(
+            new Set([
+              canonicalConversationKey,
+              resolvedConversationKey,
+              conversationKey,
+              rawRecipientId,
+            ].filter((value): value is string => typeof value === 'string' && value.trim().length > 0)),
+          ),
+        },
+      },
+      select: {
+        lastCustomerMessageAt: true,
+      },
+    });
+    const latestCustomerMessageAt = manualReplyStateRows
+      .map((row) => row.lastCustomerMessageAt)
+      .filter((value): value is Date => value instanceof Date)
+      .sort((a, b) => b.getTime() - a.getTime())[0];
+    const isManualReplyWindowExpired = Boolean(
+      latestCustomerMessageAt &&
+      Date.now() - latestCustomerMessageAt.getTime() > MANUAL_REPLY_WINDOW_MS,
+    );
+    if (isManualReplyWindowExpired) {
+      return res.status(409).json({
+        errorCode: channel === 'INSTAGRAM' ? 'INSTAGRAM_WINDOW_EXPIRED' : 'WHATSAPP_WINDOW_EXPIRED',
+        message: `${channel === 'INSTAGRAM' ? 'Instagram' : 'WhatsApp'} 24 saat mesaj penceresi doldu. Yeni mesaj göndermek için müşterinin tekrar yazması gerekiyor.`,
+      });
+    }
 
     let graphMessageId = '';
     let usedExternalAccountId = '';
