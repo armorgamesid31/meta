@@ -13,6 +13,7 @@ import {
   resendPhoneVerification,
   verifyPhoneCode,
 } from '../services/phoneVerification.js';
+import { BusinessError } from '../lib/errors.js';
 
 const router = Router();
 
@@ -300,9 +301,12 @@ router.post('/register', async (req: any, res: any) => {
     typeof body.acceptMarketing !== 'boolean' ||
     !salonIdNum
   ) {
-    return res.status(400).json({
-      message: 'firstName, lastName, rawPhone, countryIso and acceptMarketing are required.',
-    });
+    throw new BusinessError(
+      'VALIDATION_FAILED',
+      'Ad, soyad, telefon, ülke ve pazarlama izni alanları zorunludur.',
+      400,
+      { missing: ['firstName', 'lastName', 'rawPhone', 'countryIso', 'acceptMarketing'] },
+    );
   }
 
   try {

@@ -29,14 +29,15 @@ import {
   releaseAppointmentCampaignApplications,
 } from '../services/campaignPricing.js';
 import { assertBookingAllowed } from '../services/blacklist.js';
+import { BusinessError } from '../lib/errors.js';
 
 const router = Router();
 
-function sendCustomerBannedResponse(res: any, detail?: string | null) {
-  return res.status(403).json({
-    code: 'CUSTOMER_BANNED',
-    message: detail && detail.trim() ? `Müşteri yasaklı: ${detail.trim()}` : 'Müşteri yasaklı olduğu için işlem yapılamaz.',
-  });
+function sendCustomerBannedResponse(_res: any, detail?: string | null): never {
+  const message = detail && detail.trim()
+    ? `Müşteri yasaklı: ${detail.trim()}`
+    : 'Müşteri yasaklı olduğu için işlem yapılamaz.';
+  throw new BusinessError('CUSTOMER_BANNED', message, 403);
 }
 
 type SameDayEvent = 'CREATED' | 'UPDATED' | 'CANCELLED';

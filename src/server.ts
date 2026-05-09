@@ -48,6 +48,8 @@ import { startImportRetentionJob } from './services/importWizard.js';
 import { createServer } from 'http';
 import { initConversationEventsBus } from './services/conversationEventsBus.js';
 import { initConversationRealtimeWebSocketServer } from './services/conversationRealtimeWs.js';
+import { traceMiddleware } from './middleware/trace.js';
+import { errorMiddleware } from './middleware/error.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -143,6 +145,7 @@ const corsOptions: cors.CorsOptions = {
 };
 
 app.use(cors(corsOptions));
+app.use(traceMiddleware);
 
 app.post('/api/billing/stripe/webhook', express.raw({ type: 'application/json' }), async (req: any, res) => {
   const signature = String(req.headers['stripe-signature'] || '').trim();
@@ -338,12 +341,7 @@ app.get(/^(?!\/api|\/auth|\/availability|\/chakratest|\/api\/internal\/chakra\/w
   res.sendFile(path.join(distPath, "index.html"));
 });
 
-app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  console.error("Final Error Catch:", err);
-  res.status(err.status || 500).json({
-    message: err.message || "Internal server error"
-  });
-});
+app.use(errorMiddleware);
 
 const PORT = (Number(process.env.PORT) || 3000);
 const HOST = "0.0.0.0";

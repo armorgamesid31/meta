@@ -26,7 +26,7 @@ interface UpdateCustomerRequest {
 }
 
 // GET /api/admin/appointments - Get all confirmed appointments for salon
-router.get("/appointments", authenticateToken, async (req: any, res: any) => {
+router.get("/appointments", authenticateToken, async (req: any, res: any, next: any) => {
   if (!req.user) {
     return res.status(401).json({ message: 'Unauthorized.' });
   }
@@ -119,7 +119,7 @@ router.get("/appointments", authenticateToken, async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Error fetching appointments:', error);
-    res.status(500).json({ message: 'Internal server error.' });
+    next(error);
   }
 });
 
