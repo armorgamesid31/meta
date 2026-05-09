@@ -105,7 +105,7 @@ router.get('/website/content', authenticateToken, async (req: any, res: any) => 
     ]);
 
     if (!salon) {
-      return res.status(404).json({ message: 'Salon not found.' });
+      throw new BusinessError('NOT_FOUND', 'Salon not found.', 404);
     }
 
     return res.status(200).json({
@@ -123,7 +123,7 @@ router.get('/website/content', authenticateToken, async (req: any, res: any) => 
     });
   } catch (error) {
     console.error('Admin website content read error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -206,7 +206,7 @@ router.put('/website/content', authenticateToken, async (req: any, res: any) => 
     });
   } catch (error) {
     console.error('Admin website content update error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -226,7 +226,7 @@ router.post('/website/generate', authenticateToken, async (req: any, res: any) =
     });
 
     if (!salon) {
-      return res.status(404).json({ message: 'Salon not found.' });
+      throw new BusinessError('NOT_FOUND', 'Salon not found.', 404);
     }
     
     const webhookUrl = process.env.N8N_WEBSITE_GENERATE_WEBHOOK_URL;
@@ -309,7 +309,7 @@ router.post('/website/generate', authenticateToken, async (req: any, res: any) =
     return res.status(200).json({ generated });
   } catch (error) {
     console.error('Admin website copy generate error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -401,7 +401,7 @@ router.get('/conversations/realtime/sync', authenticateToken, async (req: any, r
     return res.status(200).json(response);
   } catch (error) {
     console.error('Conversation realtime sync error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -426,7 +426,7 @@ function asPositiveInt(value: unknown, fallback: number, min = 1, max = 500): nu
 
 function getSalonId(req: any, res: any): number | null {
   if (!req.user?.salonId) {
-    res.status(401).json({ message: 'Unauthorized.' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
     return null;
   }
   return req.user.salonId;
@@ -489,7 +489,7 @@ async function ensureManagementAccess(req: any, res: any): Promise<boolean> {
   const salonId = Number(req.user?.salonId);
 
   if (!Number.isInteger(membershipId) || membershipId <= 0 || !Number.isInteger(salonId) || salonId <= 0) {
-    res.status(401).json({ message: 'Unauthorized.' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
     return false;
   }
 
@@ -511,11 +511,11 @@ async function ensureManagementAccess(req: any, res: any): Promise<boolean> {
     }
   } catch (error) {
     console.error('ensureManagementAccess permission check error:', error);
-    res.status(500).json({ message: 'Internal server error.' });
+    throw error;
     return false;
   }
 
-  res.status(403).json({ message: 'Forbidden.' });
+  throw new BusinessError('FORBIDDEN', 'Forbidden.', 403);
   return false;
 }
 
@@ -2194,11 +2194,11 @@ router.get('/appointments', authenticateToken, async (req: any, res: any) => {
   const to = parseIsoDate(req.query.to);
 
   if (!from || !to) {
-    return res.status(400).json({ message: 'from and to query params are required ISO dates.' });
+    throw new BusinessError('VALIDATION_FAILED', 'from and to query params are required ISO dates.', 400);
   }
 
   if (from >= to) {
-    return res.status(400).json({ message: 'from must be earlier than to.' });
+    throw new BusinessError('VALIDATION_FAILED', 'from must be earlier than to.', 400);
   }
 
   const statusFilter = typeof req.query.status === 'string' ? req.query.status.toUpperCase() : null;
@@ -2286,7 +2286,7 @@ router.get('/appointments', authenticateToken, async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Admin appointments window query error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -2330,13 +2330,13 @@ router.post('/appointments', authenticateToken, async (req: any, res: any) => {
       : [];
 
   if (!startTime) {
-    return res.status(400).json({ message: 'startTime is required as ISO date.' });
+    throw new BusinessError('VALIDATION_FAILED', 'startTime is required as ISO date.', 400);
   }
   if (!servicesToCreate.length) {
-    return res.status(400).json({ message: 'At least one service is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'At least one service is required.', 400);
   }
   if (customerId !== null && (!Number.isInteger(customerId) || customerId <= 0)) {
-    return res.status(400).json({ message: 'customerId must be a positive integer.' });
+    throw new BusinessError('VALIDATION_FAILED', 'customerId must be a positive integer.', 400);
   }
 
   try {
@@ -2571,10 +2571,10 @@ router.post('/appointments', authenticateToken, async (req: any, res: any) => {
       return sendCustomerBannedResponse(res, error?.ban?.reason || null);
     }
     if (error?.code === 'P2002') {
-      return res.status(409).json({ message: 'Aynı telefon numarasıyla kayıtlı müşteri zaten var.' });
+      throw new BusinessError('CONFLICT', 'Aynı telefon numarasıyla kayıtlı müşteri zaten var.', 409);
     }
     console.error('Admin create appointment error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -2617,7 +2617,7 @@ router.get('/customers', authenticateToken, async (req: any, res: any) => {
   const withStats = String(req.query.withStats || '').trim() === '1';
 
   if (cursorRaw !== null && (!Number.isInteger(cursorRaw) || cursorRaw <= 0)) {
-    return res.status(400).json({ message: 'cursor must be a positive integer.' });
+    throw new BusinessError('VALIDATION_FAILED', 'cursor must be a positive integer.', 400);
   }
 
   const requestId = randomUUID();
@@ -2710,7 +2710,7 @@ router.get('/customers', authenticateToken, async (req: any, res: any) => {
         code: 'CUSTOMERS_QUERY_TIMEOUT',
       });
     }
-    return res.status(500).json({ message: 'Internal server error.', requestId, code: 'UPSTREAM_UNAVAILABLE' });
+    throw new BusinessError('INTERNAL_ERROR', 'Internal server error.', 500, { requestId, code: 'UPSTREAM_UNAVAILABLE' });
   }
 });
 
@@ -2787,7 +2787,7 @@ router.get('/customers/:id', authenticateToken, async (req: any, res: any) => {
 
   const customerId = Number(req.params.id);
   if (!Number.isInteger(customerId) || customerId <= 0) {
-    return res.status(400).json({ message: 'Invalid customer id.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid customer id.', 400);
   }
 
   try {
@@ -2835,7 +2835,7 @@ router.get('/customers/:id', authenticateToken, async (req: any, res: any) => {
     ]);
 
     if (!customer) {
-      return res.status(404).json({ message: 'Customer not found.' });
+      throw new BusinessError('NOT_FOUND', 'Customer not found.', 404);
     }
 
     const nonCancelled = appointments.filter((item) => item.status !== 'CANCELLED');
@@ -2916,7 +2916,7 @@ router.get('/customers/:id', authenticateToken, async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Admin customer detail error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -2928,7 +2928,7 @@ router.put('/customers/:id', authenticateToken, async (req: any, res: any) => {
 
   const customerId = Number(req.params.id);
   if (!Number.isInteger(customerId) || customerId <= 0) {
-    return res.status(400).json({ message: 'Invalid customer id.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid customer id.', 400);
   }
 
   const nameInput = req.body?.name;
@@ -2941,22 +2941,22 @@ router.put('/customers/:id', authenticateToken, async (req: any, res: any) => {
   const genderInput = req.body?.gender;
 
   if (nameInput !== undefined && nameInput !== null && typeof nameInput !== 'string') {
-    return res.status(400).json({ message: 'name must be a string or null.' });
+    throw new BusinessError('VALIDATION_FAILED', 'name must be a string or null.', 400);
   }
   if (firstNameInput !== undefined && firstNameInput !== null && typeof firstNameInput !== 'string') {
-    return res.status(400).json({ message: 'firstName must be a string or null.' });
+    throw new BusinessError('VALIDATION_FAILED', 'firstName must be a string or null.', 400);
   }
   if (lastNameInput !== undefined && lastNameInput !== null && typeof lastNameInput !== 'string') {
-    return res.status(400).json({ message: 'lastName must be a string or null.' });
+    throw new BusinessError('VALIDATION_FAILED', 'lastName must be a string or null.', 400);
   }
   if (phoneInput !== undefined && typeof phoneInput !== 'string') {
-    return res.status(400).json({ message: 'phone must be a string.' });
+    throw new BusinessError('VALIDATION_FAILED', 'phone must be a string.', 400);
   }
   if (instagramInput !== undefined && instagramInput !== null && typeof instagramInput !== 'string') {
-    return res.status(400).json({ message: 'instagram must be a string or null.' });
+    throw new BusinessError('VALIDATION_FAILED', 'instagram must be a string or null.', 400);
   }
   if (acceptMarketingInput !== undefined && typeof acceptMarketingInput !== 'boolean') {
-    return res.status(400).json({ message: 'acceptMarketing must be a boolean.' });
+    throw new BusinessError('VALIDATION_FAILED', 'acceptMarketing must be a boolean.', 400);
   }
 
   const shouldResolveName =
@@ -2969,7 +2969,7 @@ router.put('/customers/:id', authenticateToken, async (req: any, res: any) => {
       })
     : null;
   if (normalizedName && (!normalizedName.firstName || !normalizedName.lastName)) {
-    return res.status(400).json({ message: 'firstName and lastName are required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'firstName and lastName are required.', 400);
   }
 
   let parsedBirthDate: Date | null | undefined = undefined;
@@ -2979,11 +2979,11 @@ router.put('/customers/:id', authenticateToken, async (req: any, res: any) => {
     } else if (typeof birthDateInput === 'string') {
       const parsed = new Date(birthDateInput);
       if (Number.isNaN(parsed.getTime())) {
-        return res.status(400).json({ message: 'birthDate is invalid.' });
+        throw new BusinessError('VALIDATION_FAILED', 'birthDate is invalid.', 400);
       }
       parsedBirthDate = parsed;
     } else {
-      return res.status(400).json({ message: 'birthDate must be a string, empty string, or null.' });
+      throw new BusinessError('VALIDATION_FAILED', 'birthDate must be a string, empty string, or null.', 400);
     }
   }
 
@@ -2994,14 +2994,14 @@ router.put('/customers/:id', authenticateToken, async (req: any, res: any) => {
     } else {
       parsedGender = asCustomerGender(genderInput);
       if (!parsedGender) {
-        return res.status(400).json({ message: 'gender must be male, female, other, or null.' });
+        throw new BusinessError('VALIDATION_FAILED', 'gender must be male, female, other, or null.', 400);
       }
     }
   }
 
   const normalizedPhone = typeof phoneInput === 'string' ? phoneInput.trim() : undefined;
   if (phoneInput !== undefined && !normalizedPhone) {
-    return res.status(400).json({ message: 'phone cannot be empty.' });
+    throw new BusinessError('VALIDATION_FAILED', 'phone cannot be empty.', 400);
   }
 
   let normalizedInstagram: string | null | undefined = undefined;
@@ -3037,7 +3037,7 @@ router.put('/customers/:id', authenticateToken, async (req: any, res: any) => {
   }
 
   if (!Object.keys(updateData).length) {
-    return res.status(400).json({ message: 'No valid fields provided for update.' });
+    throw new BusinessError('VALIDATION_FAILED', 'No valid fields provided for update.', 400);
   }
 
   try {
@@ -3047,7 +3047,7 @@ router.put('/customers/:id', authenticateToken, async (req: any, res: any) => {
     });
 
     if (!existing) {
-      return res.status(404).json({ message: 'Customer not found.' });
+      throw new BusinessError('NOT_FOUND', 'Customer not found.', 404);
     }
 
     if (updateData.phone && updateData.phone !== existing.phone) {
@@ -3060,7 +3060,7 @@ router.put('/customers/:id', authenticateToken, async (req: any, res: any) => {
         select: { id: true },
       });
       if (conflict) {
-        return res.status(409).json({ message: 'Bu telefon salon için zaten kayıtlı.' });
+        throw new BusinessError('CONFLICT', 'Bu telefon salon için zaten kayıtlı.', 409);
       }
     }
 
@@ -3085,10 +3085,10 @@ router.put('/customers/:id', authenticateToken, async (req: any, res: any) => {
     return res.status(200).json({ customer });
   } catch (error: any) {
     if (error?.code === 'P2002') {
-      return res.status(409).json({ message: 'Bu telefon salon için zaten kayıtlı.' });
+      throw new BusinessError('CONFLICT', 'Bu telefon salon için zaten kayıtlı.', 409);
     }
     console.error('Admin customer update error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -3101,7 +3101,7 @@ router.get('/customer-risk-policy', authenticateToken, async (req: any, res: any
     return res.status(200).json({ policy });
   } catch (error) {
     console.error('Admin customer risk policy read error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -3124,7 +3124,7 @@ router.put('/customer-risk-policy', authenticateToken, async (req: any, res: any
     return res.status(200).json({ policy });
   } catch (error) {
     console.error('Admin customer risk policy update error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -3136,12 +3136,12 @@ router.patch('/customers/:id/no-show-risk', authenticateToken, async (req: any, 
 
   const customerId = Number(req.params.id);
   if (!Number.isInteger(customerId) || customerId <= 0) {
-    return res.status(400).json({ message: 'Invalid customer id.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid customer id.', 400);
   }
 
   const deltaRaw = typeof req.body?.delta === 'number' ? req.body.delta : Number(req.body?.delta);
   if (!Number.isFinite(deltaRaw) || (deltaRaw !== 1 && deltaRaw !== -1)) {
-    return res.status(400).json({ message: 'delta must be +1 or -1.' });
+    throw new BusinessError('VALIDATION_FAILED', 'delta must be +1 or -1.', 400);
   }
 
   try {
@@ -3240,7 +3240,7 @@ router.patch('/customers/:id/no-show-risk', authenticateToken, async (req: any, 
     });
 
     if (!result) {
-      return res.status(404).json({ message: 'Customer not found.' });
+      throw new BusinessError('NOT_FOUND', 'Customer not found.', 404);
     }
 
     if (deltaRaw > 0) {
@@ -3257,7 +3257,7 @@ router.patch('/customers/:id/no-show-risk', authenticateToken, async (req: any, 
     return res.status(200).json({ summary: result });
   } catch (error) {
     console.error('Admin customer no-show risk update error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -3269,7 +3269,7 @@ router.put('/customers/:id/discount', authenticateToken, async (req: any, res: a
 
   const customerId = Number(req.params.id);
   if (!Number.isInteger(customerId) || customerId <= 0) {
-    return res.status(400).json({ message: 'Invalid customer id.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid customer id.', 400);
   }
 
   const kind = asDiscountKind(req.body?.kind);
@@ -3279,13 +3279,13 @@ router.put('/customers/:id/discount', authenticateToken, async (req: any, res: a
   const messageTemplate = typeof req.body?.messageTemplate === 'string' ? req.body.messageTemplate.trim() : '';
 
   if (!kind) {
-    return res.status(400).json({ message: 'kind must be PERCENT or FIXED.' });
+    throw new BusinessError('VALIDATION_FAILED', 'kind must be PERCENT or FIXED.', 400);
   }
   if (!Number.isFinite(value) || value <= 0) {
-    return res.status(400).json({ message: 'value must be a positive number.' });
+    throw new BusinessError('VALIDATION_FAILED', 'value must be a positive number.', 400);
   }
   if (kind === 'PERCENT' && value > 100) {
-    return res.status(400).json({ message: 'PERCENT discount cannot exceed 100.' });
+    throw new BusinessError('VALIDATION_FAILED', 'PERCENT discount cannot exceed 100.', 400);
   }
 
   try {
@@ -3295,7 +3295,7 @@ router.put('/customers/:id/discount', authenticateToken, async (req: any, res: a
     });
 
     if (!customer) {
-      return res.status(404).json({ message: 'Customer not found.' });
+      throw new BusinessError('NOT_FOUND', 'Customer not found.', 404);
     }
 
     const now = new Date();
@@ -3359,7 +3359,7 @@ router.put('/customers/:id/discount', authenticateToken, async (req: any, res: a
     });
   } catch (error) {
     console.error('Admin customer discount update error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -3395,7 +3395,7 @@ router.get('/package-templates', authenticateToken, async (req: any, res: any) =
       });
     }
     console.error('Admin package templates list error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -3418,13 +3418,13 @@ router.post('/package-templates', authenticateToken, async (req: any, res: any) 
   const notes = typeof req.body?.notes === 'string' ? req.body.notes.trim() : null;
 
   if (!name) {
-    return res.status(400).json({ message: 'name is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'name is required.', 400);
   }
   if (!services.length) {
-    return res.status(400).json({ message: 'At least one service with initialQuota is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'At least one service with initialQuota is required.', 400);
   }
   if (validityDays !== null && (!Number.isInteger(validityDays) || validityDays <= 0)) {
-    return res.status(400).json({ message: 'validityDays must be a positive integer.' });
+    throw new BusinessError('VALIDATION_FAILED', 'validityDays must be a positive integer.', 400);
   }
 
   try {
@@ -3437,7 +3437,7 @@ router.post('/package-templates', authenticateToken, async (req: any, res: any) 
       select: { id: true },
     });
     if (foundServices.length !== serviceIds.length) {
-      return res.status(404).json({ message: 'One or more services were not found.' });
+      throw new BusinessError('NOT_FOUND', 'One or more services were not found.', 404);
     }
 
     const created = await (prisma as any).packageTemplate.create({
@@ -3475,10 +3475,10 @@ router.post('/package-templates', authenticateToken, async (req: any, res: any) 
       });
     }
     if (error?.code === 'P2002') {
-      return res.status(409).json({ message: 'A template with this name already exists.' });
+      throw new BusinessError('CONFLICT', 'A template with this name already exists.', 409);
     }
     console.error('Admin package template create error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -3490,7 +3490,7 @@ router.put('/package-templates/:id', authenticateToken, async (req: any, res: an
 
   const templateId = Number(req.params.id);
   if (!Number.isInteger(templateId) || templateId <= 0) {
-    return res.status(400).json({ message: 'Invalid template id.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid template id.', 400);
   }
 
   const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
@@ -3506,13 +3506,13 @@ router.put('/package-templates/:id', authenticateToken, async (req: any, res: an
   const notes = typeof req.body?.notes === 'string' ? req.body.notes.trim() : null;
 
   if (!name) {
-    return res.status(400).json({ message: 'name is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'name is required.', 400);
   }
   if (!services.length) {
-    return res.status(400).json({ message: 'At least one service with initialQuota is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'At least one service with initialQuota is required.', 400);
   }
   if (validityDays !== null && (!Number.isInteger(validityDays) || validityDays <= 0)) {
-    return res.status(400).json({ message: 'validityDays must be a positive integer.' });
+    throw new BusinessError('VALIDATION_FAILED', 'validityDays must be a positive integer.', 400);
   }
 
   try {
@@ -3521,7 +3521,7 @@ router.put('/package-templates/:id', authenticateToken, async (req: any, res: an
       select: { id: true },
     });
     if (!existing) {
-      return res.status(404).json({ message: 'Template not found.' });
+      throw new BusinessError('NOT_FOUND', 'Template not found.', 404);
     }
 
     const serviceIds = services.map((row) => row.serviceId);
@@ -3530,7 +3530,7 @@ router.put('/package-templates/:id', authenticateToken, async (req: any, res: an
       select: { id: true },
     });
     if (foundServices.length !== serviceIds.length) {
-      return res.status(404).json({ message: 'One or more services were not found.' });
+      throw new BusinessError('NOT_FOUND', 'One or more services were not found.', 404);
     }
 
     const updated = await prisma.$transaction(async (tx) => {
@@ -3582,10 +3582,10 @@ router.put('/package-templates/:id', authenticateToken, async (req: any, res: an
       });
     }
     if (error?.code === 'P2002') {
-      return res.status(409).json({ message: 'A template with this name already exists.' });
+      throw new BusinessError('CONFLICT', 'A template with this name already exists.', 409);
     }
     console.error('Admin package template update error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -3597,7 +3597,7 @@ router.get('/customers/:id/packages', authenticateToken, async (req: any, res: a
 
   const customerId = Number(req.params.id);
   if (!Number.isInteger(customerId) || customerId <= 0) {
-    return res.status(400).json({ message: 'Invalid customer id.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid customer id.', 400);
   }
 
   try {
@@ -3640,7 +3640,7 @@ router.get('/customers/:id/packages', authenticateToken, async (req: any, res: a
       });
     }
     console.error('Admin customer packages list error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -3652,7 +3652,7 @@ router.post('/customers/:id/packages', authenticateToken, async (req: any, res: 
 
   const customerId = Number(req.params.id);
   if (!Number.isInteger(customerId) || customerId <= 0) {
-    return res.status(400).json({ message: 'Invalid customer id.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid customer id.', 400);
   }
 
   const templateIdRaw = req.body?.templateId;
@@ -3677,7 +3677,7 @@ router.post('/customers/:id/packages', authenticateToken, async (req: any, res: 
       select: { id: true },
     });
     if (!customer) {
-      return res.status(404).json({ message: 'Customer not found.' });
+      throw new BusinessError('NOT_FOUND', 'Customer not found.', 404);
     }
 
     const created = await prisma.$transaction(async (tx) => {
@@ -3820,7 +3820,7 @@ router.post('/customers/:id/packages', authenticateToken, async (req: any, res: 
       });
     }
     console.error('Admin customer package create error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -3845,19 +3845,19 @@ router.post('/customers/:id/packages/:packageId/adjust', authenticateToken, asyn
         : null;
 
   if (!Number.isInteger(customerId) || customerId <= 0) {
-    return res.status(400).json({ message: 'Invalid customer id.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid customer id.', 400);
   }
   if (!Number.isInteger(packageId) || packageId <= 0) {
-    return res.status(400).json({ message: 'Invalid package id.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid package id.', 400);
   }
   if (!Number.isInteger(serviceId) || serviceId <= 0) {
-    return res.status(400).json({ message: 'serviceId must be a positive integer.' });
+    throw new BusinessError('VALIDATION_FAILED', 'serviceId must be a positive integer.', 400);
   }
   if (!Number.isInteger(delta) || delta === 0) {
-    return res.status(400).json({ message: 'delta must be a non-zero integer.' });
+    throw new BusinessError('VALIDATION_FAILED', 'delta must be a non-zero integer.', 400);
   }
   if (!reason) {
-    return res.status(400).json({ message: 'reason is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'reason is required.', 400);
   }
 
   try {
@@ -3954,7 +3954,7 @@ router.post('/customers/:id/packages/:packageId/adjust', authenticateToken, asyn
       });
     }
     console.error('Admin customer package adjust error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -3966,7 +3966,7 @@ router.get('/customers/:id/package-ledger', authenticateToken, async (req: any, 
 
   const customerId = Number(req.params.id);
   if (!Number.isInteger(customerId) || customerId <= 0) {
-    return res.status(400).json({ message: 'Invalid customer id.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid customer id.', 400);
   }
 
   const limit = asPositiveInt(req.query.limit, 200, 1, 500);
@@ -4011,7 +4011,7 @@ router.get('/customers/:id/package-ledger', authenticateToken, async (req: any, 
       });
     }
     console.error('Admin customer package ledger error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -4025,10 +4025,10 @@ router.patch('/appointments/:id/status', authenticateToken, async (req: any, res
   const nextStatus = asAppointmentStatus(req.body?.status);
   const paymentMethod = asPaymentMethod(req.body?.paymentMethod);
   if (!Number.isInteger(appointmentId) || appointmentId <= 0) {
-    return res.status(400).json({ message: 'Invalid appointment id.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid appointment id.', 400);
   }
   if (!nextStatus) {
-    return res.status(400).json({ message: 'status must be BOOKED, COMPLETED, CANCELLED, or NO_SHOW.' });
+    throw new BusinessError('VALIDATION_FAILED', 'status must be BOOKED, COMPLETED, CANCELLED, or NO_SHOW.', 400);
   }
 
   try {
@@ -4263,7 +4263,7 @@ router.patch('/appointments/:id/status', authenticateToken, async (req: any, res
       });
     }
     console.error('Admin appointment status update error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -4275,10 +4275,10 @@ router.patch('/appointment-lines/:id/status', authenticateToken, async (req: any
   const nextStatus = asAppointmentStatus(req.body?.status);
   const paymentMethod = asPaymentMethod(req.body?.paymentMethod);
   if (!Number.isInteger(appointmentLineId) || appointmentLineId <= 0) {
-    return res.status(400).json({ message: 'Invalid appointment line id.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid appointment line id.', 400);
   }
   if (!nextStatus) {
-    return res.status(400).json({ message: 'status must be BOOKED, COMPLETED, CANCELLED, or NO_SHOW.' });
+    throw new BusinessError('VALIDATION_FAILED', 'status must be BOOKED, COMPLETED, CANCELLED, or NO_SHOW.', 400);
   }
 
   try {
@@ -4410,7 +4410,7 @@ router.patch('/appointment-lines/:id/status', authenticateToken, async (req: any
       });
     }
     console.error('Admin appointment line status update error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -4425,7 +4425,7 @@ router.post('/appointments/checkout', authenticateToken, async (req: any, res: a
   const now = new Date();
 
   if (!lines.length) {
-    return res.status(400).json({ message: 'lines must be a non-empty array.' });
+    throw new BusinessError('VALIDATION_FAILED', 'lines must be a non-empty array.', 400);
   }
 
   const sellNewCount = lines.filter((line) => line.closeType === 'SELL_NEW_PACKAGE').length;
@@ -4436,32 +4436,32 @@ router.post('/appointments/checkout', authenticateToken, async (req: any, res: a
     const firstType = lines[0]?.closeType;
     const mixedCloseType = lines.some((line) => line.closeType !== firstType);
     if (mixedCloseType) {
-      return res.status(400).json({ message: 'GROUP mode requires the same closeType for all lines.' });
+      throw new BusinessError('VALIDATION_FAILED', 'GROUP mode requires the same closeType for all lines.', 400);
     }
     if (firstType === 'SINGLE_PAYMENT') {
       const firstPayment = lines[0]?.paymentMethod || null;
       const mixedPayment = lines.some((line) => (line.paymentMethod || null) !== firstPayment);
       if (mixedPayment) {
-        return res.status(400).json({ message: 'GROUP mode SINGLE_PAYMENT requires the same paymentMethod for all lines.' });
+        throw new BusinessError('VALIDATION_FAILED', 'GROUP mode SINGLE_PAYMENT requires the same paymentMethod for all lines.', 400);
       }
     }
     if (firstType === 'USE_EXISTING_PACKAGE') {
       const firstPackageId = lines[0]?.customerPackageId || null;
       const mixedPackage = lines.some((line) => (line.customerPackageId || null) !== firstPackageId);
       if (mixedPackage) {
-        return res.status(400).json({ message: 'GROUP mode USE_EXISTING_PACKAGE requires the same customerPackageId for all lines.' });
+        throw new BusinessError('VALIDATION_FAILED', 'GROUP mode USE_EXISTING_PACKAGE requires the same customerPackageId for all lines.', 400);
       }
     }
   }
 
   if (singlePaymentCount && lines.some((line) => line.closeType === 'SINGLE_PAYMENT' && !line.paymentMethod)) {
-    return res.status(400).json({ message: 'paymentMethod is required for SINGLE_PAYMENT lines.' });
+    throw new BusinessError('VALIDATION_FAILED', 'paymentMethod is required for SINGLE_PAYMENT lines.', 400);
   }
   if (useExistingCount && lines.some((line) => line.closeType === 'USE_EXISTING_PACKAGE' && !line.customerPackageId)) {
-    return res.status(400).json({ message: 'customerPackageId is required for USE_EXISTING_PACKAGE lines.' });
+    throw new BusinessError('VALIDATION_FAILED', 'customerPackageId is required for USE_EXISTING_PACKAGE lines.', 400);
   }
   if (sellNewCount > 0 && lines.some((line) => line.closeType === 'SELL_NEW_PACKAGE' && line.customerPackageId)) {
-    return res.status(400).json({ message: 'SELL_NEW_PACKAGE lines must not include customerPackageId.' });
+    throw new BusinessError('VALIDATION_FAILED', 'SELL_NEW_PACKAGE lines must not include customerPackageId.', 400);
   }
 
   const parsedNewPackageServices = parsePackageServices(req.body?.newPackage?.services);
@@ -4475,16 +4475,16 @@ router.post('/appointments/checkout', authenticateToken, async (req: any, res: a
 
   if (sellNewCount > 0) {
     if (!parsedNewPackageName) {
-      return res.status(400).json({ message: 'newPackage.name is required when SELL_NEW_PACKAGE is used.' });
+      throw new BusinessError('VALIDATION_FAILED', 'newPackage.name is required when SELL_NEW_PACKAGE is used.', 400);
     }
     if (!parsedNewPackageServices.length) {
-      return res.status(400).json({ message: 'newPackage.services is required when SELL_NEW_PACKAGE is used.' });
+      throw new BusinessError('VALIDATION_FAILED', 'newPackage.services is required when SELL_NEW_PACKAGE is used.', 400);
     }
     if (parsedNewPackageExpiresAt && parsedNewPackageExpiresAt <= parsedNewPackageStartsAt) {
-      return res.status(400).json({ message: 'newPackage.expiresAt must be later than newPackage.startsAt.' });
+      throw new BusinessError('VALIDATION_FAILED', 'newPackage.expiresAt must be later than newPackage.startsAt.', 400);
     }
     if (!parsedNewPackagePaymentMethod) {
-      return res.status(400).json({ message: 'newPackage.paymentMethod must be CASH, CARD, TRANSFER or OTHER.' });
+      throw new BusinessError('VALIDATION_FAILED', 'newPackage.paymentMethod must be CASH, CARD, TRANSFER or OTHER.', 400);
     }
   }
 
@@ -4804,7 +4804,7 @@ router.post('/appointments/checkout', authenticateToken, async (req: any, res: a
       });
     }
     console.error('Admin appointment checkout error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -4817,10 +4817,10 @@ router.post('/appointments/reschedule-preview', authenticateToken, async (req: a
   const assignments = parseRescheduleAssignments(req.body?.assignments);
 
   if (!appointmentIds.length) {
-    return res.status(400).json({ message: 'appointmentIds must be a non-empty array.' });
+    throw new BusinessError('VALIDATION_FAILED', 'appointmentIds must be a non-empty array.', 400);
   }
   if (!newStartTime) {
-    return res.status(400).json({ message: 'newStartTime is required as ISO date.' });
+    throw new BusinessError('VALIDATION_FAILED', 'newStartTime is required as ISO date.', 400);
   }
 
   try {
@@ -4833,7 +4833,7 @@ router.post('/appointments/reschedule-preview', authenticateToken, async (req: a
     return res.status(200).json(preview);
   } catch (error) {
     console.error('Admin appointment reschedule preview error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -4846,10 +4846,10 @@ router.post('/appointments/reschedule-options', authenticateToken, async (req: a
   const assignments = parseRescheduleAssignments(req.body?.assignments);
 
   if (!appointmentIds.length) {
-    return res.status(400).json({ message: 'appointmentIds must be a non-empty array.' });
+    throw new BusinessError('VALIDATION_FAILED', 'appointmentIds must be a non-empty array.', 400);
   }
   if (!date) {
-    return res.status(400).json({ message: 'date is required as YYYY-MM-DD.' });
+    throw new BusinessError('VALIDATION_FAILED', 'date is required as YYYY-MM-DD.', 400);
   }
 
   try {
@@ -4862,7 +4862,7 @@ router.post('/appointments/reschedule-options', authenticateToken, async (req: a
     return res.status(200).json(options);
   } catch (error) {
     console.error('Admin appointment reschedule options error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -4879,10 +4879,10 @@ router.post('/appointments/reschedule-commit', authenticateToken, async (req: an
       : null;
 
   if (!appointmentIds.length) {
-    return res.status(400).json({ message: 'appointmentIds must be a non-empty array.' });
+    throw new BusinessError('VALIDATION_FAILED', 'appointmentIds must be a non-empty array.', 400);
   }
   if (!newStartTime) {
-    return res.status(400).json({ message: 'newStartTime is required as ISO date.' });
+    throw new BusinessError('VALIDATION_FAILED', 'newStartTime is required as ISO date.', 400);
   }
 
   try {
@@ -4974,10 +4974,10 @@ router.patch('/appointments/:id/reschedule', authenticateToken, async (req: any,
   const newStartTime = parseIsoDate(req.body?.startTime);
   const explicitStaffId = Number(req.body?.staffId);
   if (!Number.isInteger(appointmentId) || appointmentId <= 0) {
-    return res.status(400).json({ message: 'Invalid appointment id.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid appointment id.', 400);
   }
   if (!newStartTime) {
-    return res.status(400).json({ message: 'startTime is required as ISO date.' });
+    throw new BusinessError('VALIDATION_FAILED', 'startTime is required as ISO date.', 400);
   }
 
   const assignments =
@@ -5026,7 +5026,7 @@ router.get('/waitlist', authenticateToken, async (req: any, res: any) => {
 
   const date = typeof req.query?.date === 'string' ? req.query.date.trim() : '';
   if (!date) {
-    return res.status(400).json({ message: 'date is required as YYYY-MM-DD.' });
+    throw new BusinessError('VALIDATION_FAILED', 'date is required as YYYY-MM-DD.', 400);
   }
 
   try {
@@ -5034,7 +5034,7 @@ router.get('/waitlist', authenticateToken, async (req: any, res: any) => {
     return res.status(200).json({ items });
   } catch (error) {
     console.error('Admin waitlist list error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -5054,13 +5054,13 @@ router.post('/waitlist', authenticateToken, async (req: any, res: any) => {
   const nearbyToleranceMinutes = Number(req.body?.nearbyToleranceMinutes);
 
   if (!date || !timeWindowStart || !timeWindowEnd || !groups.length || !customerName || !customerPhone) {
-    return res.status(400).json({ message: 'date, time window, groups, customerName and customerPhone are required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'date, time window, groups, customerName and customerPhone are required.', 400);
   }
 
   try {
     const normalizedPhone = normalizeDigitsOnly(customerPhone);
     if (!normalizedPhone) {
-      return res.status(400).json({ message: 'phone_required' });
+      throw new BusinessError('VALIDATION_FAILED', 'phone_required', 400);
     }
     const item = await createWaitlistEntry({
       salonId,
@@ -5094,7 +5094,7 @@ router.post('/waitlist/match', authenticateToken, async (req: any, res: any) => 
   if (!salonId) return;
   const date = typeof req.body?.date === 'string' ? req.body.date.trim() : '';
   if (!date) {
-    return res.status(400).json({ message: 'date is required as YYYY-MM-DD.' });
+    throw new BusinessError('VALIDATION_FAILED', 'date is required as YYYY-MM-DD.', 400);
   }
 
   try {
@@ -5103,7 +5103,7 @@ router.post('/waitlist/match', authenticateToken, async (req: any, res: any) => 
     return res.status(200).json({ items });
   } catch (error) {
     console.error('Admin waitlist match error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -5112,7 +5112,7 @@ router.post('/waitlist/:id/offer', authenticateToken, async (req: any, res: any)
   if (!salonId) return;
   const entryId = Number(req.params.id);
   if (!Number.isInteger(entryId) || entryId <= 0) {
-    return res.status(400).json({ message: 'Invalid waitlist id.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid waitlist id.', 400);
   }
 
   try {
@@ -5133,7 +5133,7 @@ router.post('/waitlist/:id/cancel', authenticateToken, async (req: any, res: any
   if (!salonId) return;
   const entryId = Number(req.params.id);
   if (!Number.isInteger(entryId) || entryId <= 0) {
-    return res.status(400).json({ message: 'Invalid waitlist id.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid waitlist id.', 400);
   }
 
   try {
@@ -5162,10 +5162,10 @@ router.patch('/appointments/:id/payment', authenticateToken, async (req: any, re
   const paymentMethod = asPaymentMethod(req.body?.paymentMethod);
 
   if (!Number.isInteger(appointmentId) || appointmentId <= 0) {
-    return res.status(400).json({ message: 'Invalid appointment id.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid appointment id.', 400);
   }
   if (!paymentMethod) {
-    return res.status(400).json({ message: 'paymentMethod must be CASH, CARD, TRANSFER or OTHER.' });
+    throw new BusinessError('VALIDATION_FAILED', 'paymentMethod must be CASH, CARD, TRANSFER or OTHER.', 400);
   }
 
   try {
@@ -5281,13 +5281,13 @@ router.patch('/appointments/:id/payment', authenticateToken, async (req: any, re
     return res.status(200).json({ item: updated });
   } catch (error) {
     if ((error as any)?.message === 'APPOINTMENT_NOT_FOUND') {
-      return res.status(404).json({ message: 'Appointment not found.' });
+      throw new BusinessError('NOT_FOUND', 'Appointment not found.', 404);
     }
     if ((error as any)?.message === 'APPOINTMENT_LINE_NOT_FOUND') {
-      return res.status(404).json({ message: 'Appointment line not found.' });
+      throw new BusinessError('NOT_FOUND', 'Appointment line not found.', 404);
     }
     console.error('Admin appointment payment update error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -5331,7 +5331,7 @@ router.get('/setup', authenticateToken, async (req: any, res: any) => {
     ]);
 
     if (!salon) {
-      return res.status(404).json({ message: 'Salon not found.' });
+      throw new BusinessError('NOT_FOUND', 'Salon not found.', 404);
     }
 
     const hasPhone = Boolean((salon.whatsappPhone || '').trim());
@@ -5366,32 +5366,32 @@ router.get('/setup', authenticateToken, async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Admin setup read error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
 router.post('/setup/resolve-maps-link', authenticateToken, async (req: any, res: any) => {
   const inputUrl = typeof req.body?.url === 'string' ? req.body.url.trim() : '';
   if (!inputUrl) {
-    return res.status(400).json({ message: 'URL gerekli.' });
+    throw new BusinessError('VALIDATION_FAILED', 'URL gerekli.', 400);
   }
 
   let parsed: URL;
   try {
     parsed = new URL(inputUrl);
   } catch {
-    return res.status(400).json({ message: 'Geçersiz URL.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Geçersiz URL.', 400);
   }
 
   if (parsed.protocol !== 'https:') {
-    return res.status(400).json({ message: 'Sadece https linkleri desteklenir.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Sadece https linkleri desteklenir.', 400);
   }
 
   const host = parsed.hostname.toLowerCase();
   const allowedHosts = ['maps.app.goo.gl', 'share.google', 'goo.gl'];
   const isGoogleMapsHost = host.includes('google.') || allowedHosts.some((entry) => host === entry);
   if (!isGoogleMapsHost) {
-    return res.status(400).json({ message: 'Sadece Google Maps linkleri desteklenir.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Sadece Google Maps linkleri desteklenir.', 400);
   }
 
   try {
@@ -5536,7 +5536,7 @@ router.post('/setup/resolve-maps-link', authenticateToken, async (req: any, res:
     });
   } catch (error) {
     console.error('Resolve maps link error:', error);
-    return res.status(502).json({ message: 'Link çözümlenemedi.' });
+    throw new BusinessError('BAD_GATEWAY', 'Link çözümlenemedi.', 502);
   }
 });
 
@@ -5610,7 +5610,7 @@ router.put('/setup', authenticateToken, async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Admin setup update error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -5661,7 +5661,7 @@ router.get('/whatsapp-agent/settings', authenticateToken, async (req: any, res: 
     });
   } catch (error) {
     console.error('Admin WhatsApp agent settings read error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -5764,7 +5764,7 @@ router.put('/whatsapp-agent/settings', authenticateToken, async (req: any, res: 
     });
   } catch (error) {
     console.error('Admin WhatsApp agent settings update error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -5832,7 +5832,7 @@ router.get('/service-categories', authenticateToken, async (req: any, res: any) 
     return res.status(200).json({ items });
   } catch (error) {
     console.error('Admin service categories list error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -5844,7 +5844,7 @@ router.put('/service-categories/:id', authenticateToken, async (req: any, res: a
 
   const categoryId = Number(req.params.id);
   if (!Number.isInteger(categoryId) || categoryId <= 0) {
-    return res.status(400).json({ message: 'Invalid category id.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid category id.', 400);
   }
 
   const updates: any = {};
@@ -5854,14 +5854,14 @@ router.put('/service-categories/:id', authenticateToken, async (req: any, res: a
   if (req.body?.displayOrder !== undefined) {
     const displayOrder = Number(req.body.displayOrder);
     if (!Number.isInteger(displayOrder) || displayOrder < 0) {
-      return res.status(400).json({ message: 'displayOrder must be >= 0.' });
+      throw new BusinessError('VALIDATION_FAILED', 'displayOrder must be >= 0.', 400);
     }
     updates.displayOrder = displayOrder;
   }
   if (req.body?.capacity !== undefined) {
     const capacity = Number(req.body.capacity);
     if (!Number.isInteger(capacity) || capacity <= 0) {
-      return res.status(400).json({ message: 'capacity must be a positive integer.' });
+      throw new BusinessError('VALIDATION_FAILED', 'capacity must be a positive integer.', 400);
     }
     updates.capacity = capacity;
   }
@@ -5874,7 +5874,7 @@ router.put('/service-categories/:id', authenticateToken, async (req: any, res: a
   if (req.body?.bufferMinutes !== undefined) {
     const buffer = Number(req.body.bufferMinutes);
     if (!Number.isInteger(buffer) || buffer < 0) {
-      return res.status(400).json({ message: 'bufferMinutes must be >= 0.' });
+      throw new BusinessError('VALIDATION_FAILED', 'bufferMinutes must be >= 0.', 400);
     }
     updates.bufferMinutes = buffer;
   }
@@ -5887,7 +5887,7 @@ router.put('/service-categories/:id', authenticateToken, async (req: any, res: a
   }
 
   if (!Object.keys(updates).length) {
-    return res.status(400).json({ message: 'No valid update field provided.' });
+    throw new BusinessError('VALIDATION_FAILED', 'No valid update field provided.', 400);
   }
 
   try {
@@ -5896,7 +5896,7 @@ router.put('/service-categories/:id', authenticateToken, async (req: any, res: a
       select: { id: true },
     });
     if (!exists) {
-      return res.status(404).json({ message: 'Category not found.' });
+      throw new BusinessError('NOT_FOUND', 'Category not found.', 404);
     }
 
     const item = await prisma.serviceCategory.update({
@@ -5937,7 +5937,7 @@ router.put('/service-categories/:id', authenticateToken, async (req: any, res: a
     });
   } catch (error) {
     console.error('Admin service category update error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -5949,7 +5949,7 @@ router.post('/service-categories/reorder', authenticateToken, async (req: any, r
 
   const orderedIds = Array.isArray(req.body?.orderedIds) ? req.body.orderedIds.map((value: any) => Number(value)) : [];
   if (!orderedIds.length || orderedIds.some((id: number) => !Number.isInteger(id) || id <= 0)) {
-    return res.status(400).json({ message: 'orderedIds must be a non-empty number array.' });
+    throw new BusinessError('VALIDATION_FAILED', 'orderedIds must be a non-empty number array.', 400);
   }
 
   try {
@@ -5958,7 +5958,7 @@ router.post('/service-categories/reorder', authenticateToken, async (req: any, r
       select: { id: true },
     });
     if (rows.length !== orderedIds.length) {
-      return res.status(400).json({ message: 'orderedIds contains invalid categories.' });
+      throw new BusinessError('VALIDATION_FAILED', 'orderedIds contains invalid categories.', 400);
     }
 
     await prisma.$transaction(
@@ -5974,7 +5974,7 @@ router.post('/service-categories/reorder', authenticateToken, async (req: any, r
     return res.status(200).json({ success: true });
   } catch (error) {
     console.error('Admin service category reorder error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -6030,7 +6030,7 @@ router.get('/service-regions', authenticateToken, async (req: any, res: any) => 
     });
   } catch (error) {
     console.error('Admin service regions list error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -6049,13 +6049,13 @@ router.post('/service-regions', authenticateToken, async (req: any, res: any) =>
       : Number(req.body.categoryId);
 
   if (!name) {
-    return res.status(400).json({ message: 'name is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'name is required.', 400);
   }
   if (displayOrder !== null && (!Number.isInteger(displayOrder) || displayOrder < 0)) {
-    return res.status(400).json({ message: 'displayOrder must be >= 0.' });
+    throw new BusinessError('VALIDATION_FAILED', 'displayOrder must be >= 0.', 400);
   }
   if (categoryId !== null && (!Number.isInteger(categoryId) || categoryId <= 0)) {
-    return res.status(400).json({ message: 'categoryId must be a positive integer.' });
+    throw new BusinessError('VALIDATION_FAILED', 'categoryId must be a positive integer.', 400);
   }
 
   try {
@@ -6065,7 +6065,7 @@ router.post('/service-regions', authenticateToken, async (req: any, res: any) =>
         select: { id: true },
       });
       if (!categoryExists) {
-        return res.status(400).json({ message: 'categoryId is not valid for this salon.' });
+        throw new BusinessError('VALIDATION_FAILED', 'categoryId is not valid for this salon.', 400);
       }
     }
 
@@ -6117,10 +6117,10 @@ router.post('/service-regions', authenticateToken, async (req: any, res: any) =>
     });
   } catch (error: any) {
     if (error?.code === 'P2002') {
-      return res.status(409).json({ message: 'Bu bölge adı zaten kullanılıyor.' });
+      throw new BusinessError('CONFLICT', 'Bu bölge adı zaten kullanılıyor.', 409);
     }
     console.error('Admin service region create error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -6132,7 +6132,7 @@ router.put('/service-regions/:id', authenticateToken, async (req: any, res: any)
 
   const regionId = Number(req.params.id);
   if (!Number.isInteger(regionId) || regionId <= 0) {
-    return res.status(400).json({ message: 'Invalid region id.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid region id.', 400);
   }
 
   const updates: any = {};
@@ -6142,7 +6142,7 @@ router.put('/service-regions/:id', authenticateToken, async (req: any, res: any)
   if (req.body?.displayOrder !== undefined) {
     const displayOrder = Number(req.body.displayOrder);
     if (!Number.isInteger(displayOrder) || displayOrder < 0) {
-      return res.status(400).json({ message: 'displayOrder must be >= 0.' });
+      throw new BusinessError('VALIDATION_FAILED', 'displayOrder must be >= 0.', 400);
     }
     updates.displayOrder = displayOrder;
   }
@@ -6155,14 +6155,14 @@ router.put('/service-regions/:id', authenticateToken, async (req: any, res: any)
     } else {
       const categoryId = Number(req.body.categoryId);
       if (!Number.isInteger(categoryId) || categoryId <= 0) {
-        return res.status(400).json({ message: 'categoryId must be a positive integer.' });
+        throw new BusinessError('VALIDATION_FAILED', 'categoryId must be a positive integer.', 400);
       }
       updates.categoryId = categoryId;
     }
   }
 
   if (!Object.keys(updates).length) {
-    return res.status(400).json({ message: 'No valid update field provided.' });
+    throw new BusinessError('VALIDATION_FAILED', 'No valid update field provided.', 400);
   }
 
   try {
@@ -6171,7 +6171,7 @@ router.put('/service-regions/:id', authenticateToken, async (req: any, res: any)
       select: { id: true },
     });
     if (!exists) {
-      return res.status(404).json({ message: 'Region not found.' });
+      throw new BusinessError('NOT_FOUND', 'Region not found.', 404);
     }
 
     if (updates.categoryId !== undefined && updates.categoryId !== null) {
@@ -6180,7 +6180,7 @@ router.put('/service-regions/:id', authenticateToken, async (req: any, res: any)
         select: { id: true },
       });
       if (!categoryExists) {
-        return res.status(400).json({ message: 'categoryId is not valid for this salon.' });
+        throw new BusinessError('VALIDATION_FAILED', 'categoryId is not valid for this salon.', 400);
       }
     }
 
@@ -6227,10 +6227,10 @@ router.put('/service-regions/:id', authenticateToken, async (req: any, res: any)
     });
   } catch (error: any) {
     if (error?.code === 'P2002') {
-      return res.status(409).json({ message: 'Bu bölge adı zaten kullanılıyor.' });
+      throw new BusinessError('CONFLICT', 'Bu bölge adı zaten kullanılıyor.', 409);
     }
     console.error('Admin service region update error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -6269,7 +6269,7 @@ router.get('/service-groups', authenticateToken, async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Admin service groups list error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -6288,16 +6288,16 @@ router.post('/service-groups', authenticateToken, async (req: any, res: any) => 
   const preparationMinutes = req.body?.preparationMinutes === undefined ? 0 : Number(req.body.preparationMinutes);
 
   if (!name) {
-    return res.status(400).json({ message: 'name is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'name is required.', 400);
   }
   if (displayOrder !== null && (!Number.isInteger(displayOrder) || displayOrder < 0)) {
-    return res.status(400).json({ message: 'displayOrder must be >= 0.' });
+    throw new BusinessError('VALIDATION_FAILED', 'displayOrder must be >= 0.', 400);
   }
   if (!Number.isInteger(capacity) || capacity <= 0) {
-    return res.status(400).json({ message: 'capacity must be a positive integer.' });
+    throw new BusinessError('VALIDATION_FAILED', 'capacity must be a positive integer.', 400);
   }
   if (!Number.isInteger(preparationMinutes) || preparationMinutes < 0) {
-    return res.status(400).json({ message: 'preparationMinutes must be >= 0.' });
+    throw new BusinessError('VALIDATION_FAILED', 'preparationMinutes must be >= 0.', 400);
   }
 
   try {
@@ -6337,10 +6337,10 @@ router.post('/service-groups', authenticateToken, async (req: any, res: any) => 
     });
   } catch (error: any) {
     if (error?.code === 'P2002') {
-      return res.status(409).json({ message: 'Bu grup adı zaten kullanılıyor.' });
+      throw new BusinessError('CONFLICT', 'Bu grup adı zaten kullanılıyor.', 409);
     }
     console.error('Admin service group create error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -6352,7 +6352,7 @@ router.put('/service-groups/:id', authenticateToken, async (req: any, res: any) 
 
   const groupId = Number(req.params.id);
   if (!Number.isInteger(groupId) || groupId <= 0) {
-    return res.status(400).json({ message: 'Invalid group id.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid group id.', 400);
   }
 
   const updates: any = {};
@@ -6366,7 +6366,7 @@ router.put('/service-groups/:id', authenticateToken, async (req: any, res: any) 
   if (req.body?.displayOrder !== undefined) {
     const displayOrder = Number(req.body.displayOrder);
     if (!Number.isInteger(displayOrder) || displayOrder < 0) {
-      return res.status(400).json({ message: 'displayOrder must be >= 0.' });
+      throw new BusinessError('VALIDATION_FAILED', 'displayOrder must be >= 0.', 400);
     }
     updates.displayOrder = displayOrder;
   }
@@ -6376,7 +6376,7 @@ router.put('/service-groups/:id', authenticateToken, async (req: any, res: any) 
   if (req.body?.capacity !== undefined) {
     const capacity = Number(req.body.capacity);
     if (!Number.isInteger(capacity) || capacity <= 0) {
-      return res.status(400).json({ message: 'capacity must be a positive integer.' });
+      throw new BusinessError('VALIDATION_FAILED', 'capacity must be a positive integer.', 400);
     }
     updates.capacity = capacity;
   }
@@ -6386,13 +6386,13 @@ router.put('/service-groups/:id', authenticateToken, async (req: any, res: any) 
   if (req.body?.preparationMinutes !== undefined) {
     const minutes = Number(req.body.preparationMinutes);
     if (!Number.isInteger(minutes) || minutes < 0) {
-      return res.status(400).json({ message: 'preparationMinutes must be >= 0.' });
+      throw new BusinessError('VALIDATION_FAILED', 'preparationMinutes must be >= 0.', 400);
     }
     updates.preparationMinutes = minutes;
   }
 
   if (!Object.keys(updates).length) {
-    return res.status(400).json({ message: 'No valid update field provided.' });
+    throw new BusinessError('VALIDATION_FAILED', 'No valid update field provided.', 400);
   }
 
   try {
@@ -6401,7 +6401,7 @@ router.put('/service-groups/:id', authenticateToken, async (req: any, res: any) 
       select: { id: true },
     });
     if (!exists) {
-      return res.status(404).json({ message: 'Group not found.' });
+      throw new BusinessError('NOT_FOUND', 'Group not found.', 404);
     }
 
     const item = await prisma.serviceGroup.update({
@@ -6432,10 +6432,10 @@ router.put('/service-groups/:id', authenticateToken, async (req: any, res: any) 
     });
   } catch (error: any) {
     if (error?.code === 'P2002') {
-      return res.status(409).json({ message: 'Bu grup adı zaten kullanılıyor.' });
+      throw new BusinessError('CONFLICT', 'Bu grup adı zaten kullanılıyor.', 409);
     }
     console.error('Admin service group update error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -6447,7 +6447,7 @@ router.post('/service-groups/reorder', authenticateToken, async (req: any, res: 
 
   const orderedIds = Array.isArray(req.body?.orderedIds) ? req.body.orderedIds.map((value: any) => Number(value)) : [];
   if (!orderedIds.length || orderedIds.some((id: number) => !Number.isInteger(id) || id <= 0)) {
-    return res.status(400).json({ message: 'orderedIds must be a non-empty number array.' });
+    throw new BusinessError('VALIDATION_FAILED', 'orderedIds must be a non-empty number array.', 400);
   }
 
   try {
@@ -6456,7 +6456,7 @@ router.post('/service-groups/reorder', authenticateToken, async (req: any, res: 
       select: { id: true },
     });
     if (rows.length !== orderedIds.length) {
-      return res.status(400).json({ message: 'orderedIds contains invalid groups.' });
+      throw new BusinessError('VALIDATION_FAILED', 'orderedIds contains invalid groups.', 400);
     }
 
     await prisma.$transaction(
@@ -6472,7 +6472,7 @@ router.post('/service-groups/reorder', authenticateToken, async (req: any, res: 
     return res.status(200).json({ success: true });
   } catch (error) {
     console.error('Admin service group reorder error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -6556,7 +6556,7 @@ router.get('/services', authenticateToken, async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Admin services list error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -6568,7 +6568,7 @@ router.get('/services/:id/staff', authenticateToken, async (req: any, res: any) 
 
   const serviceId = Number(req.params.id);
   if (!Number.isInteger(serviceId) || serviceId <= 0) {
-    return res.status(400).json({ message: 'Invalid service id.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid service id.', 400);
   }
 
   try {
@@ -6608,7 +6608,7 @@ router.get('/services/:id/staff', authenticateToken, async (req: any, res: any) 
     });
   } catch (error) {
     console.error('Admin service staff list error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -6651,22 +6651,22 @@ router.post('/services', authenticateToken, async (req: any, res: any) => {
       : Number(req.body.bufferOverride);
 
   if (!name || !Number.isFinite(duration) || duration <= 0 || !Number.isFinite(price) || price < 0) {
-    return res.status(400).json({ message: 'name, duration and price are required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'name, duration and price are required.', 400);
   }
   if (categoryId === null || !Number.isInteger(categoryId) || categoryId <= 0) {
-    return res.status(400).json({ message: 'categoryId is required and must be a positive integer.' });
+    throw new BusinessError('VALIDATION_FAILED', 'categoryId is required and must be a positive integer.', 400);
   }
   if (regionId !== null && (!Number.isInteger(regionId) || regionId <= 0)) {
-    return res.status(400).json({ message: 'regionId must be a positive integer.' });
+    throw new BusinessError('VALIDATION_FAILED', 'regionId must be a positive integer.', 400);
   }
   if (serviceGroupId !== null && (!Number.isInteger(serviceGroupId) || serviceGroupId <= 0)) {
-    return res.status(400).json({ message: 'serviceGroupId must be a positive integer.' });
+    throw new BusinessError('VALIDATION_FAILED', 'serviceGroupId must be a positive integer.', 400);
   }
   if (capacityOverride !== null && (!Number.isInteger(capacityOverride) || capacityOverride <= 0)) {
-    return res.status(400).json({ message: 'capacityOverride must be a positive integer.' });
+    throw new BusinessError('VALIDATION_FAILED', 'capacityOverride must be a positive integer.', 400);
   }
   if (bufferOverride !== null && (!Number.isFinite(bufferOverride) || bufferOverride < 0)) {
-    return res.status(400).json({ message: 'bufferOverride must be >= 0.' });
+    throw new BusinessError('VALIDATION_FAILED', 'bufferOverride must be >= 0.', 400);
   }
 
   try {
@@ -6682,7 +6682,7 @@ router.post('/services', authenticateToken, async (req: any, res: any) => {
       },
     });
     if (!categoryExists) {
-      return res.status(400).json({ message: 'categoryId is not valid for this salon.' });
+      throw new BusinessError('VALIDATION_FAILED', 'categoryId is not valid for this salon.', 400);
     }
 
     if (serviceGroupId !== null) {
@@ -6691,7 +6691,7 @@ router.post('/services', authenticateToken, async (req: any, res: any) => {
         select: { id: true },
       });
       if (!groupExists) {
-        return res.status(400).json({ message: 'serviceGroupId is not valid for this salon.' });
+        throw new BusinessError('VALIDATION_FAILED', 'serviceGroupId is not valid for this salon.', 400);
       }
     }
     if (regionId !== null) {
@@ -6700,7 +6700,7 @@ router.post('/services', authenticateToken, async (req: any, res: any) => {
         select: { id: true },
       });
       if (!regionExists) {
-        return res.status(400).json({ message: 'regionId is not valid for this salon.' });
+        throw new BusinessError('VALIDATION_FAILED', 'regionId is not valid for this salon.', 400);
       }
     }
 
@@ -6790,10 +6790,10 @@ router.post('/services', authenticateToken, async (req: any, res: any) => {
     return res.status(201).json({ item: mapServiceForAdmin(service) });
   } catch (error: any) {
     if (error?.code === 'P2002') {
-      return res.status(409).json({ message: 'Bu isimde hizmet zaten mevcut.' });
+      throw new BusinessError('CONFLICT', 'Bu isimde hizmet zaten mevcut.', 409);
     }
     console.error('Admin service create error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -6805,7 +6805,7 @@ router.put('/services/:id', authenticateToken, async (req: any, res: any) => {
 
   const serviceId = Number(req.params.id);
   if (!Number.isInteger(serviceId) || serviceId <= 0) {
-    return res.status(400).json({ message: 'Invalid service id.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid service id.', 400);
   }
 
   const updates: any = {};
@@ -6818,14 +6818,14 @@ router.put('/services/:id', authenticateToken, async (req: any, res: any) => {
   if (req.body?.duration !== undefined) {
     const duration = Number(req.body.duration);
     if (!Number.isFinite(duration) || duration <= 0) {
-      return res.status(400).json({ message: 'duration must be a positive number.' });
+      throw new BusinessError('VALIDATION_FAILED', 'duration must be a positive number.', 400);
     }
     updates.duration = Math.round(duration);
   }
   if (req.body?.price !== undefined) {
     const price = Number(req.body.price);
     if (!Number.isFinite(price) || price < 0) {
-      return res.status(400).json({ message: 'price must be a non-negative number.' });
+      throw new BusinessError('VALIDATION_FAILED', 'price must be a non-negative number.', 400);
     }
     updates.price = price;
   }
@@ -6837,11 +6837,11 @@ router.put('/services/:id', authenticateToken, async (req: any, res: any) => {
   }
   if (req.body?.categoryId !== undefined) {
     if (req.body.categoryId === null || req.body.categoryId === '') {
-      return res.status(400).json({ message: 'categoryId cannot be empty.' });
+      throw new BusinessError('VALIDATION_FAILED', 'categoryId cannot be empty.', 400);
     } else {
       const categoryId = Number(req.body.categoryId);
       if (!Number.isInteger(categoryId) || categoryId <= 0) {
-        return res.status(400).json({ message: 'categoryId must be a positive integer.' });
+        throw new BusinessError('VALIDATION_FAILED', 'categoryId must be a positive integer.', 400);
       }
       updates.categoryId = categoryId;
     }
@@ -6852,7 +6852,7 @@ router.put('/services/:id', authenticateToken, async (req: any, res: any) => {
     } else {
       const regionId = Number(req.body.regionId);
       if (!Number.isInteger(regionId) || regionId <= 0) {
-        return res.status(400).json({ message: 'regionId must be a positive integer.' });
+        throw new BusinessError('VALIDATION_FAILED', 'regionId must be a positive integer.', 400);
       }
       updates.regionId = regionId;
     }
@@ -6863,7 +6863,7 @@ router.put('/services/:id', authenticateToken, async (req: any, res: any) => {
     } else {
       const serviceGroupId = Number(req.body.serviceGroupId);
       if (!Number.isInteger(serviceGroupId) || serviceGroupId <= 0) {
-        return res.status(400).json({ message: 'serviceGroupId must be a positive integer.' });
+        throw new BusinessError('VALIDATION_FAILED', 'serviceGroupId must be a positive integer.', 400);
       }
       updates.serviceGroupId = serviceGroupId;
     }
@@ -6874,7 +6874,7 @@ router.put('/services/:id', authenticateToken, async (req: any, res: any) => {
     } else {
       const capacity = Number(req.body.capacityOverride);
       if (!Number.isInteger(capacity) || capacity <= 0) {
-        return res.status(400).json({ message: 'capacityOverride must be a positive integer.' });
+        throw new BusinessError('VALIDATION_FAILED', 'capacityOverride must be a positive integer.', 400);
       }
       updates.capacityOverride = capacity;
     }
@@ -6892,7 +6892,7 @@ router.put('/services/:id', authenticateToken, async (req: any, res: any) => {
     } else {
       const buffer = Number(req.body.bufferOverride);
       if (!Number.isFinite(buffer) || buffer < 0) {
-        return res.status(400).json({ message: 'bufferOverride must be >= 0.' });
+        throw new BusinessError('VALIDATION_FAILED', 'bufferOverride must be >= 0.', 400);
       }
       updates.bufferOverride = Math.round(buffer);
     }
@@ -6902,7 +6902,7 @@ router.put('/services/:id', authenticateToken, async (req: any, res: any) => {
   const genders = hasGenderUpdate ? parseServiceGenders(req.body?.genders) : [];
 
   if (!Object.keys(updates).length && !hasGenderUpdate) {
-    return res.status(400).json({ message: 'No valid update field provided.' });
+    throw new BusinessError('VALIDATION_FAILED', 'No valid update field provided.', 400);
   }
 
   try {
@@ -6911,7 +6911,7 @@ router.put('/services/:id', authenticateToken, async (req: any, res: any) => {
       select: { id: true },
     });
     if (!exists) {
-      return res.status(404).json({ message: 'Service not found.' });
+      throw new BusinessError('NOT_FOUND', 'Service not found.', 404);
     }
 
     if (updates.categoryId !== undefined) {
@@ -6927,7 +6927,7 @@ router.put('/services/:id', authenticateToken, async (req: any, res: any) => {
         },
       });
       if (!categoryExists) {
-        return res.status(400).json({ message: 'categoryId is not valid for this salon.' });
+        throw new BusinessError('VALIDATION_FAILED', 'categoryId is not valid for this salon.', 400);
       }
       updates.category = categoryExists.categoryRef?.key || 'OTHER';
     }
@@ -6938,7 +6938,7 @@ router.put('/services/:id', authenticateToken, async (req: any, res: any) => {
         select: { id: true },
       });
       if (!groupExists) {
-        return res.status(400).json({ message: 'serviceGroupId is not valid for this salon.' });
+        throw new BusinessError('VALIDATION_FAILED', 'serviceGroupId is not valid for this salon.', 400);
       }
     }
     if (updates.regionId !== undefined && updates.regionId !== null) {
@@ -6947,7 +6947,7 @@ router.put('/services/:id', authenticateToken, async (req: any, res: any) => {
         select: { id: true },
       });
       if (!regionExists) {
-        return res.status(400).json({ message: 'regionId is not valid for this salon.' });
+        throw new BusinessError('VALIDATION_FAILED', 'regionId is not valid for this salon.', 400);
       }
     }
 
@@ -7025,10 +7025,10 @@ router.put('/services/:id', authenticateToken, async (req: any, res: any) => {
     return res.status(200).json({ item: mapServiceForAdmin(service) });
   } catch (error: any) {
     if (error?.code === 'P2002') {
-      return res.status(409).json({ message: 'Bu isimde hizmet zaten mevcut.' });
+      throw new BusinessError('CONFLICT', 'Bu isimde hizmet zaten mevcut.', 409);
     }
     console.error('Admin service update error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -7040,7 +7040,7 @@ router.delete('/services/:id', authenticateToken, async (req: any, res: any) => 
 
   const serviceId = Number(req.params.id);
   if (!Number.isInteger(serviceId) || serviceId <= 0) {
-    return res.status(400).json({ message: 'Invalid service id.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid service id.', 400);
   }
 
   try {
@@ -7049,17 +7049,17 @@ router.delete('/services/:id', authenticateToken, async (req: any, res: any) => 
       select: { id: true },
     });
     if (!exists) {
-      return res.status(404).json({ message: 'Service not found.' });
+      throw new BusinessError('NOT_FOUND', 'Service not found.', 404);
     }
 
     await prisma.service.delete({ where: { id: serviceId } });
     return res.status(204).send();
   } catch (error: any) {
     if (error?.code === 'P2003') {
-      return res.status(409).json({ message: 'Bu hizmet randevularda kullanıldığı için silinemez.' });
+      throw new BusinessError('CONFLICT', 'Bu hizmet randevularda kullanıldığı için silinemez.', 409);
     }
     console.error('Admin service delete error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -7124,7 +7124,7 @@ router.get('/staff', authenticateToken, async (req: any, res: any) => {
     return res.status(200).json({ items: staff.map(mapStaffForMobile) });
   } catch (error) {
     console.error('Admin staff list error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -7136,7 +7136,7 @@ router.post('/staff', authenticateToken, async (req: any, res: any) => {
 
   const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
   if (!name) {
-    return res.status(400).json({ message: 'name is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'name is required.', 400);
   }
   const themeColor =
     req.body?.themeColor === null || req.body?.themeColor === undefined || req.body?.themeColor === ''
@@ -7144,7 +7144,7 @@ router.post('/staff', authenticateToken, async (req: any, res: any) => {
       : normalizeThemeColor(req.body.themeColor);
 
   if (req.body?.themeColor !== undefined && req.body?.themeColor !== null && req.body?.themeColor !== '' && !themeColor) {
-    return res.status(400).json({ message: 'themeColor must be in #RRGGBB format.' });
+    throw new BusinessError('VALIDATION_FAILED', 'themeColor must be in #RRGGBB format.', 400);
   }
 
   const assignments = parseStaffServiceAssignments(req.body?.serviceAssignments);
@@ -7253,10 +7253,10 @@ router.post('/staff', authenticateToken, async (req: any, res: any) => {
     return res.status(201).json({ item: mapStaffForMobile(staff) });
   } catch (error) {
     if ((error as Error)?.message === 'INVALID_SERVICE_ASSIGNMENT') {
-      return res.status(400).json({ message: 'serviceAssignments içinde geçersiz hizmet var.' });
+      throw new BusinessError('VALIDATION_FAILED', 'serviceAssignments içinde geçersiz hizmet var.', 400);
     }
     console.error('Admin staff create error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -7268,14 +7268,14 @@ router.put('/staff/:id', authenticateToken, async (req: any, res: any) => {
 
   const staffId = Number(req.params.id);
   if (!Number.isInteger(staffId) || staffId <= 0) {
-    return res.status(400).json({ message: 'Invalid staff id.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid staff id.', 400);
   }
 
   const updates: any = {};
   if (typeof req.body?.name === 'string') {
     const name = req.body.name.trim();
     if (!name) {
-      return res.status(400).json({ message: 'name cannot be empty.' });
+      throw new BusinessError('VALIDATION_FAILED', 'name cannot be empty.', 400);
     }
     updates.name = name;
     updates.firstName = splitStaffNameParts(name).firstName;
@@ -7299,7 +7299,7 @@ router.put('/staff/:id', authenticateToken, async (req: any, res: any) => {
     } else {
       const themeColor = normalizeThemeColor(req.body.themeColor);
       if (!themeColor) {
-        return res.status(400).json({ message: 'themeColor must be in #RRGGBB format.' });
+        throw new BusinessError('VALIDATION_FAILED', 'themeColor must be in #RRGGBB format.', 400);
       }
       updates.themeColor = themeColor;
     }
@@ -7309,7 +7309,7 @@ router.put('/staff/:id', authenticateToken, async (req: any, res: any) => {
   const assignments = hasAssignments ? parseStaffServiceAssignments(req.body?.serviceAssignments) : [];
 
   if (!Object.keys(updates).length && !hasAssignments) {
-    return res.status(400).json({ message: 'No valid update field provided.' });
+    throw new BusinessError('VALIDATION_FAILED', 'No valid update field provided.', 400);
   }
 
   try {
@@ -7422,13 +7422,13 @@ router.put('/staff/:id', authenticateToken, async (req: any, res: any) => {
     return res.status(200).json({ item: mapStaffForMobile(staff) });
   } catch (error) {
     if ((error as Error)?.message === 'STAFF_NOT_FOUND') {
-      return res.status(404).json({ message: 'Staff not found.' });
+      throw new BusinessError('NOT_FOUND', 'Staff not found.', 404);
     }
     if ((error as Error)?.message === 'INVALID_SERVICE_ASSIGNMENT') {
-      return res.status(400).json({ message: 'serviceAssignments içinde geçersiz hizmet var.' });
+      throw new BusinessError('VALIDATION_FAILED', 'serviceAssignments içinde geçersiz hizmet var.', 400);
     }
     console.error('Admin staff update error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -7440,7 +7440,7 @@ router.delete('/staff/:id', authenticateToken, async (req: any, res: any) => {
 
   const staffId = Number(req.params.id);
   if (!Number.isInteger(staffId) || staffId <= 0) {
-    return res.status(400).json({ message: 'Invalid staff id.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid staff id.', 400);
   }
 
   try {
@@ -7450,7 +7450,7 @@ router.delete('/staff/:id', authenticateToken, async (req: any, res: any) => {
     });
 
     if (!existing) {
-      return res.status(404).json({ message: 'Staff not found.' });
+      throw new BusinessError('NOT_FOUND', 'Staff not found.', 404);
     }
 
     await prisma.staff.delete({
@@ -7460,10 +7460,10 @@ router.delete('/staff/:id', authenticateToken, async (req: any, res: any) => {
     return res.status(204).send();
   } catch (error: any) {
     if (error?.code === 'P2003') {
-      return res.status(409).json({ message: 'Bu çalışan randevularda kullanıldığı için silinemez.' });
+      throw new BusinessError('CONFLICT', 'Bu çalışan randevularda kullanıldığı için silinemez.', 409);
     }
     console.error('Admin staff delete error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -7484,7 +7484,7 @@ router.get('/salon-closures', authenticateToken, async (req: any, res: any) => {
     return res.status(200).json({ items });
   } catch (error) {
     console.error('Admin salon closure list error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -7499,7 +7499,7 @@ router.post('/salon-closures', authenticateToken, async (req: any, res: any) => 
 
   const range = parseWindowRange(req.body?.startAt, req.body?.endAt);
   if (!range) {
-    return res.status(400).json({ message: 'startAt ve endAt geçerli ISO tarih olmalı ve startAt < endAt olmalıdır.' });
+    throw new BusinessError('VALIDATION_FAILED', 'startAt ve endAt geçerli ISO tarih olmalı ve startAt < endAt olmalıdır.', 400);
   }
 
   try {
@@ -7514,7 +7514,7 @@ router.post('/salon-closures', authenticateToken, async (req: any, res: any) => 
     return res.status(201).json({ item });
   } catch (error) {
     console.error('Admin salon closure create error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -7529,12 +7529,12 @@ router.put('/salon-closures/:id', authenticateToken, async (req: any, res: any) 
 
   const closureId = Number(req.params.id);
   if (!Number.isInteger(closureId) || closureId <= 0) {
-    return res.status(400).json({ message: 'Invalid closure id.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid closure id.', 400);
   }
 
   const range = parseWindowRange(req.body?.startAt, req.body?.endAt);
   if (!range) {
-    return res.status(400).json({ message: 'startAt ve endAt geçerli ISO tarih olmalı ve startAt < endAt olmalıdır.' });
+    throw new BusinessError('VALIDATION_FAILED', 'startAt ve endAt geçerli ISO tarih olmalı ve startAt < endAt olmalıdır.', 400);
   }
 
   try {
@@ -7543,7 +7543,7 @@ router.put('/salon-closures/:id', authenticateToken, async (req: any, res: any) 
       select: { id: true },
     });
     if (!exists) {
-      return res.status(404).json({ message: 'Salon tatili bulunamadı.' });
+      throw new BusinessError('NOT_FOUND', 'Salon tatili bulunamadı.', 404);
     }
 
     const item = await prisma.salonClosure.update({
@@ -7557,7 +7557,7 @@ router.put('/salon-closures/:id', authenticateToken, async (req: any, res: any) 
     return res.status(200).json({ item });
   } catch (error) {
     console.error('Admin salon closure update error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -7572,7 +7572,7 @@ router.delete('/salon-closures/:id', authenticateToken, async (req: any, res: an
 
   const closureId = Number(req.params.id);
   if (!Number.isInteger(closureId) || closureId <= 0) {
-    return res.status(400).json({ message: 'Invalid closure id.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid closure id.', 400);
   }
 
   try {
@@ -7581,7 +7581,7 @@ router.delete('/salon-closures/:id', authenticateToken, async (req: any, res: an
       select: { id: true },
     });
     if (!exists) {
-      return res.status(404).json({ message: 'Salon tatili bulunamadı.' });
+      throw new BusinessError('NOT_FOUND', 'Salon tatili bulunamadı.', 404);
     }
 
     await prisma.salonClosure.delete({
@@ -7590,7 +7590,7 @@ router.delete('/salon-closures/:id', authenticateToken, async (req: any, res: an
     return res.status(204).send();
   } catch (error) {
     console.error('Admin salon closure delete error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -7620,7 +7620,7 @@ router.get('/staff-timeoff', authenticateToken, async (req: any, res: any) => {
     return res.status(200).json({ items });
   } catch (error) {
     console.error('Admin staff time off list error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -7635,12 +7635,12 @@ router.post('/staff-timeoff', authenticateToken, async (req: any, res: any) => {
 
   const staffId = Number(req.body?.staffId);
   if (!Number.isInteger(staffId) || staffId <= 0) {
-    return res.status(400).json({ message: 'Geçerli bir staffId zorunludur.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Geçerli bir staffId zorunludur.', 400);
   }
 
   const range = parseWindowRange(req.body?.startAt, req.body?.endAt);
   if (!range) {
-    return res.status(400).json({ message: 'startAt ve endAt geçerli ISO tarih olmalı ve startAt < endAt olmalıdır.' });
+    throw new BusinessError('VALIDATION_FAILED', 'startAt ve endAt geçerli ISO tarih olmalı ve startAt < endAt olmalıdır.', 400);
   }
 
   try {
@@ -7649,7 +7649,7 @@ router.post('/staff-timeoff', authenticateToken, async (req: any, res: any) => {
       select: { id: true },
     });
     if (!staff) {
-      return res.status(404).json({ message: 'Personel bulunamadı.' });
+      throw new BusinessError('NOT_FOUND', 'Personel bulunamadı.', 404);
     }
 
     const item = await prisma.staffTimeOff.create({
@@ -7673,7 +7673,7 @@ router.post('/staff-timeoff', authenticateToken, async (req: any, res: any) => {
     return res.status(201).json({ item });
   } catch (error) {
     console.error('Admin staff time off create error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -7689,15 +7689,15 @@ router.put('/staff-timeoff/:id', authenticateToken, async (req: any, res: any) =
   const itemId = Number(req.params.id);
   const staffId = Number(req.body?.staffId);
   if (!Number.isInteger(itemId) || itemId <= 0) {
-    return res.status(400).json({ message: 'Invalid staff time off id.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid staff time off id.', 400);
   }
   if (!Number.isInteger(staffId) || staffId <= 0) {
-    return res.status(400).json({ message: 'Geçerli bir staffId zorunludur.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Geçerli bir staffId zorunludur.', 400);
   }
 
   const range = parseWindowRange(req.body?.startAt, req.body?.endAt);
   if (!range) {
-    return res.status(400).json({ message: 'startAt ve endAt geçerli ISO tarih olmalı ve startAt < endAt olmalıdır.' });
+    throw new BusinessError('VALIDATION_FAILED', 'startAt ve endAt geçerli ISO tarih olmalı ve startAt < endAt olmalıdır.', 400);
   }
 
   try {
@@ -7713,10 +7713,10 @@ router.put('/staff-timeoff/:id', authenticateToken, async (req: any, res: any) =
     ]);
 
     if (!exists) {
-      return res.status(404).json({ message: 'Personel izin kaydı bulunamadı.' });
+      throw new BusinessError('NOT_FOUND', 'Personel izin kaydı bulunamadı.', 404);
     }
     if (!staff) {
-      return res.status(404).json({ message: 'Personel bulunamadı.' });
+      throw new BusinessError('NOT_FOUND', 'Personel bulunamadı.', 404);
     }
 
     const item = await prisma.staffTimeOff.update({
@@ -7740,7 +7740,7 @@ router.put('/staff-timeoff/:id', authenticateToken, async (req: any, res: any) =
     return res.status(200).json({ item });
   } catch (error) {
     console.error('Admin staff time off update error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -7755,7 +7755,7 @@ router.delete('/staff-timeoff/:id', authenticateToken, async (req: any, res: any
 
   const itemId = Number(req.params.id);
   if (!Number.isInteger(itemId) || itemId <= 0) {
-    return res.status(400).json({ message: 'Invalid staff time off id.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid staff time off id.', 400);
   }
 
   try {
@@ -7764,7 +7764,7 @@ router.delete('/staff-timeoff/:id', authenticateToken, async (req: any, res: any
       select: { id: true },
     });
     if (!exists) {
-      return res.status(404).json({ message: 'Personel izin kaydı bulunamadı.' });
+      throw new BusinessError('NOT_FOUND', 'Personel izin kaydı bulunamadı.', 404);
     }
 
     await prisma.staffTimeOff.delete({
@@ -7773,7 +7773,7 @@ router.delete('/staff-timeoff/:id', authenticateToken, async (req: any, res: any
     return res.status(204).send();
   } catch (error) {
     console.error('Admin staff time off delete error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -7797,7 +7797,7 @@ router.get('/inventory/items', authenticateToken, async (req: any, res: any) => 
     });
   } catch (error) {
     console.error('Admin inventory list error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -7809,7 +7809,7 @@ router.post('/inventory/items', authenticateToken, async (req: any, res: any) =>
 
   const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
   if (!name) {
-    return res.status(400).json({ message: 'name is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'name is required.', 400);
   }
 
   try {
@@ -7829,7 +7829,7 @@ router.post('/inventory/items', authenticateToken, async (req: any, res: any) =>
     return res.status(201).json({ item });
   } catch (error) {
     console.error('Admin inventory create error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -7845,7 +7845,7 @@ router.post('/inventory/items/:id/adjust', authenticateToken, async (req: any, r
   const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : null;
 
   if (!Number.isInteger(itemId) || itemId <= 0 || !Number.isFinite(quantity) || quantity <= 0) {
-    return res.status(400).json({ message: 'Invalid item id or quantity.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid item id or quantity.', 400);
   }
 
   try {
@@ -7882,13 +7882,13 @@ router.post('/inventory/items/:id/adjust', authenticateToken, async (req: any, r
     return res.status(200).json({ item: result });
   } catch (error: any) {
     if (error?.message === 'ITEM_NOT_FOUND') {
-      return res.status(404).json({ message: 'Inventory item not found.' });
+      throw new BusinessError('NOT_FOUND', 'Inventory item not found.', 404);
     }
     if (error?.message === 'INSUFFICIENT_STOCK') {
-      return res.status(400).json({ message: 'Insufficient stock.' });
+      throw new BusinessError('VALIDATION_FAILED', 'Insufficient stock.', 400);
     }
     console.error('Admin inventory adjust error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -7923,7 +7923,7 @@ router.get('/inventory/movements', authenticateToken, async (req: any, res: any)
     return res.status(200).json({ items: movements });
   } catch (error) {
     console.error('Admin inventory movements error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -7942,7 +7942,7 @@ router.get('/campaigns', authenticateToken, async (req: any, res: any) => {
     return res.status(200).json({ items: campaigns });
   } catch (error) {
     console.error('Admin campaigns list error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -7990,14 +7990,14 @@ router.post('/campaigns', authenticateToken, async (req: any, res: any) => {
   const type = normalizeCampaignType(req.body?.type);
 
   if (!name || !type) {
-    return res.status(422).json({ message: 'name and valid type are required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'name and valid type are required.', 422);
   }
 
   try {
     const startsAt = parseCampaignDateInput(req.body?.startsAt);
     const endsAt = parseCampaignDateInput(req.body?.endsAt);
     if (startsAt === undefined || endsAt === undefined) {
-      return res.status(400).json({ message: 'Invalid startsAt or endsAt date.' });
+      throw new BusinessError('VALIDATION_FAILED', 'Invalid startsAt or endsAt date.', 400);
     }
 
     const configValidation = validateCampaignConfig(type, req.body?.config ?? null);
@@ -8038,7 +8038,7 @@ router.post('/campaigns', authenticateToken, async (req: any, res: any) => {
     return res.status(201).json({ item: campaign });
   } catch (error) {
     console.error('Admin campaign create error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -8050,7 +8050,7 @@ router.get('/campaigns/:id', authenticateToken, async (req: any, res: any) => {
 
   const campaignId = Number(req.params.id);
   if (!Number.isInteger(campaignId) || campaignId <= 0) {
-    return res.status(400).json({ message: 'Invalid campaign id.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid campaign id.', 400);
   }
 
   try {
@@ -8062,7 +8062,7 @@ router.get('/campaigns/:id', authenticateToken, async (req: any, res: any) => {
     });
 
     if (!campaign) {
-      return res.status(404).json({ message: 'Campaign not found.' });
+      throw new BusinessError('NOT_FOUND', 'Campaign not found.', 404);
     }
 
     const metrics = await buildCampaignMetrics(campaign);
@@ -8073,7 +8073,7 @@ router.get('/campaigns/:id', authenticateToken, async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Admin campaign detail error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -8085,21 +8085,21 @@ router.patch('/campaigns/:id', authenticateToken, async (req: any, res: any) => 
 
   const campaignId = Number(req.params.id);
   if (!Number.isInteger(campaignId) || campaignId <= 0) {
-    return res.status(400).json({ message: 'Invalid campaign id.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid campaign id.', 400);
   }
 
   const data: any = {};
   if (typeof req.body?.name === 'string') {
     const trimmed = req.body.name.trim();
     if (!trimmed) {
-      return res.status(400).json({ message: 'name cannot be empty.' });
+      throw new BusinessError('VALIDATION_FAILED', 'name cannot be empty.', 400);
     }
     data.name = trimmed;
   }
   if (typeof req.body?.type === 'string') {
     const trimmed = normalizeCampaignType(req.body.type);
     if (!trimmed) {
-      return res.status(422).json({ message: 'type is invalid.' });
+      throw new BusinessError('VALIDATION_FAILED', 'type is invalid.', 422);
     }
     data.type = trimmed;
   }
@@ -8115,14 +8115,14 @@ router.patch('/campaigns/:id', authenticateToken, async (req: any, res: any) => 
   if (req.body?.priority !== undefined) {
     const priority = Number(req.body.priority);
     if (!Number.isFinite(priority)) {
-      return res.status(400).json({ message: 'Invalid priority.' });
+      throw new BusinessError('VALIDATION_FAILED', 'Invalid priority.', 400);
     }
     data.priority = priority;
   }
   if (req.body?.deliveryMode !== undefined) {
     const deliveryMode = asCampaignDeliveryMode(req.body.deliveryMode);
     if (!deliveryMode) {
-      return res.status(400).json({ message: 'deliveryMode must be AUTO or MANUAL.' });
+      throw new BusinessError('VALIDATION_FAILED', 'deliveryMode must be AUTO or MANUAL.', 400);
     }
     data.deliveryMode = deliveryMode;
   }
@@ -8147,14 +8147,14 @@ router.patch('/campaigns/:id', authenticateToken, async (req: any, res: any) => 
   if (req.body?.startsAt !== undefined) {
     const startsAt = parseCampaignDateInput(req.body.startsAt);
     if (startsAt === undefined) {
-      return res.status(400).json({ message: 'Invalid startsAt date.' });
+      throw new BusinessError('VALIDATION_FAILED', 'Invalid startsAt date.', 400);
     }
     data.startsAt = startsAt;
   }
   if (req.body?.endsAt !== undefined) {
     const endsAt = parseCampaignDateInput(req.body.endsAt);
     if (endsAt === undefined) {
-      return res.status(400).json({ message: 'Invalid endsAt date.' });
+      throw new BusinessError('VALIDATION_FAILED', 'Invalid endsAt date.', 400);
     }
     data.endsAt = endsAt;
   }
@@ -8168,12 +8168,12 @@ router.patch('/campaigns/:id', authenticateToken, async (req: any, res: any) => 
       select: { id: true, type: true, config: true },
     });
     if (!existing) {
-      return res.status(404).json({ message: 'Campaign not found.' });
+      throw new BusinessError('NOT_FOUND', 'Campaign not found.', 404);
     }
 
     const nextType = (data.type as CampaignType | undefined) || normalizeCampaignType(existing.type);
     if (!nextType) {
-      return res.status(422).json({ message: 'Campaign type is invalid.' });
+      throw new BusinessError('VALIDATION_FAILED', 'Campaign type is invalid.', 422);
     }
     const nextConfig = req.body?.config !== undefined ? req.body.config ?? null : existing.config ?? null;
     const configValidation = validateCampaignConfig(nextType, nextConfig);
@@ -8196,7 +8196,7 @@ router.patch('/campaigns/:id', authenticateToken, async (req: any, res: any) => 
     return res.status(200).json({ item: campaign });
   } catch (error) {
     console.error('Admin campaign update error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -8208,7 +8208,7 @@ router.delete('/campaigns/:id', authenticateToken, async (req: any, res: any) =>
 
   const campaignId = Number(req.params.id);
   if (!Number.isInteger(campaignId) || campaignId <= 0) {
-    return res.status(400).json({ message: 'Invalid campaign id.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid campaign id.', 400);
   }
 
   try {
@@ -8221,7 +8221,7 @@ router.delete('/campaigns/:id', authenticateToken, async (req: any, res: any) =>
     });
 
     if (!existing) {
-      return res.status(404).json({ message: 'Campaign not found.' });
+      throw new BusinessError('NOT_FOUND', 'Campaign not found.', 404);
     }
 
     await prisma.campaign.delete({
@@ -8231,7 +8231,7 @@ router.delete('/campaigns/:id', authenticateToken, async (req: any, res: any) =>
     return res.status(204).send();
   } catch (error) {
     console.error('Admin campaign delete error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -8241,14 +8241,14 @@ router.post('/campaigns/pricing-preview', authenticateToken, async (req: any, re
 
   const startTime = parseIsoDate(req.body?.startTime || new Date().toISOString());
   if (!startTime) {
-    return res.status(400).json({ message: 'startTime is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'startTime is required.', 400);
   }
 
   const customerIdRaw = Number(req.body?.customerId);
   const customerId = Number.isInteger(customerIdRaw) && customerIdRaw > 0 ? customerIdRaw : null;
   const linesRaw = Array.isArray(req.body?.lines) ? req.body.lines : [];
   if (!linesRaw.length) {
-    return res.status(400).json({ message: 'lines[] is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'lines[] is required.', 400);
   }
 
   try {
@@ -8266,7 +8266,7 @@ router.post('/campaigns/pricing-preview', authenticateToken, async (req: any, re
     return res.status(200).json(result);
   } catch (error) {
     console.error('Admin campaign pricing-preview error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -8276,7 +8276,7 @@ router.post('/campaigns/:id/publish', authenticateToken, async (req: any, res: a
 
   const campaignId = Number(req.params.id);
   if (!Number.isInteger(campaignId) || campaignId <= 0) {
-    return res.status(400).json({ message: 'Invalid campaign id.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid campaign id.', 400);
   }
 
   try {
@@ -8284,7 +8284,7 @@ router.post('/campaigns/:id/publish', authenticateToken, async (req: any, res: a
       where: { id: campaignId, salonId },
     });
     if (!campaign) {
-      return res.status(404).json({ message: 'Campaign not found.' });
+      throw new BusinessError('NOT_FOUND', 'Campaign not found.', 404);
     }
 
     const updated = await prisma.campaign.update({
@@ -8299,7 +8299,7 @@ router.post('/campaigns/:id/publish', authenticateToken, async (req: any, res: a
     return res.status(200).json({ item: updated });
   } catch (error) {
     console.error('Admin campaign publish error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -8309,7 +8309,7 @@ router.post('/campaigns/:id/send', authenticateToken, async (req: any, res: any)
 
   const campaignId = Number(req.params.id);
   if (!Number.isInteger(campaignId) || campaignId <= 0) {
-    return res.status(400).json({ message: 'Invalid campaign id.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid campaign id.', 400);
   }
 
   try {
@@ -8320,7 +8320,7 @@ router.post('/campaigns/:id/send', authenticateToken, async (req: any, res: any)
       select: { id: true, name: true, type: true },
     });
     if (!campaign) {
-      return res.status(404).json({ message: 'Campaign not found.' });
+      throw new BusinessError('NOT_FOUND', 'Campaign not found.', 404);
     }
 
     const recipients = await listCampaignsForSend(salonId, campaignId);
@@ -8373,7 +8373,7 @@ router.post('/campaigns/:id/send', authenticateToken, async (req: any, res: any)
       },
     }).catch(() => undefined);
     console.error('Admin campaign send error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -8383,7 +8383,7 @@ router.get('/campaigns/:id/send-executions', authenticateToken, async (req: any,
 
   const campaignId = Number(req.params.id);
   if (!Number.isInteger(campaignId) || campaignId <= 0) {
-    return res.status(400).json({ message: 'Invalid campaign id.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid campaign id.', 400);
   }
 
   try {
@@ -8395,7 +8395,7 @@ router.get('/campaigns/:id/send-executions', authenticateToken, async (req: any,
     return res.status(200).json({ items });
   } catch (error) {
     console.error('Admin campaign send-executions error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -8414,7 +8414,7 @@ router.get('/automations', authenticateToken, async (req: any, res: any) => {
     return res.status(200).json({ items });
   } catch (error) {
     console.error('Admin automations list error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -8428,7 +8428,7 @@ router.post('/automations', authenticateToken, async (req: any, res: any) => {
   const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
 
   if (!key || !name) {
-    return res.status(400).json({ message: 'key and name are required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'key and name are required.', 400);
   }
 
   try {
@@ -8446,10 +8446,10 @@ router.post('/automations', authenticateToken, async (req: any, res: any) => {
     return res.status(201).json({ item });
   } catch (error: any) {
     if (error?.code === 'P2002') {
-      return res.status(409).json({ message: 'Bu otomasyon anahtari zaten tanimli.' });
+      throw new BusinessError('CONFLICT', 'Bu otomasyon anahtari zaten tanimli.', 409);
     }
     console.error('Admin automation create error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -8461,13 +8461,13 @@ router.patch('/automations/:id', authenticateToken, async (req: any, res: any) =
 
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) {
-    return res.status(400).json({ message: 'Invalid id.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid id.', 400);
   }
 
   try {
     const current = await prisma.automationRule.findFirst({ where: { id, salonId } });
     if (!current) {
-      return res.status(404).json({ message: 'Automation not found.' });
+      throw new BusinessError('NOT_FOUND', 'Automation not found.', 404);
     }
 
     const item = await prisma.automationRule.update({
@@ -8483,7 +8483,7 @@ router.patch('/automations/:id', authenticateToken, async (req: any, res: any) =
     return res.status(200).json({ item });
   } catch (error) {
     console.error('Admin automation update error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -8496,7 +8496,7 @@ router.get('/notification-settings', authenticateToken, async (req: any, res: an
     return res.status(200).json({ policy });
   } catch (error) {
     console.error('Admin notification settings get error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -8515,7 +8515,7 @@ router.put('/notification-settings', authenticateToken, async (req: any, res: an
     return res.status(200).json({ policy: saved });
   } catch (error) {
     console.error('Admin notification settings update error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -8532,12 +8532,12 @@ router.get('/analytics/overview', authenticateToken, async (req: any, res: any) 
   const to = parseIsoDate(req.query.to) || now;
 
   if (from >= to) {
-    return res.status(400).json({ message: 'from must be earlier than to.' });
+    throw new BusinessError('VALIDATION_FAILED', 'from must be earlier than to.', 400);
   }
 
   const rawDaySpan = Math.ceil((to.getTime() - from.getTime()) / ONE_DAY_MS) + 1;
   if (rawDaySpan > 180) {
-    return res.status(400).json({ message: 'Date range is too large. Maximum 180 days.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Date range is too large. Maximum 180 days.', 400);
   }
 
   try {
@@ -8725,7 +8725,7 @@ router.get('/analytics/overview', authenticateToken, async (req: any, res: any) 
     });
   } catch (error) {
     console.error('Admin analytics overview error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -8744,7 +8744,7 @@ router.get('/analytics/presets', authenticateToken, async (req: any, res: any) =
     return res.status(200).json({ items });
   } catch (error) {
     console.error('Admin analytics preset list error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -8756,7 +8756,7 @@ router.post('/analytics/presets', authenticateToken, async (req: any, res: any) 
 
   const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
   if (!name) {
-    return res.status(400).json({ message: 'name is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'name is required.', 400);
   }
 
   try {
@@ -8771,7 +8771,7 @@ router.post('/analytics/presets', authenticateToken, async (req: any, res: any) 
     return res.status(201).json({ item });
   } catch (error) {
     console.error('Admin analytics preset create error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -9219,22 +9219,22 @@ router.get('/conversations/profile-image', authenticateToken, async (req: any, r
   const conversationKeyInput = asOptionalString(req.query.conversationKey);
 
   if (!channel || !sourceUrlRaw) {
-    return res.status(400).json({ message: 'channel and sourceUrl are required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'channel and sourceUrl are required.', 400);
   }
 
   let parsed: URL;
   try {
     parsed = new URL(sourceUrlRaw);
   } catch {
-    return res.status(400).json({ message: 'sourceUrl is invalid.' });
+    throw new BusinessError('VALIDATION_FAILED', 'sourceUrl is invalid.', 400);
   }
 
   if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
-    return res.status(400).json({ message: 'sourceUrl protocol is not supported.' });
+    throw new BusinessError('VALIDATION_FAILED', 'sourceUrl protocol is not supported.', 400);
   }
 
   if (!isAllowedConversationImageHost(parsed.hostname)) {
-    return res.status(400).json({ message: 'sourceUrl host is not allowed.' });
+    throw new BusinessError('VALIDATION_FAILED', 'sourceUrl host is not allowed.', 400);
   }
 
   try {
@@ -9690,7 +9690,7 @@ router.get('/conversations', authenticateToken, async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Admin conversations error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -9702,12 +9702,12 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
 
   const channel = asInboundChannel(req.params.channel);
   if (!channel) {
-    return res.status(400).json({ message: 'channel must be INSTAGRAM or WHATSAPP.' });
+    throw new BusinessError('VALIDATION_FAILED', 'channel must be INSTAGRAM or WHATSAPP.', 400);
   }
 
   const conversationKey = typeof req.params.conversationKey === 'string' ? req.params.conversationKey.trim() : '';
   if (!conversationKey) {
-    return res.status(400).json({ message: 'conversationKey is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'conversationKey is required.', 400);
   }
 
   const limit = asPositiveInt(req.query.limit, 80, 1, 200);
@@ -9862,7 +9862,7 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
     });
   } catch (error) {
     console.error('Admin conversation messages error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -9874,21 +9874,21 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
 
   const channel = asInboundChannel(req.params.channel);
   if (!channel) {
-    return res.status(400).json({ message: 'channel must be INSTAGRAM or WHATSAPP.' });
+    throw new BusinessError('VALIDATION_FAILED', 'channel must be INSTAGRAM or WHATSAPP.', 400);
   }
 
   if (channel !== 'INSTAGRAM' && channel !== 'WHATSAPP') {
-    return res.status(400).json({ message: 'Manual reply is currently enabled only for Instagram and WhatsApp.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Manual reply is currently enabled only for Instagram and WhatsApp.', 400);
   }
 
   const conversationKey = typeof req.params.conversationKey === 'string' ? req.params.conversationKey.trim() : '';
   if (!conversationKey) {
-    return res.status(400).json({ message: 'conversationKey is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'conversationKey is required.', 400);
   }
 
   const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
   if (!text) {
-    return res.status(400).json({ message: 'text is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'text is required.', 400);
   }
 
   try {
@@ -9929,7 +9929,7 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
     });
 
     if (!latestInbound) {
-      return res.status(404).json({ message: 'Conversation not found.' });
+      throw new BusinessError('NOT_FOUND', 'Conversation not found.', 404);
     }
     const resolvedConversationKey = latestInbound.conversationKey || conversationKey;
     const senderUserId = Number.isInteger(Number(req.user?.userId)) ? Number(req.user.userId) : null;
@@ -9982,7 +9982,7 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
       ) || '';
 
     if (!rawRecipientId) {
-      return res.status(400).json({ message: 'Conversation recipient could not be resolved.' });
+      throw new BusinessError('VALIDATION_FAILED', 'Conversation recipient could not be resolved.', 400);
     }
 
     if (!senderInstagramId) {
@@ -9993,7 +9993,7 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
     }
 
     if (channel === "INSTAGRAM" && (!accessToken || !senderInstagramId)) {
-      return res.status(400).json({ message: 'Instagram is not connected yet.' });
+      throw new BusinessError('VALIDATION_FAILED', 'Instagram is not connected yet.', 400);
     }
 
     const canonicalConversationKey = `${channel}:${rawRecipientId}`;
@@ -10079,7 +10079,7 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
       const token = process.env.CHAKRA_API_TOKEN;
 
       if (!pluginId || !phoneId || !token) {
-        return res.status(400).json({ message: 'WhatsApp is not properly connected (missing Chakra configuration).' });
+        throw new BusinessError('VALIDATION_FAILED', 'WhatsApp is not properly connected (missing Chakra configuration).', 400);
       }
 
       const cleanTo = rawRecipientId.replace(/\D/g, '');
@@ -10256,12 +10256,12 @@ router.post('/conversations/:channel/:conversationKey/handover', authenticateTok
 
   const channel = asInboundChannel(req.params.channel);
   if (!channel) {
-    return res.status(400).json({ message: 'channel must be INSTAGRAM or WHATSAPP.' });
+    throw new BusinessError('VALIDATION_FAILED', 'channel must be INSTAGRAM or WHATSAPP.', 400);
   }
 
   const conversationKey = typeof req.params.conversationKey === 'string' ? req.params.conversationKey.trim() : '';
   if (!conversationKey) {
-    return res.status(400).json({ message: 'conversationKey is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'conversationKey is required.', 400);
   }
 
   const note = typeof req.body?.note === 'string' ? req.body.note.trim() : '';
@@ -10311,7 +10311,7 @@ router.post('/conversations/:channel/:conversationKey/handover', authenticateTok
     });
 
     if (!latestInbound) {
-      return res.status(404).json({ message: 'Conversation not found.' });
+      throw new BusinessError('NOT_FOUND', 'Conversation not found.', 404);
     }
     const resolvedConversationKey = latestInbound.conversationKey || conversationKey;
     const senderUserId = Number.isInteger(Number(req.user?.userId)) ? Number(req.user.userId) : null;
@@ -10431,7 +10431,7 @@ router.post('/conversations/:channel/:conversationKey/handover', authenticateTok
     });
   } catch (error) {
     console.error('Admin conversations handover error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -10443,12 +10443,12 @@ router.post('/conversations/:channel/:conversationKey/resume-auto', authenticate
 
   const channel = asInboundChannel(req.params.channel);
   if (!channel) {
-    return res.status(400).json({ message: 'channel must be INSTAGRAM or WHATSAPP.' });
+    throw new BusinessError('VALIDATION_FAILED', 'channel must be INSTAGRAM or WHATSAPP.', 400);
   }
 
   const conversationKey = typeof req.params.conversationKey === 'string' ? req.params.conversationKey.trim() : '';
   if (!conversationKey) {
-    return res.status(400).json({ message: 'conversationKey is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'conversationKey is required.', 400);
   }
 
   try {
@@ -10496,7 +10496,7 @@ router.post('/conversations/:channel/:conversationKey/resume-auto', authenticate
     });
 
     if (!latestInbound) {
-      return res.status(404).json({ message: 'Conversation not found.' });
+      throw new BusinessError('NOT_FOUND', 'Conversation not found.', 404);
     }
     const resolvedConversationKey = latestInbound.conversationKey || conversationKey;
     const senderUserId = Number.isInteger(Number(req.user?.userId)) ? Number(req.user.userId) : null;
@@ -10573,7 +10573,7 @@ router.post('/conversations/:channel/:conversationKey/resume-auto', authenticate
     });
   } catch (error) {
     console.error('Admin conversations resume-auto error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -10599,7 +10599,7 @@ router.get('/blacklist/check', authenticateToken, async (req: any, res: any) => 
     return res.status(200).json(result);
   } catch (error) {
     console.error('Admin blacklist check error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -10631,7 +10631,7 @@ router.get('/blacklist', authenticateToken, async (req: any, res: any) => {
     return res.status(200).json({ items });
   } catch (error) {
     console.error('Admin blacklist list error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -10650,7 +10650,7 @@ router.post('/blacklist', authenticateToken, async (req: any, res: any) => {
     typeof req.body?.subjectNormalized === 'string' ? req.body.subjectNormalized.trim() : null;
 
   if (!phone && !customerId && !(channel && subjectNormalized)) {
-    return res.status(400).json({ message: 'phone, customerId or channel+subjectNormalized is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'phone, customerId or channel+subjectNormalized is required.', 400);
   }
 
   try {
@@ -10711,7 +10711,7 @@ router.post('/blacklist', authenticateToken, async (req: any, res: any) => {
     return res.status(201).json({ item });
   } catch (error) {
     console.error('Admin blacklist create error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -10723,13 +10723,13 @@ router.patch('/blacklist/:id', authenticateToken, async (req: any, res: any) => 
 
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) {
-    return res.status(400).json({ message: 'Invalid id.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid id.', 400);
   }
 
   try {
     const current = await (prisma as any).blacklistEntry.findFirst({ where: { id, salonId } });
     if (!current) {
-      return res.status(404).json({ message: 'Blacklist entry not found.' });
+      throw new BusinessError('NOT_FOUND', 'Blacklist entry not found.', 404);
     }
 
     const item = await (prisma as any).blacklistEntry.update({
@@ -10753,7 +10753,7 @@ router.patch('/blacklist/:id', authenticateToken, async (req: any, res: any) => 
     return res.status(200).json({ item });
   } catch (error) {
     console.error('Admin blacklist update error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 

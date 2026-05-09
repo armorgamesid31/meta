@@ -7,6 +7,7 @@ import {
   buildFeatureFlags,
   buildSubscription,
 } from '../services/mobileBootstrap.js';
+import { BusinessError } from '../lib/errors.js';
 import { createNotification, getDefaultNotificationPolicy } from '../services/notifications.js';
 import { getPushProviderStatus } from '../services/pushProvider.js';
 import { ACCESS_VERSION, ensureSalonAccessSeed, getEffectivePermissionSet } from '../services/accessControl.js';
@@ -21,7 +22,7 @@ function maskPushToken(token: string): string {
 
 router.get('/bootstrap', authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
-    return res.status(401).json({ message: 'Unauthorized.' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
   }
 
   try {
@@ -44,7 +45,7 @@ router.get('/bootstrap', authenticateToken, async (req: any, res: any) => {
     });
 
     if (!user || !user.salon || user.salon.id !== req.user.salonId) {
-      return res.status(404).json({ message: 'User or salon not found.' });
+      throw new BusinessError('NOT_FOUND', 'User or salon not found.', 404);
     }
 
     const normalizedWhatsapp = (user.salon.whatsappPhone || '').replace(/[^\d]/g, '');
@@ -135,16 +136,16 @@ router.get('/bootstrap', authenticateToken, async (req: any, res: any) => {
     return res.status(200).json(payload);
   } catch (error) {
     console.error('Mobile bootstrap error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
 router.get('/staff-profile', authenticateToken, async (req: any, res: any) => {
-  if (!req.user) return res.status(401).json({ message: 'Unauthorized.' });
+  if (!req.user) throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
   const salonId = req.user.salonId;
   const membershipId = Number(req.user.membershipId || 0);
   if (!membershipId) {
-    return res.status(403).json({ message: 'Membership required.' });
+    throw new BusinessError('FORBIDDEN', 'Membership required.', 403);
   }
 
   const staff = await prisma.staff.findFirst({
@@ -161,18 +162,18 @@ router.get('/staff-profile', authenticateToken, async (req: any, res: any) => {
     },
   });
   if (!staff) {
-    return res.status(404).json({ message: 'Linked staff profile not found.' });
+    throw new BusinessError('NOT_FOUND', 'Linked staff profile not found.', 404);
   }
 
   return res.status(200).json({ item: staff });
 });
 
 router.put('/staff-profile', authenticateToken, async (req: any, res: any) => {
-  if (!req.user) return res.status(401).json({ message: 'Unauthorized.' });
+  if (!req.user) throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
   const salonId = req.user.salonId;
   const membershipId = Number(req.user.membershipId || 0);
   if (!membershipId) {
-    return res.status(403).json({ message: 'Membership required.' });
+    throw new BusinessError('FORBIDDEN', 'Membership required.', 403);
   }
 
   const firstName = typeof req.body?.firstName === 'string' ? req.body.firstName.trim() : '';
@@ -180,10 +181,10 @@ router.put('/staff-profile', authenticateToken, async (req: any, res: any) => {
   const genderRaw = typeof req.body?.gender === 'string' ? req.body.gender.trim().toLowerCase() : '';
 
   if (!firstName) {
-    return res.status(400).json({ message: 'firstName is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'firstName is required.', 400);
   }
   if (!(genderRaw === 'female' || genderRaw === 'male' || genderRaw === 'other')) {
-    return res.status(400).json({ message: 'gender must be female, male or other.' });
+    throw new BusinessError('VALIDATION_FAILED', 'gender must be female, male or other.', 400);
   }
 
   const staff = await prisma.staff.findFirst({
@@ -191,7 +192,7 @@ router.put('/staff-profile', authenticateToken, async (req: any, res: any) => {
     select: { id: true },
   });
   if (!staff) {
-    return res.status(404).json({ message: 'Linked staff profile not found.' });
+    throw new BusinessError('NOT_FOUND', 'Linked staff profile not found.', 404);
   }
 
   const lastName = lastNameRaw || null;
@@ -220,7 +221,7 @@ router.put('/staff-profile', authenticateToken, async (req: any, res: any) => {
 });
 
 router.post('/push/register', authenticateToken, async (req: any, res: any) => {
-  if (!req.user) return res.status(401).json({ message: 'Unauthorized.' });
+  if (!req.user) throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
   const salonId = req.user.salonId;
   const userId = req.user.userId;
 
@@ -231,16 +232,16 @@ router.post('/push/register', authenticateToken, async (req: any, res: any) => {
   const deviceMeta = req.body?.deviceMeta ?? null;
 
   if (!token) {
-    return res.status(400).json({ message: 'token is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'token is required.', 400);
   }
   if (!provider) {
-    return res.status(400).json({ message: 'provider is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'provider is required.', 400);
   }
   if (provider !== 'expo' && provider !== 'fcm') {
-    return res.status(422).json({ message: 'provider must be expo or fcm.' });
+    throw new BusinessError('VALIDATION_FAILED', 'provider must be expo or fcm.', 422);
   }
   if (!platform) {
-    return res.status(400).json({ message: 'platform is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'platform is required.', 400);
   }
 
   try {
@@ -271,20 +272,20 @@ router.post('/push/register', authenticateToken, async (req: any, res: any) => {
     return res.status(200).json({ ok: true });
   } catch (error) {
     console.error('Mobile push register error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
 router.post('/push/unregister', authenticateToken, async (req: any, res: any) => {
-  if (!req.user) return res.status(401).json({ message: 'Unauthorized.' });
+  if (!req.user) throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
   const salonId = req.user.salonId;
   const userId = req.user.userId;
 
   const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
   const provider = typeof req.body?.provider === 'string' ? req.body.provider.trim().toLowerCase() : '';
-  if (!token) return res.status(400).json({ message: 'token is required.' });
-  if (!provider) return res.status(400).json({ message: 'provider is required.' });
-  if (provider !== 'expo' && provider !== 'fcm') return res.status(422).json({ message: 'provider must be expo or fcm.' });
+  if (!token) throw new BusinessError('VALIDATION_FAILED', 'token is required.', 400);
+  if (!provider) throw new BusinessError('VALIDATION_FAILED', 'provider is required.', 400);
+  if (provider !== 'expo' && provider !== 'fcm') throw new BusinessError('VALIDATION_FAILED', 'provider must be expo or fcm.', 422);
 
   try {
     await prisma.$executeRawUnsafe(
@@ -300,12 +301,12 @@ router.post('/push/unregister', authenticateToken, async (req: any, res: any) =>
     return res.status(200).json({ ok: true });
   } catch (error) {
     console.error('Mobile push unregister error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
 router.get('/push/status', authenticateToken, async (req: any, res: any) => {
-  if (!req.user) return res.status(401).json({ message: 'Unauthorized.' });
+  if (!req.user) throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
   const salonId = req.user.salonId;
   const userId = req.user.userId;
   const provider = getPushProviderStatus();
@@ -352,12 +353,12 @@ router.get('/push/status', authenticateToken, async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Mobile push status error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
 router.post('/push/test', authenticateToken, async (req: any, res: any) => {
-  if (!req.user) return res.status(401).json({ message: 'Unauthorized.' });
+  if (!req.user) throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
 
   const rawDelaySeconds = Number(req.body?.delaySeconds);
   const delaySeconds =
@@ -483,12 +484,12 @@ router.post('/push/test', authenticateToken, async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Mobile push test error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
 router.get('/notification-preferences', authenticateToken, async (req: any, res: any) => {
-  if (!req.user) return res.status(401).json({ message: 'Unauthorized.' });
+  if (!req.user) throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
   const salonId = req.user.salonId;
   const userId = req.user.userId;
 
@@ -513,12 +514,12 @@ router.get('/notification-preferences', authenticateToken, async (req: any, res:
     });
   } catch (error) {
     console.error('Mobile notification preferences get error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
 router.put('/notification-preferences', authenticateToken, async (req: any, res: any) => {
-  if (!req.user) return res.status(401).json({ message: 'Unauthorized.' });
+  if (!req.user) throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
   const salonId = req.user.salonId;
   const userId = req.user.userId;
   const masterEnabled = req.body?.masterEnabled !== false;
@@ -546,12 +547,12 @@ router.put('/notification-preferences', authenticateToken, async (req: any, res:
     return res.status(200).json({ ok: true });
   } catch (error) {
     console.error('Mobile notification preferences update error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
 router.get('/notifications', authenticateToken, async (req: any, res: any) => {
-  if (!req.user) return res.status(401).json({ message: 'Unauthorized.' });
+  if (!req.user) throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
   const salonId = req.user.salonId;
   const userId = req.user.userId;
   const limit = Math.max(1, Math.min(100, Number(req.query.limit) || 40));
@@ -585,17 +586,17 @@ router.get('/notifications', authenticateToken, async (req: any, res: any) => {
     return res.status(200).json({ items: rows });
   } catch (error) {
     console.error('Mobile notifications list error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
 router.post('/notifications/:id/read', authenticateToken, async (req: any, res: any) => {
-  if (!req.user) return res.status(401).json({ message: 'Unauthorized.' });
+  if (!req.user) throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
   const salonId = req.user.salonId;
   const userId = req.user.userId;
   const deliveryId = Number(req.params.id);
   if (!Number.isInteger(deliveryId) || deliveryId <= 0) {
-    return res.status(400).json({ message: 'Invalid notification id.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid notification id.', 400);
   }
 
   try {
@@ -623,12 +624,12 @@ router.post('/notifications/:id/read', authenticateToken, async (req: any, res: 
     return res.status(200).json({ ok: true });
   } catch (error) {
     console.error('Mobile notification read error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
 router.post('/notifications/read-all', authenticateToken, async (req: any, res: any) => {
-  if (!req.user) return res.status(401).json({ message: 'Unauthorized.' });
+  if (!req.user) throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
   const salonId = req.user.salonId;
   const userId = req.user.userId;
 
@@ -645,7 +646,7 @@ router.post('/notifications/read-all', authenticateToken, async (req: any, res: 
     return res.status(200).json({ ok: true });
   } catch (error) {
     console.error('Mobile notifications read-all error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 

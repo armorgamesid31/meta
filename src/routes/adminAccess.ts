@@ -1,3 +1,4 @@
+import { BusinessError } from '../lib/errors.js';
 ﻿import { Router } from 'express';
 import bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
@@ -19,7 +20,7 @@ const router = Router();
 
 function getAuth(req: any, res: any) {
   if (!req.user?.salonId || !req.user?.userId || !req.user?.membershipId) {
-    res.status(401).json({ message: 'Yetkisiz erisim.' });
+    throw new BusinessError('UNAUTHORIZED', 'Yetkisiz erisim.', 401);
     return null;
   }
   return {
@@ -114,7 +115,7 @@ router.get('/permissions', authenticateToken, requirePermissionKey('access.roles
     });
   } catch (error) {
     console.error('Access permissions list error:', error);
-    return res.status(500).json({ message: 'Sunucu hatasi.' });
+    throw new BusinessError('INTERNAL_ERROR', 'Sunucu hatasi.', 500);
   }
 });
 
@@ -170,7 +171,7 @@ router.put('/roles/:role/permissions', authenticateToken, requirePermissionKey('
     return res.status(200).json({ ok: true, role, permissionKeys: definitions.map((item) => item.key).sort() });
   } catch (error) {
     console.error('Access role permissions update error:', error);
-    return res.status(500).json({ message: 'Sunucu hatasi.' });
+    throw new BusinessError('INTERNAL_ERROR', 'Sunucu hatasi.', 500);
   }
 });
 
@@ -226,7 +227,7 @@ router.get('/users', authenticateToken, requirePermissionKey('access.users.manag
     });
   } catch (error) {
     console.error('Access users list error:', error);
-    return res.status(500).json({ message: 'Sunucu hatasi.' });
+    throw new BusinessError('INTERNAL_ERROR', 'Sunucu hatasi.', 500);
   }
 });
 
@@ -351,10 +352,10 @@ router.post('/users', authenticateToken, requirePermissionKey('access.users.mana
     });
   } catch (error: any) {
     if (error?.message === 'STAFF_NOT_FOUND') {
-      return res.status(404).json({ message: 'Bagli uzman bulunamadi.' });
+      throw new BusinessError('NOT_FOUND', 'Bagli uzman bulunamadi.', 404);
     }
     console.error('Access user create error:', error);
-    return res.status(500).json({ message: 'Sunucu hatasi.' });
+    throw new BusinessError('INTERNAL_ERROR', 'Sunucu hatasi.', 500);
   }
 });
 
@@ -364,7 +365,7 @@ router.put('/users/:id', authenticateToken, requirePermissionKey('access.users.m
 
   const targetMembershipId = Number(req.params.id);
   if (!Number.isInteger(targetMembershipId) || targetMembershipId <= 0) {
-    return res.status(400).json({ message: 'Gecersiz kullanici kimligi.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Gecersiz kullanici kimligi.', 400);
   }
 
   const requestedRoles = Array.isArray(req.body?.roles) ? normalizeRoles(req.body.roles) : [];
@@ -465,13 +466,13 @@ router.put('/users/:id', authenticateToken, requirePermissionKey('access.users.m
     return res.status(200).json({ item: updated });
   } catch (error: any) {
     if (error?.message === 'USER_NOT_FOUND') {
-      return res.status(404).json({ message: 'Kullanici bulunamadi.' });
+      throw new BusinessError('NOT_FOUND', 'Kullanici bulunamadi.', 404);
     }
     if (error?.message === 'STAFF_NOT_FOUND') {
-      return res.status(404).json({ message: 'Bagli uzman bulunamadi.' });
+      throw new BusinessError('NOT_FOUND', 'Bagli uzman bulunamadi.', 404);
     }
     console.error('Access user update error:', error);
-    return res.status(500).json({ message: 'Sunucu hatasi.' });
+    throw new BusinessError('INTERNAL_ERROR', 'Sunucu hatasi.', 500);
   }
 });
 
@@ -481,7 +482,7 @@ router.put('/users/:id/overrides', authenticateToken, requirePermissionKey('acce
 
   const targetMembershipId = Number(req.params.id);
   if (!Number.isInteger(targetMembershipId) || targetMembershipId <= 0) {
-    return res.status(400).json({ message: 'Gecersiz kullanici kimligi.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Gecersiz kullanici kimligi.', 400);
   }
 
   const overrides = Array.isArray(req.body?.overrides)
@@ -543,7 +544,7 @@ router.put('/users/:id/overrides', authenticateToken, requirePermissionKey('acce
     return res.status(200).json({ ok: true });
   } catch (error) {
     console.error('Access user overrides update error:', error);
-    return res.status(500).json({ message: 'Sunucu hatasi.' });
+    throw new BusinessError('INTERNAL_ERROR', 'Sunucu hatasi.', 500);
   }
 });
 
@@ -553,7 +554,7 @@ router.post('/users/:id/reset-password', authenticateToken, requirePermissionKey
 
   const targetMembershipId = Number(req.params.id);
   if (!Number.isInteger(targetMembershipId) || targetMembershipId <= 0) {
-    return res.status(400).json({ message: 'Gecersiz kullanici kimligi.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Gecersiz kullanici kimligi.', 400);
   }
 
   const rawPassword = typeof req.body?.password === 'string' && req.body.password.trim() ? req.body.password.trim() : randomTempPassword();
@@ -561,7 +562,7 @@ router.post('/users/:id/reset-password', authenticateToken, requirePermissionKey
   try {
     const target = await prisma.salonMembership.findFirst({ where: { id: targetMembershipId, salonId: auth.salonId } });
     if (!target) {
-      return res.status(404).json({ message: 'Kullanici bulunamadi.' });
+      throw new BusinessError('NOT_FOUND', 'Kullanici bulunamadi.', 404);
     }
 
     const passwordHash = await bcrypt.hash(rawPassword, 10);
@@ -595,7 +596,7 @@ router.post('/users/:id/reset-password', authenticateToken, requirePermissionKey
     return res.status(200).json({ ok: true, temporaryPassword: rawPassword });
   } catch (error) {
     console.error('Access user reset-password error:', error);
-    return res.status(500).json({ message: 'Sunucu hatasi.' });
+    throw new BusinessError('INTERNAL_ERROR', 'Sunucu hatasi.', 500);
   }
 });
 
@@ -605,7 +606,7 @@ router.post('/users/:id/invite', authenticateToken, requirePermissionKey('access
 
   const targetMembershipId = Number(req.params.id);
   if (!Number.isInteger(targetMembershipId) || targetMembershipId <= 0) {
-    return res.status(400).json({ message: 'Gecersiz kullanici kimligi.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Gecersiz kullanici kimligi.', 400);
   }
 
   try {
@@ -618,7 +619,7 @@ router.post('/users/:id/invite', authenticateToken, requirePermissionKey('access
       include: { identity: { select: { phone: true, email: true } } },
     });
     if (!membership) {
-      return res.status(404).json({ message: 'Kullanici bulunamadi.' });
+      throw new BusinessError('NOT_FOUND', 'Kullanici bulunamadi.', 404);
     }
 
     let legacyUserId = membership.legacySalonUserId || 0;
@@ -692,7 +693,7 @@ router.post('/users/:id/invite', authenticateToken, requirePermissionKey('access
     });
   } catch (error) {
     console.error('Access user invite create error:', error);
-    return res.status(500).json({ message: 'Sunucu hatasi.' });
+    throw new BusinessError('INTERNAL_ERROR', 'Sunucu hatasi.', 500);
   }
 });
 
@@ -721,7 +722,7 @@ router.get('/audit', authenticateToken, requirePermissionKey('access.audit.view'
     return res.status(200).json({ items: rows });
   } catch (error) {
     console.error('Access audit list error:', error);
-    return res.status(500).json({ message: 'Sunucu hatasi.' });
+    throw new BusinessError('INTERNAL_ERROR', 'Sunucu hatasi.', 500);
   }
 });
 

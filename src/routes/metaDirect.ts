@@ -5,6 +5,7 @@ import { ChannelType, Prisma } from '@prisma/client';
 import { prisma } from '../prisma.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { writeAccessAudit } from '../services/accessControl.js';
+import { BusinessError } from '../lib/errors.js';
 
 const router = Router();
 
@@ -984,7 +985,7 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
   try {
     const salonId = req?.user?.salonId;
     if (!Number.isInteger(salonId) || salonId <= 0) {
-      return res.status(401).json({ message: 'Unauthorized.' });
+      throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
     }
 
     const [{ store }, bindings] = await Promise.all([
@@ -1066,7 +1067,7 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Meta Direct status failed:', error);
-    return res.status(500).json({ message: 'Meta Direct status failed.' });
+    throw new BusinessError('INTERNAL_ERROR', 'Meta Direct status failed.', 500);
   }
 });
 
@@ -1074,12 +1075,12 @@ router.post('/connect-url', authenticateToken, async (req: any, res: any) => {
   try {
     const salonId = req?.user?.salonId;
     if (!Number.isInteger(salonId) || salonId <= 0) {
-      return res.status(401).json({ message: 'Unauthorized.' });
+      throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
     }
 
     const channel = toMetaChannel(req.body?.channel);
     if (!channel) {
-      return res.status(400).json({ message: 'channel must be INSTAGRAM or WHATSAPP.' });
+      throw new BusinessError('VALIDATION_FAILED', 'channel must be INSTAGRAM or WHATSAPP.', 400);
     }
     const intent = parseConnectIntent(req.body?.intent);
 
@@ -1094,14 +1095,11 @@ router.post('/connect-url', authenticateToken, async (req: any, res: any) => {
       });
     }
     if (channel === 'INSTAGRAM' && !META_INSTAGRAM_CONFIG_ID) {
-      return res.status(500).json({
-        message:
-          'META_INSTAGRAM_CONFIG_ID is missing. Use Instagram > API setup with Instagram login > Business login settings configuration ID.',
-      });
+      throw new BusinessError('INTERNAL_ERROR', 'META_INSTAGRAM_CONFIG_ID is missing. Use Instagram > API setup with Instagram login > Business login settings configuration ID.', 500);
     }
 
     if (!META_STATE_SECRET) {
-      return res.status(500).json({ message: 'META_STATE_SECRET (or JWT_SECRET) is missing.' });
+      throw new BusinessError('INTERNAL_ERROR', 'META_STATE_SECRET (or JWT_SECRET) is missing.', 500);
     }
 
     const redirectUri = getRedirectUri(req);
@@ -1151,7 +1149,7 @@ router.post('/connect-url', authenticateToken, async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Meta Direct connect-url failed:', error);
-    return res.status(500).json({ message: 'Meta Direct connect-url failed.' });
+    throw new BusinessError('INTERNAL_ERROR', 'Meta Direct connect-url failed.', 500);
   }
 });
 
@@ -1253,17 +1251,17 @@ router.post('/exchange-code', authenticateToken, async (req: any, res: any) => {
   try {
     const salonId = req?.user?.salonId;
     if (!Number.isInteger(salonId) || salonId <= 0) {
-      return res.status(401).json({ message: 'Unauthorized.' });
+      throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
     }
 
     const channel = toMetaChannel(req.body?.channel);
     if (!channel) {
-      return res.status(400).json({ message: 'channel must be INSTAGRAM or WHATSAPP.' });
+      throw new BusinessError('VALIDATION_FAILED', 'channel must be INSTAGRAM or WHATSAPP.', 400);
     }
 
     const code = typeof req.body?.code === 'string' ? req.body.code.trim() : '';
     if (!code) {
-      return res.status(400).json({ message: 'code is required.' });
+      throw new BusinessError('VALIDATION_FAILED', 'code is required.', 400);
     }
     const intent = parseConnectIntent(req.body?.intent);
 
@@ -1351,19 +1349,19 @@ router.post('/reconcile', authenticateToken, async (req: any, res: any) => {
   try {
     const salonId = req?.user?.salonId;
     if (!Number.isInteger(salonId) || salonId <= 0) {
-      return res.status(401).json({ message: 'Unauthorized.' });
+      throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
     }
 
     const channel = toMetaChannel(req.body?.channel || 'INSTAGRAM');
     if (!channel) {
-      return res.status(400).json({ message: 'channel must be INSTAGRAM or WHATSAPP.' });
+      throw new BusinessError('VALIDATION_FAILED', 'channel must be INSTAGRAM or WHATSAPP.', 400);
     }
 
     const loaded = await loadStoreForSalon(salonId);
     const key = toMetaKey(channel);
     const state = loaded.store[key];
     if (!state.accessToken) {
-      return res.status(400).json({ message: `${channel} access token not found.` });
+      throw new BusinessError('VALIDATION_FAILED', `${channel} access token not found.`, 400);
     }
 
     const { status, probeError } = await finalizeConnection({
@@ -1405,12 +1403,12 @@ router.post('/disconnect', authenticateToken, async (req: any, res: any) => {
   try {
     const salonId = req?.user?.salonId;
     if (!Number.isInteger(salonId) || salonId <= 0) {
-      return res.status(401).json({ message: 'Unauthorized.' });
+      throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
     }
 
     const channel = toMetaChannel(req.body?.channel);
     if (!channel) {
-      return res.status(400).json({ message: 'channel must be INSTAGRAM or WHATSAPP.' });
+      throw new BusinessError('VALIDATION_FAILED', 'channel must be INSTAGRAM or WHATSAPP.', 400);
     }
 
     const loaded = await loadStoreForSalon(salonId);
@@ -1428,7 +1426,7 @@ router.post('/disconnect', authenticateToken, async (req: any, res: any) => {
     return res.status(200).json({ ok: true, channel });
   } catch (error) {
     console.error('Meta Direct disconnect failed:', error);
-    return res.status(500).json({ message: 'Meta Direct disconnect failed.' });
+    throw new BusinessError('INTERNAL_ERROR', 'Meta Direct disconnect failed.', 500);
   }
 });
 
@@ -1436,12 +1434,12 @@ router.post('/probe', authenticateToken, async (req: any, res: any) => {
   try {
     const salonId = req?.user?.salonId;
     if (!Number.isInteger(salonId) || salonId <= 0) {
-      return res.status(401).json({ message: 'Unauthorized.' });
+      throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
     }
 
     const channel = toMetaChannel(req.body?.channel);
     if (!channel) {
-      return res.status(400).json({ message: 'channel must be INSTAGRAM or WHATSAPP.' });
+      throw new BusinessError('VALIDATION_FAILED', 'channel must be INSTAGRAM or WHATSAPP.', 400);
     }
 
     const loaded = await loadStoreForSalon(salonId);
@@ -1449,7 +1447,7 @@ router.post('/probe', authenticateToken, async (req: any, res: any) => {
     const current = loaded.store[key];
 
     if (!current.accessToken) {
-      return res.status(400).json({ message: `${channel} access token not found. Connect first.` });
+      throw new BusinessError('VALIDATION_FAILED', `${channel} access token not found. Connect first.`, 400);
     }
 
     try {
@@ -1496,7 +1494,7 @@ router.post('/probe', authenticateToken, async (req: any, res: any) => {
     }
   } catch (error) {
     console.error('Meta Direct probe failed:', error);
-    return res.status(500).json({ message: 'Meta Direct probe failed.' });
+    throw new BusinessError('INTERNAL_ERROR', 'Meta Direct probe failed.', 500);
   }
 });
 
@@ -1504,19 +1502,19 @@ router.post('/debug-token', authenticateToken, async (req: any, res: any) => {
   try {
     const salonId = req?.user?.salonId;
     if (!Number.isInteger(salonId) || salonId <= 0) {
-      return res.status(401).json({ message: 'Unauthorized.' });
+      throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
     }
 
     const channel = toMetaChannel(req.body?.channel || 'INSTAGRAM');
     if (channel !== 'INSTAGRAM') {
-      return res.status(400).json({ message: 'debug-token currently supports only INSTAGRAM.' });
+      throw new BusinessError('VALIDATION_FAILED', 'debug-token currently supports only INSTAGRAM.', 400);
     }
 
     const loaded = await loadStoreForSalon(salonId);
     const tokenFromBody = typeof req.body?.accessToken === 'string' ? req.body.accessToken.trim() : '';
     const accessToken = tokenFromBody || loaded.store.instagram.accessToken || '';
     if (!accessToken) {
-      return res.status(400).json({ message: 'No access token provided and no stored Instagram token found.' });
+      throw new BusinessError('VALIDATION_FAILED', 'No access token provided and no stored Instagram token found.', 400);
     }
 
     const runCheck = async (name: string, url: string, fields?: string) => {
@@ -1585,7 +1583,7 @@ router.post('/debug-token', authenticateToken, async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Meta Direct debug-token failed:', error);
-    return res.status(500).json({ message: 'Meta Direct debug-token failed.' });
+    throw new BusinessError('INTERNAL_ERROR', 'Meta Direct debug-token failed.', 500);
   }
 });
 

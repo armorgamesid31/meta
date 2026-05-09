@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { createSubscriptionCheckoutSession } from '../services/stripeBilling.js';
 import { getPlanByKey } from '../services/billingCatalog.js';
 import { prisma } from '../prisma.js';
+import { BusinessError } from '../lib/errors.js';
 
 const router = Router();
 
@@ -10,7 +11,7 @@ function requireInternalApiKey(req: any, res: any): boolean {
   if (!configured) return true;
   const token = String(req.headers['x-internal-api-key'] || '').trim();
   if (token !== configured) {
-    res.status(401).json({ message: 'Unauthorized internal access.' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized internal access.', 401);
     return false;
   }
   return true;
@@ -31,10 +32,10 @@ router.post('/checkout/session', async (req: any, res: any) => {
   const cancelUrl = String(req.body?.cancelUrl || '').trim();
 
   if (!planKey || !ownerName || !ownerEmail || !ownerPhone || !successUrl || !cancelUrl) {
-    return res.status(400).json({ message: 'planKey, ownerName, ownerEmail, ownerPhone, successUrl and cancelUrl are required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'planKey, ownerName, ownerEmail, ownerPhone, successUrl and cancelUrl are required.', 400);
   }
   if (!getPlanByKey(planKey)) {
-    return res.status(404).json({ message: 'Unknown planKey.' });
+    throw new BusinessError('NOT_FOUND', 'Unknown planKey.', 404);
   }
 
   try {

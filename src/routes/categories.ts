@@ -3,6 +3,7 @@ import { prisma } from '../prisma.js';
 import { normalizeLocale } from '../constants/locales.js';
 import { buildCategoryMetadata } from '../services/seo.js';
 import { resolveCategoryBySlug } from '../services/translations.js';
+import { BusinessError } from '../lib/errors.js';
 
 const router = Router();
 
@@ -14,12 +15,12 @@ function normalizeWhatsappPhone(phone?: string | null): string {
 router.get('/:slug/landing', async (req: any, res: any) => {
   const salonId = req.salon?.id;
   if (!salonId) {
-    return res.status(400).json({ message: 'Tenant context required' });
+    throw new BusinessError('VALIDATION_FAILED', 'Tenant context required', 400);
   }
 
   const slug = String(req.params.slug || '').trim();
   if (!slug) {
-    return res.status(400).json({ message: 'Category slug is required' });
+    throw new BusinessError('VALIDATION_FAILED', 'Category slug is required', 400);
   }
 
   const locale = normalizeLocale(typeof req.query.locale === 'string' ? req.query.locale : null);
@@ -35,7 +36,7 @@ router.get('/:slug/landing', async (req: any, res: any) => {
     });
 
     if (!salon) {
-      return res.status(404).json({ message: 'Salon not found' });
+      throw new BusinessError('NOT_FOUND', 'Salon not found', 404);
     }
 
     const categoryMatch = await resolveCategoryBySlug({
@@ -45,7 +46,7 @@ router.get('/:slug/landing', async (req: any, res: any) => {
     });
 
     if (!categoryMatch) {
-      return res.status(404).json({ message: 'Category not found' });
+      throw new BusinessError('NOT_FOUND', 'Category not found', 404);
     }
 
     const serviceCategory = await prisma.serviceCategory.findFirst({
@@ -68,7 +69,7 @@ router.get('/:slug/landing', async (req: any, res: any) => {
     });
 
     if (!serviceCategory) {
-      return res.status(404).json({ message: 'Category is not offered by this salon' });
+      throw new BusinessError('NOT_FOUND', 'Category is not offered by this salon', 404);
     }
 
     const normalizedWhatsappPhone = normalizeWhatsappPhone(salon.whatsappPhone);
@@ -125,7 +126,7 @@ router.get('/:slug/landing', async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Error in category landing endpoint:', error);
-    return res.status(500).json({ message: 'Internal server error' });
+    throw new BusinessError('INTERNAL_ERROR', 'Internal server error', 500);
   }
 });
 

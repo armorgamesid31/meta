@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
+import { BusinessError } from '../lib/errors.js';
 
 const router = Router();
 
@@ -12,7 +13,7 @@ function isInternalAuthorized(req: any): boolean {
 
 router.post('/:salonId/generate-callback', async (req: any, res: any) => {
   if (!isInternalAuthorized(req)) {
-    return res.status(401).json({ message: 'Unauthorized.' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
   }
 
   const salonId = Number(req.params.salonId);
@@ -27,10 +28,7 @@ router.post('/:salonId/generate-callback', async (req: any, res: any) => {
 
   if (Number.isNaN(salonId) || !generated || !generated.heroText) {
     console.warn(`[Internal/WebsiteCallback] Bad request: salonId=${salonId}, hasGenerated=${!!generated}, hasHeroText=${!!(generated?.heroText)}`);
-    return res.status(400).json({ 
-      message: 'salonId and generated content (including heroText) are required.',
-      receivedBodyKeys: Object.keys(body)
-    });
+    throw new BusinessError('VALIDATION_FAILED', 'salonId and generated content (including heroText) are required.', 400, { receivedBodyKeys: Object.keys(body) });
   }
 
   try {
@@ -47,7 +45,7 @@ router.post('/:salonId/generate-callback', async (req: any, res: any) => {
     return res.status(200).json({ success: true });
   } catch (error) {
     console.error('Internal website generate callback error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 

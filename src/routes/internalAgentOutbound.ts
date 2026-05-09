@@ -6,6 +6,7 @@ import { upsertConversationMessageEvent } from '../services/conversationMessageE
 import { resolveIdentity } from '../services/identityService.js';
 import { ensureMagicLink } from '../services/magicLinkService.js';
 import { buildBookingUrl } from '../utils/bookingUrl.js';
+import { BusinessError } from '../lib/errors.js';
 
 const router = Router();
 
@@ -462,7 +463,7 @@ async function sendWhatsappViaChakra(params: {
 }
 
 router.post('/send', async (req: any, res: any) => {
-  if (!isInternalAuthorized(req)) return res.status(401).json({ message: 'Unauthorized' });
+  if (!isInternalAuthorized(req)) throw new BusinessError('UNAUTHORIZED', 'Unauthorized', 401);
 
   const body = req.body || {};
   const salonId = Number(body.salonId);
@@ -471,7 +472,7 @@ router.post('/send', async (req: any, res: any) => {
   const text = typeof body.text === 'string' ? body.text.trim() : '';
 
   if (!Number.isInteger(salonId) || salonId <= 0 || !channel || !conversationKey || !text) {
-    return res.status(400).json({ message: 'salonId, channel, conversationKey, text are required' });
+    throw new BusinessError('VALIDATION_FAILED', 'salonId, channel, conversationKey, text are required', 400);
   }
 
   const latestInbound = await resolveLatestInboundMeta(salonId, channel, conversationKey);

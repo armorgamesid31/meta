@@ -5,6 +5,7 @@ import {
   generateAvailability,
   normalizePersonGroups,
 } from '../services/availabilityService.js';
+import { BusinessError } from '../lib/errors.js';
 
 const router = Router();
 
@@ -15,7 +16,7 @@ router.post('/dates', async (req: any, res: any) => {
     const groups = normalizePersonGroups(req.body?.groups);
 
     if (!salonId || !startDate || !endDate || !groups.length) {
-      return res.status(400).json({ message: 'Missing required fields or tenant context' });
+      throw new BusinessError('VALIDATION_FAILED', 'Missing required fields or tenant context', 400);
     }
 
     const result = await generateAvailableDates({
@@ -28,7 +29,7 @@ router.post('/dates', async (req: any, res: any) => {
     res.json(result);
   } catch (error) {
     console.error('Error fetching available dates:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    throw new BusinessError('INTERNAL_ERROR', 'Internal server error', 500);
   }
 });
 
@@ -39,7 +40,7 @@ router.post('/slots', async (req: any, res: any) => {
     const groups = normalizePersonGroups(req.body?.groups);
 
     if (!salonId || !date || !groups.length) {
-      return res.status(400).json({ message: 'Missing required fields or tenant context' });
+      throw new BusinessError('VALIDATION_FAILED', 'Missing required fields or tenant context', 400);
     }
 
     const result = await generateAvailability({
@@ -51,7 +52,7 @@ router.post('/slots', async (req: any, res: any) => {
     res.json(result);
   } catch (error) {
     console.error('Error fetching slots:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    throw new BusinessError('INTERNAL_ERROR', 'Internal server error', 500);
   }
 });
 
@@ -62,7 +63,7 @@ router.get('/', async (req: any, res: any) => {
   const salonId = req.salon?.id;
 
   if (!salonId || !Number.isInteger(serviceId) || serviceId <= 0 || !date) {
-    return res.status(400).json({ message: 'serviceId and date are required, and must be in a tenant subdomain' });
+    throw new BusinessError('VALIDATION_FAILED', 'serviceId and date are required, and must be in a tenant subdomain', 400);
   }
 
   try {
@@ -80,7 +81,7 @@ router.get('/', async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Error fetching availability:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    throw new BusinessError('INTERNAL_ERROR', 'Internal server error', 500);
   }
 });
 

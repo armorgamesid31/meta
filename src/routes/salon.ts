@@ -5,6 +5,7 @@ import { logCustomerBehavior, calculateCancellationSeverity, BehaviorType } from
 import { CATEGORIES, CATEGORY_ORDER } from '../constants/categories.js';
 import { normalizeLocale } from '../constants/locales.js';
 import { resolveServiceTranslations } from '../services/serviceTranslations.js';
+import { BusinessError } from '../lib/errors.js';
 
 const router = Router();
 
@@ -23,7 +24,7 @@ router.get('/public', async (req: any, res: any) => {
   const salonId = req.salon?.id;
 
   if (!salonId) {
-    return res.status(400).json({ message: 'Tenant context required' });
+    throw new BusinessError('VALIDATION_FAILED', 'Tenant context required', 400);
   }
 
   try {
@@ -35,7 +36,7 @@ router.get('/public', async (req: any, res: any) => {
     });
 
     if (!salon) {
-      return res.status(404).json({ message: 'Salon not found' });
+      throw new BusinessError('NOT_FOUND', 'Salon not found', 404);
     }
 
     res.json({
@@ -60,14 +61,14 @@ router.get('/public', async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Error fetching salon public info:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    throw new BusinessError('INTERNAL_ERROR', 'Internal server error', 500);
   }
 });
 
 // GET /api/salon/me - Get salon info and settings
 router.get('/me', authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
-    return res.status(401).json({ message: 'Unauthorized' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized', 401);
   }
 
   try {
@@ -85,7 +86,7 @@ router.get('/me', authenticateToken, async (req: any, res: any) => {
     });
 
     if (!salon) {
-      return res.status(404).json({ message: 'Salon not found' });
+      throw new BusinessError('NOT_FOUND', 'Salon not found', 404);
     }
 
     const hasServices = salon._count.services > 0;
@@ -108,14 +109,14 @@ router.get('/me', authenticateToken, async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Error fetching salon:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    throw new BusinessError('INTERNAL_ERROR', 'Internal server error', 500);
   }
 });
 
 // PUT /api/salon/settings - Update salon settings
 router.put('/settings', authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
-    return res.status(401).json({ message: 'Unauthorized' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized', 401);
   }
 
   const { name, phone, address, googleMapsUrl, workStartHour, workEndHour, slotInterval, categoryOrder, workingDays } = req.body;
@@ -157,14 +158,14 @@ router.put('/settings', authenticateToken, async (req: any, res: any) => {
     }
   } catch (error) {
     console.error('Error updating salon settings:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    throw new BusinessError('INTERNAL_ERROR', 'Internal server error', 500);
   }
 });
 
 // GET /api/salon/services - Get authenticated salon's services
 router.get('/services', authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
-    return res.status(401).json({ message: 'Unauthorized' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized', 401);
   }
 
   const salonId = req.user.salonId;
@@ -224,7 +225,7 @@ router.get('/services', authenticateToken, async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Error fetching services:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    throw new BusinessError('INTERNAL_ERROR', 'Internal server error', 500);
   }
 });
 
@@ -235,7 +236,7 @@ router.get('/services/public', async (req: any, res: any) => {
   const locale = normalizeLocale(typeof req.query.locale === 'string' ? req.query.locale : 'tr');
 
   if (!salonId) {
-    return res.status(400).json({ message: 'Tenant context required' });
+    throw new BusinessError('VALIDATION_FAILED', 'Tenant context required', 400);
   }
 
   try {
@@ -364,7 +365,7 @@ router.get('/services/public', async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Error fetching grouped services:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    throw new BusinessError('INTERNAL_ERROR', 'Internal server error', 500);
   }
 });
 
@@ -374,7 +375,7 @@ router.get('/services/:serviceId/staff', async (req: any, res: any) => {
   const { serviceId } = req.params;
 
   if (!salonId) {
-    return res.status(400).json({ message: 'Tenant context required' });
+    throw new BusinessError('VALIDATION_FAILED', 'Tenant context required', 400);
   }
 
   try {
@@ -404,20 +405,20 @@ router.get('/services/:serviceId/staff', async (req: any, res: any) => {
     res.json({ staff: response });
   } catch (error) {
     console.error('Error fetching service-specific staff:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    throw new BusinessError('INTERNAL_ERROR', 'Internal server error', 500);
   }
 });
 
 // POST /api/salon/services - Create a new service
 router.post('/services', authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
-    return res.status(401).json({ message: 'Unauthorized' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized', 401);
   }
 
   const { name, duration, price, category, requiresSpecialist, regionId } = req.body;
 
   if (!name || !duration || price === undefined) {
-    return res.status(400).json({ message: 'Name, duration, and price are required' });
+    throw new BusinessError('VALIDATION_FAILED', 'Name, duration, and price are required', 400);
   }
 
   try {
@@ -425,14 +426,14 @@ router.post('/services', authenticateToken, async (req: any, res: any) => {
     if (regionId !== undefined && regionId !== null && regionId !== '') {
       parsedRegionId = Number(regionId);
       if (!Number.isInteger(parsedRegionId) || parsedRegionId <= 0) {
-        return res.status(400).json({ message: 'regionId must be a positive integer.' });
+        throw new BusinessError('VALIDATION_FAILED', 'regionId must be a positive integer.', 400);
       }
       const regionExists = await prisma.serviceRegion.findFirst({
         where: { id: parsedRegionId, salonId: req.user.salonId },
         select: { id: true },
       });
       if (!regionExists) {
-        return res.status(400).json({ message: 'regionId is not valid for this salon.' });
+        throw new BusinessError('VALIDATION_FAILED', 'regionId is not valid for this salon.', 400);
       }
     }
 
@@ -451,14 +452,14 @@ router.post('/services', authenticateToken, async (req: any, res: any) => {
     res.status(201).json({ service });
   } catch (error) {
     console.error('Error creating service:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    throw new BusinessError('INTERNAL_ERROR', 'Internal server error', 500);
   }
 });
 
 // GET /api/salon/staff - Get authenticated salon's staff
 router.get('/staff', authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
-    return res.status(401).json({ message: 'Unauthorized' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized', 401);
   }
 
   try {
@@ -476,7 +477,7 @@ router.get('/staff', authenticateToken, async (req: any, res: any) => {
     res.json({ staff });
   } catch (error) {
     console.error('Error fetching staff:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    throw new BusinessError('INTERNAL_ERROR', 'Internal server error', 500);
   }
 });
 
@@ -485,7 +486,7 @@ router.get('/staff/public', async (req: any, res: any) => {
   const salonId = req.salon?.id;
 
   if (!salonId) {
-    return res.status(400).json({ message: 'Tenant context required' });
+    throw new BusinessError('VALIDATION_FAILED', 'Tenant context required', 400);
   }
 
   try {
@@ -503,20 +504,20 @@ router.get('/staff/public', async (req: any, res: any) => {
     res.json({ staff });
   } catch (error) {
     console.error('Error fetching staff:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    throw new BusinessError('INTERNAL_ERROR', 'Internal server error', 500);
   }
 });
 
 // POST /api/salon/staff - Create a new staff member
 router.post('/staff', authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
-    return res.status(401).json({ message: 'Unauthorized' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized', 401);
   }
 
   const { name } = req.body;
 
   if (!name || typeof name !== 'string' || !name.trim()) {
-    return res.status(400).json({ message: 'Name is required and must be a non-empty string' });
+    throw new BusinessError('VALIDATION_FAILED', 'Name is required and must be a non-empty string', 400);
   }
 
   try {
@@ -535,14 +536,14 @@ router.post('/staff', authenticateToken, async (req: any, res: any) => {
     res.status(201).json({ staff });
   } catch (error) {
     console.error('Error creating staff:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    throw new BusinessError('INTERNAL_ERROR', 'Internal server error', 500);
   }
 });
 
 // PUT /api/salon/staff/:id - Update specific staff member
 router.put('/staff/:id', authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
-    return res.status(401).json({ message: 'Unauthorized' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized', 401);
   }
 
   const { id } = req.params;
@@ -557,12 +558,12 @@ router.put('/staff/:id', authenticateToken, async (req: any, res: any) => {
     });
 
     if (!existingStaff) {
-      return res.status(404).json({ message: 'Staff member not found' });
+      throw new BusinessError('NOT_FOUND', 'Staff member not found', 404);
     }
 
     const normalizedName = typeof name === 'string' ? name.trim() : '';
     if (!normalizedName) {
-      return res.status(400).json({ message: 'Name is required and must be a non-empty string' });
+      throw new BusinessError('VALIDATION_FAILED', 'Name is required and must be a non-empty string', 400);
     }
     const parts = splitStaffNameParts(normalizedName);
 
@@ -578,14 +579,14 @@ router.put('/staff/:id', authenticateToken, async (req: any, res: any) => {
     res.json({ staff: updatedStaff });
   } catch (error) {
     console.error('Error updating staff:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    throw new BusinessError('INTERNAL_ERROR', 'Internal server error', 500);
   }
 });
 
 // DELETE /api/salon/staff/:id - Delete specific staff member
 router.delete('/staff/:id', authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
-    return res.status(401).json({ message: 'Unauthorized' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized', 401);
   }
 
   const { id } = req.params;
@@ -599,7 +600,7 @@ router.delete('/staff/:id', authenticateToken, async (req: any, res: any) => {
     });
 
     if (!existingStaff) {
-      return res.status(404).json({ message: 'Staff member not found' });
+      throw new BusinessError('NOT_FOUND', 'Staff member not found', 404);
     }
 
     await prisma.staff.delete({
@@ -609,14 +610,14 @@ router.delete('/staff/:id', authenticateToken, async (req: any, res: any) => {
     res.json({ message: 'Staff member deleted successfully' });
   } catch (error) {
     console.error('Error deleting staff:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    throw new BusinessError('INTERNAL_ERROR', 'Internal server error', 500);
   }
 });
 
 // GET /api/salon/appointments - Get salon appointments
 router.get('/appointments', authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
-    return res.status(401).json({ message: 'Unauthorized' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized', 401);
   }
 
   const { date, limit = '50', offset = '0' } = req.query;
@@ -668,14 +669,14 @@ router.get('/appointments', authenticateToken, async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Error fetching appointments:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    throw new BusinessError('INTERNAL_ERROR', 'Internal server error', 500);
   }
 });
 
 // POST /api/salon/appointments/:id/cancel - Cancel appointment
 router.post('/appointments/:id/cancel', authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
-    return res.status(401).json({ message: 'Unauthorized' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized', 401);
   }
 
   const { id } = req.params;
@@ -694,11 +695,11 @@ router.post('/appointments/:id/cancel', authenticateToken, async (req: any, res:
     });
 
     if (!appointment) {
-      return res.status(404).json({ message: 'Appointment not found or cannot be cancelled' });
+      throw new BusinessError('NOT_FOUND', 'Appointment not found or cannot be cancelled', 404);
     }
 
     if (appointment.startTime <= new Date()) {
-      return res.status(400).json({ message: 'Cannot cancel past appointments' });
+      throw new BusinessError('VALIDATION_FAILED', 'Cannot cancel past appointments', 400);
     }
 
     const hoursUntilAppointment = (appointment.startTime.getTime() - Date.now()) / (1000 * 60 * 60);
@@ -733,7 +734,7 @@ router.post('/appointments/:id/cancel', authenticateToken, async (req: any, res:
     res.json({ message: 'Appointment cancelled successfully' });
   } catch (error) {
     console.error('Error cancelling appointment:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    throw new BusinessError('INTERNAL_ERROR', 'Internal server error', 500);
   }
 });
 

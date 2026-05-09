@@ -2,6 +2,7 @@ import { LocaleCode, TranslationStatus } from '@prisma/client';
 import { Router } from 'express';
 import { normalizeLocale } from '../constants/locales.js';
 import { upsertServiceTranslationsBatch } from '../services/serviceTranslations.js';
+import { BusinessError } from '../lib/errors.js';
 
 const router = Router();
 const STATUS_VALUES = new Set<string>(Object.values(TranslationStatus));
@@ -48,12 +49,12 @@ function parseStatus(value: unknown): TranslationStatus {
 
 router.post('/batch', async (req: any, res: any) => {
   if (!isInternalAuthorized(req)) {
-    return res.status(401).json({ message: 'Unauthorized' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized', 401);
   }
 
   const payload = Array.isArray(req.body) ? req.body : req.body?.items;
   if (!Array.isArray(payload) || payload.length === 0) {
-    return res.status(400).json({ message: 'Body must be a non-empty array or { items: [...] }' });
+    throw new BusinessError('VALIDATION_FAILED', 'Body must be a non-empty array or { items: [...] }', 400);
   }
 
   const accepted: Array<{
@@ -129,7 +130,7 @@ router.post('/batch', async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Error upserting internal service translations:', error);
-    return res.status(500).json({ message: 'Internal server error' });
+    throw new BusinessError('INTERNAL_ERROR', 'Internal server error', 500);
   }
 });
 

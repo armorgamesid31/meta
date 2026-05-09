@@ -2,6 +2,7 @@ import { ChannelType, ConversationAutomationMode } from '@prisma/client';
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { markHandoverTriggered, resolveHandoverAlert } from '../services/notifications.js';
+import { BusinessError } from '../lib/errors.js';
 
 const router = Router();
 
@@ -45,7 +46,7 @@ function computeAiPolicy(mode: ConversationAutomationMode) {
 }
 
 router.post('/evaluate', async (req: any, res: any) => {
-  if (!isInternalAuthorized(req)) return res.status(401).json({ message: 'Unauthorized' });
+  if (!isInternalAuthorized(req)) throw new BusinessError('UNAUTHORIZED', 'Unauthorized', 401);
 
   const body = req.body || {};
   const salonId = Number(body.salonId);
@@ -53,7 +54,7 @@ router.post('/evaluate', async (req: any, res: any) => {
   const conversationKey = typeof body.conversationKey === 'string' ? body.conversationKey.trim() : '';
 
   if (!Number.isInteger(salonId) || salonId <= 0 || !channel || !conversationKey) {
-    return res.status(400).json({ message: 'salonId, channel, conversationKey are required' });
+    throw new BusinessError('VALIDATION_FAILED', 'salonId, channel, conversationKey are required', 400);
   }
 
   const now = new Date();
@@ -126,7 +127,7 @@ router.post('/evaluate', async (req: any, res: any) => {
 });
 
 router.post('/set', async (req: any, res: any) => {
-  if (!isInternalAuthorized(req)) return res.status(401).json({ message: 'Unauthorized' });
+  if (!isInternalAuthorized(req)) throw new BusinessError('UNAUTHORIZED', 'Unauthorized', 401);
 
   const body = req.body || {};
   const salonId = Number(body.salonId);
@@ -139,7 +140,7 @@ router.post('/set', async (req: any, res: any) => {
     Number.isFinite(requestedMinutes) && requestedMinutes > 0 ? requestedMinutes : DEFAULT_HUMAN_ACTIVE_MINUTES;
 
   if (!Number.isInteger(salonId) || salonId <= 0 || !channel || !conversationKey || !mode) {
-    return res.status(400).json({ message: 'salonId, channel, conversationKey, mode are required' });
+    throw new BusinessError('VALIDATION_FAILED', 'salonId, channel, conversationKey, mode are required', 400);
   }
 
   const now = new Date();
@@ -202,14 +203,14 @@ router.post('/set', async (req: any, res: any) => {
 });
 
 router.post('/cancel-pending', async (req: any, res: any) => {
-  if (!isInternalAuthorized(req)) return res.status(401).json({ message: 'Unauthorized' });
+  if (!isInternalAuthorized(req)) throw new BusinessError('UNAUTHORIZED', 'Unauthorized', 401);
   const body = req.body || {};
   const salonId = Number(body.salonId);
   const channel = asChannel(body.channel);
   const conversationKey = typeof body.conversationKey === 'string' ? body.conversationKey.trim() : '';
 
   if (!Number.isInteger(salonId) || salonId <= 0 || !channel || !conversationKey) {
-    return res.status(400).json({ message: 'salonId, channel, conversationKey are required' });
+    throw new BusinessError('VALIDATION_FAILED', 'salonId, channel, conversationKey are required', 400);
   }
 
   const state = await prisma.conversationState.upsert({
@@ -241,14 +242,14 @@ router.post('/cancel-pending', async (req: any, res: any) => {
 });
 
 router.post('/touch-human', async (req: any, res: any) => {
-  if (!isInternalAuthorized(req)) return res.status(401).json({ message: 'Unauthorized' });
+  if (!isInternalAuthorized(req)) throw new BusinessError('UNAUTHORIZED', 'Unauthorized', 401);
   const body = req.body || {};
   const salonId = Number(body.salonId);
   const channel = asChannel(body.channel);
   const conversationKey = typeof body.conversationKey === 'string' ? body.conversationKey.trim() : '';
 
   if (!Number.isInteger(salonId) || salonId <= 0 || !channel || !conversationKey) {
-    return res.status(400).json({ message: 'salonId, channel, conversationKey are required' });
+    throw new BusinessError('VALIDATION_FAILED', 'salonId, channel, conversationKey are required', 400);
   }
 
   const now = new Date();

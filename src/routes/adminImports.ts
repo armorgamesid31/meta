@@ -14,6 +14,7 @@ import {
   triggerImportBenchmarkForFile,
   upsertImportAiConfig,
 } from '../services/importWizard.js';
+import { BusinessError } from '../lib/errors.js';
 
 const router = Router();
 
@@ -21,7 +22,7 @@ function getAuth(req: any, res: any): { salonId: number; userId: number } | null
   const salonId = Number(req.user?.salonId);
   const userId = Number(req.user?.userId);
   if (!Number.isInteger(salonId) || salonId <= 0 || !Number.isInteger(userId) || userId <= 0) {
-    res.status(401).json({ message: 'Unauthorized.' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
     return null;
   }
   return { salonId, userId };
@@ -40,7 +41,7 @@ router.get('/ai-config', async (req: any, res: any) => {
     return res.status(200).json(result);
   } catch (error) {
     console.error('Admin import ai config get error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -63,7 +64,7 @@ router.put('/ai-config', async (req: any, res: any) => {
     return res.status(200).json({ config });
   } catch (error) {
     console.error('Admin import ai config put error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -92,7 +93,7 @@ router.post('/', async (req: any, res: any) => {
       });
     }
     console.error('Admin import create batch error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -106,7 +107,7 @@ router.post('/:batchId/files/presign', async (req: any, res: any) => {
   const sizeBytes = Number(req.body?.sizeBytes);
 
   if (!batchId || !fileName) {
-    return res.status(400).json({ message: 'batchId and fileName are required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'batchId and fileName are required.', 400);
   }
 
   try {
@@ -121,13 +122,13 @@ router.post('/:batchId/files/presign', async (req: any, res: any) => {
   } catch (error: any) {
     const message = error?.message || 'Internal server error.';
     if (/batch_not_found/.test(message)) {
-      return res.status(404).json({ message: 'Import batch not found.' });
+      throw new BusinessError('NOT_FOUND', 'Import batch not found.', 404);
     }
     if (/batch_not_open_for_upload/.test(message)) {
-      return res.status(409).json({ message: 'Import batch is not open for upload.' });
+      throw new BusinessError('CONFLICT', 'Import batch is not open for upload.', 409);
     }
     console.error('Admin import file presign error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -141,7 +142,7 @@ router.post('/:batchId/files/complete', async (req: any, res: any) => {
   const publicUrl = asTrimmed(req.body?.publicUrl) || null;
 
   if (!batchId || !Number.isInteger(fileId) || fileId <= 0) {
-    return res.status(400).json({ message: 'batchId and valid fileId are required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'batchId and valid fileId are required.', 400);
   }
 
   try {
@@ -156,10 +157,10 @@ router.post('/:batchId/files/complete', async (req: any, res: any) => {
   } catch (error: any) {
     const message = error?.message || 'Internal server error.';
     if (/source_file_not_found/.test(message)) {
-      return res.status(404).json({ message: 'Source file not found.' });
+      throw new BusinessError('NOT_FOUND', 'Source file not found.', 404);
     }
     console.error('Admin import complete file error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -169,7 +170,7 @@ router.get('/:batchId', async (req: any, res: any) => {
 
   const batchId = asTrimmed(req.params.batchId);
   if (!batchId) {
-    return res.status(400).json({ message: 'batchId is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'batchId is required.', 400);
   }
 
   try {
@@ -177,10 +178,10 @@ router.get('/:batchId', async (req: any, res: any) => {
     return res.status(200).json({ batch });
   } catch (error: any) {
     if (/batch_not_found/.test(error?.message || '')) {
-      return res.status(404).json({ message: 'Import batch not found.' });
+      throw new BusinessError('NOT_FOUND', 'Import batch not found.', 404);
     }
     console.error('Admin import batch status error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -191,7 +192,7 @@ router.get('/:batchId/preview', async (req: any, res: any) => {
   const batchId = asTrimmed(req.params.batchId);
   const limitRows = Number(req.query?.limitRows);
   if (!batchId) {
-    return res.status(400).json({ message: 'batchId is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'batchId is required.', 400);
   }
 
   try {
@@ -203,10 +204,10 @@ router.get('/:batchId/preview', async (req: any, res: any) => {
     return res.status(200).json(preview);
   } catch (error: any) {
     if (/batch_not_found/.test(error?.message || '')) {
-      return res.status(404).json({ message: 'Import batch not found.' });
+      throw new BusinessError('NOT_FOUND', 'Import batch not found.', 404);
     }
     console.error('Admin import preview error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -217,7 +218,7 @@ router.get('/:batchId/files/:fileId/benchmark', async (req: any, res: any) => {
   const batchId = asTrimmed(req.params.batchId);
   const fileId = Number(req.params.fileId);
   if (!batchId || !Number.isInteger(fileId) || fileId <= 0) {
-    return res.status(400).json({ message: 'batchId and valid fileId are required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'batchId and valid fileId are required.', 400);
   }
 
   try {
@@ -229,10 +230,10 @@ router.get('/:batchId/files/:fileId/benchmark', async (req: any, res: any) => {
     return res.status(200).json({ runs });
   } catch (error: any) {
     if (/source_file_not_found/.test(error?.message || '')) {
-      return res.status(404).json({ message: 'Source file not found.' });
+      throw new BusinessError('NOT_FOUND', 'Source file not found.', 404);
     }
     console.error('Admin import benchmark runs error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -243,7 +244,7 @@ router.post('/:batchId/files/:fileId/benchmark/trigger', async (req: any, res: a
   const batchId = asTrimmed(req.params.batchId);
   const fileId = Number(req.params.fileId);
   if (!batchId || !Number.isInteger(fileId) || fileId <= 0) {
-    return res.status(400).json({ message: 'batchId and valid fileId are required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'batchId and valid fileId are required.', 400);
   }
 
   try {
@@ -262,13 +263,13 @@ router.post('/:batchId/files/:fileId/benchmark/trigger', async (req: any, res: a
   } catch (error: any) {
     const message = error?.message || 'Internal server error.';
     if (/source_file_not_found/.test(message)) {
-      return res.status(404).json({ message: 'Source file not found.' });
+      throw new BusinessError('NOT_FOUND', 'Source file not found.', 404);
     }
     if (/benchmark_requires_ocr_source/.test(message)) {
-      return res.status(409).json({ message: 'Benchmark OCR is only available for image/pdf files.' });
+      throw new BusinessError('CONFLICT', 'Benchmark OCR is only available for image/pdf files.', 409);
     }
     console.error('Admin import benchmark trigger error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -278,7 +279,7 @@ router.post('/benchmark/candidates/:candidateId/select', async (req: any, res: a
 
   const candidateId = Number(req.params.candidateId);
   if (!Number.isInteger(candidateId) || candidateId <= 0) {
-    return res.status(400).json({ message: 'Valid candidateId is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Valid candidateId is required.', 400);
   }
 
   try {
@@ -291,10 +292,10 @@ router.post('/benchmark/candidates/:candidateId/select', async (req: any, res: a
     return res.status(200).json(result);
   } catch (error: any) {
     if (/candidate_not_found/.test(error?.message || '')) {
-      return res.status(404).json({ message: 'Benchmark candidate not found.' });
+      throw new BusinessError('NOT_FOUND', 'Benchmark candidate not found.', 404);
     }
     console.error('Admin import benchmark candidate select error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -305,7 +306,7 @@ router.post('/:batchId/mappings', async (req: any, res: any) => {
   const batchId = asTrimmed(req.params.batchId);
   const decisions = Array.isArray(req.body?.decisions) ? req.body.decisions : [];
   if (!batchId) {
-    return res.status(400).json({ message: 'batchId is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'batchId is required.', 400);
   }
 
   try {
@@ -324,10 +325,10 @@ router.post('/:batchId/mappings', async (req: any, res: any) => {
     return res.status(200).json(result);
   } catch (error: any) {
     if (/batch_not_found/.test(error?.message || '')) {
-      return res.status(404).json({ message: 'Import batch not found.' });
+      throw new BusinessError('NOT_FOUND', 'Import batch not found.', 404);
     }
     console.error('Admin import mappings error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -337,7 +338,7 @@ router.post('/:batchId/commit', async (req: any, res: any) => {
 
   const batchId = asTrimmed(req.params.batchId);
   if (!batchId) {
-    return res.status(400).json({ message: 'batchId is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'batchId is required.', 400);
   }
 
   try {
@@ -350,16 +351,16 @@ router.post('/:batchId/commit', async (req: any, res: any) => {
   } catch (error: any) {
     const message = error?.message || 'Internal server error.';
     if (/batch_not_found/.test(message)) {
-      return res.status(404).json({ message: 'Import batch not found.' });
+      throw new BusinessError('NOT_FOUND', 'Import batch not found.', 404);
     }
     if (/open_conflicts_remaining/.test(message)) {
-      return res.status(409).json({ message: 'Open conflicts remain. Resolve conflicts before commit.' });
+      throw new BusinessError('CONFLICT', 'Open conflicts remain. Resolve conflicts before commit.', 409);
     }
     if (/commit_already_running/.test(message)) {
-      return res.status(409).json({ message: 'Commit is already running.' });
+      throw new BusinessError('CONFLICT', 'Commit is already running.', 409);
     }
     console.error('Admin import commit error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -369,7 +370,7 @@ router.get('/:batchId/report', async (req: any, res: any) => {
 
   const batchId = asTrimmed(req.params.batchId);
   if (!batchId) {
-    return res.status(400).json({ message: 'batchId is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'batchId is required.', 400);
   }
 
   try {
@@ -380,10 +381,10 @@ router.get('/:batchId/report', async (req: any, res: any) => {
     return res.status(200).json(report);
   } catch (error: any) {
     if (/batch_not_found/.test(error?.message || '')) {
-      return res.status(404).json({ message: 'Import batch not found.' });
+      throw new BusinessError('NOT_FOUND', 'Import batch not found.', 404);
     }
     console.error('Admin import report error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 

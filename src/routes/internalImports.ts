@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { getImportAiConfig, processImportOcrCallback } from '../services/importWizard.js';
+import { BusinessError } from '../lib/errors.js';
 
 const router = Router();
 
@@ -12,7 +13,7 @@ function isInternalAuthorized(req: any): boolean {
 
 router.post('/:batchId/ocr-callback', async (req: any, res: any) => {
   if (!isInternalAuthorized(req)) {
-    return res.status(401).json({ message: 'Unauthorized.' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
   }
 
   const batchId = typeof req.params?.batchId === 'string' ? req.params.batchId.trim() : '';
@@ -33,7 +34,7 @@ router.post('/:batchId/ocr-callback', async (req: any, res: any) => {
   const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
 
   if (!batchId || !Number.isInteger(sourceFileId) || sourceFileId <= 0) {
-    return res.status(400).json({ message: 'batchId and valid sourceFileId are required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'batchId and valid sourceFileId are required.', 400);
   }
 
   try {
@@ -55,16 +56,16 @@ router.post('/:batchId/ocr-callback', async (req: any, res: any) => {
   } catch (error: any) {
     const message = error?.message || 'Internal server error.';
     if (/source_file_not_found/.test(message)) {
-      return res.status(404).json({ message: 'Source file not found.' });
+      throw new BusinessError('NOT_FOUND', 'Source file not found.', 404);
     }
     console.error('Internal import OCR callback error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
 router.get('/ai-config/active', async (req: any, res: any) => {
   if (!isInternalAuthorized(req)) {
-    return res.status(401).json({ message: 'Unauthorized.' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
   }
 
   try {
@@ -72,7 +73,7 @@ router.get('/ai-config/active', async (req: any, res: any) => {
     return res.status(200).json(result);
   } catch (error) {
     console.error('Internal import ai config get error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 

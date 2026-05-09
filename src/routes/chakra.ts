@@ -3,6 +3,7 @@ import { prisma } from '../prisma.js';
 import axios from 'axios';
 import { authenticateToken } from '../middleware/auth.js';
 import { writeAccessAudit } from '../services/accessControl.js';
+import { BusinessError } from '../lib/errors.js';
 
 const router = Router();
 
@@ -866,7 +867,7 @@ router.post('/create-plugin', authenticateToken, async (req: any, res: any) => {
   try {
     const salon = await getAuthenticatedSalon(req);
     if (!salon) {
-      return res.status(401).json({ message: 'Unauthorized.' });
+      throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
     }
 
     if (salon.chakraPluginId) {
@@ -892,10 +893,7 @@ router.post('/create-plugin', authenticateToken, async (req: any, res: any) => {
     });
   } catch (error: any) {
     console.error('Create plugin failed:', error?.response?.data || error);
-    return res.status(500).json({
-      message: 'Create plugin failed.',
-      error: error?.response?.data || error?.message || 'Unknown error',
-    });
+    throw new BusinessError('INTERNAL_ERROR', 'Create plugin failed.', 500, { error: error?.response?.data || error?.message || 'Unknown error', });
   }
 });
 
@@ -904,7 +902,7 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
   try {
     let salon = await getAuthenticatedSalon(req);
     if (!salon) {
-      return res.status(401).json({ message: 'Unauthorized.' });
+      throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
     }
 
     const faqAnswers = normalizeFaqAnswers(salon.aiAgentSettings?.faqAnswers);
@@ -1032,10 +1030,7 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
     });
   } catch (error: any) {
     console.error('Chakra status failed:', error?.response?.data || error);
-    return res.status(500).json({
-      message: 'Chakra status failed.',
-      error: error?.response?.data || error?.message || 'Unknown error',
-    });
+    throw new BusinessError('INTERNAL_ERROR', 'Chakra status failed.', 500, { error: error?.response?.data || error?.message || 'Unknown error', });
   }
 });
 
@@ -1045,7 +1040,7 @@ router.get('/connect-token', authenticateToken, async (req: any, res: any) => {
     const intent = parseConnectIntent(req.query?.intent);
     let salon = await getAuthenticatedSalon(req);
     if (!salon) {
-      return res.status(401).json({ message: 'Unauthorized.' });
+      throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
     }
 
     let pluginId = salon.chakraPluginId;
@@ -1093,10 +1088,7 @@ router.get('/connect-token', authenticateToken, async (req: any, res: any) => {
     });
   } catch (error: any) {
     console.error('Token generation failed:', error?.response?.data || error);
-    return res.status(500).json({
-      message: 'Token generation failed.',
-      error: error?.response?.data || error?.message || 'Unknown error',
-    });
+    throw new BusinessError('INTERNAL_ERROR', 'Token generation failed.', 500, { error: error?.response?.data || error?.message || 'Unknown error', });
   }
 });
 
@@ -1105,7 +1097,7 @@ router.post('/connect-event', authenticateToken, async (req: any, res: any) => {
   try {
     const salon = await getAuthenticatedSalon(req);
     if (!salon) {
-      return res.status(401).json({ message: 'Unauthorized.' });
+      throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
     }
 
     const event = req.body?.event;
@@ -1116,10 +1108,10 @@ router.post('/connect-event', authenticateToken, async (req: any, res: any) => {
     const pluginId = pluginIdFromClient || salon.chakraPluginId || null;
 
     if (!pluginId) {
-      return res.status(400).json({ message: 'Plugin id is missing.' });
+      throw new BusinessError('VALIDATION_FAILED', 'Plugin id is missing.', 400);
     }
     if (salon.chakraPluginId && pluginId !== salon.chakraPluginId) {
-      return res.status(403).json({ message: 'Plugin does not match salon scope.' });
+      throw new BusinessError('FORBIDDEN', 'Plugin does not match salon scope.', 403);
     }
 
     let connected = isConnectSuccessEvent(event, data);
@@ -1234,10 +1226,7 @@ router.post('/connect-event', authenticateToken, async (req: any, res: any) => {
     });
   } catch (error: any) {
     console.error('Connect event capture failed:', error?.response?.data || error);
-    return res.status(500).json({
-      message: 'Connect event capture failed.',
-      error: error?.response?.data || error?.message || 'Unknown error',
-    });
+    throw new BusinessError('INTERNAL_ERROR', 'Connect event capture failed.', 500, { error: error?.response?.data || error?.message || 'Unknown error', });
   }
 });
 
@@ -1246,7 +1235,7 @@ router.put('/plugin-active', authenticateToken, async (req: any, res: any) => {
   try {
     const salon = await getAuthenticatedSalon(req);
     if (!salon) {
-      return res.status(401).json({ message: 'Unauthorized.' });
+      throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
     }
 
     const bodyPluginId = typeof req.body?.pluginId === 'string' ? req.body.pluginId.trim() : '';
@@ -1254,13 +1243,13 @@ router.put('/plugin-active', authenticateToken, async (req: any, res: any) => {
     const isActive = req.body?.isActive;
 
     if (!pluginId) {
-      return res.status(400).json({ message: 'Plugin id is missing.' });
+      throw new BusinessError('VALIDATION_FAILED', 'Plugin id is missing.', 400);
     }
     if (typeof isActive !== 'boolean') {
-      return res.status(400).json({ message: 'isActive must be boolean.' });
+      throw new BusinessError('VALIDATION_FAILED', 'isActive must be boolean.', 400);
     }
     if (salon.chakraPluginId && pluginId !== salon.chakraPluginId) {
-      return res.status(403).json({ message: 'Plugin does not match salon scope.' });
+      throw new BusinessError('FORBIDDEN', 'Plugin does not match salon scope.', 403);
     }
 
     if (!salon.chakraPluginId) {
@@ -1311,10 +1300,7 @@ router.put('/plugin-active', authenticateToken, async (req: any, res: any) => {
     });
   } catch (error: any) {
     console.error('Plugin active toggle failed:', error?.response?.data || error);
-    return res.status(500).json({
-      message: 'Plugin active toggle failed.',
-      error: error?.response?.data || error?.message || 'Unknown error',
-    });
+    throw new BusinessError('INTERNAL_ERROR', 'Plugin active toggle failed.', 500, { error: error?.response?.data || error?.message || 'Unknown error', });
   }
 });
 
@@ -1323,7 +1309,7 @@ router.post('/setup-connect', authenticateToken, async (req: any, res: any) => {
   try {
     const salon = await getAuthenticatedSalon(req);
     if (!salon) {
-      return res.status(401).json({ message: 'Unauthorized.' });
+      throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
     }
 
     let pluginId = salon.chakraPluginId;
@@ -1352,10 +1338,7 @@ router.post('/setup-connect', authenticateToken, async (req: any, res: any) => {
     });
   } catch (error: any) {
     console.error('Setup connect failed:', error?.response?.data || error);
-    return res.status(500).json({
-      message: 'Setup connect failed.',
-      error: error?.response?.data || error?.message || 'Unknown error',
-    });
+    throw new BusinessError('INTERNAL_ERROR', 'Setup connect failed.', 500, { error: error?.response?.data || error?.message || 'Unknown error', });
   }
 });
 
@@ -1363,7 +1346,7 @@ router.post('/setup-connect', authenticateToken, async (req: any, res: any) => {
 router.get('/templates', authenticateToken, async (req: any, res: any) => {
   try {
     const salonId = getSalonIdFromUser(req);
-    if (!salonId) return res.status(401).json({ message: 'Unauthorized' });
+    if (!salonId) throw new BusinessError('UNAUTHORIZED', 'Unauthorized', 401);
 
     const [templates, salon] = await Promise.all([
       prisma.salonMessageTemplate.findMany({
@@ -1381,7 +1364,7 @@ router.get('/templates', authenticateToken, async (req: any, res: any) => {
       isConnected: !!salon?.chakraPluginId 
     });
   } catch (error: any) {
-    return res.status(500).json({ message: 'Failed to fetch templates', error: error?.message || error });
+    throw new BusinessError('INTERNAL_ERROR', 'Failed to fetch templates', 500, { error: error?.message || error });
   }
 });
 
@@ -1390,12 +1373,12 @@ router.post('/templates/sync', authenticateToken, async (req: any, res: any) => 
   try {
     const salon = await getAuthenticatedSalon(req);
     if (!salon) {
-      return res.status(401).json({ message: 'Unauthorized', logs: ['Yetkisiz erişim denemesi.'] });
+      throw new BusinessError('UNAUTHORIZED', 'Unauthorized', 401, { logs: ['Yetkisiz erişim denemesi.'] });
     }
     
     if (!salon.chakraPluginId) {
       logs.push('HATA: Salonun Chakra Plugin ID\'si bulunamadı. Lütfen önce bağlantıyı kurun.');
-      return res.status(400).json({ message: 'WhatsApp not connected', logs });
+      throw new BusinessError('VALIDATION_FAILED', 'WhatsApp not connected', 400, { logs });
     }
 
     await syncAndEnsureMasterTemplates(salon.id, salon.chakraPluginId, logs);
@@ -1416,25 +1399,25 @@ router.post('/templates/sync', authenticateToken, async (req: any, res: any) => 
   } catch (error: any) {
     logs.push(`Sistem Hatası: ${error.message}`);
     console.error('Template sync error:', error);
-    return res.status(500).json({ message: 'Sync failed', error: error?.message || error, logs });
+    throw new BusinessError('INTERNAL_ERROR', 'Sync failed', 500, { error: error?.message || error, logs });
   }
 });
 
 router.post('/templates/:templateId/appeal', authenticateToken, async (req: any, res: any) => {
   try {
     const salon = await getAuthenticatedSalon(req);
-    if (!salon || !salon.chakraPluginId) return res.status(400).json({ message: 'WhatsApp not connected' });
+    if (!salon || !salon.chakraPluginId) throw new BusinessError('VALIDATION_FAILED', 'WhatsApp not connected', 400);
 
     const { templateId } = req.params;
     const template = await prisma.salonMessageTemplate.findFirst({
       where: { id: parseInt(templateId), salonId: salon.id }
     });
 
-    if (!template || !template.templateName) return res.status(404).json({ message: 'Template not found' });
+    if (!template || !template.templateName) throw new BusinessError('NOT_FOUND', 'Template not found', 404);
 
     // Look up the master config
     const master = KEDY_MASTER_TEMPLATES.find(m => m.name === template.templateName);
-    if (!master) return res.status(400).json({ message: 'Not a master template' });
+    if (!master) throw new BusinessError('VALIDATION_FAILED', 'Not a master template', 400);
 
     // Re-submit with original category as a way to "appeal/force"
     await axios.post(
@@ -1456,7 +1439,7 @@ router.post('/templates/:templateId/appeal', authenticateToken, async (req: any,
     return res.status(200).json({ message: 'Appeal submitted' });
   } catch (error: any) {
     console.error('Appeal failed:', error?.response?.data || error);
-    return res.status(500).json({ message: 'Appeal failed' });
+    throw new BusinessError('INTERNAL_ERROR', 'Appeal failed', 500);
   }
 });
 

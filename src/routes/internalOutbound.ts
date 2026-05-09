@@ -2,6 +2,7 @@ import { ChannelType, InboundMessageStatus, OutboundMessageSource } from '@prism
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { upsertConversationMessageEvent } from '../services/conversationMessageEvents.js';
+import { BusinessError } from '../lib/errors.js';
 
 const router = Router();
 
@@ -27,7 +28,7 @@ function asSource(value: unknown): OutboundMessageSource | null {
 }
 
 router.post('/register', async (req: any, res: any) => {
-  if (!isInternalAuthorized(req)) return res.status(401).json({ message: 'Unauthorized' });
+  if (!isInternalAuthorized(req)) throw new BusinessError('UNAUTHORIZED', 'Unauthorized', 401);
 
   const body = req.body || {};
   const salonId = Number(body.salonId);
@@ -37,9 +38,7 @@ router.post('/register', async (req: any, res: any) => {
   const providerMessageId = typeof body.providerMessageId === 'string' ? body.providerMessageId.trim() : '';
 
   if (!Number.isInteger(salonId) || salonId <= 0 || !channel || !source || !conversationKey || !providerMessageId) {
-    return res.status(400).json({
-      message: 'salonId, channel, source, conversationKey, providerMessageId are required',
-    });
+    throw new BusinessError('VALIDATION_FAILED', 'salonId, channel, source, conversationKey, providerMessageId are required', 400);
   }
 
   const sentAt =
@@ -48,7 +47,7 @@ router.post('/register', async (req: any, res: any) => {
       : new Date();
 
   if (Number.isNaN(sentAt.getTime())) {
-    return res.status(400).json({ message: 'sentAt is invalid' });
+    throw new BusinessError('VALIDATION_FAILED', 'sentAt is invalid', 400);
   }
 
   const canonicalUserId = typeof body.canonicalUserId === 'string' ? body.canonicalUserId.trim() : null;

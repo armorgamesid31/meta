@@ -637,11 +637,11 @@ router.post("/confirm", authenticateToken, async (req: any, res: any) => {
   const { lockToken, customerName, customerPhone, appointments: requestedAppointments } = req.body;
 
   if (!req.user) {
-    return res.status(401).json({ message: 'Unauthorized.' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
   }
 
   if (!lockToken || !customerName || !customerPhone || !Array.isArray(requestedAppointments)) {
-    return res.status(400).json({ message: 'Missing required fields.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Missing required fields.', 400);
   }
 
   const salonId = req.user.salonId;
@@ -765,7 +765,7 @@ router.post("/confirm", authenticateToken, async (req: any, res: any) => {
       return sendCustomerBannedResponse(res, error?.ban?.reason || null);
     }
     console.error('Error confirming booking:', error);
-    res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -774,11 +774,11 @@ router.post("/cancel", authenticateToken, async (req: any, res: any) => {
   const { bookingId } = req.body as any;
 
   if (!req.user) {
-    return res.status(401).json({ message: 'Unauthorized.' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
   }
 
   if (!bookingId || typeof bookingId !== 'number') {
-    return res.status(400).json({ message: 'Valid bookingId is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Valid bookingId is required.', 400);
   }
 
   const salonId = req.user.salonId;
@@ -902,14 +902,14 @@ router.post("/cancel", authenticateToken, async (req: any, res: any) => {
 
   } catch (error) {
     console.error('Error cancelling booking:', error);
-    res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
 router.post('/reschedule-preview', async (req: any, res: any) => {
   const salonId = req.salon?.id;
   if (!salonId) {
-    return res.status(400).json({ message: 'Salon context is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Salon context is required.', 400);
   }
 
   const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
@@ -918,13 +918,13 @@ router.post('/reschedule-preview', async (req: any, res: any) => {
   const assignments = parseRescheduleAssignments(req.body?.assignments);
 
   if (!token) {
-    return res.status(400).json({ message: 'token is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'token is required.', 400);
   }
   if (!appointmentIds.length) {
-    return res.status(400).json({ message: 'appointmentIds must be a non-empty array.' });
+    throw new BusinessError('VALIDATION_FAILED', 'appointmentIds must be a non-empty array.', 400);
   }
   if (!newStartTime) {
-    return res.status(400).json({ message: 'newStartTime is required as ISO date.' });
+    throw new BusinessError('VALIDATION_FAILED', 'newStartTime is required as ISO date.', 400);
   }
 
   try {
@@ -946,13 +946,13 @@ router.post('/reschedule-preview', async (req: any, res: any) => {
       },
     });
     if (ownedAppointments.length !== appointmentIds.length) {
-      return res.status(403).json({ message: 'One or more appointments do not belong to this customer.' });
+      throw new BusinessError('FORBIDDEN', 'One or more appointments do not belong to this customer.', 403);
     }
     if (ownedAppointments.some((item) => !isReschedulableAppointmentStatus(item.status))) {
-      return res.status(409).json({ message: 'Only BOOKED/CONFIRMED appointments can be updated.' });
+      throw new BusinessError('CONFLICT', 'Only BOOKED/CONFIRMED appointments can be updated.', 409);
     }
     if (ownedAppointments.some((item) => new Date(item.startTime).getTime() <= Date.now())) {
-      return res.status(409).json({ message: 'Past appointments cannot be updated.' });
+      throw new BusinessError('CONFLICT', 'Past appointments cannot be updated.', 409);
     }
 
     const preview = await buildAppointmentReschedulePreview({
@@ -965,14 +965,14 @@ router.post('/reschedule-preview', async (req: any, res: any) => {
     return res.status(200).json(preview);
   } catch (error) {
     console.error('Booking reschedule preview error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
 router.post('/reschedule-options', async (req: any, res: any) => {
   const salonId = req.salon?.id;
   if (!salonId) {
-    return res.status(400).json({ message: 'Salon context is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Salon context is required.', 400);
   }
 
   const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
@@ -981,13 +981,13 @@ router.post('/reschedule-options', async (req: any, res: any) => {
   const assignments = parseRescheduleAssignments(req.body?.assignments);
 
   if (!token) {
-    return res.status(400).json({ message: 'token is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'token is required.', 400);
   }
   if (!appointmentIds.length) {
-    return res.status(400).json({ message: 'appointmentIds must be a non-empty array.' });
+    throw new BusinessError('VALIDATION_FAILED', 'appointmentIds must be a non-empty array.', 400);
   }
   if (!date) {
-    return res.status(400).json({ message: 'date is required as YYYY-MM-DD.' });
+    throw new BusinessError('VALIDATION_FAILED', 'date is required as YYYY-MM-DD.', 400);
   }
 
   try {
@@ -1009,13 +1009,13 @@ router.post('/reschedule-options', async (req: any, res: any) => {
       },
     });
     if (ownedAppointments.length !== appointmentIds.length) {
-      return res.status(403).json({ message: 'One or more appointments do not belong to this customer.' });
+      throw new BusinessError('FORBIDDEN', 'One or more appointments do not belong to this customer.', 403);
     }
     if (ownedAppointments.some((item) => !isReschedulableAppointmentStatus(item.status))) {
-      return res.status(409).json({ message: 'Only BOOKED/CONFIRMED appointments can be updated.' });
+      throw new BusinessError('CONFLICT', 'Only BOOKED/CONFIRMED appointments can be updated.', 409);
     }
     if (ownedAppointments.some((item) => new Date(item.startTime).getTime() <= Date.now())) {
-      return res.status(409).json({ message: 'Past appointments cannot be updated.' });
+      throw new BusinessError('CONFLICT', 'Past appointments cannot be updated.', 409);
     }
 
     const options = await buildRescheduleOptions({
@@ -1028,14 +1028,14 @@ router.post('/reschedule-options', async (req: any, res: any) => {
     return res.status(200).json(options);
   } catch (error) {
     console.error('Booking reschedule options error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
 router.post('/reschedule-commit', async (req: any, res: any) => {
   const salonId = req.salon?.id;
   if (!salonId) {
-    return res.status(400).json({ message: 'Salon context is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Salon context is required.', 400);
   }
 
   const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
@@ -1048,13 +1048,13 @@ router.post('/reschedule-commit', async (req: any, res: any) => {
       : null;
 
   if (!token) {
-    return res.status(400).json({ message: 'token is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'token is required.', 400);
   }
   if (!appointmentIds.length) {
-    return res.status(400).json({ message: 'appointmentIds must be a non-empty array.' });
+    throw new BusinessError('VALIDATION_FAILED', 'appointmentIds must be a non-empty array.', 400);
   }
   if (!newStartTime) {
-    return res.status(400).json({ message: 'newStartTime is required as ISO date.' });
+    throw new BusinessError('VALIDATION_FAILED', 'newStartTime is required as ISO date.', 400);
   }
 
   try {
@@ -1076,13 +1076,13 @@ router.post('/reschedule-commit', async (req: any, res: any) => {
       },
     });
     if (ownedAppointments.length !== appointmentIds.length) {
-      return res.status(403).json({ message: 'One or more appointments do not belong to this customer.' });
+      throw new BusinessError('FORBIDDEN', 'One or more appointments do not belong to this customer.', 403);
     }
     if (ownedAppointments.some((item) => !isReschedulableAppointmentStatus(item.status))) {
-      return res.status(409).json({ message: 'Only BOOKED/CONFIRMED appointments can be updated.' });
+      throw new BusinessError('CONFLICT', 'Only BOOKED/CONFIRMED appointments can be updated.', 409);
     }
     if (ownedAppointments.some((item) => new Date(item.startTime).getTime() <= Date.now())) {
-      return res.status(409).json({ message: 'Past appointments cannot be updated.' });
+      throw new BusinessError('CONFLICT', 'Past appointments cannot be updated.', 409);
     }
 
     const committed = await commitAppointmentReschedule({
@@ -1138,16 +1138,16 @@ router.post('/reschedule-commit', async (req: any, res: any) => {
 router.post('/cancel-by-token', async (req: any, res: any) => {
   const salonId = req.salon?.id;
   if (!salonId) {
-    return res.status(400).json({ message: 'Salon context is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Salon context is required.', 400);
   }
 
   const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
   const appointmentIds = parseAppointmentIds(req.body?.appointmentIds);
   if (!token) {
-    return res.status(400).json({ message: 'token is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'token is required.', 400);
   }
   if (!appointmentIds.length) {
-    return res.status(400).json({ message: 'appointmentIds must be a non-empty array.' });
+    throw new BusinessError('VALIDATION_FAILED', 'appointmentIds must be a non-empty array.', 400);
   }
 
   try {
@@ -1171,13 +1171,13 @@ router.post('/cancel-by-token', async (req: any, res: any) => {
       },
     });
     if (ownedAppointments.length !== appointmentIds.length) {
-      return res.status(403).json({ message: 'One or more appointments do not belong to this customer.' });
+      throw new BusinessError('FORBIDDEN', 'One or more appointments do not belong to this customer.', 403);
     }
     if (ownedAppointments.some((item) => !isCancelableAppointmentStatus(item.status))) {
-      return res.status(409).json({ message: 'Only BOOKED/CONFIRMED/UPDATED appointments can be cancelled.' });
+      throw new BusinessError('CONFLICT', 'Only BOOKED/CONFIRMED/UPDATED appointments can be cancelled.', 409);
     }
     if (ownedAppointments.some((item) => new Date(item.startTime).getTime() <= Date.now())) {
-      return res.status(409).json({ message: 'Past appointments cannot be cancelled.' });
+      throw new BusinessError('CONFLICT', 'Past appointments cannot be cancelled.', 409);
     }
 
     await prisma.appointment.updateMany({
@@ -1222,14 +1222,14 @@ router.post('/cancel-by-token', async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Booking cancel-by-token error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
 router.post('/feedback', async (req: any, res: any) => {
   const salonId = req.salon?.id;
   if (!salonId) {
-    return res.status(400).json({ message: 'Salon context is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Salon context is required.', 400);
   }
 
   const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
@@ -1238,13 +1238,13 @@ router.post('/feedback', async (req: any, res: any) => {
   const review = typeof req.body?.review === 'string' ? req.body.review.trim() : '';
 
   if (!token) {
-    return res.status(400).json({ message: 'token is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'token is required.', 400);
   }
   if (!Number.isInteger(appointmentId) || appointmentId <= 0) {
-    return res.status(400).json({ message: 'appointmentId must be a positive integer.' });
+    throw new BusinessError('VALIDATION_FAILED', 'appointmentId must be a positive integer.', 400);
   }
   if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
-    return res.status(400).json({ message: 'rating must be between 1 and 5.' });
+    throw new BusinessError('VALIDATION_FAILED', 'rating must be between 1 and 5.', 400);
   }
 
   try {
@@ -1266,10 +1266,10 @@ router.post('/feedback', async (req: any, res: any) => {
     });
 
     if (!appointment) {
-      return res.status(404).json({ message: 'Appointment not found for this customer.' });
+      throw new BusinessError('NOT_FOUND', 'Appointment not found for this customer.', 404);
     }
     if (String(appointment.status || '').toUpperCase() !== 'COMPLETED') {
-      return res.status(409).json({ message: 'Only completed appointments can be reviewed.' });
+      throw new BusinessError('CONFLICT', 'Only completed appointments can be reviewed.', 409);
     }
 
     const updated = await prisma.appointment.update({
@@ -1290,7 +1290,7 @@ router.post('/feedback', async (req: any, res: any) => {
     return res.status(200).json({ item: updated });
   } catch (error) {
     console.error('Booking feedback error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -1299,14 +1299,14 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
   const { bookingId, newSlot } = req.body as any;
 
   if (!req.user) {
-    return res.status(401).json({ message: 'Unauthorized.' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
   }
 
   if (!bookingId || typeof bookingId !== 'number' || !newSlot ||
       !newSlot.date || !newSlot.startTime || !newSlot.serviceId ||
       !Array.isArray(newSlot.staffIds) || newSlot.staffIds.length === 0 ||
       typeof newSlot.peopleCount !== 'number') {
-    return res.status(400).json({ message: 'Missing or invalid required fields.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Missing or invalid required fields.', 400);
   }
 
   const salonId = req.user.salonId;
@@ -1334,7 +1334,7 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
 
       const parsedStart = parseIsoDate(`${newSlot.date}T${newSlot.startTime}:00`);
       if (!parsedStart) {
-        return res.status(400).json({ message: 'Invalid newSlot date/time.' });
+        throw new BusinessError('VALIDATION_FAILED', 'Invalid newSlot date/time.', 400);
       }
 
       const preferredStaffId = Number(Array.isArray(newSlot.staffIds) ? newSlot.staffIds[0] : null);
@@ -1632,19 +1632,19 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
       return sendCustomerBannedResponse(res, error?.ban?.reason || null);
     }
     console.error('Error rescheduling booking:', error);
-    res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
 router.post('/pricing-preview', async (req: any, res: any) => {
   const salonId = req.salon?.id;
   if (!salonId) {
-    return res.status(400).json({ message: 'Missing tenant context.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Missing tenant context.', 400);
   }
 
   const startTime = parseIsoDate(req.body?.startTime || req.body?.datetime || new Date().toISOString());
   if (!startTime) {
-    return res.status(400).json({ message: 'startTime is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'startTime is required.', 400);
   }
 
   const customerIdRaw = Number(req.body?.customerId);
@@ -1661,7 +1661,7 @@ router.post('/pricing-preview', async (req: any, res: any) => {
     .map((item: any) => Number(item?.serviceId))
     .filter((id: number) => Number.isInteger(id) && id > 0);
   if (!requestedServiceIds.length) {
-    return res.status(400).json({ message: 'services[] is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'services[] is required.', 400);
   }
 
   try {
@@ -1691,7 +1691,7 @@ router.post('/pricing-preview', async (req: any, res: any) => {
     return res.status(200).json(pricing);
   } catch (error) {
     console.error('Booking pricing-preview error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -1701,7 +1701,7 @@ router.post('/referral/enroll', async (req: any, res: any) => {
   const campaignId = Number(req.body?.campaignId);
 
   if (!salonId || !token || !Number.isInteger(campaignId) || campaignId <= 0) {
-    return res.status(400).json({ message: 'token and campaignId are required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'token and campaignId are required.', 400);
   }
 
   try {
@@ -1724,7 +1724,7 @@ router.post('/referral/enroll', async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Booking referral enroll error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -1734,7 +1734,7 @@ router.post('/referral/share-link', async (req: any, res: any) => {
   const campaignId = Number(req.body?.campaignId);
 
   if (!salonId || !token || !Number.isInteger(campaignId) || campaignId <= 0) {
-    return res.status(400).json({ message: 'token and campaignId are required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'token and campaignId are required.', 400);
   }
 
   try {
@@ -1757,7 +1757,7 @@ router.post('/referral/share-link', async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Booking referral share-link error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
@@ -1792,11 +1792,11 @@ router.post('/', async (req: any, res: any, next: any) => {
       fullName: customerName,
     });
     if (!normalizedCustomerName.firstName || !normalizedCustomerName.lastName) {
-      return res.status(400).json({ message: 'customerFirstName and customerLastName are required.' });
+      throw new BusinessError('VALIDATION_FAILED', 'customerFirstName and customerLastName are required.', 400);
     }
     const normalizedCustomerPhone = String(customerPhone || '').trim();
     if (!normalizedCustomerPhone) {
-      return res.status(400).json({ message: 'customerPhone is required.' });
+      throw new BusinessError('VALIDATION_FAILED', 'customerPhone is required.', 400);
     }
 
     try {
@@ -1815,7 +1815,7 @@ router.post('/', async (req: any, res: any, next: any) => {
       });
 
       if (!existingCustomer) {
-        return res.status(404).json({ message: 'Customer not found for salon.' });
+        throw new BusinessError('NOT_FOUND', 'Customer not found for salon.', 404);
       }
 
       if (
@@ -1845,7 +1845,7 @@ router.post('/', async (req: any, res: any, next: any) => {
       
       // Double check date validity
       if (isNaN(currentStartTime.getTime())) {
-          return res.status(400).json({ message: 'Geçersiz randevu saati formatı (ISO beklenen).' });
+          throw new BusinessError('VALIDATION_FAILED', 'Geçersiz randevu saati formatı (ISO beklenen).', 400);
       }
 
       const availabilityLockToken =
@@ -1973,7 +1973,7 @@ router.post('/', async (req: any, res: any, next: any) => {
                 if (autoStaff) {
                     staffId = autoStaff.staffId;
                 } else {
-                    return res.status(400).json({ message: `${serviceId} ID'li hizmeti verebilecek aktif personel bulunamadı.` });
+                    throw new BusinessError('VALIDATION_FAILED', `${serviceId} ID'li hizmeti verebilecek aktif personel bulunamadı.`, 400);
                 }
               }
           }
@@ -2138,10 +2138,7 @@ router.post('/', async (req: any, res: any, next: any) => {
           stack: error.stack,
           body: b
       });
-      return res.status(500).json({ 
-          message: 'Randevu oluşturulurken bir sunucu hatası oluştu.',
-          error: error.message 
-      });
+      throw new BusinessError('INTERNAL_ERROR', 'Randevu oluşturulurken bir sunucu hatası oluştu.', 500, { error: error.message });
     }
   }
   next();
@@ -2153,7 +2150,7 @@ router.post('/appointments-by-token', async (req: any, res: any) => {
   const salonId = req.salon?.id;
 
   if (!token || !salonId || !datetime || !Array.isArray(people) || people.length === 0) {
-    return res.status(400).json({ message: 'Missing required fields or tenant context' });
+    throw new BusinessError('VALIDATION_FAILED', 'Missing required fields or tenant context', 400);
   }
 
   try {
@@ -2165,23 +2162,23 @@ router.post('/appointments-by-token', async (req: any, res: any) => {
     });
 
     if (!magicLink) {
-      return res.status(404).json({ message: 'Magic link not found for this salon' });
+      throw new BusinessError('NOT_FOUND', 'Magic link not found for this salon', 404);
     }
 
     if (magicLink.expiresAt < new Date() || magicLink.status === 'EXPIRED' || magicLink.status === 'REVOKED') {
-      return res.status(410).json({ message: 'Magic link has expired' });
+      throw new BusinessError('GONE', 'Magic link has expired', 410);
     }
 
     if (magicLink.status !== 'ACTIVE') {
-      return res.status(410).json({ message: 'Magic link is not active' });
+      throw new BusinessError('GONE', 'Magic link is not active', 410);
     }
 
     if (magicLink.usedAt) {
-      return res.status(410).json({ message: 'Magic link has already been used' });
+      throw new BusinessError('GONE', 'Magic link has already been used', 410);
     }
 
     if (magicLink.type !== 'BOOKING' && magicLink.type !== 'RESCHEDULE') {
-      return res.status(400).json({ message: 'Invalid magic link type' });
+      throw new BusinessError('VALIDATION_FAILED', 'Invalid magic link type', 400);
     }
 
     const fallbackPhoneFromLink = magicLink.subjectType === 'PHONE'
@@ -2234,7 +2231,7 @@ router.post('/appointments-by-token', async (req: any, res: any) => {
       fullName: people?.[0]?.name,
     });
     if (!primaryName.firstName || !primaryName.lastName) {
-      return res.status(400).json({ message: 'Ad ve soyad zorunludur.' });
+      throw new BusinessError('VALIDATION_FAILED', 'Ad ve soyad zorunludur.', 400);
     }
 
     if (!customer) {
@@ -2280,7 +2277,7 @@ router.post('/appointments-by-token', async (req: any, res: any) => {
 
     const appointmentDateTime = new Date(datetime);
     if (isNaN(appointmentDateTime.getTime())) {
-      return res.status(400).json({ message: 'Invalid datetime format' });
+      throw new BusinessError('VALIDATION_FAILED', 'Invalid datetime format', 400);
     }
 
     const result = await prisma.$transaction(async (tx) => {
@@ -2452,7 +2449,7 @@ router.post('/appointments-by-token', async (req: any, res: any) => {
       return sendCustomerBannedResponse(res, error?.ban?.reason || null);
     }
     console.error('Error creating appointment:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    throw new BusinessError('INTERNAL_ERROR', 'Internal server error', 500);
   }
 });
 

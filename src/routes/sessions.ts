@@ -3,6 +3,7 @@ import { prisma } from '../prisma.js';
 import { v4 as uuidv4 } from 'uuid';
 import { buildSingleServiceGroups, generateAvailability } from '../services/availabilityService.js';
 import { assertBookingAllowed } from '../services/blacklist.js';
+import { BusinessError } from '../lib/errors.js';
 
 const router = Router();
 
@@ -66,7 +67,7 @@ router.post("/magic-link", async (req: any, res: any) => {
   const { salonId } = req.body as any;
 
   if (!salonId || typeof salonId !== 'number') {
-    return res.status(400).json({ message: 'Valid salonId is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Valid salonId is required.', 400);
   }
 
   // Verify salon exists
@@ -75,7 +76,7 @@ router.post("/magic-link", async (req: any, res: any) => {
   });
 
   if (!salon) {
-    return res.status(404).json({ message: 'Salon not found.' });
+    throw new BusinessError('NOT_FOUND', 'Salon not found.', 404);
   }
 
   // Create booking session
@@ -111,16 +112,16 @@ router.get("/:token", async (req: any, res: any) => {
   });
 
   if (!session) {
-    return res.status(404).json({ message: 'Session not found.' });
+    throw new BusinessError('NOT_FOUND', 'Session not found.', 404);
   }
 
   if (session.expiresAt < new Date()) {
-    return res.status(410).json({ message: 'Session has expired.' });
+    throw new BusinessError('GONE', 'Session has expired.', 410);
   }
 
   // After CONFIRMED, session is immutable - return 410 for all access
   if (session.state === 'CONFIRMED') {
-    return res.status(410).json({ message: 'Session has been completed.' });
+    throw new BusinessError('GONE', 'Session has been completed.', 410);
   }
 
   // Get salon info
@@ -148,7 +149,7 @@ router.get("/:token", async (req: any, res: any) => {
   });
 
   if (!salon) {
-    return res.status(404).json({ message: 'Salon not found.' });
+    throw new BusinessError('NOT_FOUND', 'Salon not found.', 404);
   }
 
   res.json({
@@ -180,7 +181,7 @@ router.get("/:token/availability", async (req: any, res: any) => {
   const peopleCount = Number(req.query?.peopleCount || 1);
 
   if (!date || typeof date !== 'string' || !Number.isInteger(serviceId) || serviceId <= 0) {
-    return res.status(400).json({ message: 'date and serviceId parameters are required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'date and serviceId parameters are required.', 400);
   }
 
   const session = await prisma.bookingSession.findUnique({
@@ -188,16 +189,16 @@ router.get("/:token/availability", async (req: any, res: any) => {
   });
 
   if (!session) {
-    return res.status(404).json({ message: 'Session not found.' });
+    throw new BusinessError('NOT_FOUND', 'Session not found.', 404);
   }
 
   if (session.expiresAt < new Date()) {
-    return res.status(410).json({ message: 'Session has expired.' });
+    throw new BusinessError('GONE', 'Session has expired.', 410);
   }
 
   // After CONFIRMED, session is immutable - return 410 for all access
   if (session.state === 'CONFIRMED') {
-    return res.status(410).json({ message: 'Session has been completed.' });
+    throw new BusinessError('GONE', 'Session has been completed.', 410);
   }
 
   const availabilityResult = await generateAvailability({
@@ -219,7 +220,7 @@ router.post("/:token/lock", async (req: any, res: any) => {
   const { slot } = req.body as any;
 
   if (!slot || !slot.date || !slot.startTime || !slot.serviceId || !Array.isArray(slot.staffIds)) {
-    return res.status(400).json({ message: 'Valid slot data is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Valid slot data is required.', 400);
   }
 
   const session = await prisma.bookingSession.findUnique({
@@ -227,21 +228,21 @@ router.post("/:token/lock", async (req: any, res: any) => {
   });
 
   if (!session) {
-    return res.status(404).json({ message: 'Session not found.' });
+    throw new BusinessError('NOT_FOUND', 'Session not found.', 404);
   }
 
   if (session.expiresAt < new Date()) {
-    return res.status(410).json({ message: 'Session has expired.' });
+    throw new BusinessError('GONE', 'Session has expired.', 410);
   }
 
   // After CONFIRMED, session is immutable - return 410 for all access
   if (session.state === 'CONFIRMED') {
-    return res.status(410).json({ message: 'Session has been completed.' });
+    throw new BusinessError('GONE', 'Session has been completed.', 410);
   }
 
   // Enforce strict state transitions: CREATED → SLOT_SELECTED → CONFIRMED
   if (session.state !== 'CREATED' && session.state !== 'SLOT_SELECTED') {
-    return res.status(409).json({ message: 'Invalid session state transition.' });
+    throw new BusinessError('CONFLICT', 'Invalid session state transition.', 409);
   }
 
   // If changing slot while in SLOT_SELECTED, release old lock
@@ -286,7 +287,7 @@ router.post("/:token/confirm", async (req: any, res: any) => {
   });
 
   if (!customerInfo || !normalizedName.firstName || !normalizedName.lastName || !customerInfo.phone) {
-    return res.status(400).json({ message: 'Customer information is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Customer information is required.', 400);
   }
 
   const session = await prisma.bookingSession.findUnique({
@@ -294,15 +295,15 @@ router.post("/:token/confirm", async (req: any, res: any) => {
   });
 
   if (!session) {
-    return res.status(404).json({ message: 'Session not found.' });
+    throw new BusinessError('NOT_FOUND', 'Session not found.', 404);
   }
 
   if (session.expiresAt < new Date()) {
-    return res.status(410).json({ message: 'Session has expired.' });
+    throw new BusinessError('GONE', 'Session has expired.', 410);
   }
 
   if (session.state !== 'SLOT_SELECTED' || !session.selectedSlot) {
-    return res.status(400).json({ message: 'No slot selected for this session.' });
+    throw new BusinessError('VALIDATION_FAILED', 'No slot selected for this session.', 400);
   }
 
   const slot = session.selectedSlot as any;
@@ -320,7 +321,7 @@ router.post("/:token/confirm", async (req: any, res: any) => {
       ` as any[];
 
       if (lockRecord.length === 0) {
-        return res.status(409).json({ message: 'Lock token has expired or is invalid.' });
+        throw new BusinessError('CONFLICT', 'Lock token has expired or is invalid.', 409);
       }
 
       // 2. Handle customer persistence
@@ -432,7 +433,7 @@ router.post("/:token/confirm", async (req: any, res: any) => {
       return sendCustomerBannedResponse(res, error?.ban?.reason || null);
     }
     console.error('Error confirming session booking:', error);
-    res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 

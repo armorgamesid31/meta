@@ -3,6 +3,7 @@ import { prisma } from '../prisma.js';
 import { authenticateToken, requirePermission } from '../middleware/auth.js';
 import { runNoShowDetection } from '../utils/noShowDetector.js';
 import { cleanupOldBehaviorLogs } from '../utils/behaviorTracking.js';
+import { BusinessError } from '../lib/errors.js';
 
 const router = Router();
 
@@ -28,7 +29,7 @@ interface UpdateCustomerRequest {
 // GET /api/admin/appointments - Get all confirmed appointments for salon
 router.get("/appointments", authenticateToken, async (req: any, res: any, next: any) => {
   if (!req.user) {
-    return res.status(401).json({ message: 'Unauthorized.' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
   }
 
   const salonId = req.user.salonId;
@@ -126,7 +127,7 @@ router.get("/appointments", authenticateToken, async (req: any, res: any, next: 
 // GET /api/admin/appointments/:id - Get appointment details
 router.get("/appointments/:id", authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
-    return res.status(401).json({ message: 'Unauthorized.' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
   }
 
   const { id } = req.params as any;
@@ -155,7 +156,7 @@ router.get("/appointments/:id", authenticateToken, async (req: any, res: any) =>
     });
 
     if (!appointment) {
-      return res.status(404).json({ message: 'Appointment not found.' });
+      throw new BusinessError('NOT_FOUND', 'Appointment not found.', 404);
     }
 
     res.json({
@@ -176,14 +177,14 @@ router.get("/appointments/:id", authenticateToken, async (req: any, res: any) =>
     });
   } catch (error) {
     console.error('Error fetching appointment:', error);
-    res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
 // POST /api/admin/appointments/:id/cancel - Cancel appointment
 router.post("/appointments/:id/cancel", authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
-    return res.status(401).json({ message: 'Unauthorized.' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
   }
 
   const { id } = req.params as any;
@@ -203,12 +204,12 @@ router.post("/appointments/:id/cancel", authenticateToken, async (req: any, res:
       });
 
       if (!appointment) {
-        return res.status(404).json({ message: 'Appointment not found or already cancelled.' });
+        throw new BusinessError('NOT_FOUND', 'Appointment not found or already cancelled.', 404);
       }
 
       // Check if appointment is in the future
       if (appointment.startTime <= new Date()) {
-        return res.status(400).json({ message: 'Cannot cancel past appointments.' });
+        throw new BusinessError('VALIDATION_FAILED', 'Cannot cancel past appointments.', 400);
       }
 
       // Update appointment status
@@ -255,14 +256,14 @@ router.post("/appointments/:id/cancel", authenticateToken, async (req: any, res:
     });
   } catch (error) {
     console.error('Error cancelling appointment:', error);
-    res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
 // GET /api/admin/customers - Get all customers for salon
 router.get("/customers", authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
-    return res.status(401).json({ message: 'Unauthorized.' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
   }
 
   const salonId = req.user.salonId;
@@ -341,14 +342,14 @@ router.get("/customers", authenticateToken, async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Error fetching customers:', error);
-    res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
 // GET /api/admin/customers/:id - Get customer details
 router.get("/customers/:id", authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
-    return res.status(401).json({ message: 'Unauthorized.' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
   }
 
   const { id } = req.params as any;
@@ -393,7 +394,7 @@ router.get("/customers/:id", authenticateToken, async (req: any, res: any) => {
     });
 
     if (!customer) {
-      return res.status(404).json({ message: 'Customer not found.' });
+      throw new BusinessError('NOT_FOUND', 'Customer not found.', 404);
     }
 
     res.json({
@@ -411,14 +412,14 @@ router.get("/customers/:id", authenticateToken, async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Error fetching customer:', error);
-    res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
 // PUT /api/admin/customers/:id - Update customer
 router.put("/customers/:id", authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
-    return res.status(401).json({ message: 'Unauthorized.' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
   }
 
   const { id } = req.params as any;
@@ -435,7 +436,7 @@ router.put("/customers/:id", authenticateToken, async (req: any, res: any) => {
     });
 
     if (!existingCustomer) {
-      return res.status(404).json({ message: 'Customer not found.' });
+      throw new BusinessError('NOT_FOUND', 'Customer not found.', 404);
     }
 
     // If phone is being changed, check for conflicts
@@ -449,7 +450,7 @@ router.put("/customers/:id", authenticateToken, async (req: any, res: any) => {
       });
 
       if (phoneConflict) {
-        return res.status(409).json({ message: 'Phone number already exists for another customer.' });
+        throw new BusinessError('CONFLICT', 'Phone number already exists for another customer.', 409);
       }
     }
 
@@ -490,14 +491,14 @@ router.put("/customers/:id", authenticateToken, async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Error updating customer:', error);
-    res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
 // GET /api/admin/booking-theme - Get salon booking theme
 router.get("/booking-theme", authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
-    return res.status(401).json({ message: 'Unauthorized.' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
   }
 
   const salonId = req.user.salonId;
@@ -509,7 +510,7 @@ router.get("/booking-theme", authenticateToken, async (req: any, res: any) => {
     });
 
     if (!salon) {
-      return res.status(404).json({ message: 'Salon not found.' });
+      throw new BusinessError('NOT_FOUND', 'Salon not found.', 404);
     }
 
     // Provide default theme if none exists
@@ -527,14 +528,14 @@ router.get("/booking-theme", authenticateToken, async (req: any, res: any) => {
     res.json({ theme });
   } catch (error) {
     console.error('Error fetching booking theme:', error);
-    res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
 // PUT /api/admin/booking-theme - Update salon booking theme
 router.put("/booking-theme", authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
-    return res.status(401).json({ message: 'Unauthorized.' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
   }
 
   const salonId = req.user.salonId;
@@ -543,23 +544,23 @@ router.put("/booking-theme", authenticateToken, async (req: any, res: any) => {
   try {
     // Validate inputs
     if (primaryColor && !/^#[0-9A-F]{6}$/i.test(primaryColor)) {
-      return res.status(400).json({ message: 'Invalid primary color format. Use hex format like #3B82F6.' });
+      throw new BusinessError('VALIDATION_FAILED', 'Invalid primary color format. Use hex format like #3B82F6.', 400);
     }
 
     if (secondaryColor && !/^#[0-9A-F]{6}$/i.test(secondaryColor)) {
-      return res.status(400).json({ message: 'Invalid secondary color format. Use hex format like #64748B.' });
+      throw new BusinessError('VALIDATION_FAILED', 'Invalid secondary color format. Use hex format like #64748B.', 400);
     }
 
     if (welcomeTitle && welcomeTitle.length > 100) {
-      return res.status(400).json({ message: 'Welcome title must be 100 characters or less.' });
+      throw new BusinessError('VALIDATION_FAILED', 'Welcome title must be 100 characters or less.', 400);
     }
 
     if (welcomeDescription && welcomeDescription.length > 200) {
-      return res.status(400).json({ message: 'Welcome description must be 200 characters or less.' });
+      throw new BusinessError('VALIDATION_FAILED', 'Welcome description must be 200 characters or less.', 400);
     }
 
     if (confirmButtonText && confirmButtonText.length > 50) {
-      return res.status(400).json({ message: 'Confirm button text must be 50 characters or less.' });
+      throw new BusinessError('VALIDATION_FAILED', 'Confirm button text must be 50 characters or less.', 400);
     }
 
     // Update salon booking theme
@@ -584,14 +585,14 @@ router.put("/booking-theme", authenticateToken, async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Error updating booking theme:', error);
-    res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
 // GET /api/admin/summary - Get salon summary stats
 router.get("/summary", authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
-    return res.status(401).json({ message: 'Unauthorized.' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
   }
 
   const salonId = req.user.salonId;
@@ -648,14 +649,14 @@ router.get("/summary", authenticateToken, async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Error fetching admin summary:', error);
-    res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
 // GET /api/admin/health - System health check
 router.get("/health", authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
-    return res.status(401).json({ message: 'Unauthorized.' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
   }
 
   const salonId = req.user.salonId;
@@ -714,7 +715,7 @@ router.get("/health", authenticateToken, async (req: any, res: any) => {
 // GET /api/admin/magic-links - Get recent magic links
 router.get("/magic-links", authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
-    return res.status(401).json({ message: 'Unauthorized.' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
   }
 
   const salonId = req.user.salonId;
@@ -760,14 +761,14 @@ router.get("/magic-links", authenticateToken, async (req: any, res: any) => {
     res.json({ links });
   } catch (error) {
     console.error('Error fetching magic links:', error);
-    res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
 // GET /api/admin/events - Get recent booking events
 router.get("/events", authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
-    return res.status(401).json({ message: 'Unauthorized.' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
   }
 
   const salonId = req.user.salonId;
@@ -779,14 +780,14 @@ router.get("/events", authenticateToken, async (req: any, res: any) => {
     res.json({ events: [] });
   } catch (error) {
     console.error('Error fetching events:', error);
-    res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
 // GET /api/admin/risk-profiles - Get customer risk profiles
 router.get("/risk-profiles", authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
-    return res.status(401).json({ message: 'Unauthorized.' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
   }
 
   const salonId = req.user.salonId;
@@ -843,14 +844,14 @@ router.get("/risk-profiles", authenticateToken, async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Error fetching risk profiles:', error);
-    res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
 // GET /api/admin/behavior-logs - Get customer behavior logs
 router.get("/behavior-logs", authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
-    return res.status(401).json({ message: 'Unauthorized.' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
   }
 
   const salonId = req.user.salonId;
@@ -918,14 +919,14 @@ router.get("/behavior-logs", authenticateToken, async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Error fetching behavior logs:', error);
-    res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
 // POST /api/admin/run-no-show-detection - Manually trigger no-show detection
 router.post("/run-no-show-detection", authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
-    return res.status(401).json({ message: 'Unauthorized.' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
   }
 
   try {
@@ -936,14 +937,14 @@ router.post("/run-no-show-detection", authenticateToken, async (req: any, res: a
     });
   } catch (error) {
     console.error('Error running no-show detection:', error);
-    res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
 // POST /api/admin/cleanup-behavior-logs - Clean up old behavior logs
 router.post("/cleanup-behavior-logs", authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
-    return res.status(401).json({ message: 'Unauthorized.' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
   }
 
   try {
@@ -954,14 +955,14 @@ router.post("/cleanup-behavior-logs", authenticateToken, async (req: any, res: a
     });
   } catch (error) {
     console.error('Error cleaning up behavior logs:', error);
-    res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
 // GET /api/admin/risk-config - Get salon risk configuration
 router.get("/risk-config", authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
-    return res.status(401).json({ message: 'Unauthorized.' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
   }
 
   const salonId = req.user.salonId;
@@ -1001,14 +1002,14 @@ router.get("/risk-config", authenticateToken, async (req: any, res: any) => {
     }
   } catch (error) {
     console.error('Error fetching risk config:', error);
-    res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
 // PUT /api/admin/risk-config - Update salon risk configuration
 router.put("/risk-config", authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
-    return res.status(401).json({ message: 'Unauthorized.' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
   }
 
   const salonId = req.user.salonId;
@@ -1038,20 +1039,20 @@ router.put("/risk-config", authenticateToken, async (req: any, res: any) => {
     // Validation
     if (warningThreshold !== undefined && blockingThreshold !== undefined) {
       if (warningThreshold >= blockingThreshold) {
-        return res.status(400).json({ message: 'Warning threshold must be less than blocking threshold.' });
+        throw new BusinessError('VALIDATION_FAILED', 'Warning threshold must be less than blocking threshold.', 400);
       }
     }
 
     if (lastMinuteHoursThreshold !== undefined && (lastMinuteHoursThreshold < 1 || lastMinuteHoursThreshold > 168)) {
-      return res.status(400).json({ message: 'Last minute threshold must be between 1-168 hours.' });
+      throw new BusinessError('VALIDATION_FAILED', 'Last minute threshold must be between 1-168 hours.', 400);
     }
 
     if (warningMessage && warningMessage.length > 500) {
-      return res.status(400).json({ message: 'Warning message must be 500 characters or less.' });
+      throw new BusinessError('VALIDATION_FAILED', 'Warning message must be 500 characters or less.', 400);
     }
 
     if (blockMessage && blockMessage.length > 500) {
-      return res.status(400).json({ message: 'Block message must be 500 characters or less.' });
+      throw new BusinessError('VALIDATION_FAILED', 'Block message must be 500 characters or less.', 400);
     }
 
     // Update or create configuration
@@ -1106,14 +1107,14 @@ router.put("/risk-config", authenticateToken, async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Error updating risk config:', error);
-    res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
 // POST /api/admin/risk-config/reset - Reset risk configuration to defaults
 router.post("/risk-config/reset", authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
-    return res.status(401).json({ message: 'Unauthorized.' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
   }
 
   const salonId = req.user.salonId;
@@ -1153,7 +1154,7 @@ router.post("/risk-config/reset", authenticateToken, async (req: any, res: any) 
     });
   } catch (error) {
     console.error('Error resetting risk config:', error);
-    res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 

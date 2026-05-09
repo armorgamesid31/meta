@@ -4,6 +4,7 @@ import {
   LocaleCode,
   Prisma,
 } from '@prisma/client';
+import { BusinessError } from '../lib/errors.js';
 import { Router } from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import { normalizeLocale } from '../constants/locales.js';
@@ -154,7 +155,7 @@ router.use(authenticateToken);
 router.get('/items', async (req: any, res: any) => {
   const context = await getContentAdminContext(req);
   if (!context) {
-    return res.status(401).json({ message: 'Unauthorized' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized', 401);
   }
 
   const surface = parseContentSurface(req.query.surface);
@@ -167,11 +168,11 @@ router.get('/items', async (req: any, res: any) => {
 
   const scope = parseSalonScope(req.query.salonId);
   if (scope.mode === 'all' && !context.isGlobalContentAdmin) {
-    return res.status(403).json({ message: 'Only allowlisted content admins can query all salon scopes.' });
+    throw new BusinessError('FORBIDDEN', 'Only allowlisted content admins can query all salon scopes.', 403);
   }
 
   if (scope.mode === 'salon' && scope.salonId && !context.isGlobalContentAdmin && scope.salonId !== context.salonId) {
-    return res.status(403).json({ message: 'You cannot access another salon scope.' });
+    throw new BusinessError('FORBIDDEN', 'You cannot access another salon scope.', 403);
   }
 
   const takeRaw = parsePositiveInt(req.query.take);
@@ -300,21 +301,21 @@ router.get('/items', async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Error listing admin content items:', error);
-    return res.status(500).json({ message: 'Internal server error' });
+    throw new BusinessError('INTERNAL_ERROR', 'Internal server error', 500);
   }
 });
 
 router.post('/items/draft', async (req: any, res: any) => {
   const context = await getContentAdminContext(req);
   if (!context) {
-    return res.status(401).json({ message: 'Unauthorized' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized', 401);
   }
 
   const locale = normalizeLocale(typeof req.body?.locale === 'string' ? req.body.locale : 'tr') as LocaleCode;
   const draftValue = typeof req.body?.draftValue === 'string' ? req.body.draftValue : null;
 
   if (draftValue === null) {
-    return res.status(400).json({ message: 'draftValue is required and must be a string.' });
+    throw new BusinessError('VALIDATION_FAILED', 'draftValue is required and must be a string.', 400);
   }
 
   const itemId = parsePositiveInt(req.body?.itemId);
@@ -343,14 +344,14 @@ router.post('/items/draft', async (req: any, res: any) => {
       });
 
       if (!existing) {
-        return res.status(404).json({ message: 'Content item not found.' });
+        throw new BusinessError('NOT_FOUND', 'Content item not found.', 404);
       }
 
       targetItem = existing;
     }
 
     if (targetItem && targetItem.surface === ContentSurface.message_templates) {
-      return res.status(403).json({ message: 'message_templates is read-only in phase 1.' });
+      throw new BusinessError('FORBIDDEN', 'message_templates is read-only in phase 1.', 403);
     }
 
     let targetSalonId = parseDraftTargetSalonId(req.body?.salonId);
@@ -359,7 +360,7 @@ router.post('/items/draft', async (req: any, res: any) => {
     }
 
     if (!canWriteScope(context, targetSalonId === undefined ? context.salonId : targetSalonId)) {
-      return res.status(403).json({ message: 'You are not allowed to edit this scope.' });
+      throw new BusinessError('FORBIDDEN', 'You are not allowed to edit this scope.', 403);
     }
 
     const metadata = req.body?.metadata && typeof req.body.metadata === 'object' ? (req.body.metadata as Prisma.InputJsonValue) : undefined;
@@ -371,13 +372,11 @@ router.post('/items/draft', async (req: any, res: any) => {
       const key = typeof req.body?.key === 'string' ? req.body.key.trim() : '';
 
       if (!surface || !page || !section || !key) {
-        return res.status(400).json({
-          message: 'surface, page, section, and key are required when itemId is not provided.',
-        });
+        throw new BusinessError('VALIDATION_FAILED', 'surface, page, section, and key are required when itemId is not provided.', 400);
       }
 
       if (surface === ContentSurface.message_templates) {
-        return res.status(403).json({ message: 'message_templates is read-only in phase 1.' });
+        throw new BusinessError('FORBIDDEN', 'message_templates is read-only in phase 1.', 403);
       }
 
       const result = await saveDraftValue({
@@ -414,21 +413,21 @@ router.post('/items/draft', async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Error saving content draft:', error);
-    return res.status(500).json({ message: 'Internal server error' });
+    throw new BusinessError('INTERNAL_ERROR', 'Internal server error', 500);
   }
 });
 
 router.post('/items/publish', async (req: any, res: any) => {
   const context = await getContentAdminContext(req);
   if (!context) {
-    return res.status(401).json({ message: 'Unauthorized' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized', 401);
   }
 
   const itemId = parsePositiveInt(req.body?.itemId);
   const locale = normalizeLocale(typeof req.body?.locale === 'string' ? req.body.locale : 'tr') as LocaleCode;
 
   if (!itemId) {
-    return res.status(400).json({ message: 'itemId is required and must be a positive integer.' });
+    throw new BusinessError('VALIDATION_FAILED', 'itemId is required and must be a positive integer.', 400);
   }
 
   try {
@@ -451,15 +450,15 @@ router.post('/items/publish', async (req: any, res: any) => {
     });
 
     if (!current) {
-      return res.status(404).json({ message: 'Locale value not found for itemId + locale.' });
+      throw new BusinessError('NOT_FOUND', 'Locale value not found for itemId + locale.', 404);
     }
 
     if (current.item.surface === ContentSurface.message_templates) {
-      return res.status(403).json({ message: 'message_templates is read-only in phase 1.' });
+      throw new BusinessError('FORBIDDEN', 'message_templates is read-only in phase 1.', 403);
     }
 
     if (!canWriteScope(context, current.item.salonId)) {
-      return res.status(403).json({ message: 'You are not allowed to publish this scope.' });
+      throw new BusinessError('FORBIDDEN', 'You are not allowed to publish this scope.', 403);
     }
 
     const published = await publishLocaleValue({
@@ -469,25 +468,25 @@ router.post('/items/publish', async (req: any, res: any) => {
     });
 
     if (!published) {
-      return res.status(404).json({ message: 'Locale value not found.' });
+      throw new BusinessError('NOT_FOUND', 'Locale value not found.', 404);
     }
 
     return res.status(200).json({ localeValue: published });
   } catch (error) {
     console.error('Error publishing content locale value:', error);
-    return res.status(500).json({ message: 'Internal server error' });
+    throw new BusinessError('INTERNAL_ERROR', 'Internal server error', 500);
   }
 });
 
 router.post('/items/publish-bulk', async (req: any, res: any) => {
   const context = await getContentAdminContext(req);
   if (!context) {
-    return res.status(401).json({ message: 'Unauthorized' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized', 401);
   }
 
   const payload = Array.isArray(req.body?.entries) ? req.body.entries : [];
   if (!payload.length) {
-    return res.status(400).json({ message: 'entries must be a non-empty array.' });
+    throw new BusinessError('VALIDATION_FAILED', 'entries must be a non-empty array.', 400);
   }
 
   const parsedEntries: Array<{ itemId: number; locale: LocaleCode }> = [];
@@ -510,7 +509,7 @@ router.post('/items/publish-bulk', async (req: any, res: any) => {
   }
 
   if (!parsedEntries.length) {
-    return res.status(400).json({ message: 'No valid entries to publish.', skipped });
+    throw new BusinessError('VALIDATION_FAILED', 'No valid entries to publish.', 400, { skipped });
   }
 
   try {
@@ -588,7 +587,7 @@ router.post('/items/publish-bulk', async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Error bulk publishing content values:', error);
-    return res.status(500).json({ message: 'Internal server error' });
+    throw new BusinessError('INTERNAL_ERROR', 'Internal server error', 500);
   }
 });
 

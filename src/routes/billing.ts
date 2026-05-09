@@ -3,12 +3,13 @@ import { authenticateToken } from '../middleware/auth.js';
 import { prisma } from '../prisma.js';
 import { createPortalSession } from '../services/stripeBilling.js';
 import { ensureSalonReferralCode } from '../services/referralService.js';
+import { BusinessError } from '../lib/errors.js';
 
 const router = Router();
 
 router.get('/subscription/summary', authenticateToken, async (req: any, res: any) => {
   if (!req.user?.salonId) {
-    return res.status(401).json({ message: 'Unauthorized.' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
   }
   const subscription = await prisma.salonSubscription.findFirst({
     where: { salonId: req.user.salonId },
@@ -29,18 +30,18 @@ router.get('/subscription/summary', authenticateToken, async (req: any, res: any
 
 router.post('/subscription/portal-link', authenticateToken, async (req: any, res: any) => {
   if (!req.user?.salonId) {
-    return res.status(401).json({ message: 'Unauthorized.' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
   }
   const subscription = await prisma.salonSubscription.findFirst({
     where: { salonId: req.user.salonId },
     orderBy: { id: 'desc' },
   });
   if (!subscription?.stripeCustomerId) {
-    return res.status(404).json({ message: 'Stripe customer not found for this salon.' });
+    throw new BusinessError('NOT_FOUND', 'Stripe customer not found for this salon.', 404);
   }
   const returnUrl = String(req.body?.returnUrl || process.env.BILLING_PORTAL_RETURN_URL || '').trim();
   if (!returnUrl) {
-    return res.status(400).json({ message: 'returnUrl is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'returnUrl is required.', 400);
   }
 
   try {
@@ -57,7 +58,7 @@ router.post('/subscription/portal-link', authenticateToken, async (req: any, res
 
 router.get('/referrals/me', authenticateToken, async (req: any, res: any) => {
   if (!req.user?.salonId) {
-    return res.status(401).json({ message: 'Unauthorized.' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
   }
   const salonId = Number(req.user.salonId);
   const referralCode = await ensureSalonReferralCode(salonId);

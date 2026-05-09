@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { normalizeLocale } from '../constants/locales.js';
 import { slugify } from '../utils/slug.js';
+import { BusinessError } from '../lib/errors.js';
 
 const router = Router();
 
@@ -17,12 +18,12 @@ function isInternalAuthorized(req: any): boolean {
 
 router.post('/batch', async (req: any, res: any) => {
   if (!isInternalAuthorized(req)) {
-    return res.status(401).json({ message: 'Unauthorized' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized', 401);
   }
 
   const payload = Array.isArray(req.body) ? req.body : req.body?.items;
   if (!Array.isArray(payload) || payload.length === 0) {
-    return res.status(400).json({ message: 'Body must be a non-empty array or { items: [...] }' });
+    throw new BusinessError('VALIDATION_FAILED', 'Body must be a non-empty array or { items: [...] }', 400);
   }
 
   let inserted = 0;

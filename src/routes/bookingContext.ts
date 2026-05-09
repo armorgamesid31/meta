@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { getCampaignTeasersForCustomer } from '../services/campaignPricing.js';
+import { BusinessError } from '../lib/errors.js';
 
 const router = Router();
 
@@ -27,7 +28,7 @@ router.get('/context', async (req: any, res: any) => {
   const { token } = req.query;
 
   if (!token || typeof token !== 'string') {
-    return res.status(400).json({ message: 'Token is required' });
+    throw new BusinessError('VALIDATION_FAILED', 'Token is required', 400);
   }
 
   const now = new Date();
@@ -46,11 +47,11 @@ router.get('/context', async (req: any, res: any) => {
   });
 
   if (!magicLink) {
-    return res.status(404).json({ message: 'Magic link not found' });
+    throw new BusinessError('NOT_FOUND', 'Magic link not found', 404);
   }
 
   if (magicLink.expiresAt < now || magicLink.status === 'EXPIRED' || magicLink.status === 'REVOKED') {
-    return res.status(410).json({ message: 'Magic link has expired' });
+    throw new BusinessError('GONE', 'Magic link has expired', 410);
   }
 
   const context = asObject(magicLink.context);
@@ -59,7 +60,7 @@ router.get('/context', async (req: any, res: any) => {
     : Number(context.salonId || 0);
 
   if (!Number.isInteger(salonId) || salonId <= 0) {
-    return res.status(400).json({ message: 'Magic link context must contain salonId' });
+    throw new BusinessError('VALIDATION_FAILED', 'Magic link context must contain salonId', 400);
   }
 
   const salon = await prisma.salon.findUnique({
@@ -68,7 +69,7 @@ router.get('/context', async (req: any, res: any) => {
   });
 
   if (!salon) {
-    return res.status(404).json({ message: 'Salon not found' });
+    throw new BusinessError('NOT_FOUND', 'Salon not found', 404);
   }
 
   const originChannel = magicLink.channel;

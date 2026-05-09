@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { DEFAULT_LOCALE, normalizeLocale } from '../constants/locales.js';
 import { resolveRuntimeContent } from '../services/content.js';
+import { BusinessError } from '../lib/errors.js';
 
 const router = Router();
 const CONTENT_SURFACES = new Set<string>(Object.values(ContentSurface));
@@ -91,14 +92,11 @@ router.get('/runtime', async (req: any, res: any) => {
   const page = typeof req.query.page === 'string' ? req.query.page.trim() : '';
 
   if (!surface) {
-    return res.status(400).json({
-      message: 'surface is required and must be a valid ContentSurface',
-      validSurfaces: Array.from(CONTENT_SURFACES),
-    });
+    throw new BusinessError('VALIDATION_FAILED', 'surface is required and must be a valid ContentSurface', 400, { validSurfaces: Array.from(CONTENT_SURFACES), });
   }
 
   if (!page) {
-    return res.status(400).json({ message: 'page is required' });
+    throw new BusinessError('VALIDATION_FAILED', 'page is required', 400);
   }
 
   const locale = normalizeLocale(typeof req.query.locale === 'string' ? req.query.locale : DEFAULT_LOCALE);
@@ -132,7 +130,7 @@ router.get('/runtime', async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Error resolving runtime content:', error);
-    return res.status(500).json({ message: 'Internal server error' });
+    throw new BusinessError('INTERNAL_ERROR', 'Internal server error', 500);
   }
 });
 

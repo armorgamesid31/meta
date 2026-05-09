@@ -3,6 +3,7 @@ import { prisma } from '../prisma.js';
 import { normalizeLocale } from '../constants/locales.js';
 import { buildCategoryCityMetadata, buildCategoryLocationMetadata } from '../services/seo.js';
 import { resolveCategoryBySlug } from '../services/translations.js';
+import { BusinessError } from '../lib/errors.js';
 
 const router = Router();
 
@@ -36,7 +37,7 @@ async function loadTenantSalon(salonId: number) {
 router.get('/category-city', async (req: any, res: any) => {
   const salonId = req.salon?.id;
   if (!salonId) {
-    return res.status(400).json({ message: 'Tenant context required' });
+    throw new BusinessError('VALIDATION_FAILED', 'Tenant context required', 400);
   }
 
   const categorySlug = normalizeSlug(typeof req.query.categorySlug === 'string' ? req.query.categorySlug : null);
@@ -44,17 +45,17 @@ router.get('/category-city', async (req: any, res: any) => {
   const locale = normalizeLocale(typeof req.query.locale === 'string' ? req.query.locale : null);
 
   if (!categorySlug || !citySlug) {
-    return res.status(400).json({ message: 'categorySlug and citySlug are required' });
+    throw new BusinessError('VALIDATION_FAILED', 'categorySlug and citySlug are required', 400);
   }
 
   try {
     const salon = await loadTenantSalon(salonId);
     if (!salon) {
-      return res.status(404).json({ message: 'Salon not found' });
+      throw new BusinessError('NOT_FOUND', 'Salon not found', 404);
     }
 
     if (normalizeSlug(salon.citySlug) !== citySlug) {
-      return res.status(404).json({ message: 'City landing not found for this tenant' });
+      throw new BusinessError('NOT_FOUND', 'City landing not found for this tenant', 404);
     }
 
     const categoryMatch = await resolveCategoryBySlug({
@@ -64,12 +65,12 @@ router.get('/category-city', async (req: any, res: any) => {
     });
 
     if (!categoryMatch) {
-      return res.status(404).json({ message: 'Category not found' });
+      throw new BusinessError('NOT_FOUND', 'Category not found', 404);
     }
 
     const serviceCategory = salon.ServiceCategory.find((cat) => cat.categoryId === categoryMatch.category.id);
     if (!serviceCategory) {
-      return res.status(404).json({ message: 'Category is not offered by this salon' });
+      throw new BusinessError('NOT_FOUND', 'Category is not offered by this salon', 404);
     }
 
     const normalizedWhatsappPhone = normalizeWhatsappPhone(salon.whatsappPhone);
@@ -122,14 +123,14 @@ router.get('/category-city', async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Error in category-city SEO endpoint:', error);
-    return res.status(500).json({ message: 'Internal server error' });
+    throw new BusinessError('INTERNAL_ERROR', 'Internal server error', 500);
   }
 });
 
 router.get('/category-location', async (req: any, res: any) => {
   const salonId = req.salon?.id;
   if (!salonId) {
-    return res.status(400).json({ message: 'Tenant context required' });
+    throw new BusinessError('VALIDATION_FAILED', 'Tenant context required', 400);
   }
 
   const categorySlug = normalizeSlug(typeof req.query.categorySlug === 'string' ? req.query.categorySlug : null);
@@ -138,17 +139,17 @@ router.get('/category-location', async (req: any, res: any) => {
   const locale = normalizeLocale(typeof req.query.locale === 'string' ? req.query.locale : null);
 
   if (!categorySlug || !citySlug || !districtSlug) {
-    return res.status(400).json({ message: 'categorySlug, citySlug and districtSlug are required' });
+    throw new BusinessError('VALIDATION_FAILED', 'categorySlug, citySlug and districtSlug are required', 400);
   }
 
   try {
     const salon = await loadTenantSalon(salonId);
     if (!salon) {
-      return res.status(404).json({ message: 'Salon not found' });
+      throw new BusinessError('NOT_FOUND', 'Salon not found', 404);
     }
 
     if (normalizeSlug(salon.citySlug) !== citySlug || normalizeSlug(salon.districtSlug) !== districtSlug) {
-      return res.status(404).json({ message: 'Location landing not found for this tenant' });
+      throw new BusinessError('NOT_FOUND', 'Location landing not found for this tenant', 404);
     }
 
     const categoryMatch = await resolveCategoryBySlug({
@@ -158,12 +159,12 @@ router.get('/category-location', async (req: any, res: any) => {
     });
 
     if (!categoryMatch) {
-      return res.status(404).json({ message: 'Category not found' });
+      throw new BusinessError('NOT_FOUND', 'Category not found', 404);
     }
 
     const serviceCategory = salon.ServiceCategory.find((cat) => cat.categoryId === categoryMatch.category.id);
     if (!serviceCategory) {
-      return res.status(404).json({ message: 'Category is not offered by this salon' });
+      throw new BusinessError('NOT_FOUND', 'Category is not offered by this salon', 404);
     }
 
     const normalizedWhatsappPhone = normalizeWhatsappPhone(salon.whatsappPhone);
@@ -224,7 +225,7 @@ router.get('/category-location', async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Error in category-location SEO endpoint:', error);
-    return res.status(500).json({ message: 'Internal server error' });
+    throw new BusinessError('INTERNAL_ERROR', 'Internal server error', 500);
   }
 });
 

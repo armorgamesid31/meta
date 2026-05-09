@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
+import { BusinessError } from '../lib/errors.js';
 
 const router = Router();
 const DEFAULT_GALLERY_IMAGES = ['/placeholder.jpg', '/placeholder.jpg?slide=2', '/placeholder.jpg?slide=3'];
@@ -68,7 +69,7 @@ router.get('/:slug/homepage', async (req: any, res: any) => {
   const { slug } = req.params;
 
   if (!slug || typeof slug !== 'string') {
-    return res.status(400).json({ message: 'Salon slug is required' });
+    throw new BusinessError('VALIDATION_FAILED', 'Salon slug is required', 400);
   }
 
   try {
@@ -181,7 +182,7 @@ router.get('/:slug/homepage', async (req: any, res: any) => {
     });
 
     if (!salon) {
-      return res.status(404).json({ message: 'Salon not found' });
+      throw new BusinessError('NOT_FOUND', 'Salon not found', 404);
     }
 
     const workingDayRows = await prisma.staffWorkingHours.findMany({
@@ -341,7 +342,7 @@ router.get('/:slug/homepage', async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Error loading salon homepage:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    throw new BusinessError('INTERNAL_ERROR', 'Internal server error', 500);
   }
 });
 

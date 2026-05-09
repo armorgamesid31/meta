@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { ensureMagicLink } from '../services/magicLinkService.js';
+import { BusinessError } from '../lib/errors.js';
 
 const router = Router();
 
@@ -9,19 +10,19 @@ router.post('/create', async (req: any, res: any) => {
   const { phone, type, context, salonId } = req.body as any;
 
   if (!phone || !type || !salonId) {
-    return res.status(400).json({ message: 'Phone, type, and salonId are required' });
+    throw new BusinessError('VALIDATION_FAILED', 'Phone, type, and salonId are required', 400);
   }
 
   // Validate type
   const validTypes = ['BOOKING', 'CANCEL', 'RESCHEDULE'];
   if (!validTypes.includes(type)) {
-    return res.status(400).json({ message: 'Invalid type. Must be BOOKING, CANCEL, or RESCHEDULE' });
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid type. Must be BOOKING, CANCEL, or RESCHEDULE', 400);
   }
 
   // Validate context based on type
   if (type === 'CANCEL' || type === 'RESCHEDULE') {
     if (!context || !context.appointmentId) {
-      return res.status(400).json({ message: 'appointmentId is required in context for CANCEL/RESCHEDULE' });
+      throw new BusinessError('VALIDATION_FAILED', 'appointmentId is required in context for CANCEL/RESCHEDULE', 400);
     }
   }
 
@@ -33,7 +34,7 @@ router.post('/create', async (req: any, res: any) => {
     });
 
     if (!salon) {
-      return res.status(404).json({ message: 'Salon not found' });
+      throw new BusinessError('NOT_FOUND', 'Salon not found', 404);
     }
 
     // For CANCEL/RESCHEDULE, verify appointment exists and belongs to customer
@@ -48,7 +49,7 @@ router.post('/create', async (req: any, res: any) => {
       });
 
       if (!appointment) {
-        return res.status(404).json({ message: 'Appointment not found or does not belong to this customer' });
+        throw new BusinessError('NOT_FOUND', 'Appointment not found or does not belong to this customer', 404);
       }
     }
 
@@ -74,7 +75,7 @@ router.post('/create', async (req: any, res: any) => {
 
   } catch (error) {
     console.error('Error creating magic link:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    throw new BusinessError('INTERNAL_ERROR', 'Internal server error', 500);
   }
 });
 
@@ -312,7 +313,7 @@ router.post('/:token/complete', async (req: any, res: any) => {
   const { token } = req.params as any;
 
   if (!token) {
-    return res.status(400).json({ message: 'Token is required' });
+    throw new BusinessError('VALIDATION_FAILED', 'Token is required', 400);
   }
 
   try {
@@ -331,7 +332,7 @@ router.post('/:token/complete', async (req: any, res: any) => {
 
   } catch (error) {
     console.error('Error completing magic link:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    throw new BusinessError('INTERNAL_ERROR', 'Internal server error', 500);
   }
 });
 

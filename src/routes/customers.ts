@@ -362,9 +362,7 @@ router.post('/register', async (req: any, res: any) => {
 
     if (isInstagramOrigin) {
       if (!resolvedInstagramId && !magicLink) {
-        return res.status(400).json({
-          message: 'Instagram kimligi dogrulanamadi. Lutfen size gonderilen son baglantiyi kullanin.',
-        });
+        throw new BusinessError('VALIDATION_FAILED', 'Instagram kimligi dogrulanamadi. Lutfen size gonderilen son baglantiyi kullanin.', 400);
       }
 
       if (identity) {
@@ -457,7 +455,7 @@ router.post('/verify-phone/request', async (req: any, res: any) => {
   const salonId = req.salon?.id;
   const verificationId = typeof req.body?.verificationId === 'string' ? req.body.verificationId.trim() : '';
   if (!salonId || !verificationId) {
-    return res.status(400).json({ message: 'verificationId is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'verificationId is required.', 400);
   }
 
   try {
@@ -482,7 +480,7 @@ router.post('/verify-phone/confirm', async (req: any, res: any) => {
   const verificationId = typeof req.body?.verificationId === 'string' ? req.body.verificationId.trim() : '';
   const code = typeof req.body?.code === 'string' ? req.body.code.trim() : '';
   if (!salonId || !verificationId || !code) {
-    return res.status(400).json({ message: 'verificationId and code are required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'verificationId and code are required.', 400);
   }
 
   try {
@@ -494,7 +492,7 @@ router.post('/verify-phone/confirm', async (req: any, res: any) => {
       fullName: typeof payload.fullName === 'string' ? payload.fullName : undefined,
     });
     if (!normalizedPayloadName.firstName || !normalizedPayloadName.lastName) {
-      return res.status(400).json({ message: 'firstName and lastName are required.' });
+      throw new BusinessError('VALIDATION_FAILED', 'firstName and lastName are required.', 400);
     }
     const { magicLink } = await resolveMagicLinkContext({
       salonId,

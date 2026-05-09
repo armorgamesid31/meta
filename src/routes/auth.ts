@@ -9,6 +9,7 @@ import { ensureSalonAccessSeed } from '../services/accessControl.js';
 import { activateInvite, validateInvite } from '../services/inviteService.js';
 import { createPhoneVerification, verifyPhoneCode } from '../services/phoneVerification.js';
 import { normalizeDigitsOnly } from '../services/phoneValidation.js';
+import { BusinessError } from '../lib/errors.js';
 
 const router = Router();
 
@@ -86,13 +87,13 @@ router.post('/register-salon', async (req: any, res: any) => {
   const { email, password, salonName } = req.body;
 
   if (!email || !password || !salonName) {
-    return res.status(400).json({ message: 'Email, password, and salonName are required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Email, password, and salonName are required.', 400);
   }
 
   try {
     const existingUser = await prisma.userIdentity.findFirst({ where: { email } });
     if (existingUser) {
-      return res.status(409).json({ message: 'Bu email adresi ile zaten bir kullanici var.' });
+      throw new BusinessError('CONFLICT', 'Bu email adresi ile zaten bir kullanici var.', 409);
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -151,7 +152,7 @@ router.post('/register-salon', async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Salon registration error:', error);
-    res.status(500).json({ message: 'Sunucu hatasi.' });
+    throw new BusinessError('INTERNAL_ERROR', 'Sunucu hatasi.', 500);
   }
 });
 
@@ -160,7 +161,7 @@ router.post('/login', async (req: any, res: any) => {
   const password = String(req.body?.password || '');
 
   if (!identifier || !password) {
-    return res.status(400).json({ message: 'identifier and password are required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'identifier and password are required.', 400);
   }
 
   try {
@@ -179,20 +180,20 @@ router.post('/login', async (req: any, res: any) => {
     });
 
     if (!identity) {
-      return res.status(401).json({ message: 'Hatali giris bilgileri.' });
+      throw new BusinessError('UNAUTHORIZED', 'Hatali giris bilgileri.', 401);
     }
 
     if (!identity.isActive) {
-      return res.status(403).json({ message: 'User account is inactive.' });
+      throw new BusinessError('FORBIDDEN', 'User account is inactive.', 403);
     }
     const passwordOk = await bcrypt.compare(password, identity.passwordHash);
     if (!passwordOk) {
-      return res.status(401).json({ message: 'Hatali giris bilgileri.' });
+      throw new BusinessError('UNAUTHORIZED', 'Hatali giris bilgileri.', 401);
     }
 
     const memberships = identity.memberships;
     if (!memberships.length) {
-      return res.status(403).json({ message: 'Aktif salon uyeligi bulunamadi.' });
+      throw new BusinessError('FORBIDDEN', 'Aktif salon uyeligi bulunamadi.', 403);
     }
 
     if (memberships.length > 1 && !req.body?.salonId) {
@@ -211,7 +212,7 @@ router.post('/login', async (req: any, res: any) => {
     const requestedSalonId = Number(req.body?.salonId || 0);
     const membership = requestedSalonId > 0 ? memberships.find((m) => m.salonId === requestedSalonId) || null : memberships[0];
     if (!membership) {
-      return res.status(404).json({ message: 'Selected salon membership was not found.' });
+      throw new BusinessError('NOT_FOUND', 'Selected salon membership was not found.', 404);
     }
 
     let legacyUserId = membership.legacySalonUserId || 0;
@@ -269,7 +270,7 @@ router.post('/login', async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Login error:', error);
-    return res.status(500).json({ message: 'Sunucu hatasi.' });
+    throw new BusinessError('INTERNAL_ERROR', 'Sunucu hatasi.', 500);
   }
 });
 
@@ -277,7 +278,7 @@ router.post('/invites/validate', async (req: any, res: any) => {
   try {
     const payload = await validateInvite({ code: req.body?.code, token: req.body?.token });
     if (!payload) {
-      return res.status(404).json({ message: 'Invite not found or expired.' });
+      throw new BusinessError('NOT_FOUND', 'Invite not found or expired.', 404);
     }
     return res.status(200).json(payload);
   } catch (error: any) {
@@ -289,11 +290,11 @@ router.post('/invites/send-otp', async (req: any, res: any) => {
   try {
     const validated = await validateInvite({ code: req.body?.code, token: req.body?.token });
     if (!validated) {
-      return res.status(404).json({ message: 'Invite not found or expired.' });
+      throw new BusinessError('NOT_FOUND', 'Invite not found or expired.', 404);
     }
     const phone = normalizeDigitsOnly(req.body?.phone || validated.user.phone || '');
     if (!phone) {
-      return res.status(400).json({ message: 'phone is required.' });
+      throw new BusinessError('VALIDATION_FAILED', 'phone is required.', 400);
     }
     const verification = await createPhoneVerification({
       salonId: validated.salon.id,
@@ -313,7 +314,7 @@ router.post('/invites/verify-otp', async (req: any, res: any) => {
   const verificationId = String(req.body?.verificationId || '');
   const code = String(req.body?.code || '');
   if (!verificationId || !code) {
-    return res.status(400).json({ message: 'verificationId and code are required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'verificationId and code are required.', 400);
   }
   try {
     const verificationRef = await prisma.customerPhoneVerification.findUnique({
@@ -321,7 +322,7 @@ router.post('/invites/verify-otp', async (req: any, res: any) => {
       select: { salonId: true },
     });
     if (!verificationRef) {
-      return res.status(404).json({ message: 'Verification not found.' });
+      throw new BusinessError('NOT_FOUND', 'Verification not found.', 404);
     }
     const verification = await verifyPhoneCode({ verificationId, salonId: verificationRef.salonId, code });
     return res.status(200).json({ verified: true, verificationId: verification.id });
@@ -334,11 +335,11 @@ router.post('/invites/activate', async (req: any, res: any) => {
   try {
     const verificationId = String(req.body?.verificationId || '').trim();
     if (!verificationId) {
-      return res.status(400).json({ message: 'verificationId is required.' });
+      throw new BusinessError('VALIDATION_FAILED', 'verificationId is required.', 400);
     }
     const verification = await prisma.customerPhoneVerification.findUnique({ where: { id: verificationId } });
     if (!verification || verification.status !== 'VERIFIED') {
-      return res.status(400).json({ message: 'Phone verification is required before activation.' });
+      throw new BusinessError('VALIDATION_FAILED', 'Phone verification is required before activation.', 400);
     }
 
     const result = await activateInvite({
@@ -376,14 +377,14 @@ router.post('/invites/activate', async (req: any, res: any) => {
 router.post('/password/forgot/start', async (req: any, res: any) => {
   const phone = normalizeDigitsOnly(req.body?.phone || '');
   if (!phone) {
-    return res.status(400).json({ message: 'phone is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'phone is required.', 400);
   }
   const identity = await prisma.userIdentity.findFirst({
     where: { phone, isActive: true },
     include: { memberships: { where: { isActive: true }, select: { id: true, salonId: true } } },
   });
   if (!identity || !identity.memberships.length) {
-    return res.status(404).json({ message: 'User not found for phone.' });
+    throw new BusinessError('NOT_FOUND', 'User not found for phone.', 404);
   }
   try {
     const membership = identity.memberships[0];
@@ -406,7 +407,7 @@ router.post('/password/forgot/verify', async (req: any, res: any) => {
     const verificationId = String(req.body?.verificationId || '');
     const verificationRef = await prisma.customerPhoneVerification.findUnique({ where: { id: verificationId }, select: { salonId: true } });
     if (!verificationRef) {
-      return res.status(404).json({ message: 'Verification not found.' });
+      throw new BusinessError('NOT_FOUND', 'Verification not found.', 404);
     }
     const verification = await verifyPhoneCode({ verificationId, salonId: verificationRef.salonId, code: String(req.body?.code || '') });
     return res.status(200).json({ verified: true, verificationId: verification.id });
@@ -419,16 +420,16 @@ router.post('/password/forgot/complete', async (req: any, res: any) => {
   const verificationId = String(req.body?.verificationId || '');
   const newPassword = String(req.body?.newPassword || '');
   if (!verificationId || newPassword.length < 8) {
-    return res.status(400).json({ message: 'verificationId and min 8-char newPassword are required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'verificationId and min 8-char newPassword are required.', 400);
   }
   const verification = await prisma.customerPhoneVerification.findUnique({ where: { id: verificationId } });
   if (!verification || verification.status !== 'VERIFIED') {
-    return res.status(400).json({ message: 'Verification is not completed.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Verification is not completed.', 400);
   }
   const payload = (verification.payload || {}) as any;
   const identityId = Number(payload.identityId || 0);
   if (!identityId) {
-    return res.status(400).json({ message: 'Invalid verification payload.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid verification payload.', 400);
   }
   const hashedPassword = await bcrypt.hash(newPassword, 10);
   await prisma.userIdentity.update({ where: { id: identityId }, data: { passwordHash: hashedPassword } });
@@ -441,18 +442,18 @@ router.post('/refresh', async (req: any, res: any) => {
   const startedAt = Date.now();
 
   if (!refreshToken || typeof refreshToken !== 'string') {
-    return res.status(400).json({ message: 'refreshToken is required.', code: 'AUTH_RECOVERY_FAILED' });
+    throw new BusinessError('VALIDATION_FAILED', 'refreshToken is required.', 400, { code: 'AUTH_RECOVERY_FAILED' });
   }
 
   try {
     const rotated = await rotateRefreshToken(refreshToken);
     if (!rotated) {
       console.warn(`[auth/refresh] rejected latencyMs=${Date.now() - startedAt} reason=invalid-refresh-token`);
-      return res.status(401).json({ message: 'Invalid refresh token.', code: 'AUTH_RECOVERY_FAILED' });
+      throw new BusinessError('UNAUTHORIZED', 'Invalid refresh token.', 401, { code: 'AUTH_RECOVERY_FAILED' });
     }
     if (!rotated.user.isActive) {
       console.warn(`[auth/refresh] rejected latencyMs=${Date.now() - startedAt} reason=user-inactive userId=${rotated.user.id}`);
-      return res.status(403).json({ message: 'User account is inactive.', code: 'AUTH_RECOVERY_FAILED' });
+      throw new BusinessError('FORBIDDEN', 'User account is inactive.', 403, { code: 'AUTH_RECOVERY_FAILED' });
     }
 
     console.info(`[auth/refresh] success latencyMs=${Date.now() - startedAt} userId=${rotated.user.id} salonId=${rotated.user.salonId}`);
@@ -470,7 +471,7 @@ router.post('/refresh', async (req: any, res: any) => {
     });
   } catch (error) {
     console.error(`[auth/refresh] failed latencyMs=${Date.now() - startedAt} reason=exception`, error);
-    return res.status(500).json({ message: 'Internal server error.', code: 'AUTH_RECOVERY_FAILED' });
+    throw new BusinessError('INTERNAL_ERROR', 'Internal server error.', 500, { code: 'AUTH_RECOVERY_FAILED' });
   }
 });
 
@@ -478,7 +479,7 @@ router.post('/logout', async (req: any, res: any) => {
   const { refreshToken } = req.body || {};
 
   if (!refreshToken || typeof refreshToken !== 'string') {
-    return res.status(400).json({ message: 'refreshToken is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'refreshToken is required.', 400);
   }
 
   try {
@@ -486,13 +487,13 @@ router.post('/logout', async (req: any, res: any) => {
     return res.status(204).send();
   } catch (error) {
     console.error('Logout error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
 router.get('/me', authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
-    return res.status(401).json({ message: 'Unauthorized.' });
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
   }
   try {
     const membership = await prisma.salonMembership.findUnique({
@@ -501,7 +502,7 @@ router.get('/me', authenticateToken, async (req: any, res: any) => {
     });
 
     if (!membership) {
-      return res.status(404).json({ message: 'User not found.' });
+      throw new BusinessError('NOT_FOUND', 'User not found.', 404);
     }
 
     res.status(200).json({
@@ -517,7 +518,7 @@ router.get('/me', authenticateToken, async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Get user info error:', error);
-    res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 

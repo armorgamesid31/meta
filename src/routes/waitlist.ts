@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { createWaitlistEntry, getWaitlistOfferByToken, acceptWaitlistOffer, rejectWaitlistOffer } from '../services/waitlist.js';
 import type { PersonGroup } from '../modules/availability/types.js';
 import { normalizeDigitsOnly } from '../services/phoneValidation.js';
+import { BusinessError } from '../lib/errors.js';
 
 const router = Router();
 
@@ -12,7 +13,7 @@ function asGroups(input: unknown): PersonGroup[] {
 router.post('/', async (req: any, res: any) => {
   const salonId = req.salon?.id;
   if (!salonId) {
-    return res.status(400).json({ message: 'Salon context is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'Salon context is required.', 400);
   }
 
   const date = typeof req.body?.date === 'string' ? req.body.date.trim() : '';
@@ -27,13 +28,13 @@ router.post('/', async (req: any, res: any) => {
   const nearbyToleranceMinutes = Number(req.body?.nearbyToleranceMinutes);
 
   if (!date || !timeWindowStart || !timeWindowEnd || !groups.length || !customerName || !customerPhone) {
-    return res.status(400).json({ message: 'date, time window, groups, customerName and customerPhone are required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'date, time window, groups, customerName and customerPhone are required.', 400);
   }
 
   try {
     const normalizedPhone = normalizeDigitsOnly(customerPhone);
     if (!normalizedPhone) {
-      return res.status(400).json({ message: 'phone_required' });
+      throw new BusinessError('VALIDATION_FAILED', 'phone_required', 400);
     }
     const item = await createWaitlistEntry({
       salonId,
@@ -65,25 +66,25 @@ router.post('/', async (req: any, res: any) => {
 router.get('/offers/:token', async (req: any, res: any) => {
   const token = typeof req.params?.token === 'string' ? req.params.token.trim() : '';
   if (!token) {
-    return res.status(400).json({ message: 'token is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'token is required.', 400);
   }
 
   try {
     const offer = await getWaitlistOfferByToken(token);
     if (!offer) {
-      return res.status(404).json({ message: 'Offer not found.' });
+      throw new BusinessError('NOT_FOUND', 'Offer not found.', 404);
     }
     return res.status(200).json(offer);
   } catch (error) {
     console.error('Waitlist offer fetch error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    throw error;
   }
 });
 
 router.post('/offers/:token/accept', async (req: any, res: any) => {
   const token = typeof req.params?.token === 'string' ? req.params.token.trim() : '';
   if (!token) {
-    return res.status(400).json({ message: 'token is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'token is required.', 400);
   }
 
   try {
@@ -107,7 +108,7 @@ router.post('/offers/:token/accept', async (req: any, res: any) => {
 router.post('/offers/:token/reject', async (req: any, res: any) => {
   const token = typeof req.params?.token === 'string' ? req.params.token.trim() : '';
   if (!token) {
-    return res.status(400).json({ message: 'token is required.' });
+    throw new BusinessError('VALIDATION_FAILED', 'token is required.', 400);
   }
 
   try {

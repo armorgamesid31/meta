@@ -5,6 +5,7 @@ import {
   OutboundMessageSource,
   Prisma,
 } from '@prisma/client';
+import { BusinessError } from '../lib/errors.js';
 import { createHash } from 'crypto';
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
@@ -181,7 +182,7 @@ router.post('/ingest', async (req: any, res: any) => {
 
   const payload = Array.isArray(req.body) ? req.body : Array.isArray(req.body?.items) ? req.body.items : [req.body];
   if (!Array.isArray(payload) || payload.length === 0) {
-    return res.status(400).json({ message: 'Body must be an object, array, or { items: [...] }' });
+    throw new BusinessError('VALIDATION_FAILED', 'Body must be an object, array, or { items: [...] }', 400);
   }
 
   const results: Array<{ index: number; ok: boolean; result: string; id?: number | null }> = [];
