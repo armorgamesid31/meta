@@ -19,6 +19,12 @@ export type CreateAppointmentInput = z.infer<typeof CreateAppointmentInputSchema
 export const UpdateAppointmentStatusInputSchema = z.object({
   status: z.enum(['BOOKED', 'COMPLETED', 'CANCELLED', 'NO_SHOW', 'PENDING']),
   paymentMethod: z.enum(['CASH', 'CARD', 'TRANSFER', 'OTHER']).optional(),
+  /**
+   * Optimistic concurrency control: client gönderirse, sunucu mevcut
+   * appointment.updatedAt değeri ile karşılaştırır; eşleşmezse 409 (STALE_RECORD).
+   * Geriye uyumluluk: gönderilmezse kontrol atlanır.
+   */
+  expectedUpdatedAt: z.string().optional(),
 });
 export type UpdateAppointmentStatusInput = z.infer<typeof UpdateAppointmentStatusInputSchema>;
 
@@ -30,6 +36,12 @@ export const UpdateCustomerInputSchema = z.object({
   instagram: z.string().trim().nullable().optional(),
   birthDate: z.string().trim().nullable().optional(),
   acceptMarketing: z.boolean().optional(),
+  /**
+   * Optimistic concurrency control: client gönderirse, sunucu mevcut
+   * customer.updatedAt değeri ile karşılaştırır; eşleşmezse 409 (STALE_RECORD).
+   * Geriye uyumluluk: gönderilmezse kontrol atlanır.
+   */
+  expectedUpdatedAt: z.string().optional(),
 });
 export type UpdateCustomerInput = z.infer<typeof UpdateCustomerInputSchema>;
 

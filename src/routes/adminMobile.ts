@@ -3048,11 +3048,24 @@ router.put('/customers/:id', authenticateToken, validate({ body: UpdateCustomerI
   try {
     const existing = await prisma.customer.findFirst({
       where: { id: customerId, salonId },
-      select: { id: true, phone: true },
+      select: { id: true, phone: true, updatedAt: true },
     });
 
     if (!existing) {
       throw new BusinessError('NOT_FOUND', 'Customer not found.', 404);
+    }
+
+    // Optimistic concurrency control (ETag/version via updatedAt).
+    const expectedUpdatedAt = req.body?.expectedUpdatedAt;
+    if (typeof expectedUpdatedAt === 'string' && expectedUpdatedAt.length > 0) {
+      const currentVersion = existing.updatedAt ? existing.updatedAt.toISOString() : null;
+      if (currentVersion !== expectedUpdatedAt) {
+        throw new BusinessError(
+          'STALE_RECORD',
+          'Bu kayıt başka biri tarafından güncellendi. Yenileyip tekrar deneyin.',
+          409,
+        );
+      }
     }
 
     if (updateData.phone && updateData.phone !== existing.phone) {
@@ -4049,10 +4062,24 @@ router.patch('/appointments/:id/status', authenticateToken, validate({ body: Upd
           status: true,
           startTime: true,
           customerName: true,
+          updatedAt: true,
         },
       });
       if (!appointment) {
         return { error: { code: 404, message: 'Appointment not found.' } };
+      }
+
+      // Optimistic concurrency control (ETag/version via updatedAt).
+      const expectedUpdatedAt = req.body?.expectedUpdatedAt;
+      if (typeof expectedUpdatedAt === 'string' && expectedUpdatedAt.length > 0) {
+        const currentVersion = appointment.updatedAt ? appointment.updatedAt.toISOString() : null;
+        if (currentVersion !== expectedUpdatedAt) {
+          throw new BusinessError(
+            'STALE_RECORD',
+            'Bu kayıt başka biri tarafından güncellendi. Yenileyip tekrar deneyin.',
+            409,
+          );
+        }
       }
 
       const previousStatus = appointment.status || 'BOOKED';

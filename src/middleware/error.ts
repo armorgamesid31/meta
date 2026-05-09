@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
+import * as Sentry from '@sentry/node';
 import { BusinessError, ErrorCodes, type ApiErrorBody } from '../lib/errors.js';
 
 const isProduction = process.env.NODE_ENV === 'production';
@@ -50,6 +51,17 @@ export function errorMiddleware(
 
   if (status >= 500) {
     console.error(`[error ${traceId}] ${req.method} ${req.originalUrl}:`, err);
+  }
+
+  // Report unexpected (non-business) errors to Sentry, tagged with the traceId
+  // so the support flow ("Kod: abc123") maps directly to a Sentry event.
+  // BusinessError instances are expected business outcomes and intentionally skipped.
+  if (!(err instanceof BusinessError)) {
+    try {
+      Sentry.captureException(err, { tags: { traceId: traceId || 'unknown' } });
+    } catch {
+      // Sentry not initialized — ignore.
+    }
   }
 
   const body: ApiErrorBody = {

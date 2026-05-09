@@ -1,5 +1,8 @@
 import dotenv from 'dotenv';
 dotenv.config();
+// Sentry MUST be imported/initialized before any other modules that may throw
+import './lib/sentry.js';
+import * as Sentry from '@sentry/node';
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
@@ -362,6 +365,11 @@ app.get(/^(?!\/api|\/auth|\/availability|\/chakratest|\/api\/internal\/chakra\/w
 app.use('/api', (req, _res, next) => {
   next(new BusinessError('NOT_FOUND', `Endpoint bulunamadı: ${req.method} ${req.originalUrl}`, 404));
 });
+
+// Sentry error handler — must be mounted BEFORE the project's errorMiddleware
+// so it can observe each error before the response is built. It is a passive
+// observer; it does not modify the response.
+Sentry.setupExpressErrorHandler(app);
 
 app.use(errorMiddleware);
 
