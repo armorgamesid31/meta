@@ -51,6 +51,7 @@ import { initConversationRealtimeWebSocketServer } from './services/conversation
 import { traceMiddleware } from './middleware/trace.js';
 import { errorMiddleware } from './middleware/error.js';
 import { accessLogMiddleware } from './middleware/accessLog.js';
+import { authRateLimiter, apiRateLimiter } from './middleware/rateLimit.js';
 import { BusinessError } from './lib/errors.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -238,6 +239,17 @@ app.use('/api/webhooks', channelWebhooksRoutes);
 
 // Apply tenant middleware to ALL other API routes
 app.use(multiTenantMiddleware);
+
+// Strict rate limit on credential / verification endpoints (login,
+// refresh, register, code verification). Mounted before the routers
+// so the limiter runs first.
+app.use('/auth', authRateLimiter);
+app.use('/api/customers/register', authRateLimiter);
+app.use('/api/customers/verify', authRateLimiter);
+app.use('/api/customers/resend-code', authRateLimiter);
+
+// Loose limiter for the rest of /api traffic.
+app.use('/api', apiRateLimiter);
 
 app.use('/auth', authRoutes);
 app.use('/api/mobile', mobileRoutes);
