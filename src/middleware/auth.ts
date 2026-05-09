@@ -3,6 +3,7 @@ import { verifyToken } from '../utils/jwt.js';
 import { UserRole } from '@prisma/client';
 import { prisma } from '../prisma.js';
 import { hasPermission, normalizeRole } from '../services/accessControl.js';
+import { BusinessError } from '../lib/errors.js';
 
 interface AuthRequest extends Request {
   user?: {
@@ -14,7 +15,7 @@ interface AuthRequest extends Request {
   };
 }
 
-export const authenticateToken = async (req: AuthRequest, res: Response, next: NextFunction) => {
+export const authenticateToken = async (req: AuthRequest, _res: Response, next: NextFunction) => {
   const authHeader = req.headers['authorization'];
   const headerToken = authHeader && authHeader.split(' ')[1];
   const queryTokenRaw = req.query?.authToken ?? req.query?.token;
@@ -24,25 +25,29 @@ export const authenticateToken = async (req: AuthRequest, res: Response, next: N
     (req.method === 'GET' && queryToken ? queryToken : null);
   const salonHeaderRaw = req.headers['x-salon-id'];
 
-  if (token == null) return res.sendStatus(401); // No token
+  if (token == null) {
+    return next(new BusinessError('UNAUTHORIZED', 'Oturum açmanız gerekiyor.', 401));
+  }
 
   const payload = verifyToken(token);
 
-  if (!payload) return res.sendStatus(401); // Invalid or expired token
+  if (!payload) {
+    return next(new BusinessError('UNAUTHORIZED', 'Oturum süresi dolmuş veya geçersiz.', 401));
+  }
 
   const salonHeader = Array.isArray(salonHeaderRaw) ? salonHeaderRaw[0] : salonHeaderRaw;
   const requestedSalonId =
     typeof salonHeader === 'string' && salonHeader.trim() ? Number(salonHeader.trim()) : null;
 
   if (requestedSalonId !== null && (!Number.isInteger(requestedSalonId) || requestedSalonId <= 0)) {
-    return res.status(400).json({ message: 'x-salon-id must be a positive integer.' });
+    return next(new BusinessError('VALIDATION_FAILED', 'x-salon-id pozitif tam sayı olmalı.', 400));
   }
 
   try {
     const membershipId = Number(payload.membershipId || 0);
     const identityId = Number(payload.identityId || 0);
     if (!membershipId || !identityId) {
-      return res.sendStatus(401);
+      return next(new BusinessError('UNAUTHORIZED', 'Oturum bilgisi eksik.', 401));
     }
 
     const membership = await prisma.salonMembership.findUnique({
@@ -58,26 +63,26 @@ export const authenticateToken = async (req: AuthRequest, res: Response, next: N
     });
 
     if (!membership || membership.identityId !== identityId) {
-      return res.sendStatus(401);
+      return next(new BusinessError('UNAUTHORIZED', 'Oturum doğrulanamadı.', 401));
     }
     if (!membership.isActive || !membership.identity.isActive) {
-      return res.status(403).json({ message: 'Account is inactive.' });
+      return next(new BusinessError('ACCOUNT_INACTIVE', 'Hesap pasif durumda.', 403));
     }
 
     let resolvedSalonId = payload.salonId;
 
     if (requestedSalonId !== null) {
       if (resolvedSalonId && resolvedSalonId !== requestedSalonId) {
-        return res.status(403).json({ message: 'x-salon-id does not match token scope.' });
+        return next(new BusinessError('SALON_SCOPE_MISMATCH', 'x-salon-id token kapsamıyla eşleşmiyor.', 403));
       }
       if (membership.salonId !== requestedSalonId) {
-        return res.status(403).json({ message: 'x-salon-id is outside user scope.' });
+        return next(new BusinessError('SALON_SCOPE_MISMATCH', 'x-salon-id kullanıcı kapsamı dışında.', 403));
       }
       resolvedSalonId = requestedSalonId;
     }
 
     if (!resolvedSalonId) {
-      return res.status(403).json({ message: 'Salon scope could not be resolved.' });
+      return next(new BusinessError('SALON_SCOPE_MISMATCH', 'Salon kapsamı çözümlenemedi.', 403));
     }
 
     req.user = {
@@ -91,23 +96,23 @@ export const authenticateToken = async (req: AuthRequest, res: Response, next: N
     next();
   } catch (error) {
     console.error('authenticateToken error:', error);
-    return res.status(500).json({ message: 'Internal server error' });
+    return next(error);
   }
 };
 
 export const authorizeRoles = (roles: UserRole[]) => {
-  return (req: AuthRequest, res: Response, next: NextFunction) => {
+  return (req: AuthRequest, _res: Response, next: NextFunction) => {
     if (!req.user || !roles.includes(req.user.role)) {
-      return res.sendStatus(403); // Forbidden
+      return next(new BusinessError('FORBIDDEN', 'Bu işlem için yetkiniz yok.', 403));
     }
     next();
   };
 };
 
 export const requirePermission = (permissionKey: string) => {
-  return async (req: AuthRequest, res: Response, next: NextFunction) => {
+  return async (req: AuthRequest, _res: Response, next: NextFunction) => {
     if (!req.user) {
-      return res.status(401).json({ message: 'Unauthorized' });
+      return next(new BusinessError('UNAUTHORIZED', 'Oturum açmanız gerekiyor.', 401));
     }
 
     const { membershipId, salonId, role } = req.user;
@@ -120,13 +125,13 @@ export const requirePermission = (permissionKey: string) => {
         permissionKey,
       });
       if (!allowed) {
-        return res.status(403).json({ message: 'Insufficient permissions' });
+        return next(new BusinessError('FORBIDDEN', 'Bu işlem için yetkiniz yok.', 403));
       }
 
       next();
     } catch (error) {
       console.error('Permission check error:', error);
-      res.status(500).json({ message: 'Internal server error' });
+      next(error);
     }
   };
 };

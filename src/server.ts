@@ -51,6 +51,7 @@ import { initConversationRealtimeWebSocketServer } from './services/conversation
 import { traceMiddleware } from './middleware/trace.js';
 import { errorMiddleware } from './middleware/error.js';
 import { accessLogMiddleware } from './middleware/accessLog.js';
+import { BusinessError } from './lib/errors.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -341,6 +342,13 @@ app.use(express.static(distPath));
 
 app.get(/^(?!\/api|\/auth|\/availability|\/chakratest|\/api\/internal\/chakra\/webhook).*$/, (req, res) => {
   res.sendFile(path.join(distPath, "index.html"));
+});
+
+// Anything still unhandled (mostly unknown /api/* paths) becomes a structured 404
+// rather than Express' default HTML page, so the frontend's ApiError sees the
+// same { code, message, traceId } envelope as every other failure.
+app.use('/api', (req, _res, next) => {
+  next(new BusinessError('NOT_FOUND', `Endpoint bulunamadı: ${req.method} ${req.originalUrl}`, 404));
 });
 
 app.use(errorMiddleware);
