@@ -4,6 +4,12 @@ import { randomUUID } from 'node:crypto';
 import { CampaignType, InboundMessageStatus, OutboundMessageSource, type CustomerGender } from '@prisma/client';
 import { prisma } from '../prisma.js';
 import { authenticateToken } from '../middleware/auth.js';
+import { validate } from '../middleware/validate.js';
+import { BusinessError } from '../lib/errors.js';
+import {
+  CreateAdminCustomerInputSchema,
+  type CreateAdminCustomerInput,
+} from '../schemas/customer.js';
 import { ensureSalonServiceCategories } from '../services/salonCategorySetup.js';
 import { ensureSalonServiceRegions } from '../services/salonRegionSetup.js';
 import { normalizeInstagramIdentity, normalizePhoneDigits } from '../services/identityService.js';
@@ -2708,35 +2714,30 @@ router.get('/customers', authenticateToken, async (req: any, res: any) => {
   }
 });
 
-router.post('/customers', authenticateToken, async (req: any, res: any) => {
+router.post('/customers', authenticateToken, validate({ body: CreateAdminCustomerInputSchema }), async (req: any, res: any, next: any) => {
   const salonId = getSalonId(req, res);
   if (!salonId) {
     return;
   }
 
+  const input = req.validated.body as CreateAdminCustomerInput;
   const normalizedName = resolveCustomerNameParts({
-    firstName: req.body?.firstName,
-    lastName: req.body?.lastName,
-    name: req.body?.name,
+    firstName: input.firstName,
+    lastName: input.lastName,
+    name: input.name,
   });
-  const phone = typeof req.body?.phone === 'string' ? req.body.phone.trim() : '';
-  const instagram = typeof req.body?.instagram === 'string' ? req.body.instagram.trim() : '';
-  const gender = typeof req.body?.gender === 'string' ? req.body.gender : null;
-  const acceptMarketing = Boolean(req.body?.acceptMarketing);
-  const birthDateInput = req.body?.birthDate;
-
   if (!normalizedName.firstName || !normalizedName.lastName) {
-    return res.status(400).json({ message: 'firstName and lastName are required.' });
+    return next(new BusinessError('VALIDATION_FAILED', 'Ad ve soyad zorunludur.', 400));
   }
-  if (!phone) {
-    return res.status(400).json({ message: 'phone is required.' });
-  }
+  const phone = input.phone.trim();
+  const instagram = (input.instagram ?? '').toString().trim();
+  const acceptMarketing = input.acceptMarketing;
 
   let birthDate: Date | null = null;
-  if (birthDateInput !== null && birthDateInput !== undefined && birthDateInput !== '') {
-    const parsed = new Date(String(birthDateInput));
+  if (input.birthDate) {
+    const parsed = new Date(String(input.birthDate));
     if (Number.isNaN(parsed.getTime())) {
-      return res.status(400).json({ message: 'birthDate is invalid.' });
+      return next(new BusinessError('VALIDATION_FAILED', 'birthDate geçersiz.', 400));
     }
     birthDate = parsed;
   }
@@ -2750,7 +2751,7 @@ router.post('/customers', authenticateToken, async (req: any, res: any) => {
         lastName: normalizedName.lastName,
         phone,
         instagram: instagram || null,
-        gender: gender && ['male', 'female', 'other'].includes(gender) ? (gender as any) : null,
+        gender: null,
         birthDate,
         acceptMarketing,
       },
@@ -2772,10 +2773,9 @@ router.post('/customers', authenticateToken, async (req: any, res: any) => {
     return res.status(201).json({ customer });
   } catch (error: any) {
     if (error?.code === 'P2002') {
-      return res.status(409).json({ message: 'Bu telefon salon icin zaten kayitli.' });
+      return next(new BusinessError('CUSTOMER_PHONE_EXISTS', 'Bu telefon salonda zaten kayıtlı.', 409));
     }
-    console.error('Admin create customer error:', error);
-    return res.status(500).json({ message: 'Internal server error.' });
+    return next(error);
   }
 });
 
