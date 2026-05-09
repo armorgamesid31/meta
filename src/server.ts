@@ -50,6 +50,7 @@ import { initConversationEventsBus } from './services/conversationEventsBus.js';
 import { initConversationRealtimeWebSocketServer } from './services/conversationRealtimeWs.js';
 import { traceMiddleware } from './middleware/trace.js';
 import { errorMiddleware } from './middleware/error.js';
+import { accessLogMiddleware } from './middleware/accessLog.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -146,6 +147,7 @@ const corsOptions: cors.CorsOptions = {
 
 app.use(cors(corsOptions));
 app.use(traceMiddleware);
+app.use(accessLogMiddleware);
 
 app.post('/api/billing/stripe/webhook', express.raw({ type: 'application/json' }), async (req: any, res) => {
   const signature = String(req.headers['stripe-signature'] || '').trim();
