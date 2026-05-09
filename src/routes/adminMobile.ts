@@ -10,6 +10,11 @@ import {
   CreateAdminCustomerInputSchema,
   type CreateAdminCustomerInput,
 } from '../schemas/customer.js';
+import {
+  CreateAppointmentInputSchema,
+  UpdateAppointmentStatusInputSchema,
+  UpdateCustomerInputSchema,
+} from '../schemas/appointment-input.js';
 import { ensureSalonServiceCategories } from '../services/salonCategorySetup.js';
 import { ensureSalonServiceRegions } from '../services/salonRegionSetup.js';
 import { normalizeInstagramIdentity, normalizePhoneDigits } from '../services/identityService.js';
@@ -2290,7 +2295,7 @@ router.get('/appointments', authenticateToken, async (req: any, res: any) => {
   }
 });
 
-router.post('/appointments', authenticateToken, async (req: any, res: any) => {
+router.post('/appointments', authenticateToken, validate({ body: CreateAppointmentInputSchema }), async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
   if (!salonId) {
     return;
@@ -2920,7 +2925,7 @@ router.get('/customers/:id', authenticateToken, async (req: any, res: any) => {
   }
 });
 
-router.put('/customers/:id', authenticateToken, async (req: any, res: any) => {
+router.put('/customers/:id', authenticateToken, validate({ body: UpdateCustomerInputSchema }), async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
   if (!salonId) {
     return;
@@ -4015,7 +4020,7 @@ router.get('/customers/:id/package-ledger', authenticateToken, async (req: any, 
   }
 });
 
-router.patch('/appointments/:id/status', authenticateToken, async (req: any, res: any) => {
+router.patch('/appointments/:id/status', authenticateToken, validate({ body: UpdateAppointmentStatusInputSchema }), async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
   if (!salonId) {
     return;
