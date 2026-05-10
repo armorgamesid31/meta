@@ -824,6 +824,7 @@ function normalizeWebhookPayload(body: any) {
             recipientId: value?.metadata?.phone_number_id || (isEcho ? null : from) || null,
             externalAccountId: value?.metadata?.phone_number_id || null,
             externalBusinessId: entry?.id || null,
+            businessDisplayPhone: typeof value?.metadata?.display_phone_number === 'string' ? value.metadata.display_phone_number : null,
             channelUserId,
             channelConversationKey: `WHATSAPP:${channelUserId || 'unknown'}`,
             rawProfileName: contact?.profile?.name || null,
@@ -936,6 +937,28 @@ async function processIncomingBatch(items: any[]) {
 
     if (channel === 'INSTAGRAM' && !row.isEcho) {
       await markInstagramWebhookSeen(salonId, toEventDate(row));
+    }
+
+    // Backfill salon.whatsappPhone with the human-readable display phone
+    // exposed by Meta in WhatsApp webhook metadata. Chakra'nın plugin state
+    // sadece phone_number_id veriyor; display_phone_number'ı yalnızca
+    // mesaj webhook'unda görüyoruz. Sadece kolon boşsa yazıyoruz; kullanıcı
+    // manuel girmişse dokunma.
+    if (channel === 'WHATSAPP') {
+      const displayPhone = typeof row.businessDisplayPhone === 'string' ? row.businessDisplayPhone.trim() : '';
+      if (displayPhone) {
+        try {
+          await prisma.salon.updateMany({
+            where: {
+              id: salonId,
+              OR: [{ whatsappPhone: null }, { whatsappPhone: '' }],
+            },
+            data: { whatsappPhone: displayPhone },
+          });
+        } catch (err: any) {
+          console.warn('whatsappPhone webhook backfill failed:', err?.message || err);
+        }
+      }
     }
 
     let instagramProfile: InstagramScopedProfile | null = null;
