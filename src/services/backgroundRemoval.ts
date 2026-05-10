@@ -8,12 +8,13 @@
 import axios from 'axios';
 
 const REPLICATE_TOKEN = (process.env.REPLICATE_API_TOKEN || '').trim();
-// Pinned version hash for 851-labs/background-remover — much better than
-// the legacy cjwbw/rembg (U2Net) on logos and intricate shapes. Override via
-// REPLICATE_BG_MODEL_VERSION env if a newer model is desired.
+// Pinned version hash for men1scus/birefnet — BiRefNet uses transformer-based
+// matting that recovers fine edges and *interior holes* (e.g. the cream gaps
+// inside a circular emblem) that simpler U-Net models can't. Override via
+// REPLICATE_BG_MODEL_VERSION env if a different model is desired.
 const REPLICATE_BG_MODEL_VERSION =
   (process.env.REPLICATE_BG_MODEL_VERSION || '').trim() ||
-  'a029dff38972b5fda4ec5d75d7d1cd25aeff621d2cf4946a41055d7db66b80bc';
+  'f74986db0355b58403ed20963af156525e2891ea3c2d499bfbfb2a28cd87c5d7';
 
 const REPLICATE_BASE = 'https://api.replicate.com/v1';
 const TOTAL_TIMEOUT_MS = 90_000;
