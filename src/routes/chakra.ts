@@ -1365,8 +1365,10 @@ router.put('/plugin-active', authenticateToken, async (req: any, res: any) => {
   }
 });
 
-// Disconnect WhatsApp: deactivate plugin (best-effort), clear binding,
-// reset faqAnswers. Used by Temel Bilgiler "X" button.
+// Disconnect WhatsApp: deactivate + delete plugin in Chakra (best-effort),
+// then unlink from salon entirely. chakraPluginId must be cleared because
+// /status re-reads Chakra plugin state and would otherwise resurrect the
+// phone binding from Chakra's cached serverConfig.
 router.post('/disconnect', authenticateToken, async (req: any, res: any) => {
   try {
     const salon = await getAuthenticatedSalon(req);
@@ -1374,15 +1376,29 @@ router.post('/disconnect', authenticateToken, async (req: any, res: any) => {
       throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
     }
 
-    if (salon.chakraPluginId) {
+    if (salon.chakraPluginId && CHAKRA_API_TOKEN) {
       try {
         await setPluginActiveState(salon.chakraPluginId, false);
       } catch (deactErr: any) {
         console.warn('Chakra plugin deactivate on disconnect failed:', deactErr?.response?.data || deactErr?.message);
       }
+      try {
+        await axios.delete(`${CHAKRA_API_BASE}/plugin/${salon.chakraPluginId}`, {
+          headers: {
+            Authorization: `Bearer ${CHAKRA_API_TOKEN}`,
+            'Content-Type': 'application/json',
+          },
+          timeout: 8000,
+        });
+      } catch (deleteErr: any) {
+        // Plugin removal is best-effort; orphaned plugin in Chakra is
+        // tolerable as long as we unlink locally.
+        console.warn('Chakra plugin delete on disconnect failed:', deleteErr?.response?.status, deleteErr?.response?.data || deleteErr?.message);
+      }
     }
 
     await updateSalonChakraState(salon.id, {
+      chakraPluginId: null,
       chakraPhoneNumberId: null,
     });
 
