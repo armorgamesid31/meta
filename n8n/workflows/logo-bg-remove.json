@@ -1,5 +1,5 @@
 {
-  "name": "Kedy Logo Background Removal (HF RMBG + R2)",
+  "name": "Kedy Logo Background Removal (HF RMBG + Presigned R2 Upload)",
   "nodes": [
     {
       "id": "webhook-trigger",
@@ -33,7 +33,7 @@
             {
               "id": "jobId",
               "name": "jobId",
-              "value": "={{ $json.body.jobId || $json.jobId || $now.toMillis() + '-' + Math.random().toString(36).slice(2, 8) }}",
+              "value": "={{ $json.body.jobId || $json.jobId || ($now.toMillis() + '-' + Math.random().toString(36).slice(2, 8)) }}",
               "type": "string"
             },
             {
@@ -43,9 +43,21 @@
               "type": "string"
             },
             {
-              "id": "originalKey",
-              "name": "originalKey",
-              "value": "={{ $json.body.originalKey || $json.originalKey || '' }}",
+              "id": "uploadUrl",
+              "name": "uploadUrl",
+              "value": "={{ $json.body.uploadUrl || $json.uploadUrl }}",
+              "type": "string"
+            },
+            {
+              "id": "publicUrl",
+              "name": "publicUrl",
+              "value": "={{ $json.body.publicUrl || $json.publicUrl }}",
+              "type": "string"
+            },
+            {
+              "id": "processedKey",
+              "name": "processedKey",
+              "value": "={{ $json.body.processedKey || $json.processedKey || '' }}",
               "type": "string"
             }
           ]
@@ -67,7 +79,8 @@
               "responseFormat": "file",
               "outputPropertyName": "original"
             }
-          }
+          },
+          "timeout": 30000
         }
       }
     },
@@ -112,53 +125,28 @@
       }
     },
     {
-      "id": "compute-output-key",
-      "name": "Compute Output Key",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.4,
+      "id": "upload-to-r2",
+      "name": "Upload to R2 (Presigned PUT)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [-300, 0],
       "parameters": {
-        "assignments": {
-          "assignments": [
+        "method": "PUT",
+        "url": "={{ $('Prepare Input').item.json.uploadUrl }}",
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "processed",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
             {
-              "id": "objectKey",
-              "name": "objectKey",
-              "value": "=avatars/logos/{{ $('Prepare Input').item.json.salonId }}/processed-{{ $now.toMillis() }}.png",
-              "type": "string"
-            },
-            {
-              "id": "publicUrl",
-              "name": "publicUrl",
-              "value": "=https://cdn.kedyapp.com/avatars/logos/{{ $('Prepare Input').item.json.salonId }}/processed-{{ $now.toMillis() }}.png",
-              "type": "string"
+              "name": "Content-Type",
+              "value": "image/png"
             }
           ]
         },
-        "include": "all",
-        "options": {}
-      }
-    },
-    {
-      "id": "upload-to-r2",
-      "name": "Upload to R2",
-      "type": "n8n-nodes-base.awsS3",
-      "typeVersion": 2,
-      "position": [-100, 0],
-      "parameters": {
-        "operation": "upload",
-        "bucketName": "kedy",
-        "fileName": "={{ $json.objectKey }}",
-        "binaryPropertyName": "processed",
-        "additionalFields": {
-          "acl": "publicRead",
-          "contentType": "image/png",
-          "storageClass": "standard"
-        }
-      },
-      "credentials": {
-        "aws": {
-          "id": "REPLACE_WITH_R2_CRED_ID",
-          "name": "Cloudflare R2 (S3 compatible)"
+        "options": {
+          "timeout": 30000
         }
       }
     },
@@ -167,7 +155,7 @@
       "name": "Build Response",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [100, 0],
+      "position": [-100, 0],
       "parameters": {
         "assignments": {
           "assignments": [
@@ -198,13 +186,13 @@
             {
               "id": "processedKey",
               "name": "processedKey",
-              "value": "={{ $('Compute Output Key').item.json.objectKey }}",
+              "value": "={{ $('Prepare Input').item.json.processedKey }}",
               "type": "string"
             },
             {
               "id": "processedUrl",
               "name": "processedUrl",
-              "value": "={{ $('Compute Output Key').item.json.publicUrl }}",
+              "value": "={{ $('Prepare Input').item.json.publicUrl }}",
               "type": "string"
             }
           ]
@@ -217,7 +205,7 @@
       "name": "Respond Success",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [300, 0],
+      "position": [100, 0],
       "parameters": {
         "respondWith": "json",
         "responseBody": "={{ { ok: true, jobId: $json.jobId, salonId: $json.salonId, originalUrl: $json.originalUrl, processedKey: $json.processedKey, processedUrl: $json.processedUrl } }}",
@@ -240,7 +228,7 @@
       "position": [-700, 240],
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ { ok: false, error: $json.error?.message || 'logo_bg_remove_failed' } }}",
+        "responseBody": "={{ { ok: false, error: $json.error?.message || 'logo_bg_remove_failed', node: $json.execution?.error?.node?.name || null } }}",
         "options": {
           "responseCode": 500
         }
@@ -258,12 +246,9 @@
       "main": [[{ "node": "HuggingFace RMBG", "type": "main", "index": 0 }]]
     },
     "HuggingFace RMBG": {
-      "main": [[{ "node": "Compute Output Key", "type": "main", "index": 0 }]]
+      "main": [[{ "node": "Upload to R2 (Presigned PUT)", "type": "main", "index": 0 }]]
     },
-    "Compute Output Key": {
-      "main": [[{ "node": "Upload to R2", "type": "main", "index": 0 }]]
-    },
-    "Upload to R2": {
+    "Upload to R2 (Presigned PUT)": {
       "main": [[{ "node": "Build Response", "type": "main", "index": 0 }]]
     },
     "Build Response": {
