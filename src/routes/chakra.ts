@@ -1063,12 +1063,14 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
           where: {
             channel: 'WHATSAPP',
             direction: 'INBOUND',
+            eventType: 'message',
           },
         });
         const recentLog = await prisma.metaChannelWebhookLog.findFirst({
           where: {
             channel: 'WHATSAPP',
             direction: 'INBOUND',
+            eventType: 'message',
             OR: [{ salonId: salon.id }, { salonId: null }],
           },
           orderBy: { createdAt: 'desc' },
