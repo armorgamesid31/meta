@@ -1054,19 +1054,8 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
       typeof salon.whatsappPhone === 'string' && salon.whatsappPhone.trim().length > 0
         ? salon.whatsappPhone.trim()
         : null;
-    let _debugLogCount = 0;
-    let _debugSamplePayloadKeys: string[] = [];
-    let _debugMetadata: any = null;
-    let _debugRecent5: any[] = [];
     if (!whatsappPhoneDisplay) {
       try {
-        _debugLogCount = await prisma.metaChannelWebhookLog.count({
-          where: {
-            channel: 'WHATSAPP',
-            direction: 'INBOUND',
-            eventType: 'message',
-          },
-        });
         const recentLog = await prisma.metaChannelWebhookLog.findFirst({
           where: {
             channel: 'WHATSAPP',
@@ -1078,45 +1067,19 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
           select: { payload: true },
           take: 1,
         });
-        if (recentLog?.payload && typeof recentLog.payload === 'object') {
-          _debugSamplePayloadKeys = Object.keys(recentLog.payload as any).slice(0, 10);
-          const p: any = recentLog.payload;
-          _debugMetadata = p?.entry?.[0]?.changes?.[0]?.value?.metadata ?? null;
-        }
-        const recent5 = await prisma.metaChannelWebhookLog.findMany({
-          where: {
-            channel: 'WHATSAPP',
-            direction: 'INBOUND',
-            eventType: 'message',
-          },
-          orderBy: { createdAt: 'desc' },
-          select: { createdAt: true, salonId: true, payload: true },
-          take: 5,
-        });
-        _debugRecent5 = recent5.map((row) => {
-          const p: any = row.payload;
-          const meta = p?.entry?.[0]?.changes?.[0]?.value?.metadata ?? null;
-          return {
-            createdAt: row.createdAt,
-            salonId: row.salonId,
-            phoneId: meta?.phone_number_id ?? null,
-            display: meta?.display_phone_number ?? null,
-          };
-        });
         const payload = recentLog?.payload as any;
         const entries = Array.isArray(payload?.entry) ? payload.entry : [];
         for (const entry of entries) {
           const changes = Array.isArray(entry?.changes) ? entry.changes : [];
           for (const change of changes) {
             const value = change?.value;
-            const phoneNumberIdInPayload = value?.metadata?.phone_number_id;
             const displayPhoneInPayload = value?.metadata?.display_phone_number;
-            // Yalnızca aynı phone_number_id'ye ait log'tan ÷güncelle.
-            if (
-              typeof displayPhoneInPayload === 'string' &&
-              displayPhoneInPayload.trim() &&
-              (!whatsappPhoneNumberId || phoneNumberIdInPayload === whatsappPhoneNumberId)
-            ) {
+            // Chakra'nın bildirdiği phone_number_id ile Meta'nın aktif olarak
+            // webhook gönderdiği phone_number_id farklı olabiliyor (reconnect
+            // sonrası stale state). Burada sadece "salonun en son aldığı WA
+            // mesajındaki business display number" kuralını uygula; phoneId
+            // match'i zorlamıyoruz.
+            if (typeof displayPhoneInPayload === 'string' && displayPhoneInPayload.trim()) {
               whatsappPhoneDisplay = displayPhoneInPayload.trim();
               break;
             }
@@ -1173,12 +1136,6 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
       whatsappPhoneDisplay,
       hasActiveBinding,
       sdkUrl: CHAKRA_SDK_URL,
-      _debug: {
-        logCount: _debugLogCount,
-        samplePayloadKeys: _debugSamplePayloadKeys,
-        metadata: _debugMetadata,
-        recent5: _debugRecent5,
-      },
     });
   } catch (error: any) {
     console.error('Chakra status failed:', error?.response?.data || error);
