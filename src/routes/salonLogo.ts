@@ -20,16 +20,16 @@
 import { Router, type Request, type Response } from 'express';
 import multer from 'multer';
 import { createHash, createHmac, randomBytes } from 'crypto';
-import { authenticateToken } from '../middleware/auth';
-import { BusinessError } from '../lib/errors';
-import { prisma } from '../prisma';
+import { authenticateToken } from '../middleware/auth.js';
+import { BusinessError } from '../lib/errors.js';
+import { prisma } from '../prisma.js';
 import {
   buildR2PublicUrl,
   deleteR2Object,
   isR2Configured,
   uploadBufferToR2,
-} from '../lib/r2';
-import { isBackgroundRemovalConfigured, removeBackground } from '../services/backgroundRemoval';
+} from '../lib/r2.js';
+import { isBackgroundRemovalConfigured, removeBackground } from '../services/backgroundRemoval.js';
 
 const router = Router();
 
