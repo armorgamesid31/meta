@@ -1057,6 +1057,7 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
     let _debugLogCount = 0;
     let _debugSamplePayloadKeys: string[] = [];
     let _debugMetadata: any = null;
+    let _debugRecent5: any[] = [];
     if (!whatsappPhoneDisplay) {
       try {
         _debugLogCount = await prisma.metaChannelWebhookLog.count({
@@ -1082,6 +1083,26 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
           const p: any = recentLog.payload;
           _debugMetadata = p?.entry?.[0]?.changes?.[0]?.value?.metadata ?? null;
         }
+        const recent5 = await prisma.metaChannelWebhookLog.findMany({
+          where: {
+            channel: 'WHATSAPP',
+            direction: 'INBOUND',
+            eventType: 'message',
+          },
+          orderBy: { createdAt: 'desc' },
+          select: { createdAt: true, salonId: true, payload: true },
+          take: 5,
+        });
+        _debugRecent5 = recent5.map((row) => {
+          const p: any = row.payload;
+          const meta = p?.entry?.[0]?.changes?.[0]?.value?.metadata ?? null;
+          return {
+            createdAt: row.createdAt,
+            salonId: row.salonId,
+            phoneId: meta?.phone_number_id ?? null,
+            display: meta?.display_phone_number ?? null,
+          };
+        });
         const payload = recentLog?.payload as any;
         const entries = Array.isArray(payload?.entry) ? payload.entry : [];
         for (const entry of entries) {
@@ -1156,6 +1177,7 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
         logCount: _debugLogCount,
         samplePayloadKeys: _debugSamplePayloadKeys,
         metadata: _debugMetadata,
+        recent5: _debugRecent5,
       },
     });
   } catch (error: any) {
