@@ -1054,8 +1054,17 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
       typeof salon.whatsappPhone === 'string' && salon.whatsappPhone.trim().length > 0
         ? salon.whatsappPhone.trim()
         : null;
+    let _debugLogCount = 0;
+    let _debugSamplePayloadKeys: string[] = [];
+    let _debugMetadata: any = null;
     if (!whatsappPhoneDisplay) {
       try {
+        _debugLogCount = await prisma.metaChannelWebhookLog.count({
+          where: {
+            channel: 'WHATSAPP',
+            direction: 'INBOUND',
+          },
+        });
         const recentLog = await prisma.metaChannelWebhookLog.findFirst({
           where: {
             channel: 'WHATSAPP',
@@ -1066,6 +1075,11 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
           select: { payload: true },
           take: 1,
         });
+        if (recentLog?.payload && typeof recentLog.payload === 'object') {
+          _debugSamplePayloadKeys = Object.keys(recentLog.payload as any).slice(0, 10);
+          const p: any = recentLog.payload;
+          _debugMetadata = p?.entry?.[0]?.changes?.[0]?.value?.metadata ?? null;
+        }
         const payload = recentLog?.payload as any;
         const entries = Array.isArray(payload?.entry) ? payload.entry : [];
         for (const entry of entries) {
@@ -1136,6 +1150,11 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
       whatsappPhoneDisplay,
       hasActiveBinding,
       sdkUrl: CHAKRA_SDK_URL,
+      _debug: {
+        logCount: _debugLogCount,
+        samplePayloadKeys: _debugSamplePayloadKeys,
+        metadata: _debugMetadata,
+      },
     });
   } catch (error: any) {
     console.error('Chakra status failed:', error?.response?.data || error);
