@@ -345,6 +345,7 @@ async function getAuthenticatedSalon(req: any) {
       slug: true,
       chakraPluginId: true,
       chakraPhoneNumberId: true,
+      whatsappPhone: true,
       aiAgentSettings: {
         select: {
           faqAnswers: true,
@@ -684,6 +685,39 @@ function extractWhatsappPhoneNumberId(payload: any): string | null {
   return null;
 }
 
+// Best-effort: Chakra pass-through ile Meta Cloud API'sinden display_phone_number çek.
+// Chakra documented endpoint sadece POST /messages, ama aynı pass-through GET
+// genelde aynı Meta resource'una proxy ediyor. Başarısız olursa sessizce null dön.
+async function fetchWhatsappPhoneDisplay(
+  pluginId: string,
+  phoneNumberId: string,
+): Promise<string | null> {
+  if (!CHAKRA_API_TOKEN || !pluginId || !phoneNumberId) return null;
+  try {
+    const url = `${CHAKRA_API_BASE}/v1/ext/plugin/whatsapp/${pluginId}/api/v19.0/${phoneNumberId}`;
+    const response = await axios.get(url, {
+      headers: {
+        Authorization: `Bearer ${CHAKRA_API_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      params: { fields: 'display_phone_number,verified_name' },
+      timeout: 8000,
+    });
+    const display = response?.data?.display_phone_number;
+    if (typeof display === 'string' && display.trim().length > 0) {
+      return display.trim();
+    }
+    return null;
+  } catch (err: any) {
+    console.warn(
+      'Chakra display phone fetch failed:',
+      err?.response?.status,
+      err?.response?.data || err?.message,
+    );
+    return null;
+  }
+}
+
 function normalizeFaqAnswers(value: unknown): Record<string, any> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return {};
@@ -1012,6 +1046,32 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
       activeWhatsappBinding.externalAccountId.trim().length > 0;
     const connected = Boolean(salon.chakraPluginId) && hasActiveBinding && (pluginActive || hasConnectionSignal);
 
+    // Backfill: salon.whatsappPhone boşsa ve Chakra üzerinden display
+    // phone alabiliyorsak DB'ye yaz. Temel Bilgiler ekranı setup'tan
+    // okuduğu için sonraki açılışta otomatik dolu gelir.
+    let whatsappPhoneDisplay: string | null =
+      typeof salon.whatsappPhone === 'string' && salon.whatsappPhone.trim().length > 0
+        ? salon.whatsappPhone.trim()
+        : null;
+    if (
+      !whatsappPhoneDisplay &&
+      salon.chakraPluginId &&
+      whatsappPhoneNumberId
+    ) {
+      const fetched = await fetchWhatsappPhoneDisplay(salon.chakraPluginId, whatsappPhoneNumberId);
+      if (fetched) {
+        whatsappPhoneDisplay = fetched;
+        try {
+          await prisma.salon.update({
+            where: { id: salon.id },
+            data: { whatsappPhone: fetched },
+          });
+        } catch (backfillError: any) {
+          console.warn('whatsappPhone backfill failed:', backfillError?.message || backfillError);
+        }
+      }
+    }
+
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
@@ -1025,6 +1085,7 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
       connected,
       isActive: pluginActive,
       whatsappPhoneNumberId,
+      whatsappPhoneDisplay,
       hasActiveBinding,
       sdkUrl: CHAKRA_SDK_URL,
     });
