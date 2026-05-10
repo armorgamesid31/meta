@@ -5346,6 +5346,7 @@ router.get('/setup', authenticateToken, async (req: any, res: any) => {
           about: true,
           heroImageUrl: true,
           instagramUrl: true,
+          logoUrl: true,
         },
       }),
       prisma.salonSettings.findUnique({
