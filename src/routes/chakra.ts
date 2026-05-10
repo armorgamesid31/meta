@@ -1365,6 +1365,41 @@ router.put('/plugin-active', authenticateToken, async (req: any, res: any) => {
   }
 });
 
+// Disconnect WhatsApp: deactivate plugin (best-effort), clear binding,
+// reset faqAnswers. Used by Temel Bilgiler "X" button.
+router.post('/disconnect', authenticateToken, async (req: any, res: any) => {
+  try {
+    const salon = await getAuthenticatedSalon(req);
+    if (!salon) {
+      throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
+    }
+
+    if (salon.chakraPluginId) {
+      try {
+        await setPluginActiveState(salon.chakraPluginId, false);
+      } catch (deactErr: any) {
+        console.warn('Chakra plugin deactivate on disconnect failed:', deactErr?.response?.data || deactErr?.message);
+      }
+    }
+
+    await updateSalonChakraState(salon.id, {
+      chakraPhoneNumberId: null,
+    });
+
+    await upsertSalonAiAgentFaqAnswers(salon.id, {
+      whatsappPluginActive: false,
+      whatsappPhoneNumberId: null,
+      whatsappConnectedAt: null,
+    });
+
+    return res.status(200).json({ ok: true });
+  } catch (error: any) {
+    if (error instanceof BusinessError) throw error;
+    console.error('Chakra disconnect failed:', error?.response?.data || error);
+    throw new BusinessError('INTERNAL_ERROR', 'Chakra disconnect failed.', 500);
+  }
+});
+
 // One-shot flow: create plugin (if missing) + create connect token
 router.post('/setup-connect', authenticateToken, async (req: any, res: any) => {
   try {
