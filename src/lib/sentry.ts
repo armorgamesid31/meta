@@ -1,8 +1,8 @@
 import * as Sentry from '@sentry/node';
-import { nodeProfilingIntegration } from '@sentry/profiling-node';
 
 // Sentry initializasyonu — DSN env yoksa hiçbir şey yapma.
-// Bu sayede production deploy'una env eklenmeden patlamaz.
+// Profiling ve yüksek trace örnekleme küçük instance'larda event loop'u
+// blokladığı için kapatıldı; sadece error capture açık.
 const dsn = process.env.SENTRY_DSN;
 
 if (dsn) {
@@ -10,9 +10,7 @@ if (dsn) {
     dsn,
     environment: process.env.NODE_ENV || 'development',
     enabled: true,
-    tracesSampleRate: 0.1,
-    profilesSampleRate: 0.1,
-    integrations: [nodeProfilingIntegration()],
+    tracesSampleRate: 0.01,
   });
 }
 

@@ -28,6 +28,11 @@ export function accessLogMiddleware(req: Request, res: Response, next: NextFunct
     const slow = durationMs > 500 ? '[slow]' : '';
 
     if (isProduction) {
+      // Prod'da sadece yavaş istek veya 4xx/5xx loglanır;
+      // her istek için stdout yazmak hot path'i yavaşlatıyordu.
+      if (durationMs <= 500 && status < 400) {
+        return;
+      }
       console.log(
         JSON.stringify({
           type: 'access',
