@@ -8,10 +8,12 @@
 import axios from 'axios';
 
 const REPLICATE_TOKEN = (process.env.REPLICATE_API_TOKEN || '').trim();
-// Pinned version hash for cjwbw/rembg — change here to upgrade.
+// Pinned version hash for 851-labs/background-remover — much better than
+// the legacy cjwbw/rembg (U2Net) on logos and intricate shapes. Override via
+// REPLICATE_BG_MODEL_VERSION env if a newer model is desired.
 const REPLICATE_BG_MODEL_VERSION =
   (process.env.REPLICATE_BG_MODEL_VERSION || '').trim() ||
-  'fb8af171cfa1616ddcf1242c093f9c46bcada5ad4cf6f2fbe8b81b330ec5c003';
+  'a029dff38972b5fda4ec5d75d7d1cd25aeff621d2cf4946a41055d7db66b80bc';
 
 const REPLICATE_BASE = 'https://api.replicate.com/v1';
 const TOTAL_TIMEOUT_MS = 90_000;
