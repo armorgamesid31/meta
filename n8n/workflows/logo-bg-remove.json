@@ -1,0 +1,280 @@
+{
+  "name": "Kedy Logo Background Removal (HF RMBG + R2)",
+  "nodes": [
+    {
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-1120, 0],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "logo-bg-remove",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "kedy-logo-bg-remove"
+    },
+    {
+      "id": "prepare-input",
+      "name": "Prepare Input",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-900, 0],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "salonId",
+              "name": "salonId",
+              "value": "={{ Number($json.body.salonId || $json.salonId || 0) }}",
+              "type": "number"
+            },
+            {
+              "id": "jobId",
+              "name": "jobId",
+              "value": "={{ $json.body.jobId || $json.jobId || $now.toMillis() + '-' + Math.random().toString(36).slice(2, 8) }}",
+              "type": "string"
+            },
+            {
+              "id": "originalUrl",
+              "name": "originalUrl",
+              "value": "={{ $json.body.originalUrl || $json.originalUrl }}",
+              "type": "string"
+            },
+            {
+              "id": "originalKey",
+              "name": "originalKey",
+              "value": "={{ $json.body.originalKey || $json.originalKey || '' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "download-original",
+      "name": "Download Original",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-700, 0],
+      "parameters": {
+        "url": "={{ $json.originalUrl }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "original"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "call-hf-rmbg",
+      "name": "HuggingFace RMBG",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-500, 0],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api-inference.huggingface.co/models/briaai/RMBG-1.4",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "original",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/octet-stream"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "processed"
+            }
+          },
+          "timeout": 60000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_HF_CRED_ID",
+          "name": "HuggingFace Bearer"
+        }
+      }
+    },
+    {
+      "id": "compute-output-key",
+      "name": "Compute Output Key",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-300, 0],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "objectKey",
+              "name": "objectKey",
+              "value": "=avatars/logos/{{ $('Prepare Input').item.json.salonId }}/processed-{{ $now.toMillis() }}.png",
+              "type": "string"
+            },
+            {
+              "id": "publicUrl",
+              "name": "publicUrl",
+              "value": "=https://cdn.kedyapp.com/avatars/logos/{{ $('Prepare Input').item.json.salonId }}/processed-{{ $now.toMillis() }}.png",
+              "type": "string"
+            }
+          ]
+        },
+        "include": "all",
+        "options": {}
+      }
+    },
+    {
+      "id": "upload-to-r2",
+      "name": "Upload to R2",
+      "type": "n8n-nodes-base.awsS3",
+      "typeVersion": 2,
+      "position": [-100, 0],
+      "parameters": {
+        "operation": "upload",
+        "bucketName": "kedy",
+        "fileName": "={{ $json.objectKey }}",
+        "binaryPropertyName": "processed",
+        "additionalFields": {
+          "acl": "publicRead",
+          "contentType": "image/png",
+          "storageClass": "standard"
+        }
+      },
+      "credentials": {
+        "aws": {
+          "id": "REPLACE_WITH_R2_CRED_ID",
+          "name": "Cloudflare R2 (S3 compatible)"
+        }
+      }
+    },
+    {
+      "id": "build-response",
+      "name": "Build Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [100, 0],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ok",
+              "name": "ok",
+              "value": "=true",
+              "type": "boolean"
+            },
+            {
+              "id": "jobId",
+              "name": "jobId",
+              "value": "={{ $('Prepare Input').item.json.jobId }}",
+              "type": "string"
+            },
+            {
+              "id": "salonId",
+              "name": "salonId",
+              "value": "={{ $('Prepare Input').item.json.salonId }}",
+              "type": "number"
+            },
+            {
+              "id": "originalUrl",
+              "name": "originalUrl",
+              "value": "={{ $('Prepare Input').item.json.originalUrl }}",
+              "type": "string"
+            },
+            {
+              "id": "processedKey",
+              "name": "processedKey",
+              "value": "={{ $('Compute Output Key').item.json.objectKey }}",
+              "type": "string"
+            },
+            {
+              "id": "processedUrl",
+              "name": "processedUrl",
+              "value": "={{ $('Compute Output Key').item.json.publicUrl }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "respond-success",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [300, 0],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, jobId: $json.jobId, salonId: $json.salonId, originalUrl: $json.originalUrl, processedKey: $json.processedKey, processedUrl: $json.processedUrl } }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-trigger",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [-1120, 240],
+      "parameters": {}
+    },
+    {
+      "id": "respond-error",
+      "name": "Respond Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [-700, 240],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: false, error: $json.error?.message || 'logo_bg_remove_failed' } }}",
+        "options": {
+          "responseCode": 500
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [[{ "node": "Prepare Input", "type": "main", "index": 0 }]]
+    },
+    "Prepare Input": {
+      "main": [[{ "node": "Download Original", "type": "main", "index": 0 }]]
+    },
+    "Download Original": {
+      "main": [[{ "node": "HuggingFace RMBG", "type": "main", "index": 0 }]]
+    },
+    "HuggingFace RMBG": {
+      "main": [[{ "node": "Compute Output Key", "type": "main", "index": 0 }]]
+    },
+    "Compute Output Key": {
+      "main": [[{ "node": "Upload to R2", "type": "main", "index": 0 }]]
+    },
+    "Upload to R2": {
+      "main": [[{ "node": "Build Response", "type": "main", "index": 0 }]]
+    },
+    "Build Response": {
+      "main": [[{ "node": "Respond Success", "type": "main", "index": 0 }]]
+    },
+    "Error Trigger": {
+      "main": [[{ "node": "Respond Error", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
