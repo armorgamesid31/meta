@@ -1046,13 +1046,61 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
       activeWhatsappBinding.externalAccountId.trim().length > 0;
     const connected = Boolean(salon.chakraPluginId) && hasActiveBinding && (pluginActive || hasConnectionSignal);
 
-    // Backfill: salon.whatsappPhone boşsa ve Chakra üzerinden display
-    // phone alabiliyorsak DB'ye yaz. Temel Bilgiler ekranı setup'tan
-    // okuduğu için sonraki açılışta otomatik dolu gelir.
+    // Backfill: salon.whatsappPhone boşsa, en son WhatsApp webhook log'undan
+    // metadata.display_phone_number'ı çıkar. Chakra plugin state phone display
+    // dönmediği için bu en güvenilir kaynak. Mesaj geldikten sonra bu kayıt
+    // tabloda olur ve bir sonraki status çağrısında numara dolar.
     let whatsappPhoneDisplay: string | null =
       typeof salon.whatsappPhone === 'string' && salon.whatsappPhone.trim().length > 0
         ? salon.whatsappPhone.trim()
         : null;
+    if (!whatsappPhoneDisplay) {
+      try {
+        const recentLog = await prisma.metaChannelWebhookLog.findFirst({
+          where: {
+            channel: 'WHATSAPP',
+            direction: 'INBOUND',
+            OR: [{ salonId: salon.id }, { salonId: null }],
+          },
+          orderBy: { createdAt: 'desc' },
+          select: { payload: true },
+          take: 1,
+        });
+        const payload = recentLog?.payload as any;
+        const entries = Array.isArray(payload?.entry) ? payload.entry : [];
+        for (const entry of entries) {
+          const changes = Array.isArray(entry?.changes) ? entry.changes : [];
+          for (const change of changes) {
+            const value = change?.value;
+            const phoneNumberIdInPayload = value?.metadata?.phone_number_id;
+            const displayPhoneInPayload = value?.metadata?.display_phone_number;
+            // Yalnızca aynı phone_number_id'ye ait log'tan ÷güncelle.
+            if (
+              typeof displayPhoneInPayload === 'string' &&
+              displayPhoneInPayload.trim() &&
+              (!whatsappPhoneNumberId || phoneNumberIdInPayload === whatsappPhoneNumberId)
+            ) {
+              whatsappPhoneDisplay = displayPhoneInPayload.trim();
+              break;
+            }
+          }
+          if (whatsappPhoneDisplay) break;
+        }
+        if (whatsappPhoneDisplay) {
+          try {
+            await prisma.salon.update({
+              where: { id: salon.id },
+              data: { whatsappPhone: whatsappPhoneDisplay },
+            });
+          } catch (writeErr: any) {
+            console.warn('whatsappPhone log-backfill write failed:', writeErr?.message || writeErr);
+          }
+        }
+      } catch (logErr: any) {
+        console.warn('whatsappPhone log-backfill read failed:', logErr?.message || logErr);
+      }
+    }
+    // Fallback: Chakra pass-through GET (best-effort, çoğu zaman 404 dönüyor)
     if (
       !whatsappPhoneDisplay &&
       salon.chakraPluginId &&
