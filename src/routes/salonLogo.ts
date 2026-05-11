@@ -179,52 +179,73 @@ router.post(
   },
 );
 
-router.post('/approve', authenticateToken, async (req: Request, res: Response) => {
-  const salonId = getSalonId(req);
+// /approve now accepts the user's edited composition as a multipart file.
+// We verify the original HMAC token to make sure this approval matches the
+// processedKey that came out of /process, then write the user's final image
+// to R2 (new key) and update salon.logoUrl. Old processed/original temp
+// files are deleted afterwards.
+router.post(
+  '/approve',
+  authenticateToken,
+  upload.single('file'),
+  async (req: Request, res: Response) => {
+    const salonId = getSalonId(req);
 
-  const processedKey = String(req.body?.processedKey || '').trim();
-  const token = String(req.body?.token || '').trim();
-  const expiresAt = Number(req.body?.expiresAt);
-  const originalKey = typeof req.body?.originalKey === 'string' ? req.body.originalKey.trim() : '';
-  const originalToken = typeof req.body?.originalToken === 'string' ? req.body.originalToken.trim() : '';
+    const processedKey = String(req.body?.processedKey || '').trim();
+    const token = String(req.body?.token || '').trim();
+    const expiresAt = Number(req.body?.expiresAt);
+    const originalKey = typeof req.body?.originalKey === 'string' ? req.body.originalKey.trim() : '';
+    const originalToken = typeof req.body?.originalToken === 'string' ? req.body.originalToken.trim() : '';
 
-  if (!processedKey || !token || !Number.isFinite(expiresAt)) {
-    throw new BusinessError('VALIDATION_FAILED', 'Missing processedKey/token/expiresAt.', 400);
-  }
-  if (!verifyToken({ salonId, key: processedKey, expiresAt, token })) {
-    throw new BusinessError('INVALID_TOKEN', 'Logo approval token is invalid or expired.', 400);
-  }
-
-  const publicUrl = buildR2PublicUrl(processedKey);
-
-  const existing = await prisma.salon.findUnique({
-    where: { id: salonId },
-    select: { logoUrl: true },
-  });
-
-  await prisma.salon.update({
-    where: { id: salonId },
-    data: { logoUrl: publicUrl },
-  });
-
-  if (originalKey && originalToken && verifyToken({ salonId, key: originalKey, expiresAt, token: originalToken })) {
-    await deleteR2Object(originalKey);
-  }
-
-  if (existing?.logoUrl) {
-    try {
-      const parsed = new URL(existing.logoUrl);
-      const prevKey = parsed.pathname.replace(/^\/+/, '');
-      if (prevKey.startsWith(LOGO_PREFIX) && prevKey !== processedKey) {
-        await deleteR2Object(prevKey);
-      }
-    } catch {
-      // ignore — old URL may not parse
+    if (!processedKey || !token || !Number.isFinite(expiresAt)) {
+      throw new BusinessError('VALIDATION_FAILED', 'Missing processedKey/token/expiresAt.', 400);
     }
-  }
+    if (!verifyToken({ salonId, key: processedKey, expiresAt, token })) {
+      throw new BusinessError('INVALID_TOKEN', 'Logo approval token is invalid or expired.', 400);
+    }
 
-  res.status(200).json({ ok: true, logoUrl: publicUrl });
-});
+    const file = req.file;
+    if (!file?.buffer?.length) {
+      throw new BusinessError('VALIDATION_FAILED', 'Edited logo file is required.', 400);
+    }
+
+    const finalKey = buildObjectKey(salonId, 'processed', 'png');
+    const publicUrl = await uploadBufferToR2({
+      objectKey: finalKey,
+      body: file.buffer,
+      contentType: 'image/png',
+    });
+
+    const existing = await prisma.salon.findUnique({
+      where: { id: salonId },
+      select: { logoUrl: true },
+    });
+
+    await prisma.salon.update({
+      where: { id: salonId },
+      data: { logoUrl: publicUrl },
+    });
+
+    // Clean up the staging files from /process now that we have the final.
+    await deleteR2Object(processedKey);
+    if (originalKey && originalToken && verifyToken({ salonId, key: originalKey, expiresAt, token: originalToken })) {
+      await deleteR2Object(originalKey);
+    }
+    if (existing?.logoUrl) {
+      try {
+        const parsed = new URL(existing.logoUrl);
+        const prevKey = parsed.pathname.replace(/^\/+/, '');
+        if (prevKey.startsWith(LOGO_PREFIX) && prevKey !== finalKey) {
+          await deleteR2Object(prevKey);
+        }
+      } catch {
+        // ignore — old URL may not parse
+      }
+    }
+
+    res.status(200).json({ ok: true, logoUrl: publicUrl });
+  },
+);
 
 router.post('/reject', authenticateToken, async (req: Request, res: Response) => {
   const salonId = getSalonId(req);
