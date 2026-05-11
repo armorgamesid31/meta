@@ -1,24 +1,17 @@
-// Background removal via Replicate (cjwbw/rembg, ~3sec on T4).
+// Background removal via remove.bg.
 //
-// Backend uploads the original image to R2 first, then asks Replicate to
-// process the public URL. We poll the prediction with the `Prefer: wait=60`
-// header so the call returns synchronously in most cases; fall back to short
-// polling if Replicate keeps the request open longer than that.
+// Professional-grade BG removal with crisp edges and proper interior alpha
+// — matches the quality Canva/Photoshop give in their UIs. Free tier covers
+// 50 calls/month; beyond that it's $0.20/img (prepaid credit packs).
+//
+// We pass the original's public R2 URL straight to remove.bg as image_url,
+// so the salon's PNG never needs to be base64-encoded or re-uploaded.
 
 import axios from 'axios';
 
-const REPLICATE_TOKEN = (process.env.REPLICATE_API_TOKEN || '').trim();
-// Pinned version hash for men1scus/birefnet — BiRefNet uses transformer-based
-// matting that recovers fine edges and *interior holes* (e.g. the cream gaps
-// inside a circular emblem) that simpler U-Net models can't. Override via
-// REPLICATE_BG_MODEL_VERSION env if a different model is desired.
-const REPLICATE_BG_MODEL_VERSION =
-  (process.env.REPLICATE_BG_MODEL_VERSION || '').trim() ||
-  'f74986db0355b58403ed20963af156525e2891ea3c2d499bfbfb2a28cd87c5d7';
-
-const REPLICATE_BASE = 'https://api.replicate.com/v1';
-const TOTAL_TIMEOUT_MS = 90_000;
-const POLL_INTERVAL_MS = 1_500;
+const REMOVEBG_TOKEN = (process.env.REMOVEBG_API_KEY || '').trim();
+const REMOVEBG_ENDPOINT = 'https://api.remove.bg/v1.0/removebg';
+const REMOVEBG_TIMEOUT_MS = 60_000;
 
 export class BackgroundRemovalError extends Error {
   public readonly status: number | null;
@@ -30,113 +23,40 @@ export class BackgroundRemovalError extends Error {
 }
 
 export function isBackgroundRemovalConfigured(): boolean {
-  return Boolean(REPLICATE_TOKEN);
-}
-
-function authHeaders() {
-  return {
-    Authorization: `Bearer ${REPLICATE_TOKEN}`,
-    'Content-Type': 'application/json',
-  };
-}
-
-type ReplicatePrediction = {
-  id: string;
-  status: 'starting' | 'processing' | 'succeeded' | 'failed' | 'canceled';
-  output: string | string[] | null;
-  error: string | null;
-  urls?: { get?: string; cancel?: string };
-};
-
-async function pollPrediction(getUrl: string, deadline: number): Promise<ReplicatePrediction> {
-  while (Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-    const res = await axios.get<ReplicatePrediction>(getUrl, {
-      headers: authHeaders(),
-      timeout: 15_000,
-      validateStatus: () => true,
-    });
-    if (res.status >= 400) {
-      throw new BackgroundRemovalError(
-        `Replicate poll failed (status ${res.status}): ${JSON.stringify(res.data).slice(0, 200)}`,
-        res.status,
-      );
-    }
-    const data = res.data;
-    if (data.status === 'succeeded' || data.status === 'failed' || data.status === 'canceled') {
-      return data;
-    }
-  }
-  throw new BackgroundRemovalError('Replicate prediction timed out.');
+  return Boolean(REMOVEBG_TOKEN);
 }
 
 export async function removeBackgroundFromUrl(imageUrl: string): Promise<Buffer> {
-  if (!REPLICATE_TOKEN) {
-    throw new BackgroundRemovalError('REPLICATE_API_TOKEN missing.');
+  if (!REMOVEBG_TOKEN) {
+    throw new BackgroundRemovalError('REMOVEBG_API_KEY missing.');
   }
 
-  const startedAt = Date.now();
-  const deadline = startedAt + TOTAL_TIMEOUT_MS;
+  const form = new FormData();
+  form.set('image_url', imageUrl);
+  form.set('size', 'auto');
+  form.set('format', 'png');
 
-  // Kick off the prediction, asking Replicate to wait up to 60s before responding.
-  const createRes = await axios.post<ReplicatePrediction>(
-    `${REPLICATE_BASE}/predictions`,
-    {
-      version: REPLICATE_BG_MODEL_VERSION,
-      input: { image: imageUrl },
+  const response = await axios.post<ArrayBuffer>(REMOVEBG_ENDPOINT, form, {
+    headers: {
+      'X-Api-Key': REMOVEBG_TOKEN,
+      Accept: 'image/png',
     },
-    {
-      headers: {
-        ...authHeaders(),
-        Prefer: 'wait=60',
-      },
-      timeout: 70_000,
-      validateStatus: () => true,
-    },
-  );
-
-  if (createRes.status >= 400) {
-    throw new BackgroundRemovalError(
-      `Replicate create failed (status ${createRes.status}): ${JSON.stringify(createRes.data).slice(0, 300)}`,
-      createRes.status,
-    );
-  }
-
-  let prediction = createRes.data;
-  if (prediction.status !== 'succeeded' && prediction.status !== 'failed' && prediction.status !== 'canceled') {
-    const getUrl = prediction.urls?.get;
-    if (!getUrl) {
-      throw new BackgroundRemovalError('Replicate response missing urls.get for polling.');
-    }
-    prediction = await pollPrediction(getUrl, deadline);
-  }
-
-  if (prediction.status !== 'succeeded') {
-    throw new BackgroundRemovalError(
-      prediction.error || `Replicate prediction status: ${prediction.status}`,
-    );
-  }
-
-  const output = prediction.output;
-  const outputUrl = typeof output === 'string' ? output : Array.isArray(output) ? output[0] : null;
-  if (!outputUrl) {
-    throw new BackgroundRemovalError('Replicate prediction had no output URL.');
-  }
-
-  const fileRes = await axios.get<ArrayBuffer>(outputUrl, {
     responseType: 'arraybuffer',
-    timeout: 30_000,
+    timeout: REMOVEBG_TIMEOUT_MS,
     validateStatus: () => true,
   });
-  if (fileRes.status >= 400) {
+
+  if (response.status >= 400) {
+    const body = Buffer.from(response.data).toString('utf8').slice(0, 500);
     throw new BackgroundRemovalError(
-      `Replicate output download failed (status ${fileRes.status}).`,
-      fileRes.status,
+      `remove.bg error (${response.status}): ${body}`,
+      response.status,
     );
   }
-  const buffer = Buffer.from(fileRes.data);
+
+  const buffer = Buffer.from(response.data);
   if (!buffer.length) {
-    throw new BackgroundRemovalError('Replicate output download returned empty body.');
+    throw new BackgroundRemovalError('remove.bg returned empty body.');
   }
   return buffer;
 }
