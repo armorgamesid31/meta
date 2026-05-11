@@ -29,7 +29,7 @@ import {
 } from '../lib/r2.js';
 import {
   isBackgroundRemovalConfigured,
-  removeBackgroundFromUrl,
+  removeBackground,
 } from '../services/backgroundRemoval.js';
 
 const router = Router();
@@ -145,7 +145,7 @@ router.post(
 
     let processedBuffer: Buffer;
     try {
-      processedBuffer = await removeBackgroundFromUrl(originalUrl);
+      processedBuffer = await removeBackground(file.buffer);
     } catch (err: any) {
       await deleteR2Object(originalKey);
       console.error('Logo bg removal failed:', err?.message || err);
