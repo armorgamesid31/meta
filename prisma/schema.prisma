@@ -484,6 +484,7 @@ model Appointment {
   serviceId                    Int
   gender                       CustomerGender                   @default(female)
   customerRating               Int?
+  salonRating                  Int?
   customerReview               String?
   customerReviewedAt           DateTime?                        @db.Timestamp(6)
   paymentMethod                PaymentMethod?
@@ -643,6 +644,7 @@ model Customer {
   acceptMarketing      Boolean?                         @default(false)
   instagram            String?
   registrationStatus   CustomerRegistrationStatus       @default(VERIFIED)
+  googleReviewRequestedAt DateTime?                     @db.Timestamp(6)
   appointments         Appointment[]
   campaignApplications AppointmentCampaignApplication[]
   appointmentLines     AppointmentLine[]
@@ -2299,6 +2301,7 @@ enum CustomerPhoneVerificationStatus {
 enum MagicLinkType {
   BOOKING
   RESCHEDULE
+  FEEDBACK
 }
 
 enum MagicLinkStatus {
