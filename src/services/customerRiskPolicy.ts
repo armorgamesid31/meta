@@ -21,8 +21,12 @@ export type AttendanceConfig = {
   countMissedAppointments: boolean;
   countLateCancellations: boolean;
   countLateReschedules: boolean;
-  lateCancellationHours: number;
-  lateRescheduleHours: number;
+  /**
+   * Unified threshold for BOTH late cancellation and late reschedule events.
+   * Replaces the legacy separate `lateCancellationHours` / `lateRescheduleHours`
+   * fields. Legacy reads coerce to whichever old field exists.
+   */
+  lateChangeHours: number;
   validityWindow: ValidityWindow;
   notificationEvents: AttendanceNotificationConfig;
   penaltyPolicy: Record<AttendanceRangeKey, AttendancePenaltyAction>;
@@ -49,8 +53,7 @@ export const DEFAULT_ATTENDANCE_CONFIG: AttendanceConfig = {
   countMissedAppointments: true,
   countLateCancellations: true,
   countLateReschedules: true,
-  lateCancellationHours: 24,
-  lateRescheduleHours: 12,
+  lateChangeHours: 24,
   validityWindow: '6m',
   notificationEvents: {
     missedAppointments: true,
@@ -111,8 +114,12 @@ function mergeAttendanceConfig(current: AttendanceConfig, patch: unknown): Atten
     countMissedAppointments: toBoolean(raw.countMissedAppointments, current.countMissedAppointments),
     countLateCancellations: toBoolean(raw.countLateCancellations, current.countLateCancellations),
     countLateReschedules: toBoolean(raw.countLateReschedules, current.countLateReschedules),
-    lateCancellationHours: toPositiveInt(raw.lateCancellationHours, current.lateCancellationHours),
-    lateRescheduleHours: toPositiveInt(raw.lateRescheduleHours, current.lateRescheduleHours),
+    lateChangeHours: toPositiveInt(
+      // Prefer the canonical field; fall back to legacy ones so existing
+      // AutomationRule rows continue to work.
+      raw.lateChangeHours ?? raw.lateCancellationHours ?? raw.lateRescheduleHours,
+      current.lateChangeHours,
+    ),
     validityWindow: toValidityWindow(raw.validityWindow, current.validityWindow),
     notificationEvents: {
       missedAppointments: toBoolean(
