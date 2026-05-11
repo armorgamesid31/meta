@@ -14,6 +14,25 @@ import {
   verifyPhoneCode,
 } from '../services/phoneVerification.js';
 import { BusinessError } from '../lib/errors.js';
+import {
+  VerificationChannel,
+  VerificationPurpose,
+} from '@prisma/client';
+import {
+  consumeVerificationLink,
+  createVerificationLink,
+  VerificationError,
+  VERIFICATION_TTL_MINUTES,
+  VERIFICATION_RESEND_COOLDOWN_SECONDS,
+} from '../services/verificationLinkService.js';
+import {
+  sendVerificationLinkTemplate,
+} from '../services/whatsappTemplateSender.js';
+import {
+  findSalonLinksForPhone,
+  linkCustomerToIdentity,
+  upsertPhoneIdentity,
+} from '../services/phoneIdentityService.js';
 
 const router = Router();
 
@@ -553,6 +572,246 @@ router.post('/verify-phone/confirm', async (req: any, res: any) => {
     }
     return res.status(status).json({ message });
   }
+});
+
+// ─────────────────────────────────────────────────────────────────
+// UTILITY-link based customer phone verification.
+//
+// Replaces the OTP code flow with a magic-link sent via the salon's
+// own WABA using the kedy_dogrulama_link template. Two paths:
+//
+//   FAST PATH — phone has a PhoneIdentity AND is already linked to
+//   this salon → return VERIFIED immediately, no message sent.
+//
+//   CONSENT PATH — phone has a PhoneIdentity (ecosystem-verified) but
+//   not linked to THIS salon → short consent link (purpose=CUSTOMER_LINK_CONSENT).
+//
+//   FULL PATH — phone has no PhoneIdentity → full verification
+//   (purpose=CUSTOMER_PHONE).
+// ─────────────────────────────────────────────────────────────────
+
+function clientReqInfo(req: any): { ipAddress: string | null; userAgent: string | null } {
+  const ip = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  return {
+    ipAddress: ip || req.ip || req.socket?.remoteAddress || null,
+    userAgent: String(req.headers['user-agent'] || '').slice(0, 500) || null,
+  };
+}
+
+router.post('/verify-link/start', async (req: any, res: any) => {
+  const salonId = req.salon?.id;
+  if (!salonId) {
+    throw new BusinessError('VALIDATION_FAILED', 'Salon kontekstı bulunamadı.', 400);
+  }
+
+  const body = req.body || {};
+  const rawPhone = String(body.rawPhone || body.phone || '').trim();
+  const countryIso = String(body.countryIso || 'TR').trim().toUpperCase();
+  const customerName = String(body.name || body.firstName || '').trim() || 'Müşteri';
+  const source = String(body.source || 'BOOKING').toUpperCase() as
+    | 'INSTAGRAM'
+    | 'BOOKING'
+    | 'ADMIN'
+    | 'WHATSAPP_INBOUND'
+    | 'WEB';
+
+  if (!rawPhone) {
+    throw new BusinessError('VALIDATION_FAILED', 'Telefon gereklidir.', 400);
+  }
+
+  let normalized;
+  try {
+    normalized = validateMobilePhone({ rawPhone, countryIso });
+  } catch (e: any) {
+    throw new BusinessError('VALIDATION_FAILED', e?.message || 'Geçersiz telefon.', 400);
+  }
+
+  // Resolve salon meta for WABA + display name.
+  const salon = await prisma.salon.findUnique({
+    where: { id: salonId },
+    select: { id: true, name: true, slug: true, chakraPluginId: true, chakraPhoneNumberId: true },
+  });
+  if (!salon?.chakraPluginId || !salon.chakraPhoneNumberId) {
+    throw new BusinessError(
+      'PRECONDITION_FAILED',
+      'Bu salon için WhatsApp doğrulama servisi henüz hazır değil.',
+      412,
+    );
+  }
+
+  // FAST PATH: phone already linked to this salon.
+  const ecoLinks = await findSalonLinksForPhone(normalized.digits);
+  const alreadyLinked = ecoLinks.identity
+    ? ecoLinks.links.some((l) => l.salonId === salonId)
+    : false;
+
+  if (alreadyLinked) {
+    return res.status(200).json({
+      state: 'already_verified',
+      verifiedAt: ecoLinks.identity?.lastVerifiedAt?.toISOString(),
+    });
+  }
+
+  const purpose = ecoLinks.identity
+    ? VerificationPurpose.CUSTOMER_LINK_CONSENT
+    : VerificationPurpose.CUSTOMER_PHONE;
+
+  const { ipAddress, userAgent } = clientReqInfo(req);
+  const link = await createVerificationLink({
+    purpose,
+    channel: VerificationChannel.WHATSAPP,
+    targetSalonId: salonId,
+    targetPhone: normalized.digits,
+    payload: {
+      salonName: salon.name,
+      customerName,
+      source,
+      countryIso: normalized.countryIso,
+      e164: normalized.e164,
+    },
+    salonSlug: salon.slug || null,
+    ipAddress,
+    userAgent,
+  });
+
+  const actionText =
+    purpose === VerificationPurpose.CUSTOMER_LINK_CONSENT
+      ? `${salon.name} salonuna kayıt`
+      : `${salon.name} salonu randevu`;
+
+  const sendResult = await sendVerificationLinkTemplate({
+    salonId,
+    phone: normalized.digits,
+    name: customerName,
+    salonOrAction: actionText,
+    verificationLink: link.link,
+    ttlMinutes: VERIFICATION_TTL_MINUTES,
+    footerBrand: salon.name,
+  });
+
+  if (!sendResult.ok) {
+    throw new BusinessError('INTERNAL_ERROR', 'WhatsApp gönderimi başarısız.', 500, {
+      reason: sendResult.error,
+    });
+  }
+
+  return res.status(202).json({
+    id: link.id,
+    state: purpose === VerificationPurpose.CUSTOMER_LINK_CONSENT ? 'consent_required' : 'verification_required',
+    channel: 'whatsapp',
+    expiresAt: link.expiresAt.toISOString(),
+    resendCooldownSeconds: VERIFICATION_RESEND_COOLDOWN_SECONDS,
+  });
+});
+
+router.post('/verify-link/confirm', async (req: any, res: any) => {
+  const salonId = req.salon?.id;
+  if (!salonId) {
+    throw new BusinessError('VALIDATION_FAILED', 'Salon kontekstı bulunamadı.', 400);
+  }
+
+  const token = String(req.body?.token || '').trim();
+  const consentAccepted = req.body?.consentAccepted === true;
+  if (!token) {
+    throw new BusinessError('VALIDATION_FAILED', 'token gereklidir.', 400);
+  }
+  if (!consentAccepted) {
+    throw new BusinessError('VALIDATION_FAILED', 'KVKK onayı gereklidir.', 400);
+  }
+
+  const { ipAddress, userAgent } = clientReqInfo(req);
+
+  let consumed;
+  try {
+    consumed = await consumeVerificationLink(token, { ipAddress, userAgent });
+  } catch (error: any) {
+    if (error instanceof VerificationError) {
+      const status = error.code === 'VERIFICATION_LINK_EXPIRED' ? 410 : 400;
+      throw new BusinessError(error.code, error.message, status);
+    }
+    throw error;
+  }
+
+  if (
+    consumed.purpose !== VerificationPurpose.CUSTOMER_PHONE &&
+    consumed.purpose !== VerificationPurpose.CUSTOMER_LINK_CONSENT
+  ) {
+    throw new BusinessError('VALIDATION_FAILED', 'Geçersiz doğrulama tipi.', 400);
+  }
+  if (consumed.targetSalonId !== salonId) {
+    throw new BusinessError('VALIDATION_FAILED', 'Bu doğrulama bu salona ait değil.', 400);
+  }
+
+  const phone = consumed.targetPhone;
+  if (!phone) {
+    throw new BusinessError('INTERNAL_ERROR', 'Doğrulama eksik.', 500);
+  }
+
+  const payloadAny = consumed.payload as any;
+  const customerName = (payloadAny?.customerName as string) || 'Müşteri';
+  const source = ((payloadAny?.source as string) || 'BOOKING').toUpperCase() as
+    | 'INSTAGRAM'
+    | 'BOOKING'
+    | 'ADMIN'
+    | 'WHATSAPP_INBOUND'
+    | 'WEB';
+
+  // Upsert ecosystem PhoneIdentity.
+  const phoneIdentity = await upsertPhoneIdentity({ phone });
+
+  // Create or upgrade the salon's Customer row.
+  const existing = await prisma.customer.findFirst({
+    where: { phone, salonId },
+  });
+
+  let customer;
+  if (existing) {
+    customer = await prisma.customer.update({
+      where: { id: existing.id },
+      data: { registrationStatus: 'VERIFIED' },
+    });
+  } else {
+    const splitName = customerName.split(' ');
+    customer = await prisma.customer.create({
+      data: {
+        phone,
+        salonId,
+        name: customerName,
+        firstName: splitName[0] || null,
+        lastName: splitName.slice(1).join(' ') || null,
+        registrationStatus: 'VERIFIED',
+        acceptMarketing: false,
+      },
+    });
+    await prisma.customerRiskProfile.create({
+      data: {
+        customerId: customer.id,
+        salonId,
+        riskScore: 0,
+        riskLevel: null,
+      },
+    });
+  }
+
+  await linkCustomerToIdentity({
+    salonId,
+    phoneIdentityId: phoneIdentity.id,
+    customerId: customer.id,
+    consentSource: source,
+    optInChannels: { whatsapp: true },
+  });
+
+  return res.status(200).json({
+    state: 'verified',
+    customer: {
+      id: customer.id,
+      phone: customer.phone,
+      name: customer.name,
+    },
+    salon: {
+      id: salonId,
+    },
+  });
 });
 
 export default router;

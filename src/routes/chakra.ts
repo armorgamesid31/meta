@@ -82,6 +82,18 @@ const MASTER_TEMPLATE_VARIATIONS: Record<string, string[]> = {
     "Merhaba {{customer_name}}, {{service_name}} ile gününüzün güzelleştiğini umuyoruz. Bir yorum bırakmak ister misiniz? 🌸",
     "Selamlar, {{service_name}} randevunuzu değerlendirmek için vakit ayırdığınız için teşekkürler! 👋"
   ],
+  kedy_dogrulama_link: [
+    "Merhaba {{name}}, {{salon_or_action}} işleminizi tamamlamak için linke dokunun: {{verification_link}} — Link {{ttl}} dakika geçerlidir. — {{footer_brand}}",
+    "Selam {{name}}! {{salon_or_action}} için kısa onay linkin hazır: {{verification_link}} (Link {{ttl}} dk geçerli) — {{footer_brand}}",
+    "Merhaba {{name}}, {{salon_or_action}} işlemini bu güvenli bağlantıyla onaylayabilirsin: {{verification_link}}. Süre: {{ttl}} dk. — {{footer_brand}}",
+    "{{name}}, {{salon_or_action}} işlemini tamamlamak için linke dokun: {{verification_link}}. {{ttl}} dakika içinde kullanmalısın. — {{footer_brand}}",
+    "Hey {{name}}, {{salon_or_action}} işlemini buradan onayla: {{verification_link}} — {{ttl}} dk geçerlidir. — {{footer_brand}}",
+    "Merhaba {{name}}, {{salon_or_action}} için aşağıdaki linke tıklamanız yeterli: {{verification_link}}. Linkin geçerlilik süresi {{ttl}} dakikadır. — {{footer_brand}}",
+    "Selamlar {{name}}, {{salon_or_action}} işlemine devam etmek için: {{verification_link}}. {{ttl}} dakika içinde kullanın. — {{footer_brand}}",
+    "{{name}}, {{salon_or_action}} işlemini tek dokunuşla tamamlayın: {{verification_link}}. {{ttl}} dk içinde geçerlidir. — {{footer_brand}}",
+    "Merhaba {{name}}, {{salon_or_action}} adımını tamamlamak için bağlantıyı açın: {{verification_link}}. Süre: {{ttl}} dakika. — {{footer_brand}}",
+    "Hoş geldiniz {{name}}, {{salon_or_action}} işleminize devam etmek için: {{verification_link}} — {{ttl}} dakika içinde kullanın. — {{footer_brand}}"
+  ],
   kedy_auth_code: [
     "Kedy doğrulama kodunuz: {{verification_code}}. Bu kodu kimseyle paylaşmayın. ✨",
     "Giriş için onay kodunuz: {{verification_code}}. Teşekkürler! 🔒",
@@ -182,6 +194,27 @@ const KEDY_MASTER_TEMPLATES = [
             { param_name: 'customer_name', example: 'Müşteri' },
             { param_name: 'appointment_date', example: '14 Nisan 15:30' },
             { param_name: 'service_name', example: 'Saç Kesimi' }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    name: 'kedy_dogrulama_link',
+    category: 'UTILITY',
+    parameter_format: 'NAMED',
+    eventType: 'VERIFICATION_LINK',
+    components: [
+      {
+        type: 'BODY',
+        text: MASTER_TEMPLATE_VARIATIONS.kedy_dogrulama_link[0],
+        example: {
+          body_text_named_params: [
+            { param_name: 'name', example: 'Müşteri' },
+            { param_name: 'salon_or_action', example: 'Bella Studio salonu randevu' },
+            { param_name: 'verification_link', example: 'https://app.berkai.shop/c/v/abc123' },
+            { param_name: 'ttl', example: '15' },
+            { param_name: 'footer_brand', example: 'Kedy' }
           ]
         }
       }

@@ -25,7 +25,7 @@ model Salon {
   citySlug                    String?
   district                    String?
   districtSlug                String?
-  status                      SalonLifecycleStatus              @default(ACTIVE)
+  status                      SalonLifecycleStatus             @default(ACTIVE)
   countryCode                 String?
   address                     String?
   googleMapsUrl               String?
@@ -56,6 +56,7 @@ model Salon {
   phoneVerifications          CustomerPhoneVerification[]
   identityBindings            IdentityBinding[]
   identitySessions            IdentitySession[]
+  verificationLinks           VerificationLink[]               @relation("SalonVerificationLinks")
   importBatches               ImportBatch[]
   importCommitRuns            ImportCommitRun[]
   importConflicts             ImportConflict[]
@@ -81,9 +82,9 @@ model Salon {
   memberships                 SalonMembership[]
   subscriptions               SalonSubscription[]
   invites                     Invite[]
-  referralCodes               ReferralCode[]                  @relation("ReferrerSalon")
-  referralInvitesSent         ReferralInvite[]                @relation("ReferrerSalonInvites")
-  referredInvites             ReferralInvite[]                @relation("ReferredSalon")
+  referralCodes               ReferralCode[]                   @relation("ReferrerSalon")
+  referralInvitesSent         ReferralInvite[]                 @relation("ReferrerSalonInvites")
+  referredInvites             ReferralInvite[]                 @relation("ReferredSalon")
   referralRewards             ReferralReward[]
   services                    Service[]
   ServiceCategory             ServiceCategory[]
@@ -161,35 +162,38 @@ model SalonUser {
 }
 
 model UserIdentity {
-  id                Int                @id @default(autoincrement())
-  phone             String?            @unique(map: "uq_user_identity_phone")
-  email             String?            @unique(map: "uq_user_identity_email")
+  id                Int                 @id @default(autoincrement())
+  phone             String?             @unique(map: "uq_user_identity_phone")
+  email             String?             @unique(map: "uq_user_identity_email")
   passwordHash      String
   firstName         String?
   lastName          String?
   displayName       String?
-  isActive          Boolean            @default(true)
-  createdAt         DateTime?          @default(now()) @db.Timestamp(6)
-  updatedAt         DateTime?          @default(now()) @updatedAt @db.Timestamp(6)
+  isActive          Boolean             @default(true)
+  phoneVerifiedAt   DateTime?
+  emailVerifiedAt   DateTime?
+  createdAt         DateTime?           @default(now()) @db.Timestamp(6)
+  updatedAt         DateTime?           @default(now()) @updatedAt @db.Timestamp(6)
   memberships       SalonMembership[]
   authSessions      MobileAuthSession[]
+  verificationLinks VerificationLink[]
 }
 
 model SalonMembership {
-  id                    Int                    @id @default(autoincrement())
+  id                    Int                      @id @default(autoincrement())
   salonId               Int
   identityId            Int
   role                  String
   secondaryRoles        Json?
-  isActive              Boolean                @default(true)
-  passwordResetRequired Boolean                @default(false)
-  lastLoginAt           DateTime?              @db.Timestamp(6)
+  isActive              Boolean                  @default(true)
+  passwordResetRequired Boolean                  @default(false)
+  lastLoginAt           DateTime?                @db.Timestamp(6)
   legacySalonUserId     Int?
-  createdAt             DateTime?              @default(now()) @db.Timestamp(6)
-  updatedAt             DateTime?              @default(now()) @updatedAt @db.Timestamp(6)
-  salon                 Salon                  @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  identity              UserIdentity           @relation(fields: [identityId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  invites               Invite[]               @relation("InviteMembershipTarget")
+  createdAt             DateTime?                @default(now()) @db.Timestamp(6)
+  updatedAt             DateTime?                @default(now()) @updatedAt @db.Timestamp(6)
+  salon                 Salon                    @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  identity              UserIdentity             @relation(fields: [identityId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  invites               Invite[]                 @relation("InviteMembershipTarget")
   staffMembers          Staff[]
   permissionOverrides   UserPermissionOverride[]
   authSessions          MobileAuthSession[]
@@ -200,19 +204,19 @@ model SalonMembership {
 }
 
 model MobileAuthSession {
-  id               Int       @id @default(autoincrement())
+  id               Int              @id @default(autoincrement())
   userId           Int
   identityId       Int?
   membershipId     Int?
   salonId          Int
-  refreshTokenHash String    @unique(map: "uq_mobile_auth_refresh_token_hash")
-  expiresAt        DateTime  @db.Timestamp(6)
-  revokedAt        DateTime? @db.Timestamp(6)
-  createdAt        DateTime? @default(now()) @db.Timestamp(6)
-  updatedAt        DateTime? @default(now()) @updatedAt @db.Timestamp(6)
-  salon            Salon     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  user             SalonUser @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  identity         UserIdentity?   @relation(fields: [identityId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  refreshTokenHash String           @unique(map: "uq_mobile_auth_refresh_token_hash")
+  expiresAt        DateTime         @db.Timestamp(6)
+  revokedAt        DateTime?        @db.Timestamp(6)
+  createdAt        DateTime?        @default(now()) @db.Timestamp(6)
+  updatedAt        DateTime?        @default(now()) @updatedAt @db.Timestamp(6)
+  salon            Salon            @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user             SalonUser        @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  identity         UserIdentity?    @relation(fields: [identityId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   membership       SalonMembership? @relation(fields: [membershipId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([userId, salonId], map: "idx_mobile_auth_user_salon")
@@ -237,25 +241,25 @@ model SalonSubscription {
 }
 
 model Invite {
-  id              Int          @id @default(autoincrement())
-  salonId         Int
-  invitedUserId   Int
-  invitedMembershipId Int?
+  id                   Int              @id @default(autoincrement())
+  salonId              Int
+  invitedUserId        Int
+  invitedMembershipId  Int?
   invitedIdentityPhone String?
   invitedIdentityEmail String?
-  inviteCodeHash  String       @unique
-  inviteTokenHash String       @unique
-  status          InviteStatus @default(PENDING)
-  expiresAt       DateTime     @db.Timestamp(6)
-  acceptedAt      DateTime?    @db.Timestamp(6)
-  revokedAt       DateTime?    @db.Timestamp(6)
-  createdBy       Int?
-  createdAt       DateTime?    @default(now()) @db.Timestamp(6)
-  updatedAt       DateTime?    @default(now()) @updatedAt @db.Timestamp(6)
-  salon           Salon        @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  invitedUser     SalonUser    @relation("InviteTargetUser", fields: [invitedUserId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  invitedMembership SalonMembership? @relation("InviteMembershipTarget", fields: [invitedMembershipId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  createdByUser   SalonUser?   @relation("InviteCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  inviteCodeHash       String           @unique
+  inviteTokenHash      String           @unique
+  status               InviteStatus     @default(PENDING)
+  expiresAt            DateTime         @db.Timestamp(6)
+  acceptedAt           DateTime?        @db.Timestamp(6)
+  revokedAt            DateTime?        @db.Timestamp(6)
+  createdBy            Int?
+  createdAt            DateTime?        @default(now()) @db.Timestamp(6)
+  updatedAt            DateTime?        @default(now()) @updatedAt @db.Timestamp(6)
+  salon                Salon            @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  invitedUser          SalonUser        @relation("InviteTargetUser", fields: [invitedUserId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  invitedMembership    SalonMembership? @relation("InviteMembershipTarget", fields: [invitedMembershipId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  createdByUser        SalonUser?       @relation("InviteCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([salonId, status], map: "idx_invite_salon_status")
   @@index([invitedUserId, status], map: "idx_invite_user_status")
@@ -297,30 +301,30 @@ model StripeCheckoutAttempt {
 }
 
 model ReferralCode {
-  id             Int       @id @default(autoincrement())
-  salonId        Int
-  code           String    @unique
-  isActive       Boolean   @default(true)
-  createdAt      DateTime? @default(now()) @db.Timestamp(6)
-  updatedAt      DateTime? @default(now()) @updatedAt @db.Timestamp(6)
-  referrerSalon  Salon     @relation("ReferrerSalon", fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  invites        ReferralInvite[]
+  id            Int              @id @default(autoincrement())
+  salonId       Int
+  code          String           @unique
+  isActive      Boolean          @default(true)
+  createdAt     DateTime?        @default(now()) @db.Timestamp(6)
+  updatedAt     DateTime?        @default(now()) @updatedAt @db.Timestamp(6)
+  referrerSalon Salon            @relation("ReferrerSalon", fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  invites       ReferralInvite[]
 
   @@index([salonId, isActive], map: "idx_referral_code_salon_active")
 }
 
 model ReferralInvite {
-  id               Int                  @id @default(autoincrement())
-  referralCodeId   Int
-  referrerSalonId  Int
-  referredSalonId  Int
-  status           ReferralInviteStatus @default(QUALIFIED)
-  createdAt        DateTime?            @default(now()) @db.Timestamp(6)
-  updatedAt        DateTime?            @default(now()) @updatedAt @db.Timestamp(6)
-  referralCode     ReferralCode         @relation(fields: [referralCodeId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  referrerSalon    Salon                @relation("ReferrerSalonInvites", fields: [referrerSalonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  referredSalon    Salon                @relation("ReferredSalon", fields: [referredSalonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  rewards          ReferralReward[]
+  id              Int                  @id @default(autoincrement())
+  referralCodeId  Int
+  referrerSalonId Int
+  referredSalonId Int
+  status          ReferralInviteStatus @default(QUALIFIED)
+  createdAt       DateTime?            @default(now()) @db.Timestamp(6)
+  updatedAt       DateTime?            @default(now()) @updatedAt @db.Timestamp(6)
+  referralCode    ReferralCode         @relation(fields: [referralCodeId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  referrerSalon   Salon                @relation("ReferrerSalonInvites", fields: [referrerSalonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  referredSalon   Salon                @relation("ReferredSalon", fields: [referredSalonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  rewards         ReferralReward[]
 
   @@unique([referredSalonId], map: "uq_referral_invite_referred_salon")
   @@index([referrerSalonId, status], map: "idx_referral_invite_referrer_status")
@@ -863,30 +867,30 @@ model InventoryMovement {
 }
 
 model Campaign {
-  id             Int                              @id @default(autoincrement())
-  salonId        Int
-  name           String
-  type           CampaignType
-  description    String?
-  config         Json?
-  isActive       Boolean                          @default(true)
-  lifecycleStatus CampaignLifecycleStatus         @default(DRAFT)
-  startsAt       DateTime?                        @db.Timestamp(6)
-  endsAt         DateTime?                        @db.Timestamp(6)
-  createdAt      DateTime?                        @default(now()) @db.Timestamp(6)
-  updatedAt      DateTime?                        @default(now()) @updatedAt @db.Timestamp(6)
-  priority       Int                              @default(100)
-  deliveryMode   CampaignDeliveryMode             @default(MANUAL)
-  maxGlobalUsage Int?
-  maxPerCustomer Int?
-  publishedAt    DateTime?                        @db.Timestamp(6)
-  applications   AppointmentCampaignApplication[]
-  salon          Salon                            @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  attributions   CampaignAttribution[]
-  shareLinks     CampaignShareLink[]
-  enrollments    CustomerCampaignEnrollment[]
-  wallets        CustomerCampaignWallet[]
-  sendExecutions CampaignSendExecution[]
+  id              Int                              @id @default(autoincrement())
+  salonId         Int
+  name            String
+  type            CampaignType
+  description     String?
+  config          Json?
+  isActive        Boolean                          @default(true)
+  lifecycleStatus CampaignLifecycleStatus          @default(DRAFT)
+  startsAt        DateTime?                        @db.Timestamp(6)
+  endsAt          DateTime?                        @db.Timestamp(6)
+  createdAt       DateTime?                        @default(now()) @db.Timestamp(6)
+  updatedAt       DateTime?                        @default(now()) @updatedAt @db.Timestamp(6)
+  priority        Int                              @default(100)
+  deliveryMode    CampaignDeliveryMode             @default(MANUAL)
+  maxGlobalUsage  Int?
+  maxPerCustomer  Int?
+  publishedAt     DateTime?                        @db.Timestamp(6)
+  applications    AppointmentCampaignApplication[]
+  salon           Salon                            @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  attributions    CampaignAttribution[]
+  shareLinks      CampaignShareLink[]
+  enrollments     CustomerCampaignEnrollment[]
+  wallets         CustomerCampaignWallet[]
+  sendExecutions  CampaignSendExecution[]
 
   @@index([salonId, type, isActive], map: "idx_campaign_salon_type_active")
   @@index([salonId, priority, isActive], map: "idx_campaign_salon_priority_active")
@@ -1940,17 +1944,17 @@ model SalonRolePermission {
 }
 
 model UserPermissionOverride {
-  id              Int       @id @default(autoincrement())
+  id              Int              @id @default(autoincrement())
   salonId         Int
   userId          Int
   membershipId    Int?
   permissionId    Int
   granted         Boolean
   reason          String?
-  expiresAt       DateTime? @db.Timestamp(6)
+  expiresAt       DateTime?        @db.Timestamp(6)
   updatedByUserId Int?
-  createdAt       DateTime? @default(now()) @db.Timestamp(6)
-  updatedAt       DateTime? @default(now()) @updatedAt @db.Timestamp(6)
+  createdAt       DateTime?        @default(now()) @db.Timestamp(6)
+  updatedAt       DateTime?        @default(now()) @updatedAt @db.Timestamp(6)
   membership      SalonMembership? @relation(fields: [membershipId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@unique([salonId, userId, permissionId], map: "uq_user_permission_override")
@@ -1958,16 +1962,16 @@ model UserPermissionOverride {
 }
 
 model AccessAuditLog {
-  id          Int       @id @default(autoincrement())
-  salonId     Int
-  actorUserId Int?
+  id                Int       @id @default(autoincrement())
+  salonId           Int
+  actorUserId       Int?
   actorMembershipId Int?
-  actorIdentityId Int?
-  action      String
-  targetType  String
-  targetId    String?
-  metadata    Json?
-  createdAt   DateTime? @default(now()) @db.Timestamp(6)
+  actorIdentityId   Int?
+  action            String
+  targetType        String
+  targetId          String?
+  metadata          Json?
+  createdAt         DateTime? @default(now()) @db.Timestamp(6)
 
   @@index([salonId, createdAt], map: "idx_access_audit_salon_created")
 }
@@ -2265,6 +2269,9 @@ enum AppointmentMessageEventType {
   REMINDER
   CANCELLATION
   SATISFACTION_SURVEY
+  AUTH_CODE
+  WAITLIST_OFFER
+  VERIFICATION_LINK
 }
 
 enum CustomerGender {
@@ -2401,4 +2408,80 @@ enum MessageEventDirection {
   INBOUND
   OUTBOUND
   SYSTEM
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Verification system (UTILITY-link based, replacing OTP)
+// ─────────────────────────────────────────────────────────────────
+
+model VerificationLink {
+  id               String              @id @default(uuid())
+  tokenHash        String              @unique(map: "uq_verification_token_hash")
+  purpose          VerificationPurpose
+  channel          VerificationChannel
+  targetIdentityId Int?
+  targetSalonId    Int?
+  targetPhone      String?
+  targetEmail      String?
+  payload          Json?
+  expiresAt        DateTime
+  usedAt           DateTime?
+  invalidatedAt    DateTime?
+  deliveryStatus   String?
+  sendCount        Int                 @default(1)
+  lastSentAt       DateTime?
+  ipAddress        String?
+  userAgent        String?
+  createdAt        DateTime            @default(now())
+  identity         UserIdentity?       @relation(fields: [targetIdentityId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  salon            Salon?              @relation("SalonVerificationLinks", fields: [targetSalonId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([targetIdentityId], map: "idx_verification_identity")
+  @@index([targetSalonId], map: "idx_verification_salon")
+  @@index([targetPhone], map: "idx_verification_phone")
+  @@index([targetEmail], map: "idx_verification_email")
+  @@index([expiresAt], map: "idx_verification_expires")
+  @@index([purpose, channel], map: "idx_verification_purpose_channel")
+}
+
+model PhoneIdentity {
+  id              Int                 @id @default(autoincrement())
+  phone           String              @unique(map: "uq_phone_identity_phone")
+  firstVerifiedAt DateTime            @default(now())
+  lastVerifiedAt  DateTime            @default(now())
+  isActive        Boolean             @default(true)
+  blockedAt       DateTime?
+  blockedReason   String?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @default(now()) @updatedAt
+  customerLinks   CustomerPhoneLink[]
+}
+
+model CustomerPhoneLink {
+  id              Int           @id @default(autoincrement())
+  salonId         Int
+  phoneIdentityId Int
+  customerId      Int
+  linkedAt        DateTime      @default(now())
+  consentSource   String
+  optInChannels   Json?
+  phoneIdentity   PhoneIdentity @relation(fields: [phoneIdentityId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([salonId, phoneIdentityId], map: "uq_customer_phone_link_salon_phone")
+  @@index([customerId], map: "idx_customer_phone_link_customer")
+  @@index([phoneIdentityId], map: "idx_customer_phone_link_phone")
+}
+
+enum VerificationPurpose {
+  SALON_SIGNUP_EMAIL
+  TEAM_INVITE_PHONE
+  PHONE_CHANGE
+  PASSWORD_RESET
+  CUSTOMER_PHONE
+  CUSTOMER_LINK_CONSENT
+}
+
+enum VerificationChannel {
+  WHATSAPP
+  EMAIL
 }

@@ -16,6 +16,7 @@ import translationsRoutes from './routes/translations.js';
 import bookingRoutes from './routes/bookings.js';
 import availabilityRoutes from './routes/availability.js';
 import authRoutes from './routes/auth.js';
+import verificationRoutes from './routes/verification.js';
 import adminMobileRoutes from './routes/adminMobile.js';
 import adminAccessRoutes from './routes/adminAccess.js';
 import adminImportsRoutes from './routes/adminImports.js';
@@ -256,6 +257,7 @@ app.use('/api/customers/resend-code', authRateLimiter);
 app.use('/api', apiRateLimiter);
 
 app.use('/auth', authRoutes);
+app.use('/auth', verificationRoutes);
 app.use('/api/mobile', mobileRoutes);
 app.use('/api/admin/content', adminContentRoutes);
 app.use('/api/admin/access', adminAccessRoutes);
