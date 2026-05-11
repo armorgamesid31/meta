@@ -247,6 +247,60 @@ router.post(
   },
 );
 
+// Mevcut logoyu (BG removal yapmadan) yeniden boyut/konum ayarıyla
+// güncellemek için kullanılır. /process+approve farkı: bg-removal yok,
+// HMAC yok — auth kontrolü kullanıcının kendi salon kaydını güncelle-
+// diğini garantiliyor. Frontend canvas composit eder, transparan PNG
+// yükler.
+router.post(
+  '/update',
+  authenticateToken,
+  upload.single('file'),
+  async (req: Request, res: Response) => {
+    const salonId = getSalonId(req);
+
+    if (!isR2Configured()) {
+      throw new BusinessError('STORAGE_NOT_CONFIGURED', 'Logo storage is not available right now.', 503);
+    }
+
+    const file = req.file;
+    if (!file?.buffer?.length) {
+      throw new BusinessError('VALIDATION_FAILED', 'Edited logo file is required.', 400);
+    }
+
+    const finalKey = buildObjectKey(salonId, 'processed', 'png');
+    const publicUrl = await uploadBufferToR2({
+      objectKey: finalKey,
+      body: file.buffer,
+      contentType: 'image/png',
+    });
+
+    const existing = await prisma.salon.findUnique({
+      where: { id: salonId },
+      select: { logoUrl: true },
+    });
+
+    await prisma.salon.update({
+      where: { id: salonId },
+      data: { logoUrl: publicUrl },
+    });
+
+    if (existing?.logoUrl) {
+      try {
+        const parsed = new URL(existing.logoUrl);
+        const prevKey = parsed.pathname.replace(/^\/+/, '');
+        if (prevKey.startsWith(LOGO_PREFIX) && prevKey !== finalKey) {
+          await deleteR2Object(prevKey);
+        }
+      } catch {
+        // ignore — old URL may not parse
+      }
+    }
+
+    res.status(200).json({ ok: true, logoUrl: publicUrl });
+  },
+);
+
 router.post('/reject', authenticateToken, async (req: Request, res: Response) => {
   const salonId = getSalonId(req);
 
