@@ -1,36 +1,73 @@
-// Email service — Resend (https://resend.com) integration.
+// Email service — Amazon SES (sesv2) integration.
 //
 // Used for:
 //   - Salon signup email verification (UTILITY-link based)
 //   - Future password reset via email (when added)
 //
-// Resend was chosen over SendGrid/Postmark for:
-//   - Simpler API, JSON SDK with no callbacks
-//   - Free tier 3K/month, $20/mo for 50K — fits our scale
-//   - First-class Turkish deliverability
+// AWS SES was chosen because:
+//   - Already on AWS for credit / cost reasons
+//   - $0.10 / 1000 emails — by far the cheapest of the major providers
+//   - High deliverability with verified sender domain
+//   - Region-pinned (eu-central-1 / eu-west-1 closest to TR users)
 //
 // Required env:
-//   RESEND_API_KEY              re_xxx...
-//   EMAIL_FROM                  "Kedy <noreply@kedyapp.com>"  (sender must be verified)
+//   AWS_SES_REGION              eu-central-1
+//   AWS_ACCESS_KEY_ID           AKIA...
+//   AWS_SECRET_ACCESS_KEY       ...
+//   EMAIL_FROM                  "Kedy <noreply@kedyapp.com>"  (verified in SES)
+//
+// SES sandbox notes:
+//   - When the AWS account is in sandbox mode, recipient addresses must
+//     also be verified. Production account exit happens via the AWS console.
+//   - Sender domain (kedyapp.com) MUST be domain-verified or sender-
+//     verified before send is allowed.
 
-import { Resend } from 'resend';
+import { SESv2Client, SendEmailCommand } from '@aws-sdk/client-sesv2';
 
-const API_KEY = (process.env.RESEND_API_KEY || '').trim();
-const FROM = (process.env.EMAIL_FROM || 'Kedy <noreply@kedyapp.com>').trim();
+const AWS_REGION = (
+  process.env.AWS_SES_REGION ||
+  process.env.AWS_REGION ||
+  'eu-central-1'
+).trim();
+const AWS_ACCESS_KEY_ID = (process.env.AWS_ACCESS_KEY_ID || '').trim();
+const AWS_SECRET_ACCESS_KEY = (process.env.AWS_SECRET_ACCESS_KEY || '').trim();
+const EMAIL_FROM = (process.env.EMAIL_FROM || 'Kedy <noreply@kedyapp.com>').trim();
+const CONFIGURATION_SET = (process.env.AWS_SES_CONFIGURATION_SET || '').trim();
 
-let client: Resend | null = null;
-function getClient(): Resend {
-  if (!API_KEY) {
+let client: SESv2Client | null = null;
+
+function getClient(): SESv2Client {
+  if (!isEmailConfigured()) {
     throw new Error('email_provider_not_configured');
   }
   if (!client) {
-    client = new Resend(API_KEY);
+    client = new SESv2Client({
+      region: AWS_REGION,
+      // If creds are not provided, fall through to the default chain
+      // (IAM role, env, shared config). Explicit creds win when present.
+      ...(AWS_ACCESS_KEY_ID && AWS_SECRET_ACCESS_KEY
+        ? {
+            credentials: {
+              accessKeyId: AWS_ACCESS_KEY_ID,
+              secretAccessKey: AWS_SECRET_ACCESS_KEY,
+            },
+          }
+        : {}),
+    });
   }
   return client;
 }
 
+/**
+ * `true` if at least region + sender are configured. Credentials may come
+ * from the AWS SDK default chain (IAM, profile) when explicit keys are absent.
+ */
 export function isEmailConfigured(): boolean {
-  return Boolean(API_KEY);
+  if (!AWS_REGION || !EMAIL_FROM) return false;
+  // If explicit creds are partially provided, treat as misconfigured.
+  if (AWS_ACCESS_KEY_ID && !AWS_SECRET_ACCESS_KEY) return false;
+  if (!AWS_ACCESS_KEY_ID && AWS_SECRET_ACCESS_KEY) return false;
+  return true;
 }
 
 export interface VerificationEmailInput {
@@ -42,7 +79,7 @@ export interface VerificationEmailInput {
 }
 
 /**
- * Sends a UTILITY-style verification email. Single template, brand-consistent.
+ * Sends a UTILITY-style verification email via Amazon SES.
  */
 export async function sendVerificationEmail(input: VerificationEmailInput): Promise<void> {
   const c = getClient();
@@ -50,20 +87,40 @@ export async function sendVerificationEmail(input: VerificationEmailInput): Prom
   const text = renderVerificationText(input);
   const subject = `Kedy — ${input.actionLabel}`;
 
-  await c.emails.send({
-    from: FROM,
-    to: input.to,
-    subject,
-    html,
-    text,
-    headers: {
-      'X-Kedy-Mail-Kind': 'verification',
+  const command = new SendEmailCommand({
+    FromEmailAddress: EMAIL_FROM,
+    Destination: { ToAddresses: [input.to] },
+    Content: {
+      Simple: {
+        Subject: { Data: subject, Charset: 'UTF-8' },
+        Body: {
+          Html: { Data: html, Charset: 'UTF-8' },
+          Text: { Data: text, Charset: 'UTF-8' },
+        },
+        Headers: [{ Name: 'X-Kedy-Mail-Kind', Value: 'verification' }],
+      },
     },
+    ...(CONFIGURATION_SET ? { ConfigurationSetName: CONFIGURATION_SET } : {}),
   });
+
+  try {
+    await c.send(command);
+  } catch (error: any) {
+    // SES surfaces useful error names like MessageRejected, NotAuthorized,
+    // SendingPausedException, AccountSuspendedException — log and rethrow
+    // a typed message so the caller can surface "service unavailable".
+    const reason = error?.name || error?.Code || error?.message || 'ses_send_failed';
+    console.error('[emailService] SES send failed', {
+      to: input.to,
+      reason,
+      message: error?.message,
+    });
+    throw new Error(`email_send_failed:${reason}`);
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────
-// Templates
+// Templates (Kedy brand)
 // ─────────────────────────────────────────────────────────────────
 
 function escapeHtml(value: string): string {

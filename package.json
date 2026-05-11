@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.916.0",
+    "@aws-sdk/client-sesv2": "^3.1045.0",
     "@aws-sdk/s3-request-presigner": "^3.916.0",
     "@modelcontextprotocol/sdk": "^1.25.3",
     "@prisma/client": "^6.19.2",
@@ -57,7 +58,6 @@
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.12.0",
     "redis": "^5.12.1",
-    "resend": "^6.12.3",
     "stripe": "^22.1.0",
     "tailwind-merge": "^3.4.0",
     "tailwindcss-animate": "^1.0.7",
