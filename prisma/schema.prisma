@@ -31,6 +31,7 @@ model Salon {
   googleMapsUrl               String?
   chakraPhoneNumberId         String?
   heroText                    String?
+  communicationTone           SalonCommunicationTone           @default(BALANCED)
   analyticsPresets            AnalyticsPreset[]
   appointments                Appointment[]
   campaignApplications        AppointmentCampaignApplication[]
@@ -2487,4 +2488,10 @@ enum VerificationPurpose {
 enum VerificationChannel {
   WHATSAPP
   EMAIL
+}
+
+enum SalonCommunicationTone {
+  FRIENDLY
+  BALANCED
+  PROFESSIONAL
 }

@@ -114,6 +114,43 @@ router.get('/me', authenticateToken, async (req: any, res: any) => {
 });
 
 // PUT /api/salon/settings - Update salon settings
+// GET /api/salon/communication-tone — read salon's tone preference
+// (drives WhatsApp template variation tier AND AI agent response tone).
+router.get('/communication-tone', authenticateToken, async (req: any, res: any) => {
+  if (!req.user) {
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized', 401);
+  }
+  const salon = await prisma.salon.findUnique({
+    where: { id: req.user.salonId },
+    select: { communicationTone: true },
+  });
+  if (!salon) {
+    throw new BusinessError('NOT_FOUND', 'Salon bulunamadı.', 404);
+  }
+  return res.json({ tone: salon.communicationTone });
+});
+
+// PATCH /api/salon/communication-tone — update salon's tone preference.
+router.patch('/communication-tone', authenticateToken, async (req: any, res: any) => {
+  if (!req.user) {
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized', 401);
+  }
+  const raw = String(req.body?.tone || '').toUpperCase();
+  if (raw !== 'FRIENDLY' && raw !== 'BALANCED' && raw !== 'PROFESSIONAL') {
+    throw new BusinessError(
+      'VALIDATION_FAILED',
+      'tone FRIENDLY | BALANCED | PROFESSIONAL olmalı.',
+      400,
+    );
+  }
+  const updated = await prisma.salon.update({
+    where: { id: req.user.salonId },
+    data: { communicationTone: raw as any },
+    select: { communicationTone: true },
+  });
+  return res.json({ tone: updated.communicationTone });
+});
+
 router.put('/settings', authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
     throw new BusinessError('UNAUTHORIZED', 'Unauthorized', 401);

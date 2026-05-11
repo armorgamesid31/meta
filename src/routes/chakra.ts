@@ -4,6 +4,11 @@ import axios from 'axios';
 import { authenticateToken } from '../middleware/auth.js';
 import { writeAccessAudit } from '../services/accessControl.js';
 import { BusinessError } from '../lib/errors.js';
+import {
+  hasTieredVariations,
+  pickVariation,
+  pickNextInTier,
+} from '../services/templateVariations.js';
 
 const router = Router();
 
@@ -457,6 +462,14 @@ async function syncAndEnsureMasterTemplates(salonId: number, pluginId: string, l
 
   logs.push(`Senkronizasyon başlatıldı. Salon: ${salonId}, Plugin: ${pluginId}`);
 
+  // Resolve the salon's communicationTone for tier-aware variation picking.
+  const salonRow = await prisma.salon.findUnique({
+    where: { id: salonId },
+    select: { communicationTone: true },
+  });
+  const tone = salonRow?.communicationTone || 'BALANCED';
+  logs.push(`Salon iletişim tonu: ${tone}`);
+
   try {
     // 1. Fetch Plugin info to get WABA ID
     logs.push('Plugin bilgileri ve WABA ID doğrulanıyor...');
@@ -494,31 +507,45 @@ async function syncAndEnsureMasterTemplates(salonId: number, pluginId: string, l
       const match = externalTemplates.find((ext: any) => ext.name === master.name);
       
       let shouldSubmit = !match;
-      let variationToSubmit = MASTER_TEMPLATE_VARIATIONS[master.name][0];
+      // Tier-aware variation pick: if this template has tiered variations
+      // (defined in templateVariations.ts), pick a random one from the
+      // salon's tone tier. Otherwise fall back to the legacy flat array.
+      const useTiered = hasTieredVariations(master.name);
+      let variationToSubmit = useTiered
+        ? (pickVariation(master.name, tone) ?? MASTER_TEMPLATE_VARIATIONS[master.name]?.[0] ?? '')
+        : MASTER_TEMPLATE_VARIATIONS[master.name]?.[0] ?? '';
+
+      if (useTiered) {
+        logs.push(`Varyasyon kaynağı: ${tone} tier (rastgele seçim).`);
+      }
 
       if (match) {
-        // Log status
         logs.push(`Şablon mevcut: ${master.name} (Durum: ${match.status}, Kategori: ${match.category})`);
-        
-        // Resilience logic: If rejected or auto-reclassified to MARKETING, try next variation
+
         const isRejected = ['REJECTED', 'DISABLED', 'PAUSED'].includes(match.status);
         const isWrongCategory = master.category === 'UTILITY' && match.category === 'MARKETING';
 
         if (isRejected || isWrongCategory) {
           logs.push(`DİKKAT: ${master.name} ${isRejected ? 'REDDEDİLMİŞ' : 'PAZARLAMAYA DÖNÜŞMÜŞ'}. Yeni varyasyon deneniyor...`);
-          
-          // Find current variation index
-          const currentBody = match.components?.find((c: any) => c.type === 'BODY')?.text;
-          const variations = MASTER_TEMPLATE_VARIATIONS[master.name] || [];
-          const currentIndex = variations.indexOf(currentBody);
-          const nextIndex = (currentIndex + 1) % variations.length;
-          
-          variationToSubmit = variations[nextIndex];
-          shouldSubmit = true;
 
-          // Delete old one if allowed (Meta requires deletion to reuse name if pending/rejected sometimes, 
-          // or we can just update if Chakra supports it. Here we try to overwrite via POST)
-          logs.push(`Eski şablonun üzerine yazılacak veya yeniden gönderilecek: Varyasyon #${nextIndex + 1}`);
+          const currentBody = match.components?.find((c: any) => c.type === 'BODY')?.text;
+
+          if (useTiered) {
+            // Rotate within the salon's tier — preserves tone consistency.
+            const next = pickNextInTier(master.name, tone, currentBody || '');
+            if (next) {
+              variationToSubmit = next;
+              shouldSubmit = true;
+              logs.push(`Tier içi rotasyon: ${tone} kategorisinden bir sonraki varyasyon.`);
+            }
+          } else {
+            const variations = MASTER_TEMPLATE_VARIATIONS[master.name] || [];
+            const currentIndex = variations.indexOf(currentBody);
+            const nextIndex = (currentIndex + 1) % variations.length;
+            variationToSubmit = variations[nextIndex];
+            shouldSubmit = true;
+            logs.push(`Eski şablonun üzerine yazılacak: Varyasyon #${nextIndex + 1}`);
+          }
         }
       }
 
