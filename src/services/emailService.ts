@@ -11,10 +11,13 @@
 //   - Region-pinned (eu-central-1 / eu-west-1 closest to TR users)
 //
 // Required env:
-//   AWS_SES_REGION              eu-central-1
+//   AWS_SES_REGION              eu-west-1   (Ireland)
 //   AWS_ACCESS_KEY_ID           AKIA...
 //   AWS_SECRET_ACCESS_KEY       ...
-//   EMAIL_FROM                  "Kedy <noreply@kedyapp.com>"  (verified in SES)
+//   EMAIL_FROM                  "Kedy <noreply@mail.kedyapp.com>"
+//                               (must be on a domain verified in SES;
+//                                we use the mail.* subdomain to isolate
+//                                transactional sender reputation)
 //
 // SES sandbox notes:
 //   - When the AWS account is in sandbox mode, recipient addresses must
@@ -27,11 +30,13 @@ import { SESv2Client, SendEmailCommand } from '@aws-sdk/client-sesv2';
 const AWS_REGION = (
   process.env.AWS_SES_REGION ||
   process.env.AWS_REGION ||
-  'eu-central-1'
+  'eu-west-1'
 ).trim();
 const AWS_ACCESS_KEY_ID = (process.env.AWS_ACCESS_KEY_ID || '').trim();
 const AWS_SECRET_ACCESS_KEY = (process.env.AWS_SECRET_ACCESS_KEY || '').trim();
-const EMAIL_FROM = (process.env.EMAIL_FROM || 'Kedy <noreply@kedyapp.com>').trim();
+// Sender uses the mail.kedyapp.com SES-verified subdomain. Isolates
+// transactional reputation from the apex domain.
+const EMAIL_FROM = (process.env.EMAIL_FROM || 'Kedy <noreply@mail.kedyapp.com>').trim();
 const CONFIGURATION_SET = (process.env.AWS_SES_CONFIGURATION_SET || '').trim();
 
 let client: SESv2Client | null = null;
