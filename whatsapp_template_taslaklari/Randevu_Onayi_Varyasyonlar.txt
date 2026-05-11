@@ -1,8 +1,12 @@
 # Randevu Onayı Şablon Varyasyonları (30 Adet)
-# Değişkenler: {{customer_name}}, {{customer_honorific}}, {{appointment_date}}, {{appointment_time}}, {{service_name}}, {{location_url}}
-# Not: professional ve balanced varyasyonlarda {{customer_honorific}} = Bey/Hanım olacak.
+# Değişkenler: {{customer_name}}, {{customer_surname}}, {{customer_honorific}}, {{appointment_date}}, {{appointment_time}}, {{service_name}}, {{location_url}}
+#
+# Ton hiyerarşisi:
+#   FRIENDLY     — emoji + {{customer_name}}
+#   BALANCED     — emoji + {{customer_name}} {{customer_honorific}}
+#   PROFESSIONAL — emojisiz + Sayın {{customer_name}} {{customer_surname}}
 
-# --- FRIENDLY (10) | Esprili, samimi, isimle hitap ---
+# --- FRIENDLY (10) ---
 1. Merhaba {{customer_name}}! {{appointment_date}} {{appointment_time}} için {{service_name}} randevun hazır ✨ Konum: {{location_url}}
 2. Harika {{customer_name}}! 🎉 {{appointment_date}} saat {{appointment_time}} randevun onaylandı. Yol tarifi: {{location_url}}
 3. Selam {{customer_name}}! {{service_name}} randevun kesinleşti 🗓️ {{appointment_date}} {{appointment_time}} — {{location_url}}
@@ -14,26 +18,26 @@
 9. Kayıt tamam {{customer_name}} 🙌 {{service_name}} | {{appointment_date}} {{appointment_time}}. Harita: {{location_url}}
 10. {{customer_name}}, randevu onayını iletiyoruz 💛 {{appointment_date}} {{appointment_time}} için görüşürüz. {{location_url}}
 
-# --- BALANCED (10) | İsim + hitap, sıcak ama saygılı ---
-11. Sayın {{customer_name}} {{customer_honorific}}, {{appointment_date}} {{appointment_time}} tarihli {{service_name}} randevunuz onaylanmıştır. Konum: {{location_url}}
-12. {{customer_name}} {{customer_honorific}}, {{service_name}} randevunuz {{appointment_date}} {{appointment_time}} için oluşturulmuştur. Yol tarifi: {{location_url}}
-13. Bilgilendirme: {{customer_name}} {{customer_honorific}}, randevunuz {{appointment_date}} {{appointment_time}} olarak planlanmıştır. {{location_url}}
-14. {{customer_name}} {{customer_honorific}}, {{appointment_date}} saat {{appointment_time}} için rezervasyonunuz başarıyla tamamlandı. {{location_url}}
-15. Randevu onayı: {{customer_name}} {{customer_honorific}}, {{service_name}} hizmetiniz {{appointment_date}} {{appointment_time}} tarihindedir. {{location_url}}
-16. {{customer_name}} {{customer_honorific}}, randevu kaydınız alınmıştır. Tarih-saat: {{appointment_date}} {{appointment_time}}. Konum: {{location_url}}
-17. Merhaba {{customer_name}} {{customer_honorific}}, {{appointment_date}} {{appointment_time}} randevunuz aktif durumdadır. {{location_url}}
-18. {{customer_name}} {{customer_honorific}}, planlanan randevu detayları: {{service_name}} / {{appointment_date}} {{appointment_time}}. {{location_url}}
-19. Sayın {{customer_name}} {{customer_honorific}}, rezervasyonunuz kesinleşmiştir. Görüşme zamanı: {{appointment_date}} {{appointment_time}}. {{location_url}}
-20. {{customer_name}} {{customer_honorific}}, randevu durumunuz onaylıdır. Konum bilgisi: {{location_url}}
+# --- BALANCED (10) | {{customer_name}} {{customer_honorific}} + emoji ---
+11. Merhaba {{customer_name}} {{customer_honorific}}, {{appointment_date}} {{appointment_time}} tarihli {{service_name}} randevunuz onaylandı 🙌 Konum: {{location_url}}
+12. {{customer_name}} {{customer_honorific}}, {{service_name}} randevunuz {{appointment_date}} {{appointment_time}} için oluşturuldu ✨ Yol tarifi: {{location_url}}
+13. Selamlar {{customer_name}} {{customer_honorific}}, randevunuz {{appointment_date}} {{appointment_time}} olarak planlandı 🌟 {{location_url}}
+14. {{customer_name}} {{customer_honorific}}, {{appointment_date}} saat {{appointment_time}} rezervasyonunuz başarıyla tamamlandı 🌸 {{location_url}}
+15. Merhaba {{customer_name}} {{customer_honorific}}, {{service_name}} hizmetiniz {{appointment_date}} {{appointment_time}} tarihinde 💫 {{location_url}}
+16. {{customer_name}} {{customer_honorific}}, randevu kaydınız alındı 🙌 Tarih-saat: {{appointment_date}} {{appointment_time}}. Konum: {{location_url}}
+17. Merhaba {{customer_name}} {{customer_honorific}}, {{appointment_date}} {{appointment_time}} randevunuz aktif ✨ {{location_url}}
+18. {{customer_name}} {{customer_honorific}}, planladığımız randevu detayları: {{service_name}} / {{appointment_date}} {{appointment_time}} 🌟 {{location_url}}
+19. Selamlar {{customer_name}} {{customer_honorific}}, rezervasyonunuz kesinleşti 🌸 Görüşme zamanı: {{appointment_date}} {{appointment_time}}. {{location_url}}
+20. {{customer_name}} {{customer_honorific}}, randevu durumunuz onaylı 💛 Konum: {{location_url}}
 
-# --- PROFESSIONAL (10) | Kurumsal, mesafeli, bilgilendirme odaklı ---
-21. Sayın {{customer_name}} {{customer_honorific}}, {{appointment_date}} {{appointment_time}} tarihli {{service_name}} randevunuz onaylanmıştır. Konum bağlantısı: {{location_url}}
-22. Sayın {{customer_name}} {{customer_honorific}}, rezervasyon işleminiz tamamlanmıştır. Randevu: {{appointment_date}} {{appointment_time}}. {{location_url}}
-23. Kurumsal bilgilendirme: {{customer_name}} {{customer_honorific}}, {{service_name}} randevunuz sistemde onaylıdır. Detay: {{location_url}}
-24. Sayın {{customer_name}} {{customer_honorific}}, randevu kaydınız başarıyla oluşturulmuştur. Tarih-saat: {{appointment_date}} {{appointment_time}}.
-25. {{customer_name}} {{customer_honorific}}, {{appointment_date}} {{appointment_time}} için randevu planlamanız tamamlanmıştır. Konum: {{location_url}}
-26. Bilgilendirme: {{customer_name}} {{customer_honorific}}, {{service_name}} randevunuz aktif durumdadır. {{location_url}}
-27. Sayın {{customer_name}} {{customer_honorific}}, hizmet randevunuz aşağıdaki tarihte gerçekleştirilecektir: {{appointment_date}} {{appointment_time}}.
-28. {{customer_name}} {{customer_honorific}}, rezervasyon teyidiniz alınmıştır. Ulaşım için harita: {{location_url}}
-29. Kurumsal bilgilendirme: {{customer_name}} {{customer_honorific}}, randevu kaydınız onaylanmıştır. Saat: {{appointment_time}}, Tarih: {{appointment_date}}.
-30. Sayın {{customer_name}} {{customer_honorific}}, randevu süreciniz başarıyla tamamlanmış olup detaylar bu mesajda paylaşılmıştır.
+# --- PROFESSIONAL (10) | Sayın {{customer_name}} {{customer_surname}} + emojisiz ---
+21. Sayın {{customer_name}} {{customer_surname}}, {{appointment_date}} {{appointment_time}} tarihli {{service_name}} randevunuz onaylanmıştır. Konum bağlantısı: {{location_url}}
+22. Sayın {{customer_name}} {{customer_surname}}, rezervasyon işleminiz tamamlanmıştır. Randevu: {{appointment_date}} {{appointment_time}}. {{location_url}}
+23. Sayın {{customer_name}} {{customer_surname}}, {{service_name}} randevunuz sistemimizde onaylıdır. Detay: {{location_url}}
+24. Sayın {{customer_name}} {{customer_surname}}, randevu kaydınız başarıyla oluşturulmuştur. Tarih-saat: {{appointment_date}} {{appointment_time}}.
+25. Sayın {{customer_name}} {{customer_surname}}, {{appointment_date}} {{appointment_time}} için randevu planlamanız tamamlanmıştır. Konum: {{location_url}}
+26. Sayın {{customer_name}} {{customer_surname}}, {{service_name}} randevunuz aktif durumdadır. {{location_url}}
+27. Sayın {{customer_name}} {{customer_surname}}, hizmet randevunuz aşağıdaki tarihte gerçekleştirilecektir: {{appointment_date}} {{appointment_time}}.
+28. Sayın {{customer_name}} {{customer_surname}}, rezervasyon teyidiniz alınmıştır. Ulaşım için harita: {{location_url}}
+29. Sayın {{customer_name}} {{customer_surname}}, randevu kaydınız onaylanmıştır. Saat: {{appointment_time}}, Tarih: {{appointment_date}}.
+30. Sayın {{customer_name}} {{customer_surname}}, randevu süreciniz başarıyla tamamlanmış olup detaylar bu mesajda paylaşılmıştır.

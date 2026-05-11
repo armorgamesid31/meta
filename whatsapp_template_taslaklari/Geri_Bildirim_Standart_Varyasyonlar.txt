@@ -3,11 +3,15 @@
 # Davranış: Magic link → /feedback/{token}, tek kullanımlık, süre sınırsız
 # Form: 2 soru × 5 yıldız (hizmet memnuniyeti + salon memnuniyeti)
 #
-# Değişkenler: {{customer_name}}, {{customer_honorific}}, {{service_name}}
+# Değişkenler: {{customer_name}}, {{customer_surname}}, {{customer_honorific}}, {{service_name}}
 # Buton: [Değerlendir -> https://app.berkai.shop/feedback/{{magic_token}}]
-# Not: professional ve balanced varyasyonlarda {{customer_honorific}} = Bey/Hanım olacak.
+#
+# Ton hiyerarşisi:
+#   FRIENDLY     — emoji + {{customer_name}}
+#   BALANCED     — emoji + {{customer_name}} {{customer_honorific}}
+#   PROFESSIONAL — emojisiz + Sayın {{customer_name}} {{customer_surname}}
 
-# --- FRIENDLY (10) | Esprili, samimi, isimle hitap ---
+# --- FRIENDLY (10) ---
 1. Merhaba {{customer_name}}! {{service_name}} deneyimin nasıldı? ⭐ 30 saniyede değerlendir.
 2. {{customer_name}}, bugün seni ağırlamak çok güzeldi 💛 Kısa bir puan bırakır mısın?
 3. Selam {{customer_name}}! Görüşüne ihtiyacımız var 🌟 İki sorulu mini değerlendirme.
@@ -19,26 +23,26 @@
 9. Mini değerlendirme {{customer_name}}? 🌟 Linke dokunup yıldızlarını ver.
 10. Teşekkürler {{customer_name}}! 💛 Deneyiminizi paylaşır mısınız?
 
-# --- BALANCED (10) | İsim + hitap, sıcak ama saygılı ---
-11. Sayın {{customer_name}} {{customer_honorific}}, aldığınız {{service_name}} hizmetini değerlendirmenizi rica ederiz.
-12. {{customer_name}} {{customer_honorific}}, kısa memnuniyet anketimize katılabilir misiniz?
-13. Bilgilendirme: {{customer_name}} {{customer_honorific}}, hizmet kalitemizi artırmak için değerlendirmenize ihtiyaç duyuyoruz.
-14. {{customer_name}} {{customer_honorific}}, yorumlarınız süreçlerimizi geliştirmemize katkı sağlamaktadır.
-15. Sayın {{customer_name}} {{customer_honorific}}, deneyiminizi iki kısa soruyla puanlayabilirsiniz.
-16. {{customer_name}} {{customer_honorific}}, hizmet sonu geri bildiriminiz bizim için kıymetlidir.
-17. Merhaba {{customer_name}} {{customer_honorific}}, değerlendirme talebi: {{service_name}} süreciniz hakkında görüş paylaşabilir misiniz?
-18. {{customer_name}} {{customer_honorific}}, kısa anketi tamamlamanız yeterlidir.
-19. Sayın {{customer_name}} {{customer_honorific}}, geri bildirimleriniz ekibimiz tarafından titizlikle incelenmektedir.
-20. {{customer_name}} {{customer_honorific}}, memnuniyet puanınızı iletmenizi rica ederiz.
+# --- BALANCED (10) | {{customer_name}} {{customer_honorific}} + emoji ---
+11. Merhaba {{customer_name}} {{customer_honorific}}, aldığınız {{service_name}} hizmetini değerlendirmenizi rica ederiz ⭐
+12. {{customer_name}} {{customer_honorific}}, kısa memnuniyet anketimize katılabilir misiniz? 🌟
+13. Merhaba {{customer_name}} {{customer_honorific}}, hizmet kalitemizi artırmak için değerlendirmenize ihtiyaç duyuyoruz 🙏
+14. {{customer_name}} {{customer_honorific}}, yorumlarınız süreçlerimizi geliştirmemize katkı sağlar 💛
+15. Selamlar {{customer_name}} {{customer_honorific}}, deneyiminizi iki kısa soruyla puanlayabilirsiniz ✨
+16. {{customer_name}} {{customer_honorific}}, hizmet sonu geri bildiriminiz bizim için kıymetli 🌸
+17. Merhaba {{customer_name}} {{customer_honorific}}, {{service_name}} süreciniz hakkında görüş paylaşabilir misiniz? 🌟
+18. {{customer_name}} {{customer_honorific}}, kısa anketi tamamlamanız yeterli — 30 saniye sürmez ⏱️
+19. Selamlar {{customer_name}} {{customer_honorific}}, geri bildirimleriniz ekibimiz tarafından titizlikle incelenir 🙏
+20. {{customer_name}} {{customer_honorific}}, memnuniyet puanınızı iletmenizi rica ederiz 💫
 
-# --- PROFESSIONAL (10) | Kurumsal, mesafeli, bilgilendirme odaklı ---
-21. Sayın {{customer_name}} {{customer_honorific}}, hizmet kalitesi değerlendirme sürecine katkınız rica olunur.
-22. Kurumsal bilgilendirme: {{service_name}} sonrası memnuniyet geri bildiriminiz talep edilmektedir.
-23. Sayın {{customer_name}} {{customer_honorific}}, geri bildiriminiz kalite standartlarımızın iyileştirilmesinde kullanılacaktır.
-24. Bilgilendirme: {{customer_name}} {{customer_honorific}}, kısa değerlendirme formunu tamamlamanız beklenmektedir.
-25. Sayın {{customer_name}} {{customer_honorific}}, müşteri deneyim puanlaması operasyonel iyileştirme süreçleri için önemlidir.
-26. {{customer_name}} {{customer_honorific}}, görüşleriniz hizmet denetim süreçlerine dahil edilmektedir.
-27. Sayın {{customer_name}} {{customer_honorific}}, tarafınıza iletilen bağlantı üzerinden puanlama yapabilirsiniz.
-28. Kurumsal bilgilendirme: Memnuniyet süreci kapsamında değerlendirme paylaşmanız beklenmektedir.
-29. Bilgilendirme mesajı: {{customer_name}} {{customer_honorific}}, zaman ayırdığınız için teşekkür ederiz.
-30. Sayın {{customer_name}} {{customer_honorific}}, geri bildiriminiz sistem kayıtlarına işlenecektir.
+# --- PROFESSIONAL (10) | Sayın {{customer_name}} {{customer_surname}} + emojisiz ---
+21. Sayın {{customer_name}} {{customer_surname}}, hizmet kalitesi değerlendirme sürecine katkınızı rica ederiz.
+22. Sayın {{customer_name}} {{customer_surname}}, {{service_name}} sonrası memnuniyet geri bildiriminizi bekliyoruz.
+23. Sayın {{customer_name}} {{customer_surname}}, geri bildiriminiz kalite standartlarımızın iyileştirilmesinde kullanılacaktır.
+24. Sayın {{customer_name}} {{customer_surname}}, kısa değerlendirme formunu tamamlamanızı rica ederiz.
+25. Sayın {{customer_name}} {{customer_surname}}, müşteri deneyim puanlaması iyileştirme süreçlerimiz için önem taşımaktadır.
+26. Sayın {{customer_name}} {{customer_surname}}, görüşleriniz hizmet denetim süreçlerimize dahil edilmektedir.
+27. Sayın {{customer_name}} {{customer_surname}}, tarafınıza iletilen bağlantı üzerinden puanlama yapabilirsiniz.
+28. Sayın {{customer_name}} {{customer_surname}}, memnuniyet süreci kapsamında değerlendirme paylaşmanızı bekliyoruz.
+29. Sayın {{customer_name}} {{customer_surname}}, zaman ayırdığınız için teşekkür ederiz.
+30. Sayın {{customer_name}} {{customer_surname}}, geri bildiriminiz sistem kayıtlarına işlenecektir.

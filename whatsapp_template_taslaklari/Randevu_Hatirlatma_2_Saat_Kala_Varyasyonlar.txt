@@ -1,8 +1,13 @@
 # Randevu Hatırlatma 2 Saat Kala Şablon Varyasyonları (30 Adet)
-# Değişkenler: {{customer_name}}, {{customer_honorific}}, {{appointment_time}}, {{service_name}}, {{location_url}}
+# Değişkenler: {{customer_name}}, {{customer_surname}}, {{customer_honorific}}, {{appointment_time}}, {{service_name}}, {{location_url}}
 # Buton: [Yol Tarifi -> {{location_url}}]
+#
+# Ton hiyerarşisi:
+#   FRIENDLY     — emoji + {{customer_name}}
+#   BALANCED     — emoji + {{customer_name}} {{customer_honorific}}
+#   PROFESSIONAL — emojisiz + Sayın {{customer_name}} {{customer_surname}}
 
-# --- FRIENDLY (10) | Esprili, samimi, isimle hitap ---
+# --- FRIENDLY (10) ---
 1. {{customer_name}}, 2 saat sonra buluşuyoruz 👀 Yol tarifi butondan açılıyor.
 2. Selam {{customer_name}}! Her şey hazır, bir sen eksiksin ✨ Randevuna 2 saat kaldı.
 3. {{customer_name}}, kendine ayırdığın zaman yaklaşıyor 🌟 {{appointment_time}} için bekliyoruz.
@@ -14,26 +19,26 @@
 9. {{customer_name}}, hazır mıyız? 😊 2 saat sonra seansın başlıyor.
 10. Hey {{customer_name}}! {{appointment_time}} için kapımız açık 🌸 Yola çıkarken tarifi unutma.
 
-# --- BALANCED (10) | İsim + hitap, sıcak ama saygılı ---
-11. Sayın {{customer_name}} {{customer_honorific}}, randevunuza yaklaşık 2 saat kalmıştır. Yol tarifi butondan açılabilir.
-12. {{customer_name}} {{customer_honorific}}, bugün {{appointment_time}} randevunuz için sizi ağırlamaya hazırız.
-13. Merhaba {{customer_name}} {{customer_honorific}}, {{service_name}} seansınız için son hatırlatma mesajıdır.
-14. {{customer_name}} {{customer_honorific}}, randevu saatiniz yaklaşmaktadır: {{appointment_time}}.
-15. Sayın {{customer_name}} {{customer_honorific}}, sizi rahat ulaşmanız için yol tarifini paylaşıyoruz.
-16. {{customer_name}} {{customer_honorific}}, bugünkü randevunuz için kısa hatırlatma iletmek istedik.
-17. Merhaba {{customer_name}} {{customer_honorific}}, {{appointment_time}} için sabırsızlanıyoruz.
-18. {{customer_name}} {{customer_honorific}}, planlanan {{service_name}} seansınıza 2 saat kalmıştır.
-19. Sayın {{customer_name}} {{customer_honorific}}, gelirken trafiğe karşı tarifi kontrol etmenizi öneririz.
-20. {{customer_name}} {{customer_honorific}}, randevu bilgilendirmesi: bugün saat {{appointment_time}}.
+# --- BALANCED (10) | {{customer_name}} {{customer_honorific}} + emoji ---
+11. Merhaba {{customer_name}} {{customer_honorific}}, randevunuza yaklaşık 2 saat kaldı 🫶 Yol tarifi butondan açılabilir.
+12. {{customer_name}} {{customer_honorific}}, bugün {{appointment_time}} randevunuz için sizi ağırlamaya hazırız ✨
+13. Merhaba {{customer_name}} {{customer_honorific}}, {{service_name}} seansınız için son hatırlatma 🌸
+14. {{customer_name}} {{customer_honorific}}, randevu saatiniz yaklaşmaktadır: {{appointment_time}} 🌟
+15. Selamlar {{customer_name}} {{customer_honorific}}, rahat ulaşmanız için yol tarifini ekledik 🗺️
+16. {{customer_name}} {{customer_honorific}}, bugünkü randevunuz için kısa hatırlatma iletmek istedik 🙌
+17. Merhaba {{customer_name}} {{customer_honorific}}, {{appointment_time}} için sabırsızlanıyoruz 💫
+18. {{customer_name}} {{customer_honorific}}, planlanan {{service_name}} seansınıza 2 saat kalmıştır ⏰
+19. Selamlar {{customer_name}} {{customer_honorific}}, gelirken trafiğe karşı tarifi kontrol etmenizi öneririz 🚗
+20. {{customer_name}} {{customer_honorific}}, randevu hatırlatması: bugün saat {{appointment_time}} 🌸
 
-# --- PROFESSIONAL (10) | Kurumsal, mesafeli, bilgilendirme odaklı ---
-21. Sayın {{customer_name}} {{customer_honorific}}, randevunuza yaklaşık 2 saat kalmıştır.
-22. Kurumsal bilgilendirme: Bugünkü randevu saatiniz {{appointment_time}} olarak planlanmıştır.
-23. Sayın {{customer_name}} {{customer_honorific}}, {{service_name}} seansınız için operasyonel hatırlatma mesajıdır.
-24. Bilgilendirme: {{customer_name}} {{customer_honorific}}, konum bilgisi butondan erişime sunulmuştur.
-25. Sayın {{customer_name}} {{customer_honorific}}, randevu saatinizden önce ulaşım planlamanız önerilmektedir.
-26. Kurumsal bilgilendirme: Bugün {{appointment_time}} randevusu için hatırlatma süreci başlatılmıştır.
-27. Sayın {{customer_name}} {{customer_honorific}}, ulaşım yönlendirmesi mesajda paylaşılmaktadır.
-28. Bilgilendirme mesajı: Randevu zamanına yaklaşık 2 saat kalmıştır.
-29. Sayın {{customer_name}} {{customer_honorific}}, gecikme yaşanmaması için zamanında yola çıkmanız rica olunur.
-30. Kurumsal bilgilendirme: Randevu kaydınız aktiftir ve {{appointment_time}} saatinde gerçekleştirilecektir.
+# --- PROFESSIONAL (10) | Sayın {{customer_name}} {{customer_surname}} + emojisiz ---
+21. Sayın {{customer_name}} {{customer_surname}}, randevunuza yaklaşık 2 saat kalmıştır.
+22. Sayın {{customer_name}} {{customer_surname}}, bugünkü randevu saatiniz {{appointment_time}} olarak planlanmıştır.
+23. Sayın {{customer_name}} {{customer_surname}}, {{service_name}} seansınız için hatırlatma mesajıdır.
+24. Sayın {{customer_name}} {{customer_surname}}, konum bilgisi butondan erişiminize sunulmuştur.
+25. Sayın {{customer_name}} {{customer_surname}}, randevu saatinizden önce ulaşım planlamanızı öneririz.
+26. Sayın {{customer_name}} {{customer_surname}}, bugün {{appointment_time}} randevusu için hatırlatma süreci başlatılmıştır.
+27. Sayın {{customer_name}} {{customer_surname}}, ulaşım yönlendirmesi mesajda paylaşılmaktadır.
+28. Sayın {{customer_name}} {{customer_surname}}, randevu zamanına yaklaşık 2 saat kalmıştır.
+29. Sayın {{customer_name}} {{customer_surname}}, gecikme yaşanmaması için zamanında yola çıkmanızı rica ederiz.
+30. Sayın {{customer_name}} {{customer_surname}}, randevu kaydınız aktiftir ve {{appointment_time}} saatinde gerçekleştirilecektir.
