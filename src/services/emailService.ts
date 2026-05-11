@@ -1,78 +1,63 @@
-// Email service — Amazon SES (sesv2) integration.
+// Email service — Amazon SES via SMTP (nodemailer).
 //
 // Used for:
 //   - Salon signup email verification (UTILITY-link based)
 //   - Future password reset via email (when added)
 //
-// AWS SES was chosen because:
-//   - Already on AWS for credit / cost reasons
-//   - $0.10 / 1000 emails — by far the cheapest of the major providers
-//   - High deliverability with verified sender domain
-//   - Region-pinned (eu-central-1 / eu-west-1 closest to TR users)
+// We send via SMTP (port 587, STARTTLS) rather than the SES HTTPS API
+// because the operator manages an SMTP IAM user (kedy-ses-smtp-transactional)
+// and that's simpler to deploy on Coolify / any Node host than the SDK
+// credential chain. Deliverability is identical; the SMTP endpoint is
+// just a fronting protocol for the same SES infrastructure.
 //
-// Required env:
-//   AWS_SES_REGION              eu-west-1   (Ireland)
-//   AWS_ACCESS_KEY_ID           AKIA...
-//   AWS_SECRET_ACCESS_KEY       ...
-//   EMAIL_FROM                  "Kedy <noreply@mail.kedyapp.com>"
-//                               (must be on a domain verified in SES;
-//                                we use the mail.* subdomain to isolate
-//                                transactional sender reputation)
-//
-// SES sandbox notes:
-//   - When the AWS account is in sandbox mode, recipient addresses must
-//     also be verified. Production account exit happens via the AWS console.
-//   - Sender domain (kedyapp.com) MUST be domain-verified or sender-
-//     verified before send is allowed.
+// Required env (set in Coolify):
+//   SMTP_HOST          email-smtp.eu-west-1.amazonaws.com
+//   SMTP_PORT          587
+//   SMTP_USER          IAM SMTP user name (e.g. AKIA...)
+//   SMTP_PASS          IAM SMTP password
+//   EMAIL_FROM         "Kedy <noreply@mail.kedyapp.com>"
+//                      (must be on a SES-verified domain — we use the
+//                       mail.kedyapp.com subdomain to isolate transactional
+//                       sender reputation)
 
-import { SESv2Client, SendEmailCommand } from '@aws-sdk/client-sesv2';
+import nodemailer, { type Transporter } from 'nodemailer';
 
-const AWS_REGION = (
-  process.env.AWS_SES_REGION ||
-  process.env.AWS_REGION ||
-  'eu-west-1'
-).trim();
-const AWS_ACCESS_KEY_ID = (process.env.AWS_ACCESS_KEY_ID || '').trim();
-const AWS_SECRET_ACCESS_KEY = (process.env.AWS_SECRET_ACCESS_KEY || '').trim();
-// Sender uses the mail.kedyapp.com SES-verified subdomain. Isolates
-// transactional reputation from the apex domain.
+const SMTP_HOST = (process.env.SMTP_HOST || 'email-smtp.eu-west-1.amazonaws.com').trim();
+const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
+const SMTP_USER = (process.env.SMTP_USER || '').trim();
+const SMTP_PASS = (process.env.SMTP_PASS || '').trim();
 const EMAIL_FROM = (process.env.EMAIL_FROM || 'Kedy <noreply@mail.kedyapp.com>').trim();
-const CONFIGURATION_SET = (process.env.AWS_SES_CONFIGURATION_SET || '').trim();
 
-let client: SESv2Client | null = null;
+let transporter: Transporter | null = null;
 
-function getClient(): SESv2Client {
+function getTransporter(): Transporter {
   if (!isEmailConfigured()) {
     throw new Error('email_provider_not_configured');
   }
-  if (!client) {
-    client = new SESv2Client({
-      region: AWS_REGION,
-      // If creds are not provided, fall through to the default chain
-      // (IAM role, env, shared config). Explicit creds win when present.
-      ...(AWS_ACCESS_KEY_ID && AWS_SECRET_ACCESS_KEY
-        ? {
-            credentials: {
-              accessKeyId: AWS_ACCESS_KEY_ID,
-              secretAccessKey: AWS_SECRET_ACCESS_KEY,
-            },
-          }
-        : {}),
+  if (!transporter) {
+    transporter = nodemailer.createTransport({
+      host: SMTP_HOST,
+      port: SMTP_PORT,
+      // Port 587 → STARTTLS upgrade (secure=false + requireTLS=true).
+      // Port 465 → implicit TLS (secure=true).
+      secure: SMTP_PORT === 465,
+      requireTLS: SMTP_PORT === 587,
+      auth: {
+        user: SMTP_USER,
+        pass: SMTP_PASS,
+      },
+      pool: true,
+      maxConnections: 4,
+      maxMessages: 100,
+      connectionTimeout: 10_000,
+      socketTimeout: 25_000,
     });
   }
-  return client;
+  return transporter;
 }
 
-/**
- * `true` if at least region + sender are configured. Credentials may come
- * from the AWS SDK default chain (IAM, profile) when explicit keys are absent.
- */
 export function isEmailConfigured(): boolean {
-  if (!AWS_REGION || !EMAIL_FROM) return false;
-  // If explicit creds are partially provided, treat as misconfigured.
-  if (AWS_ACCESS_KEY_ID && !AWS_SECRET_ACCESS_KEY) return false;
-  if (!AWS_ACCESS_KEY_ID && AWS_SECRET_ACCESS_KEY) return false;
-  return true;
+  return Boolean(SMTP_HOST && SMTP_USER && SMTP_PASS && EMAIL_FROM);
 }
 
 export interface VerificationEmailInput {
@@ -84,43 +69,40 @@ export interface VerificationEmailInput {
 }
 
 /**
- * Sends a UTILITY-style verification email via Amazon SES.
+ * Sends a UTILITY-style verification email via Amazon SES (SMTP).
  */
 export async function sendVerificationEmail(input: VerificationEmailInput): Promise<void> {
-  const c = getClient();
+  const t = getTransporter();
   const html = renderVerificationHtml(input);
   const text = renderVerificationText(input);
   const subject = `Kedy — ${input.actionLabel}`;
 
-  const command = new SendEmailCommand({
-    FromEmailAddress: EMAIL_FROM,
-    Destination: { ToAddresses: [input.to] },
-    Content: {
-      Simple: {
-        Subject: { Data: subject, Charset: 'UTF-8' },
-        Body: {
-          Html: { Data: html, Charset: 'UTF-8' },
-          Text: { Data: text, Charset: 'UTF-8' },
-        },
-        Headers: [{ Name: 'X-Kedy-Mail-Kind', Value: 'verification' }],
-      },
-    },
-    ...(CONFIGURATION_SET ? { ConfigurationSetName: CONFIGURATION_SET } : {}),
-  });
-
   try {
-    await c.send(command);
-  } catch (error: any) {
-    // SES surfaces useful error names like MessageRejected, NotAuthorized,
-    // SendingPausedException, AccountSuspendedException — log and rethrow
-    // a typed message so the caller can surface "service unavailable".
-    const reason = error?.name || error?.Code || error?.message || 'ses_send_failed';
-    console.error('[emailService] SES send failed', {
+    await t.sendMail({
+      from: EMAIL_FROM,
       to: input.to,
-      reason,
-      message: error?.message,
+      subject,
+      html,
+      text,
+      headers: {
+        'X-Kedy-Mail-Kind': 'verification',
+      },
     });
-    throw new Error(`email_send_failed:${reason}`);
+  } catch (error: any) {
+    // nodemailer error codes:
+    //   EAUTH        — SMTP credentials wrong
+    //   ECONNECTION  — host unreachable
+    //   ESOCKET      — TLS / port issue
+    //   EENVELOPE    — recipient rejected (SES sandbox: recipient not verified)
+    //   EMESSAGE     — message rejected post-DATA
+    const code = error?.code || error?.responseCode || 'unknown';
+    const message = error?.response || error?.message || 'smtp_send_failed';
+    console.error('[emailService] SMTP send failed', {
+      to: input.to,
+      code,
+      message,
+    });
+    throw new Error(`email_send_failed:${code}`);
   }
 }
 
