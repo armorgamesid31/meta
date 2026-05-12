@@ -102,6 +102,24 @@ async function handleSingleStatusEvent(opts: {
     const expectedCategory = row.expectedCategory || 'UTILITY';
     const actualCategory = newCategory || expectedCategory;
 
+    // Guard: rows that an admin explicitly marked as outdated must not get
+    // promoted back to ACTIVE_VALID just because Meta later approved them.
+    // The body they were submitted with is known-stale; picking them at
+    // send time would deliver the wrong content. Record the Meta status
+    // for audit but keep submissionState=REJECTED.
+    const isUserMarkedOutdated =
+      row.submissionState === 'REJECTED' &&
+      typeof row.rejectionReason === 'string' &&
+      row.rejectionReason.startsWith('user_marked_outdated');
+
+    if (isUserMarkedOutdated) {
+      await prisma.salonMessageTemplate.update({
+        where: { id: row.id },
+        data: { metaStatus: event, metaCategory: actualCategory, lastSyncAt: new Date() },
+      });
+      continue;
+    }
+
     if (event === 'APPROVED') {
       const categoryMatches = !newCategory || newCategory === expectedCategory;
 

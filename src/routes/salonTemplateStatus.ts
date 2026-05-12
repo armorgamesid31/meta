@@ -14,7 +14,7 @@ import {
   OPERATIONAL_TEMPLATES,
   OperationalStatus,
 } from '../services/templateOperationalNames.js';
-import { enqueueSalonTemplates } from '../services/salonTemplateSubmitter.js';
+import { enqueueSalonTemplates, promoteReserveVariation } from '../services/salonTemplateSubmitter.js';
 import { listTemplateKeys, ALL_TONES } from '../services/templateVariations.js';
 
 const router = Router();
@@ -264,8 +264,8 @@ router.post('/templates/sync', authenticateToken, async (req: any, res) => {
 
   const logs: string[] = [];
 
-  // Clean up orphan NOT_QUEUED rows with no scheduledSubmitAt — they would
-  // never submit. Mark them as POOL_EXHAUSTED so they don't clog status.
+  // Step 1: orphan cleanup — NOT_QUEUED rows with no scheduledSubmitAt
+  // would never submit. Convert to POOL_EXHAUSTED so they stop blocking.
   const orphanCleanup = await prisma.salonMessageTemplate.updateMany({
     where: {
       salonId,
@@ -278,6 +278,50 @@ router.post('/templates/sync', authenticateToken, async (req: any, res) => {
     logs.push(`${orphanCleanup.count} kayıtsız satır temizlendi (zamanlama yoktu).`);
   }
 
+  // Step 2: stale-SUBMITTED cleanup — rows submitted to Meta with old
+  // template content (before button/leading-var fixes) get marked REJECTED
+  // with reason="user_marked_outdated" so the webhook handler won't
+  // promote them to ACTIVE_VALID if Meta later approves them. They keep
+  // their Meta name (we can't reuse it) but the picker will never serve
+  // them at send time. We then promote a reserve slot for each
+  // (key, tone) pair so a fresh row with corrected body goes out.
+  const staleSubmitted = await prisma.salonMessageTemplate.findMany({
+    where: { salonId, submissionState: 'SUBMITTED' },
+    select: { id: true, templateKey: true, tone: true, templateName: true },
+  });
+
+  if (staleSubmitted.length > 0) {
+    await prisma.salonMessageTemplate.updateMany({
+      where: { id: { in: staleSubmitted.map(r => r.id) } },
+      data: {
+        submissionState: 'REJECTED',
+        rejectedAt: new Date(),
+        rejectionReason: 'user_marked_outdated_template_content',
+      },
+    });
+    logs.push(`${staleSubmitted.length} eski içerikli SUBMITTED satır kullanım dışı bırakıldı.`);
+
+    // Promote one reserve per unique (key, tone). promoteReserveVariation
+    // picks the lowest unused 4-10 slot, inserts a fresh row scheduled
+    // immediately.
+    const seen = new Set<string>();
+    let promoted = 0;
+    for (const r of staleSubmitted) {
+      if (!r.templateKey || !r.tone) continue;
+      const k = `${r.templateKey}:${r.tone}`;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      const res = await promoteReserveVariation({
+        salonId, logicalKey: r.templateKey, tone: r.tone,
+      });
+      if (res.created) promoted++;
+    }
+    if (promoted > 0) logs.push(`${promoted} yedek slot devreye alındı.`);
+  }
+
+  // Step 3: enqueue any missing primary rows (90 tone-varied total).
+  // skipDuplicates ensures we don't collide with retained stale-SUBMITTED
+  // or already-active rows.
   try {
     const tone = salon.communicationTone || 'BALANCED';
     const result = await enqueueSalonTemplates({ salonId, tone });
@@ -286,6 +330,7 @@ router.post('/templates/sync', authenticateToken, async (req: any, res) => {
       ok: true,
       enqueued: result.enqueued,
       orphansCleared: orphanCleanup.count,
+      staleSubmittedFailed: staleSubmitted.length,
       logs,
     });
   } catch (err: any) {

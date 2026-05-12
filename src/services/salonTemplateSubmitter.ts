@@ -104,6 +104,11 @@ const TEMPLATES: TemplateMeta[] = [
     eventType: 'REMINDER_3_DAY',
     paramNames: ['customer_name', 'customer_surname', 'customer_honorific', 'appointment_date', 'appointment_time', 'service_name', 'late_policy_hours'],
     paramExamples: PARAM_EXAMPLES,
+    buttons: [
+      { type: 'QUICK_REPLY', text: 'Geliyorum √' },
+      { type: 'QUICK_REPLY', text: 'İptal Et X' },
+      { type: 'QUICK_REPLY', text: 'Değiştirmek İstiyorum' },
+    ],
   },
   {
     logicalKey: 'kedy_randevu_hatirlatma_2_saat',
@@ -111,7 +116,8 @@ const TEMPLATES: TemplateMeta[] = [
     paramNames: ['customer_name', 'customer_surname', 'customer_honorific', 'appointment_time', 'service_name'],
     paramExamples: PARAM_EXAMPLES,
     buttons: [
-      { type: 'URL', text: 'Yol Tarifi', url: 'https://maps.google.com/?q=Salon' },
+      // {{1}} = salon-specific Google Maps URL injected at send time.
+      { type: 'URL', text: 'Yol Tarifi »', url: 'https://maps.google.com/?q={{1}}', example: ['Bella+Studio+Istanbul'] },
     ],
   },
   {
@@ -119,6 +125,10 @@ const TEMPLATES: TemplateMeta[] = [
     eventType: 'NO_SHOW',
     paramNames: ['customer_name', 'customer_surname', 'customer_honorific', 'appointment_date', 'appointment_time', 'service_name', 'late_policy_hours'],
     paramExamples: PARAM_EXAMPLES,
+    buttons: [
+      // {{1}} = salon slug injected at send time → /:slug/booking.
+      { type: 'URL', text: 'Yeni Randevu Al', url: 'https://app.berkai.shop/{{1}}/booking', example: ['bella-studio'] },
+    ],
   },
   {
     logicalKey: 'kedy_waitlist_teklif',
@@ -135,7 +145,7 @@ const TEMPLATES: TemplateMeta[] = [
     paramNames: ['customer_name', 'customer_surname', 'customer_honorific', 'service_name'],
     paramExamples: PARAM_EXAMPLES,
     buttons: [
-      { type: 'URL', text: 'Değerlendir', url: 'https://app.berkai.shop/feedback/{{1}}', example: ['feedback_token'] },
+      { type: 'URL', text: 'Değerlendir ★', url: 'https://app.berkai.shop/feedback/{{1}}', example: ['feedback_token'] },
     ],
   },
   {
@@ -144,7 +154,8 @@ const TEMPLATES: TemplateMeta[] = [
     paramNames: ['customer_name', 'customer_surname', 'customer_honorific', 'salon_name'],
     paramExamples: PARAM_EXAMPLES,
     buttons: [
-      { type: 'URL', text: "Google'da Yorum Yap", url: 'https://maps.google.com/?q=Salon', example: ['https://maps.google.com/?q=Salon'] },
+      // {{1}} = salon.googleMapsUrl path injected at send time.
+      { type: 'URL', text: "Google'da Yorum Yap", url: 'https://www.google.com/maps/place/{{1}}', example: ['Bella+Studio'] },
     ],
   },
   {
@@ -152,12 +163,18 @@ const TEMPLATES: TemplateMeta[] = [
     eventType: 'BIRTHDAY',
     paramNames: ['customer_name', 'customer_surname', 'customer_honorific', 'discount_amount', 'validity_period'],
     paramExamples: PARAM_EXAMPLES,
+    buttons: [
+      { type: 'URL', text: 'Randevu Al', url: 'https://app.berkai.shop/{{1}}/booking', example: ['bella-studio'] },
+    ],
   },
   {
     logicalKey: 'kedy_geri_donus',
     eventType: 'WINBACK',
     paramNames: ['customer_name', 'customer_surname', 'customer_honorific', 'discount_amount', 'validity_period'],
     paramExamples: PARAM_EXAMPLES,
+    buttons: [
+      { type: 'URL', text: 'Randevu Al', url: 'https://app.berkai.shop/{{1}}/booking', example: ['bella-studio'] },
+    ],
   },
 ];
 
