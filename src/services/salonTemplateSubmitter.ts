@@ -420,7 +420,10 @@ export async function runSubmissionTick(opts?: { batchSize?: number }): Promise<
         errStr.includes("variables can't") ||
         errStr.includes('parameter_format') ||
         errStr.includes('invalid template') ||
-        errStr.includes('leading or trailing');
+        errStr.includes('leading or trailing') ||
+        errStr.includes('parameters words ratio') ||
+        errStr.includes('too many variables') ||
+        errStr.includes('words ratio exceeds');
 
       if (isPermanent) {
         await prisma.salonMessageTemplate.update({
