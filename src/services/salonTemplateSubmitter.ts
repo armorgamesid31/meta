@@ -74,9 +74,10 @@ const PARAM_EXAMPLES: Record<string, string> = {
 // Meta WhatsApp template button rules (enforced 2026):
 //   - No emojis, no newlines, no formatting characters in button text
 //   - Variables (placeholders) only allowed in URL button paths, never in text
-// We use the » and « guillemets (Alt+Gr+. / Alt+Gr+, on Turkish Q keyboards).
-// These are standard punctuation marks (not emojis, not formatting markup),
-// used as directional cues — forward (») for confirm, backward («) for cancel.
+// We use √ (U+221A, math square root — Alt+Gr+V on Turkish Q layouts) for
+// confirm actions and a plain ASCII X for cancel. Both are standard text
+// characters (math symbol + Latin letter), not emojis or formatting markup,
+// and their meaning matches the button action.
 const TEMPLATES: TemplateMeta[] = [
   {
     logicalKey: 'kedy_randevu_onay',
@@ -84,8 +85,8 @@ const TEMPLATES: TemplateMeta[] = [
     paramNames: ['customer_name', 'customer_surname', 'customer_honorific', 'appointment_date', 'appointment_time', 'service_name'],
     paramExamples: PARAM_EXAMPLES,
     buttons: [
-      { type: 'QUICK_REPLY', text: 'Onaylıyorum »' },
-      { type: 'QUICK_REPLY', text: 'İptal Et «' },
+      { type: 'QUICK_REPLY', text: 'Onaylıyorum √' },
+      { type: 'QUICK_REPLY', text: 'İptal Et X' },
     ],
   },
   {
@@ -94,8 +95,8 @@ const TEMPLATES: TemplateMeta[] = [
     paramNames: ['customer_name', 'customer_surname', 'customer_honorific', 'appointment_date', 'appointment_time', 'service_name'],
     paramExamples: PARAM_EXAMPLES,
     buttons: [
-      { type: 'QUICK_REPLY', text: 'Geliyorum »' },
-      { type: 'QUICK_REPLY', text: 'Gelemiyorum «' },
+      { type: 'QUICK_REPLY', text: 'Geliyorum √' },
+      { type: 'QUICK_REPLY', text: 'Gelemiyorum X' },
     ],
   },
   {
