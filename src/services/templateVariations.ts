@@ -176,11 +176,11 @@ const KEDY_RANDEVU_HATIRLATMA_2_SAAT: TieredVariations = {
     reserve: [
       "Selamlar {{customer_name}} {{customer_honorific}}, rahat ulaşmanız için yol tarifini ekledik 🗺️",
       "Selamlar {{customer_name}} {{customer_honorific}}, gelirken trafiğe karşı tarifi kontrol etmenizi öneririz 🚗",
-      "Merhaba {{customer_name}} {{customer_honorific}}, {{service_name}} seansınız için son hatırlatma 🌸",
-      "Merhaba {{customer_name}} {{customer_honorific}}, randevu saatiniz yaklaşmaktadır: {{appointment_time}} 🌟",
-      "Merhaba {{customer_name}} {{customer_honorific}}, bugünkü randevunuz için kısa hatırlatma iletmek istedik 🙌",
-      "Merhaba {{customer_name}} {{customer_honorific}}, {{appointment_time}} için sabırsızlanıyoruz 💫",
-      "Merhaba {{customer_name}} {{customer_honorific}}, randevu hatırlatması: bugün saat {{appointment_time}} 🌸",
+      "Merhaba {{customer_name}} {{customer_honorific}}, planlanan {{service_name}} seansınız için kısa bir hatırlatma iletiyoruz, randevunuza yaklaşık iki saat kalmıştır 🌸",
+      "Merhaba {{customer_name}} {{customer_honorific}}, bugün için planlanan randevu saatiniz yaklaşmaktadır, randevu zamanınız {{appointment_time}} olarak belirlenmiştir 🌟",
+      "Merhaba {{customer_name}} {{customer_honorific}}, bugünkü randevunuz için kısa bir hatırlatma iletmek istedik, görüşmek üzere 🙌",
+      "Merhaba {{customer_name}} {{customer_honorific}}, planlanan randevu zamanınız {{appointment_time}} olarak yaklaşmaktadır, sizi ağırlamaya hazırız 💫",
+      "Merhaba {{customer_name}} {{customer_honorific}}, bugünkü randevu hatırlatması: planlanan randevu saatiniz {{appointment_time}} olarak belirlenmiştir 🌸",
     ],
   },
   PROFESSIONAL: {
@@ -237,20 +237,24 @@ const KEDY_NO_SHOW_HATIRLATMA: TieredVariations = {
       "Merhaba {{customer_name}} {{customer_honorific}}, randevu durumunuz güncellendi 📋 Yeni randevu planlaması için bekliyoruz.",
     ],
   },
+  // PROFESSIONAL rewritten: removed "Yeni randevu için tarafımıza
+  // ulaşabilirsiniz" call-to-action sentences (Meta reads these as
+  // promotional), centered every line on the existing appointment record
+  // and the cancellation policy.
   PROFESSIONAL: {
     primary: [
-      "Sayın {{customer_name}} {{customer_surname}}, {{appointment_date}} {{appointment_time}} randevunuza katılım gerçekleşmemiştir. Sonraki randevularınız için iptal/değişiklik taleplerinin en az {{late_policy_hours}} saat öncesinden iletilmesini rica ederiz.",
-      "Sayın {{customer_name}} {{customer_surname}}, bugünkü {{service_name}} randevunuza ilişkin katılım kaydı bulunmamaktadır. Yeni randevu için tarafımıza ulaşabilirsiniz.",
-      "Sayın {{customer_name}} {{customer_surname}}, randevu kaydınız \"gelinmedi\" olarak işlenmiştir. Politikamız gereği iptal ve değişiklikler en az {{late_policy_hours}} saat öncesinden bildirilmelidir.",
+      "Sayın {{customer_name}} {{customer_surname}}, {{appointment_date}} {{appointment_time}} {{service_name}} randevunuza katılım kaydı oluşmamıştır. İptal/değişiklik bildirimleri en az {{late_policy_hours}} saat öncesinden yapılmalıdır.",
+      "Sayın {{customer_name}} {{customer_surname}}, {{appointment_date}} tarihli {{service_name}} randevunuza gelinmedi statüsü işlenmiştir. Bildirim politikamız: {{late_policy_hours}} saat.",
+      "Sayın {{customer_name}} {{customer_surname}}, randevu kaydınız {{appointment_date}} {{appointment_time}} için gelinmedi olarak güncellenmiştir.",
     ],
     reserve: [
-      "Sayın {{customer_name}} {{customer_surname}}, randevunuza katılım sağlanmaması nedeniyle kaydınız güncellenmiştir. Yeni planlama için bizimle iletişime geçebilirsiniz.",
-      "Sayın {{customer_name}} {{customer_surname}}, {{appointment_date}} tarihli randevunuza katılım gerçekleşmemiştir. Hatırlatma: İptal ve değişiklik talepleri için süre {{late_policy_hours}} saattir.",
-      "Sayın {{customer_name}} {{customer_surname}}, bugünkü randevunuzla ilgili katılım kaydı oluşmamıştır. Detaylar için iletişim sağlayabilirsiniz.",
-      "Sayın {{customer_name}} {{customer_surname}}, randevu sürecinizde gelinmedi statüsü oluşmuştur. Yeni planlama için bizimle iletişime geçebilirsiniz.",
-      "Sayın {{customer_name}} {{customer_surname}}, randevunuz no-show kaydı ile sonuçlanmıştır. {{late_policy_hours}} saat öncesinden bildirim politikamızı hatırlatmak isteriz.",
-      "Sayın {{customer_name}} {{customer_surname}}, bugünkü randevunuza katılım olmamıştır. Sonraki randevularınızda iptal/değişiklik için süre {{late_policy_hours}} saattir.",
-      "Sayın {{customer_name}} {{customer_surname}}, randevu süreciniz katılım olmadığı için güncellenmiştir. Yeni planlama yapmak isterseniz tarafımıza ulaşabilirsiniz.",
+      "Sayın {{customer_name}} {{customer_surname}}, {{appointment_date}} {{appointment_time}} {{service_name}} randevunuz katılım olmadan kapanmıştır. Politika süresi: {{late_policy_hours}} saat.",
+      "Sayın {{customer_name}} {{customer_surname}}, {{appointment_date}} randevu kaydınız no-show statüsü ile kapatılmıştır.",
+      "Sayın {{customer_name}} {{customer_surname}}, {{service_name}} randevunuza ait katılım kaydı tamamlanmamıştır. İptal/değişiklik süresi {{late_policy_hours}} saattir.",
+      "Sayın {{customer_name}} {{customer_surname}}, {{appointment_date}} {{appointment_time}} randevu kaydı katılım olmadığı için güncellenmiştir.",
+      "Sayın {{customer_name}} {{customer_surname}}, no-show politikamız kapsamında {{appointment_date}} kaydınız işlenmiştir.",
+      "Sayın {{customer_name}} {{customer_surname}}, {{service_name}} randevunuz katılım gerçekleşmediği için tamamlanmamıştır. Hatırlatma: {{late_policy_hours}} saat bildirim süresi.",
+      "Sayın {{customer_name}} {{customer_surname}}, randevu sürecinizde {{appointment_date}} için gelinmedi kaydı oluşmuştur.",
     ],
   },
 };
@@ -258,53 +262,58 @@ const KEDY_NO_SHOW_HATIRLATMA: TieredVariations = {
 // ─────────────────────────────────────────────────────────────────
 // kedy_waitlist_teklif — UTILITY waitlist offer
 // ─────────────────────────────────────────────────────────────────
+// Rewritten to read as transactional notification (not promotional offer).
+// Key changes vs the original: removed "teklif/fırsat/müjde" vocabulary,
+// added concrete date/time/service anchors in every primary variation,
+// kept emojis sparse, and centered language on the customer's existing
+// waitlist record rather than presenting it as a new offer.
 const KEDY_WAITLIST_TEKLIF: TieredVariations = {
   FRIENDLY: {
     primary: [
-      "Hey {{customer_name}}, müjde 🎉 {{appointment_date}} {{appointment_time}} için bir yer açıldı!",
-      "Selam {{customer_name}}! Bekleme listesindeki {{service_name}} için sıra sana geldi ✨",
-      "Merhaba {{customer_name}}! {{service_name}} için müsaitlik açıldı 💫 Onaylarsan rezerve edelim.",
+      "Merhaba {{customer_name}}, bekleme listendeki {{service_name}} için {{appointment_date}} {{appointment_time}} saati uygun hale geldi. Onaylarsan randevuya çevirelim.",
+      "Selam {{customer_name}}, {{service_name}} için bekleme listendeki sıran geldi. Uygun saat: {{appointment_date}} {{appointment_time}}.",
+      "Merhaba {{customer_name}}, bekleme kaydındaki {{appointment_date}} {{appointment_time}} saati artık müsait. Yanıt vermezsen sıra bir sonrakine geçecek.",
     ],
     reserve: [
-      "Hey {{customer_name}}, sürpriz var 🍀 {{appointment_date}} {{appointment_time}} aralığında müsait bir slot oluştu.",
-      "Hey {{customer_name}}! Beklediğin teklif kapına geldi 🌟 {{appointment_time}} için yer ayıralım mı?",
-      "Hey {{customer_name}}, bir iptal oldu ve sana uygun bir slot çıktı 🙌 Hemen değerlendir.",
-      "Hey {{customer_name}}, sıradaki teklif sende ⏰ {{appointment_date}} {{appointment_time}} — istersen senin olsun.",
-      "Selam {{customer_name}}! Bekleme listesi sırası sende 🌸 Onayını bekliyoruz.",
-      "Hızlı not {{customer_name}}: {{service_name}} için yerimiz var 😊 Senin tercihin?",
-      "Hey {{customer_name}}, fırsat kapıda 🚪 {{appointment_time}} slotunu senin için ayıralım mı?",
+      "Hey {{customer_name}}, bekleme listendeki {{service_name}} için {{appointment_date}} {{appointment_time}} uygun hale geldi.",
+      "Merhaba {{customer_name}}, bekleme kaydın aktif. {{appointment_date}} {{appointment_time}} saati senin için ayrıldı.",
+      "Hey {{customer_name}}, daha önce talep ettiğin {{service_name}} için {{appointment_date}} {{appointment_time}} açıldı.",
+      "Merhaba {{customer_name}}, bekleme kaydın için planlama yapıldı: {{appointment_date}} {{appointment_time}}.",
+      "Selam {{customer_name}}, {{service_name}} için bekleme sıran geçerli. Saat: {{appointment_date}} {{appointment_time}}.",
+      "Hey {{customer_name}}, bekleme listendeki kayıt için uygun saat geldi: {{appointment_date}} {{appointment_time}}.",
+      "Merhaba {{customer_name}}, {{service_name}} bekleme kaydın için {{appointment_date}} {{appointment_time}} aktif edildi.",
     ],
   },
   BALANCED: {
     primary: [
-      "Merhaba {{customer_name}} {{customer_honorific}}, bekleme listesi talebiniz için uygun slot oluştu 🙌",
-      "Merhaba {{customer_name}} {{customer_honorific}}, {{appointment_date}} {{appointment_time}} için müsaitlik mevcut ✨",
-      "Selamlar {{customer_name}} {{customer_honorific}}, {{service_name}} için teklif hakkınız açıldı 🌟",
+      "Merhaba {{customer_name}} {{customer_honorific}}, bekleme listenizdeki {{service_name}} için {{appointment_date}} {{appointment_time}} saati uygun hale gelmiştir.",
+      "Merhaba {{customer_name}} {{customer_honorific}}, bekleme kaydınız için planlama yapıldı: {{appointment_date}} {{appointment_time}}.",
+      "Merhaba {{customer_name}} {{customer_honorific}}, {{service_name}} için bekleme listenizdeki sıranız {{appointment_date}} {{appointment_time}} saati ile uyumlandı.",
     ],
     reserve: [
-      "Merhaba {{customer_name}} {{customer_honorific}}, sıradaki uygunluk tarafınıza tahsis edildi 🌸",
-      "Merhaba {{customer_name}} {{customer_honorific}}, teklifi onaylamanız halinde randevu kaydınız oluşturulacak 💫",
-      "Merhaba {{customer_name}} {{customer_honorific}}, bekleme listesi durumunuz güncellendi — size öncelik tanımlandı 🙌",
-      "Merhaba {{customer_name}} {{customer_honorific}}, uygunluk bildirimi: {{appointment_date}} {{appointment_time}} ⏰",
-      "Merhaba {{customer_name}} {{customer_honorific}}, talep ettiğiniz {{service_name}} için boşluk oluştu 🌟",
-      "Selamlar {{customer_name}} {{customer_honorific}}, teklif süresi dolmadan yanıt vermenizi rica ederiz 🙏",
-      "Merhaba {{customer_name}} {{customer_honorific}}, slotu değerlendirmek isterseniz butondan onaylayabilirsiniz ✨",
+      "Merhaba {{customer_name}} {{customer_honorific}}, bekleme kaydınızdaki {{service_name}} için {{appointment_date}} {{appointment_time}} planlamaya alınmıştır.",
+      "Merhaba {{customer_name}} {{customer_honorific}}, bekleme listenizdeki sıranıza istinaden {{appointment_date}} {{appointment_time}} saati tarafınıza ayrılmıştır.",
+      "Merhaba {{customer_name}} {{customer_honorific}}, {{service_name}} bekleme kaydınız için {{appointment_date}} {{appointment_time}} aktif edilmiştir.",
+      "Selamlar {{customer_name}} {{customer_honorific}}, bekleme kaydınız için müsaitlik bilgisi: {{appointment_date}} {{appointment_time}}.",
+      "Merhaba {{customer_name}} {{customer_honorific}}, bekleme listenizdeki {{service_name}} kaydı için {{appointment_date}} {{appointment_time}} uygundur.",
+      "Merhaba {{customer_name}} {{customer_honorific}}, daha önce ilettiğiniz {{service_name}} bekleme talebiniz için {{appointment_date}} {{appointment_time}} planlanmıştır.",
+      "Merhaba {{customer_name}} {{customer_honorific}}, bekleme kaydınız için {{appointment_date}} {{appointment_time}} saati onayınıza sunulmuştur.",
     ],
   },
   PROFESSIONAL: {
     primary: [
-      "Sayın {{customer_name}} {{customer_surname}}, bekleme listesi kapsamında tarafınıza özel uygun randevu slotu açılmıştır.",
-      "Sayın {{customer_name}} {{customer_surname}}, {{appointment_date}} {{appointment_time}} aralığında kapasite oluşmuştur.",
-      "Sayın {{customer_name}} {{customer_surname}}, {{service_name}} talebiniz için teklif hakkınız aktif durumdadır.",
+      "Sayın {{customer_name}} {{customer_surname}}, bekleme listesi kaydınızdaki {{service_name}} için {{appointment_date}} {{appointment_time}} saati uygun hale gelmiştir.",
+      "Sayın {{customer_name}} {{customer_surname}}, {{service_name}} bekleme kaydınız {{appointment_date}} {{appointment_time}} planlamasına alınmıştır.",
+      "Sayın {{customer_name}} {{customer_surname}}, bekleme listenizdeki sıranıza istinaden {{appointment_date}} {{appointment_time}} saati randevu kaydı olarak hazırlanmıştır.",
     ],
     reserve: [
-      "Sayın {{customer_name}} {{customer_surname}}, yanıtınız doğrultusunda rezervasyon işlemi tamamlanacaktır.",
-      "Sayın {{customer_name}} {{customer_surname}}, bekleme listesi sıralamanız çerçevesinde öncelik tanımlanmıştır.",
-      "Sayın {{customer_name}} {{customer_surname}}, teklif geçerlilik süresi içinde dönüş yapmanızı rica ederiz.",
-      "Sayın {{customer_name}} {{customer_surname}}, müsait slot bilgisi sistemimiz tarafından tarafınıza iletilmiştir.",
-      "Sayın {{customer_name}} {{customer_surname}}, teklif onayı alınmadığı durumda slot bir sonraki müşteriye devredilecektir.",
-      "Sayın {{customer_name}} {{customer_surname}}, uygunluk durumunuzu onaylamak için butonu kullanabilirsiniz.",
-      "Sayın {{customer_name}} {{customer_surname}}, anlayışınız ve takip etmeniz için teşekkür ederiz.",
+      "Sayın {{customer_name}} {{customer_surname}}, daha önce iletilen {{service_name}} bekleme talebinize istinaden {{appointment_date}} {{appointment_time}} planlanmıştır.",
+      "Sayın {{customer_name}} {{customer_surname}}, bekleme kaydınız için randevu zamanı belirlenmiştir: {{appointment_date}} {{appointment_time}}.",
+      "Sayın {{customer_name}} {{customer_surname}}, {{service_name}} bekleme kaydınız {{appointment_date}} {{appointment_time}} saatinde aktif duruma getirilmiştir.",
+      "Sayın {{customer_name}} {{customer_surname}}, bekleme listenizde kayıtlı talebiniz {{appointment_date}} {{appointment_time}} olarak planlanmıştır.",
+      "Sayın {{customer_name}} {{customer_surname}}, bekleme kaydınızla ilişkili randevu {{appointment_date}} {{appointment_time}} saatine ayarlanmıştır.",
+      "Sayın {{customer_name}} {{customer_surname}}, müşteri kaydınızdaki {{service_name}} talebi için randevu saati: {{appointment_date}} {{appointment_time}}.",
+      "Sayın {{customer_name}} {{customer_surname}}, bekleme listenizden randevu planlamasına geçiş yapılmıştır. Saat: {{appointment_date}} {{appointment_time}}.",
     ],
   },
 };
@@ -315,18 +324,18 @@ const KEDY_WAITLIST_TEKLIF: TieredVariations = {
 const KEDY_MEMNUNIYET_ANKETI: TieredVariations = {
   FRIENDLY: {
     primary: [
-      "Merhaba {{customer_name}}! {{service_name}} deneyimin nasıldı? ⭐ 30 saniyede değerlendir.",
-      "Selam {{customer_name}}! Görüşüne ihtiyacımız var 🌟 İki sorulu mini değerlendirme.",
-      "Hey {{customer_name}}! {{service_name}} sonrası geri bildirimini bekliyoruz 💫",
+      "Merhaba {{customer_name}}, {{service_name}} randevun tamamlandı. Kısa bir geri bildirim formu hazırladık.",
+      "Selam {{customer_name}}, son randevun için hizmet değerlendirme formu açıldı. İki kısa soru bekleniyor.",
+      "Merhaba {{customer_name}}, {{service_name}} randevun sonrasında geri bildirim aşamasına geldik.",
     ],
     reserve: [
-      "Hey {{customer_name}}, bugün seni ağırlamak çok güzeldi 💛 Kısa bir puan bırakır mısın?",
-      "Hey {{customer_name}}, son randevun nasıldı? 🌸 Tek dokunuşla puanlayabilirsin.",
-      "Bize puan ver {{customer_name}} ⭐ Yorumun ekibimize yol gösteriyor.",
-      "Hey {{customer_name}}, memnuniyetini ölçmek için iki soru ✨ Cevapların 1 dakikadan az sürer.",
-      "Hey {{customer_name}}, daha iyi olmak için yorumuna ihtiyacımız var 🙏",
-      "Mini değerlendirme {{customer_name}}? 🌟 Linke dokunup yıldızlarını ver.",
-      "Teşekkürler {{customer_name}}! 💛 Deneyiminizi paylaşır mısınız?",
+      "Merhaba {{customer_name}}, hizmet sonrası değerlendirme adımına geçildi. Görüşlerini iletebilirsin.",
+      "Selam {{customer_name}}, {{service_name}} kaydın için değerlendirme formu hazır.",
+      "Merhaba {{customer_name}}, hizmet kalitesi değerlendirme süreci başlatıldı.",
+      "Hey {{customer_name}}, randevu sonrası değerlendirme formu butondan açılabilir.",
+      "Merhaba {{customer_name}}, hizmet değerlendirme sürecine katılım için bağlantı iletildi.",
+      "Selam {{customer_name}}, son hizmet kaydın için değerlendirme adımı aktif.",
+      "Merhaba {{customer_name}}, geri bildirim formu randevu sonrası kayıtlara dahil edildi.",
     ],
   },
   BALANCED: {
@@ -549,7 +558,10 @@ export const TEMPLATE_EXPECTED_CATEGORY: Record<string, 'UTILITY' | 'MARKETING'>
   kedy_no_show_hatirlatma: 'UTILITY',
   kedy_waitlist_teklif: 'UTILITY',
   kedy_memnuniyet_anketi: 'UTILITY',
-  kedy_google_maps_yorum: 'UTILITY',
+  // Google review requests are fundamentally promotional from Meta's view —
+  // every variation gets bumped to MARKETING. Accept it: requires
+  // Customer.acceptMarketing to send.
+  kedy_google_maps_yorum: 'MARKETING',
   kedy_dogum_gunu_kutlamasi: 'MARKETING',
   kedy_geri_donus: 'MARKETING',
 };
