@@ -57,10 +57,10 @@ const MASTER_TEMPLATE_VARIATIONS: Record<string, string[]> = {
     "Merhaba {{customer_name}} {{customer_honorific}}, bugünkü randevunuza gelemediğinizi fark ettik. İsterseniz yeni bir tarih ayarlayalım. Plan değişikliği için en az {{late_policy_hours}} saat öncesinden bildirim rica ederiz."
   ],
   kedy_dogum_gunu_kutlamasi: [
-    "Merhaba {{customer_name}} {{customer_honorific}}, doğum gününüzü kutlar, sağlık ve mutluluk dolu bir yıl dileriz 🎉"
+    "Merhaba {{customer_name}} {{customer_honorific}}, doğum gününüzü kutlar, size özel {{discount_amount}} indirim hediyemizi sunarız 🎉 ({{validity_period}} geçerli)"
   ],
   kedy_geri_donus: [
-    "Merhaba {{customer_name}} {{customer_honorific}}, uzun süredir görüşmedik 🌸 Sizi tekrar ağırlamayı isteriz."
+    "Merhaba {{customer_name}} {{customer_honorific}}, uzun süredir görüşmedik 🌸 Size özel {{discount_amount}} indirim hediyemizi sunarız ({{validity_period}})."
   ],
   kedy_waitlist_teklif: [
     "Güzel haber {{customer_name}}! Bekleme listenizde olduğunuz {{service_name}} için {{appointment_date}} vaktinde bir boşluk oluştu! ✨",
@@ -314,8 +314,10 @@ const KEDY_MASTER_TEMPLATES = [
     ]
   },
   {
+    // MARKETING category (NOT UTILITY) — contains discount/offer language.
+    // Requires Customer.acceptMarketing = true at send-time.
     name: 'kedy_dogum_gunu_kutlamasi',
-    category: 'UTILITY',
+    category: 'MARKETING',
     parameter_format: 'NAMED',
     eventType: 'BIRTHDAY',
     components: [
@@ -324,15 +326,20 @@ const KEDY_MASTER_TEMPLATES = [
         text: MASTER_TEMPLATE_VARIATIONS.kedy_dogum_gunu_kutlamasi[0],
         example: {
           body_text_named_params: [
-            { param_name: 'customer_name', example: 'Müşteri' }
+            { param_name: 'customer_name', example: 'Ayşe' },
+            { param_name: 'customer_honorific', example: 'Hanım' },
+            { param_name: 'discount_amount', example: '%15' },
+            { param_name: 'validity_period', example: '7 gün' }
           ]
         }
       }
     ]
   },
   {
+    // MARKETING category — contains discount/offer language.
+    // Requires Customer.acceptMarketing = true at send-time.
     name: 'kedy_geri_donus',
-    category: 'UTILITY',
+    category: 'MARKETING',
     parameter_format: 'NAMED',
     eventType: 'WINBACK',
     components: [
@@ -341,7 +348,10 @@ const KEDY_MASTER_TEMPLATES = [
         text: MASTER_TEMPLATE_VARIATIONS.kedy_geri_donus[0],
         example: {
           body_text_named_params: [
-            { param_name: 'customer_name', example: 'Müşteri' }
+            { param_name: 'customer_name', example: 'Ayşe' },
+            { param_name: 'customer_honorific', example: 'Hanım' },
+            { param_name: 'discount_amount', example: '%10' },
+            { param_name: 'validity_period', example: '30 gün' }
           ]
         }
       }

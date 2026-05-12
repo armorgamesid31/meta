@@ -1,64 +1,73 @@
-# Geri Dönüş (Winback) Şablon Varyasyonları (30 Adet — 15 Seçilen, 15 Yedek)
+# Geri Dönüş (Winback) İndirim Şablon Varyasyonları (30 Adet — 15 Seçilen, 15 Yedek)
 # Tetik: Müşteri son N gün (default 45) içinde randevu almadıysa
-# Davranış: Müşteri başına yılda max 1-2 gönderim
-# Değişkenler: {{customer_name}}, {{customer_surname}}, {{customer_honorific}}
+# Davranış: 30 günde bir kez (deduplication)
 #
-# ⚠️ META KATEGORİ NOTU:
-# UTILITY-safe tasarım — indirim/kupon/teklif dili YOK. Sadece ilişki bağlamında
-# "uzun süredir görüşmedik, müsait olduğunda tekrar bekleriz" mesajı.
-# Eğer salon teşvik etmek isterse müşteri salona dönünce fiziksel sunar.
-# Body'e "%X indirim" eklemeyin → Meta otomatik MARKETING'e atar.
+# Değişkenler:
+#   {{customer_name}}      — Customer.firstName
+#   {{customer_surname}}   — Customer.lastName
+#   {{customer_honorific}} — Customer.gender → "Bey" / "Hanım"
+#   {{discount_amount}}    — Salon.winbackDiscountText (örn. "%10", "100 TL")
+#   {{validity_period}}    — Salon.winbackValidityText (örn. "30 gün", "ay sonu")
+#
+# ⚠️ META KATEGORİSİ: MARKETING (UTILITY DEĞİL!)
+#   - Customer.acceptMarketing = true olmalı
+#   - Salon winbackDiscountText veya winbackValidityText boşsa GÖNDERİLMEZ
+#
+# Ton hiyerarşisi:
+#   FRIENDLY     — emoji + {{customer_name}}
+#   BALANCED     — emoji + {{customer_name}} {{customer_honorific}}
+#   PROFESSIONAL — emojisiz + Sayın {{customer_name}} {{customer_surname}}
 
 # ═══════════════════════════════════════════════════════════════════
 # FRIENDLY
 # ═══════════════════════════════════════════════════════════════════
 
 ## SEÇİLEN (Production) — 5 adet
-1. {{customer_name}}, uzun süredir görüşmedik 💭 Eski güzel günleri özledik ✨ Tekrar buluşmak ister misin?
-2. Selam {{customer_name}} 🌸 Bir süredir uğramadın — müsait olduğunda yine bekleriz.
-3. Hey {{customer_name}}, salon olarak seni özlüyoruz 💛 Tekrar görüşmek için yanındayız.
-4. Merhaba {{customer_name}}! Uzun zaman oldu 🌟 Tekrar bir araya gelmek istersen kapımız açık.
-5. {{customer_name}}, takvim seni hatırlattı 😊 Yeni bir randevu için müsait olduğunda yaz.
+1. {{customer_name}}, uzun süredir görüşmedik 💭 Seni geri kazanmak için {{discount_amount}} indirim hediyemiz var, {{validity_period}} geçerli ✨
+2. Selam {{customer_name}} 🌸 Bir süredir uğramadın, sana özel {{discount_amount}} indirim ({{validity_period}})!
+3. Hey {{customer_name}}, salon olarak seni özlüyoruz 💛 {{discount_amount}} indirimle tekrar bir araya gelelim! {{validity_period}} geçerli.
+4. Merhaba {{customer_name}}! Sana özel {{discount_amount}} indirim hazır 🌟 {{validity_period}} içinde kullanabilirsin.
+5. {{customer_name}}, geri dönüş hediyemiz hazır 💫 {{discount_amount}} indirim, {{validity_period}} geçerli!
 
 ## YEDEK (Henüz onaya gitmiyor) — 5 adet
-6. {{customer_name}}, bir süredir görüşemedik 💫 Yeniden buluşmak için sabırsızlanıyoruz.
-7. Selam {{customer_name}}! 🌸 Bir süredir uğramadın, seni özledik. Yeni bir tarih ayarlayalım mı?
-8. {{customer_name}}, uzun bir aradan sonra seninle görüşmek isteriz 💛
-9. Merhaba {{customer_name}}! Salon ailesi olarak seni özledik 🌟 Tekrar görüşmek için yanındayız.
-10. {{customer_name}}, müsait olduğunda eskisi gibi bir araya gelelim ✨
+6. {{customer_name}}, seni özledik 💛 Sana özel {{discount_amount}} indirim hediyemiz {{validity_period}} içinde geçerli.
+7. Selam {{customer_name}}! 🌸 Tekrar görüşmek için sana {{discount_amount}} indirim hazırladık ({{validity_period}}).
+8. {{customer_name}}, geri dönüş için müjde 🎁 {{discount_amount}} indirim, {{validity_period}} geçerli!
+9. Hey {{customer_name}}, bekleyemedik 😊 Sana özel {{discount_amount}} indirim, {{validity_period}} içinde kullan.
+10. {{customer_name}}, salonumuzda eskisi gibi bir araya gelelim ✨ {{discount_amount}} indirim, {{validity_period}}.
 
 # ═══════════════════════════════════════════════════════════════════
 # BALANCED — {{customer_name}} {{customer_honorific}} + emoji
 # ═══════════════════════════════════════════════════════════════════
 
 ## SEÇİLEN (Production) — 5 adet
-1. Merhaba {{customer_name}} {{customer_honorific}}, uzun süredir görüşmedik 🌸 Sizi tekrar ağırlamayı isteriz.
-2. {{customer_name}} {{customer_honorific}}, bir süredir randevu almadığınızı fark ettik 💭 Yeni bir tarih için yardımcı olabiliriz.
-3. Selamlar {{customer_name}} {{customer_honorific}}, bir süredir yokluğunuzu hissettik 🌟 Görüşmek için sabırsızlanıyoruz.
-4. Merhaba {{customer_name}} {{customer_honorific}}, salon olarak sizi özledik ✨ Müsait olduğunuzda tarafımıza ulaşabilirsiniz.
-5. {{customer_name}} {{customer_honorific}}, müsait olduğunuzda tekrar görüşmek isteriz 💫 Yeni randevu için yanınızdayız.
+1. Merhaba {{customer_name}} {{customer_honorific}}, uzun süredir görüşmedik 🌸 Size özel {{discount_amount}} indirim hediyemizi sunarız ({{validity_period}}).
+2. {{customer_name}} {{customer_honorific}}, bir süredir görüşmedik 💭 Geri dönüş hediyemiz: {{discount_amount}} indirim, {{validity_period}} geçerli.
+3. Selamlar {{customer_name}} {{customer_honorific}}, sizi tekrar ağırlamak isteriz 🌟 {{discount_amount}} indirim fırsatımız {{validity_period}} içinde geçerlidir.
+4. Merhaba {{customer_name}} {{customer_honorific}}, salon olarak sizi özledik ✨ {{discount_amount}} indirim ile tekrar buluşalım ({{validity_period}}).
+5. {{customer_name}} {{customer_honorific}}, tekrar görüşmek için size {{discount_amount}} indirim sunuyoruz 💫 {{validity_period}}
 
 ## YEDEK (Henüz onaya gitmiyor) — 5 adet
-6. Merhaba {{customer_name}} {{customer_honorific}}, uzun süredir görüşemedik 🌸 Bir randevu için bekleriz.
-7. {{customer_name}} {{customer_honorific}}, eski güzel günlerimizi yeniden yaşamak isterseniz buradayız 💛
-8. Selamlar {{customer_name}} {{customer_honorific}}, bir süredir gelmediğinizin farkındayız — sizi özledik 🌟
-9. {{customer_name}} {{customer_honorific}}, salon ailesi olarak sizi tekrar ağırlamayı dileriz ✨
-10. Merhaba {{customer_name}} {{customer_honorific}}, tekrar bir araya gelmek için kapımız her zaman açık 🌸
+6. Merhaba {{customer_name}} {{customer_honorific}}, uzun süredir görüşemedik 🌸 {{discount_amount}} indirimle tekrar bir araya gelelim ({{validity_period}}).
+7. {{customer_name}} {{customer_honorific}}, eski güzel günleri yeniden yaşamak için sizi {{discount_amount}} indirimle bekleriz 💛 {{validity_period}}
+8. Selamlar {{customer_name}} {{customer_honorific}}, salon ailesi olarak sizi özledik 🌟 {{discount_amount}} indirim hediyemiz {{validity_period}} geçerli.
+9. {{customer_name}} {{customer_honorific}}, geri dönüş için size özel {{discount_amount}} indirim hazırladık ✨ {{validity_period}} içinde kullanabilirsiniz.
+10. Merhaba {{customer_name}} {{customer_honorific}}, sizi tekrar ağırlamak için kapımız açık — üstelik {{discount_amount}} indirimle 🌸 {{validity_period}}
 
 # ═══════════════════════════════════════════════════════════════════
 # PROFESSIONAL — Sayın {{customer_name}} {{customer_surname}} + emojisiz
 # ═══════════════════════════════════════════════════════════════════
 
 ## SEÇİLEN (Production) — 5 adet
-1. Sayın {{customer_name}} {{customer_surname}}, uzun bir süredir randevu kaydınız oluşmamıştır. Sizi tekrar ağırlamak isteriz; müsait olduğunuzda tarafımıza ulaşabilirsiniz.
-2. Sayın {{customer_name}} {{customer_surname}}, salon olarak yokluğunuzu hissetmekteyiz. Yeni planlama için bizimle iletişime geçebilirsiniz.
-3. Sayın {{customer_name}} {{customer_surname}}, müşterilerimiz arasında değerli yerinizin hala devam etmesini umuyoruz. Yeni randevu için tarafımıza yazabilirsiniz.
-4. Sayın {{customer_name}} {{customer_surname}}, bir süredir görüşmediğimizin farkındayız. Tekrar bir araya gelmek için kapımız açıktır.
-5. Sayın {{customer_name}} {{customer_surname}}, hizmetlerimizden yararlanmak istediğinizde tarafımıza ulaşabilirsiniz.
+1. Sayın {{customer_name}} {{customer_surname}}, uzun bir süredir randevu kaydınız oluşmamıştır. Tekrar ağırlamak amacıyla {{discount_amount}} indirim fırsatımızı sunarız. {{validity_period}} süreyle geçerlidir.
+2. Sayın {{customer_name}} {{customer_surname}}, salon olarak yokluğunuzu hissetmekteyiz. {{discount_amount}} indirim hakkınız {{validity_period}} içinde geçerlidir.
+3. Sayın {{customer_name}} {{customer_surname}}, müşterimiz olarak tarafınıza özel {{discount_amount}} indirim sunuyoruz. {{validity_period}} süreyle değerlendirebilirsiniz.
+4. Sayın {{customer_name}} {{customer_surname}}, sizi tekrar ağırlamak için {{discount_amount}} indirim fırsatımızı paylaşırız. Geçerlilik süresi: {{validity_period}}.
+5. Sayın {{customer_name}} {{customer_surname}}, bir süredir görüşmediğimizin farkındayız. {{discount_amount}} indirim hediyemiz {{validity_period}} geçerlidir.
 
 ## YEDEK (Henüz onaya gitmiyor) — 5 adet
-6. Sayın {{customer_name}} {{customer_surname}}, son ziyaretinizden bu yana belirli bir süre geçmiştir. Yeniden görüşmek isteriz.
-7. Sayın {{customer_name}} {{customer_surname}}, müşterimiz olarak yokluğunuzu önemsiyoruz. Yeni randevu için tarafımıza ulaşabilirsiniz.
-8. Sayın {{customer_name}} {{customer_surname}}, salon olarak siz değerli müşterilerimizi tekrar ağırlamak isteriz.
-9. Sayın {{customer_name}} {{customer_surname}}, hatırlatma niteliğinde mesajımız: hizmetlerimiz her zaman emrinizdedir.
-10. Sayın {{customer_name}} {{customer_surname}}, müsait olduğunuz bir tarihte tarafımıza ulaşabilirsiniz.
+6. Sayın {{customer_name}} {{customer_surname}}, son ziyaretinizden bu yana belirli bir süre geçmiştir. Tarafınıza özel {{discount_amount}} indirim fırsatı {{validity_period}} içinde geçerlidir.
+7. Sayın {{customer_name}} {{customer_surname}}, müşterimiz olarak yokluğunuzu önemsiyoruz. {{discount_amount}} indirim hediyemizi {{validity_period}} süreyle sunarız.
+8. Sayın {{customer_name}} {{customer_surname}}, salon olarak siz değerli müşterilerimizi {{discount_amount}} indirimle ağırlamaktan memnuniyet duyarız. {{validity_period}}.
+9. Sayın {{customer_name}} {{customer_surname}}, hizmetlerimizden tekrar yararlanmanız için {{discount_amount}} indirim fırsatımız {{validity_period}} içinde geçerlidir.
+10. Sayın {{customer_name}} {{customer_surname}}, müsait olduğunuz bir tarihte sizi {{discount_amount}} indirimle ağırlamaktan memnuniyet duyarız. {{validity_period}}.

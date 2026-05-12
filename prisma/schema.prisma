@@ -32,6 +32,12 @@ model Salon {
   chakraPhoneNumberId         String?
   heroText                    String?
   communicationTone           SalonCommunicationTone           @default(BALANCED)
+  // Birthday voucher (MARKETING template kedy_dogum_gunu_kutlamasi)
+  birthdayDiscountText        String?
+  birthdayValidityText        String?
+  // Winback voucher (MARKETING template kedy_geri_donus)
+  winbackDiscountText         String?
+  winbackValidityText         String?
   analyticsPresets            AnalyticsPreset[]
   appointments                Appointment[]
   campaignApplications        AppointmentCampaignApplication[]

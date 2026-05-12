@@ -1,65 +1,76 @@
-# Doğum Günü Kutlama Şablon Varyasyonları (30 Adet — 15 Seçilen, 15 Yedek)
-# Tetik: Müşterinin doğum günü (BIRTHDAY_TODAY) veya 7 gün öncesi (BIRTHDAY_7D)
+# Doğum Günü İndirim Şablon Varyasyonları (30 Adet — 15 Seçilen, 15 Yedek)
+# Tetik: Müşterinin doğum günü (BIRTHDAY_TODAY)
 # Davranış: Yılda bir kez, salon başına gönderilir
-# Değişkenler: {{customer_name}}, {{customer_surname}}, {{customer_honorific}}
 #
-# ⚠️ META KATEGORİ NOTU:
-# Bu template UTILITY-safe olarak tasarlandı — hediye/kupon/indirim dili YOK.
-# Sadece müşteri ilişkisi bağlamında kutlama. Eğer salon hediye/indirim sunmak
-# isterse, müşteri salona geldiğinde fiziksel olarak sunabilir. Buraya
-# "%X indirim hediye" gibi ifade EKLENMEMELİDİR — Meta otomatik MARKETING'e
-# atar ve onay süreci uzar.
+# Değişkenler:
+#   {{customer_name}}      — Customer.firstName
+#   {{customer_surname}}   — Customer.lastName
+#   {{customer_honorific}} — Customer.gender → "Bey" / "Hanım"
+#   {{discount_amount}}    — Salon.birthdayDiscountText (örn. "%15", "150 TL", "1 ücretsiz seans")
+#   {{validity_period}}    — Salon.birthdayValidityText (örn. "7 gün", "31 Aralık'a kadar")
+#
+# ⚠️ META KATEGORİSİ: MARKETING (UTILITY DEĞİL!)
+#   - Customer.acceptMarketing = true olmalı (send-time check)
+#   - Customer "STOP/DURDUR" derse o anda ban → opt-out
+#   - UTILITY'den ~4x pahalı per send
+#   - Salon birthdayDiscountText veya birthdayValidityText boşsa
+#     template GÖNDERİLMEZ (salon promosyon kullanmıyor)
+#
+# Ton hiyerarşisi:
+#   FRIENDLY     — emoji + {{customer_name}}
+#   BALANCED     — emoji + {{customer_name}} {{customer_honorific}}
+#   PROFESSIONAL — emojisiz + Sayın {{customer_name}} {{customer_surname}}
 
 # ═══════════════════════════════════════════════════════════════════
 # FRIENDLY
 # ═══════════════════════════════════════════════════════════════════
 
 ## SEÇİLEN (Production) — 5 adet
-1. İyi ki doğdun {{customer_name}}! 🎂 Tüm dileklerin gerçek olsun, harika bir yıl olsun ✨
-2. Doğum günün kutlu olsun {{customer_name}} 🎉 Bu özel günde mutluluklar diliyoruz!
-3. Selam {{customer_name}}! 🎂 Doğum günün kutlu olsun, kendine iyi bak.
-4. Hey {{customer_name}}! 🎈 Doğum günün kutlu olsun, nice mutlu yıllara!
-5. Mutlu yıllar {{customer_name}} 🌸 Tüm sevdiklerinle nice güzel günlere!
+1. İyi ki doğdun {{customer_name}}! 🎂 Sana özel doğum günü hediyemiz: {{discount_amount}} indirim, {{validity_period}} geçerli ✨
+2. Doğum günün kutlu olsun {{customer_name}} 🎉 {{discount_amount}} indirim hediyemiz hazır, {{validity_period}} içinde kullanın!
+3. Selam {{customer_name}}! 🎂 Doğum günün kutlu olsun, {{discount_amount}} indirim hediyemiz {{validity_period}} geçerli 🎁
+4. Hey {{customer_name}}! 🎈 Doğum günün kutlu olsun! Sana özel {{discount_amount}} indirim, {{validity_period}} senin için ayrıldı.
+5. Mutlu yıllar {{customer_name}} 🌸 Doğum günü hediyemiz: {{discount_amount}} indirim ({{validity_period}} geçerli)!
 
 ## YEDEK (Henüz onaya gitmiyor) — 5 adet
-6. {{customer_name}}, doğum günün kutlu olsun! 🎉 Bugün senin günün ✨
-7. Merhaba {{customer_name}}! 🎂 Yeni yaşında huzur ve mutluluk dileriz.
-8. {{customer_name}}, iyi ki varsın 💛 Doğum günün kutlu olsun!
-9. Selam {{customer_name}} 🥳 Tüm dileklerinin gerçekleşmesini diliyoruz.
-10. {{customer_name}}, doğum günün kutlu olsun 🎁 Salon ailesi olarak yanındayız.
+6. {{customer_name}}, doğum günün kutlu olsun! 🎉 Hediye olarak {{discount_amount}} indirim seni bekliyor ({{validity_period}}).
+7. Merhaba {{customer_name}}! 🎂 Yeni yaşın hayırlı olsun, doğum günü indiriminiz: {{discount_amount}}, {{validity_period}} ✨
+8. {{customer_name}}, iyi ki varsın 💛 Doğum günün için {{discount_amount}} indirim hediyemiz var ({{validity_period}})!
+9. Selam {{customer_name}} 🥳 Doğum günün kutlu olsun! Sana özel {{discount_amount}} indirim {{validity_period}} geçerli.
+10. {{customer_name}}, doğum günün kutlu olsun 🎁 {{discount_amount}} hediyemizi {{validity_period}} içinde kullanabilirsin.
 
 # ═══════════════════════════════════════════════════════════════════
 # BALANCED — {{customer_name}} {{customer_honorific}} + emoji
 # ═══════════════════════════════════════════════════════════════════
 
 ## SEÇİLEN (Production) — 5 adet
-1. Merhaba {{customer_name}} {{customer_honorific}}, doğum gününüzü kutlar, sağlık ve mutluluk dolu bir yıl dileriz 🎉
-2. {{customer_name}} {{customer_honorific}}, doğum gününüz kutlu olsun ✨ Yeni yaşınızda nice güzelliklere!
-3. Selamlar {{customer_name}} {{customer_honorific}}, doğum günü mesajımız 🎂 Tüm dileklerinizin gerçekleşmesini dileriz.
-4. Mutlu yıllar {{customer_name}} {{customer_honorific}} 🌟 Bu özel günde aklımızdaydınız.
-5. Merhaba {{customer_name}} {{customer_honorific}}, doğum gününüzü kutlar, harika bir yıl dileriz 🌸
+1. Merhaba {{customer_name}} {{customer_honorific}}, doğum gününüzü kutlar, size özel {{discount_amount}} indirim hediyemizi sunarız 🎉 ({{validity_period}} geçerli)
+2. {{customer_name}} {{customer_honorific}}, doğum gününüz kutlu olsun ✨ {{discount_amount}} indirim hediyemiz {{validity_period}} içinde geçerlidir.
+3. Selamlar {{customer_name}} {{customer_honorific}}, doğum günü hediyeniz hazır 🎂 {{discount_amount}} indirim, {{validity_period}} geçerli!
+4. Merhaba {{customer_name}} {{customer_honorific}}, doğum gününüzü kutlar, {{discount_amount}} indirim fırsatımızı paylaşırız 🌟 {{validity_period}}
+5. Mutlu yıllar {{customer_name}} {{customer_honorific}} 🎈 Size özel doğum günü indiriminiz: {{discount_amount}}, {{validity_period}} içinde geçerli.
 
 ## YEDEK (Henüz onaya gitmiyor) — 5 adet
-6. {{customer_name}} {{customer_honorific}}, doğum gününüz kutlu olsun 🎈 Yeni yaşınız hayırlı olsun.
-7. Selamlar {{customer_name}} {{customer_honorific}}, bu özel günde tüm iyi dileklerimizi iletiriz 💛
-8. Merhaba {{customer_name}} {{customer_honorific}}, doğum gününüzü kutlar, dileklerinizin gerçek olmasını dileriz 🌟
-9. {{customer_name}} {{customer_honorific}}, salon ailesi olarak doğum gününüzü kutlarız 🎂
-10. {{customer_name}} {{customer_honorific}}, nice mutlu yıllara 🌸 Doğum gününüz kutlu olsun.
+6. {{customer_name}} {{customer_honorific}}, doğum gününüz kutlu olsun 🎈 Hediyemiz {{discount_amount}} indirim ({{validity_period}}).
+7. Selamlar {{customer_name}} {{customer_honorific}}, doğum günü mesajımızla birlikte {{discount_amount}} indirim sunarız 💛 {{validity_period}}
+8. Merhaba {{customer_name}} {{customer_honorific}}, bu özel günde size özel {{discount_amount}} indirim hazırladık 🌟 {{validity_period}}
+9. {{customer_name}} {{customer_honorific}}, salon ailesi olarak doğum gününüzü kutlar, {{discount_amount}} indirim hediyemizi {{validity_period}} ile sunarız 🎂
+10. {{customer_name}} {{customer_honorific}}, nice mutlu yıllara 🌸 Doğum günü hediyeniz: {{discount_amount}} indirim, {{validity_period}} geçerli.
 
 # ═══════════════════════════════════════════════════════════════════
 # PROFESSIONAL — Sayın {{customer_name}} {{customer_surname}} + emojisiz
 # ═══════════════════════════════════════════════════════════════════
 
 ## SEÇİLEN (Production) — 5 adet
-1. Sayın {{customer_name}} {{customer_surname}}, doğum gününüzü kutlar, mutluluk ve sağlık dolu bir yıl dileriz.
-2. Sayın {{customer_name}} {{customer_surname}}, doğum günü mesajımızı kabul ediniz; nice mutlu yıllara.
-3. Sayın {{customer_name}} {{customer_surname}}, bu özel gününüzü kutlar, yeni yaşınızda başarılar dileriz.
-4. Sayın {{customer_name}} {{customer_surname}}, doğum gününüz kutlu olsun. Salon olarak en güzel dileklerimizi iletiriz.
-5. Sayın {{customer_name}} {{customer_surname}}, mutlu yıllar dileklerimizle.
+1. Sayın {{customer_name}} {{customer_surname}}, doğum gününüzü kutlar, tarafınıza özel {{discount_amount}} indirim fırsatımızı sunarız. Geçerlilik süresi: {{validity_period}}.
+2. Sayın {{customer_name}} {{customer_surname}}, doğum günü mesajımızı sunmaktan mutluluk duyarız. {{discount_amount}} indirim, {{validity_period}} içinde geçerlidir.
+3. Sayın {{customer_name}} {{customer_surname}}, bu özel gününüzü kutlar, {{discount_amount}} doğum günü hediyemizi sunarız. {{validity_period}} süreyle geçerlidir.
+4. Sayın {{customer_name}} {{customer_surname}}, doğum gününüz kutlu olsun. Size özel {{discount_amount}} indirim {{validity_period}} içinde geçerlidir.
+5. Sayın {{customer_name}} {{customer_surname}}, mutlu yıllar dileklerimizle birlikte {{discount_amount}} doğum günü indirimimiz {{validity_period}} süreyle tarafınıza sunulmuştur.
 
 ## YEDEK (Henüz onaya gitmiyor) — 5 adet
-6. Sayın {{customer_name}} {{customer_surname}}, doğum gününüzü kutlar, sağlık ve esenlik dolu bir yıl dileriz.
-7. Sayın {{customer_name}} {{customer_surname}}, bu anlamlı gününüzde tüm iyi dileklerimizi iletmek isteriz.
-8. Sayın {{customer_name}} {{customer_surname}}, doğum gününüz vesilesiyle sağlık ve mutluluk dileklerimizi sunarız.
-9. Sayın {{customer_name}} {{customer_surname}}, yeni yaşınızın hayırlı olmasını dileriz.
-10. Sayın {{customer_name}} {{customer_surname}}, doğum günü dileklerimizi en içten duygularla iletiriz.
+6. Sayın {{customer_name}} {{customer_surname}}, doğum gününüzü kutlar, {{discount_amount}} indirim fırsatımızı paylaşırız. {{validity_period}} süreyle geçerlidir.
+7. Sayın {{customer_name}} {{customer_surname}}, bu anlamlı gününüzde tarafınıza özel {{discount_amount}} indirim sunmaktan mutluluk duyarız. Geçerlilik: {{validity_period}}.
+8. Sayın {{customer_name}} {{customer_surname}}, doğum gününüz vesilesiyle {{discount_amount}} indirim hakkınız {{validity_period}} içinde geçerlidir.
+9. Sayın {{customer_name}} {{customer_surname}}, yeni yaşınızın hayırlı olmasını diler, {{discount_amount}} doğum günü indirimimizi sunarız. {{validity_period}}.
+10. Sayın {{customer_name}} {{customer_surname}}, doğum günü dileklerimizi {{discount_amount}} indirim hediyemizle birlikte iletmek isteriz. {{validity_period}} geçerli.
