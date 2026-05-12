@@ -39,17 +39,26 @@ const MASTER_TEMPLATE_VARIATIONS: Record<string, string[]> = {
     "{{appointment_date}} vaktinde {{service_name}} için hazırız. Sizi de bekliyoruz {{customer_name}}! 🌺 Adres: {{location_url}}",
     "Selamlar, {{appointment_date}} tarihli {{service_name}} randevunuz sisteme kaydedildi {{customer_name}}. İşte konumumuz: {{location_url}} 👋"
   ],
-  kedy_randevu_hatirlatma: [
-    "Merhaba {{customer_name}}! Hatırlatmak isteriz: Randevunuz yarın {{appointment_time}} saatinde. Konum: {{location_url}} ⏰",
-    "Randevu Hatırlatması: {{customer_name}}, yarın saat {{appointment_time}}'de {{service_name}} randevunuz var. Yol tarifi: {{location_url}} ✨",
-    "Selam! Yarın {{appointment_time}} saatindeki {{service_name}} randevunuz için sizi bekliyor olacağız {{customer_name}}. 🌸 {{location_url}}",
-    "Unutmadınız değil mi {{customer_name}}? Yarın {{appointment_time}} vaktinde {{service_name}} randevunuz var. Adres: {{location_url}} 🗓️",
-    "Küçük bir hatırlatma: Yarın {{appointment_time}} | {{service_name}} randevunuz için hazırız {{customer_name}}! 💖 {{location_url}}",
-    "Merhaba! Yarın {{appointment_time}} saatinde {{service_name}} randevunuzu sabırsızlıkla bekliyoruz. 🌟 Konum: {{location_url}}",
-    "Hatırlatma: Yarın {{appointment_time}} tarihindeki randevunuza gelmeden önce lütfen teyit edin {{customer_name}}. 🙏 {{location_url}}",
-    "Hey! Yarın {{appointment_time}} tarihinde {{service_name}} için davetlisiniz. Görüşmek dileğiyle! 👋 Harita: {{location_url}}",
-    "Randevunuz yarın! {{appointment_time}} | {{service_name}}. Sizi görmek için sabırsızlanıyoruz {{customer_name}}! 😊 {{location_url}}",
-    "Selamlar, yarın {{appointment_time}} tarihli {{service_name}} randevunuzun yaklaştığını hatırlatmak istedik. 🌺 {{location_url}}"
+  // Tier-aware: variations live in templateVariations.ts.
+  // Flat fallback for legacy callers below. All 3 reminder timings live
+  // in separate templates (1g / 3g / 2s) — see templateVariations.ts.
+  kedy_randevu_hatirlatma_1_gun: [
+    "Merhaba {{customer_name}} {{customer_honorific}}, yarın {{appointment_time}} randevunuz için kısa bir teyit alabilir miyiz? 🙌"
+  ],
+  kedy_randevu_hatirlatma_3_gun: [
+    "Merhaba {{customer_name}} {{customer_honorific}}, randevu tarihinize 3 gün kalmıştır 🙌 İptal veya değişiklik taleplerinizi en az {{late_policy_hours}} saat önce iletmenizi rica ederiz."
+  ],
+  kedy_randevu_hatirlatma_2_saat: [
+    "Merhaba {{customer_name}} {{customer_honorific}}, randevunuza yaklaşık 2 saat kaldı 🫶 Yol tarifi butondan açılabilir."
+  ],
+  kedy_google_maps_yorum: [
+    "Merhaba {{customer_name}} {{customer_honorific}}, {{salon_name}} olarak sizi üçüncü kez ağırlamaktan mutluyuz 🌸 Google Maps yorumunuz bizim için kıymetli."
+  ],
+  kedy_islem_link: [
+    "Bekleyen işleminizi tamamlamak için aşağıdaki butona dokunun.\n\nBağlantı kısa süreliğine geçerlidir."
+  ],
+  kedy_ekip_katilim_link: [
+    "Kedy ekip katılımınızı tamamlamak için aşağıdaki butona dokunun.\n\nBağlantı kısa süreliğine geçerlidir.\n\n— Kedy"
   ],
   // Tier-aware: variations live in templateVariations.ts.
   // Flat fallback for legacy callers.
@@ -98,22 +107,17 @@ const MASTER_TEMPLATE_VARIATIONS: Record<string, string[]> = {
     "Merhaba {{name}}, {{salon_or_action}} adımını tamamlamak için bağlantıyı açın: {{verification_link}}. Süre: {{ttl}} dakika. — {{footer_brand}}",
     "Hoş geldiniz {{name}}, {{salon_or_action}} işleminize devam etmek için: {{verification_link}} — {{ttl}} dakika içinde kullanın. — {{footer_brand}}"
   ],
-  kedy_auth_code: [
-    "Kedy doğrulama kodunuz: {{verification_code}}. Bu kodu kimseyle paylaşmayın. ✨",
-    "Giriş için onay kodunuz: {{verification_code}}. Teşekkürler! 🔒",
-    "Kedy Hesabınız için Doğrulama Kodu: {{verification_code}}. 🛠️",
-    "Selam! Doğrulama kodun burada: {{verification_code}}. Hesabına hemen giriş yapabilirsin. 🌸",
-    "{{verification_code}} - Bu sizin güvenlik kodunuzdur. Lütfen ilgili alana giriniz. 🧤",
-    "Merhaba, Kedy işlemine devam etmek için bu kodu kullan: {{verification_code}}. 🌟",
-    "Güvenliğiniz için doğrulama kodunuz: {{verification_code}}. İyi günler! 🙏",
-    "Hey! İşte beklediğin giriş kodu: {{verification_code}}. Kedy dünyasına hoş geldin! 👋",
-    "Doğrulama kodunuz oluşturuldu: {{verification_code}}. ⏰",
-    "Selamlar, hesabını teyit etmek için bu kodu girmen yeterli: {{verification_code}}. 😊"
-  ]
+  // NOTE: kedy_auth_code (legacy AUTHENTICATION template) removed. UTILITY-link
+  // flow (kedy_islem_link / kedy_ekip_katilim_link) replaces it.
 };
 
 // WhatsApp Master Templates Definitions
 const KEDY_MASTER_TEMPLATES = [
+  // ── Appointment confirmation ──
+  // Variables in body (union of tiers): customer_name, customer_surname,
+  // customer_honorific, appointment_date, appointment_time, service_name,
+  // location_url. Meta requires example for each {{var}} actually in the
+  // submitted body — sync logic builds examples dynamically per pick.
   {
     name: 'kedy_randevu_onay',
     category: 'UTILITY',
@@ -125,42 +129,10 @@ const KEDY_MASTER_TEMPLATES = [
         text: MASTER_TEMPLATE_VARIATIONS.kedy_randevu_onay[0],
         example: {
           body_text_named_params: [
-            { param_name: 'customer_name', example: 'Müşteri' },
-            { param_name: 'appointment_date', example: '14 Nisan 15:30' },
-            { param_name: 'service_name', example: 'Saç Kesimi' },
-            { param_name: 'location_url', example: 'https://maps.google.com/?q=Salon' }
-          ]
-        }
-      },
-      {
-        type: 'BUTTONS',
-        buttons: [
-          {
-            type: 'QUICK_REPLY',
-            text: 'Onaylıyorum ✅',
-            payload: 'CONFIRM_APPOINTMENT'
-          },
-          {
-            type: 'QUICK_REPLY',
-            text: 'İptal Et ❌',
-            payload: 'CANCEL_APPOINTMENT'
-          }
-        ]
-      }
-    ]
-  },
-  {
-    name: 'kedy_randevu_hatirlatma',
-    category: 'UTILITY',
-    parameter_format: 'NAMED',
-    eventType: 'REMINDER',
-    components: [
-      {
-        type: 'BODY',
-        text: MASTER_TEMPLATE_VARIATIONS.kedy_randevu_hatirlatma[0],
-        example: {
-          body_text_named_params: [
-            { param_name: 'customer_name', example: 'Müşteri' },
+            { param_name: 'customer_name', example: 'Ayşe' },
+            { param_name: 'customer_surname', example: 'Yılmaz' },
+            { param_name: 'customer_honorific', example: 'Hanım' },
+            { param_name: 'appointment_date', example: '14 Nisan' },
             { param_name: 'appointment_time', example: '15:30' },
             { param_name: 'service_name', example: 'Saç Kesimi' },
             { param_name: 'location_url', example: 'https://maps.google.com/?q=Salon' }
@@ -170,16 +142,91 @@ const KEDY_MASTER_TEMPLATES = [
       {
         type: 'BUTTONS',
         buttons: [
-          {
-            type: 'QUICK_REPLY',
-            text: 'Geliyorum 👍',
-            payload: 'REMINDER_CONFIRM'
-          },
-          {
-            type: 'QUICK_REPLY',
-            text: 'Gelemiyorum 👎',
-            payload: 'REMINDER_CANCEL'
-          }
+          { type: 'QUICK_REPLY', text: 'Onaylıyorum ✅', payload: 'CONFIRM_APPOINTMENT' },
+          { type: 'QUICK_REPLY', text: 'İptal Et ❌', payload: 'CANCEL_APPOINTMENT' }
+        ]
+      }
+    ]
+  },
+  // ── Reminder: 1 day before ──
+  {
+    name: 'kedy_randevu_hatirlatma_1_gun',
+    category: 'UTILITY',
+    parameter_format: 'NAMED',
+    eventType: 'REMINDER_1_DAY',
+    components: [
+      {
+        type: 'BODY',
+        text: MASTER_TEMPLATE_VARIATIONS.kedy_randevu_hatirlatma_1_gun[0],
+        example: {
+          body_text_named_params: [
+            { param_name: 'customer_name', example: 'Ayşe' },
+            { param_name: 'customer_surname', example: 'Yılmaz' },
+            { param_name: 'customer_honorific', example: 'Hanım' },
+            { param_name: 'appointment_date', example: '14 Nisan' },
+            { param_name: 'appointment_time', example: '15:30' },
+            { param_name: 'service_name', example: 'Saç Kesimi' }
+          ]
+        }
+      },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          { type: 'QUICK_REPLY', text: 'Geliyorum 👍', payload: 'REMINDER_CONFIRM' },
+          { type: 'QUICK_REPLY', text: 'Gelemiyorum 👎', payload: 'REMINDER_CANCEL' }
+        ]
+      }
+    ]
+  },
+  // ── Reminder: 3 days before (includes salon cancellation policy hours) ──
+  {
+    name: 'kedy_randevu_hatirlatma_3_gun',
+    category: 'UTILITY',
+    parameter_format: 'NAMED',
+    eventType: 'REMINDER_3_DAY',
+    components: [
+      {
+        type: 'BODY',
+        text: MASTER_TEMPLATE_VARIATIONS.kedy_randevu_hatirlatma_3_gun[0],
+        example: {
+          body_text_named_params: [
+            { param_name: 'customer_name', example: 'Ayşe' },
+            { param_name: 'customer_surname', example: 'Yılmaz' },
+            { param_name: 'customer_honorific', example: 'Hanım' },
+            { param_name: 'appointment_date', example: '14 Nisan' },
+            { param_name: 'appointment_time', example: '15:30' },
+            { param_name: 'service_name', example: 'Saç Kesimi' },
+            { param_name: 'late_policy_hours', example: '24' }
+          ]
+        }
+      }
+    ]
+  },
+  // ── Reminder: 2 hours before (includes location button) ──
+  {
+    name: 'kedy_randevu_hatirlatma_2_saat',
+    category: 'UTILITY',
+    parameter_format: 'NAMED',
+    eventType: 'REMINDER_2_HOUR',
+    components: [
+      {
+        type: 'BODY',
+        text: MASTER_TEMPLATE_VARIATIONS.kedy_randevu_hatirlatma_2_saat[0],
+        example: {
+          body_text_named_params: [
+            { param_name: 'customer_name', example: 'Ayşe' },
+            { param_name: 'customer_surname', example: 'Yılmaz' },
+            { param_name: 'customer_honorific', example: 'Hanım' },
+            { param_name: 'appointment_time', example: '15:30' },
+            { param_name: 'service_name', example: 'Saç Kesimi' },
+            { param_name: 'location_url', example: 'https://maps.google.com/?q=Salon' }
+          ]
+        }
+      },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          { type: 'URL', text: 'Yol Tarifi', url: 'https://maps.google.com/?q=Salon' }
         ]
       }
     ]
@@ -195,8 +242,11 @@ const KEDY_MASTER_TEMPLATES = [
         text: MASTER_TEMPLATE_VARIATIONS.kedy_no_show_hatirlatma[0],
         example: {
           body_text_named_params: [
-            { param_name: 'customer_name', example: 'Müşteri' },
-            { param_name: 'appointment_date', example: '14 Nisan 15:30' },
+            { param_name: 'customer_name', example: 'Ayşe' },
+            { param_name: 'customer_surname', example: 'Yılmaz' },
+            { param_name: 'customer_honorific', example: 'Hanım' },
+            { param_name: 'appointment_date', example: '14 Nisan' },
+            { param_name: 'appointment_time', example: '15:30' },
             { param_name: 'service_name', example: 'Saç Kesimi' },
             { param_name: 'late_policy_hours', example: '24' }
           ]
@@ -204,6 +254,8 @@ const KEDY_MASTER_TEMPLATES = [
       }
     ]
   },
+  // ── Legacy verification link template (deprecated for customer flows;
+  //    superseded by kedy_islem_link). Kept for backwards compat.
   {
     name: 'kedy_dogrulama_link',
     category: 'UTILITY',
@@ -225,28 +277,47 @@ const KEDY_MASTER_TEMPLATES = [
       }
     ]
   },
+  // ── Customer transactional verify (CUSTOMER_PHONE / CUSTOMER_LINK_CONSENT
+  //    / PHONE_CHANGE). Body is static; only URL button carries the token. ──
   {
-    name: 'kedy_auth_code',
-    category: 'AUTHENTICATION',
+    name: 'kedy_islem_link',
+    category: 'UTILITY',
     parameter_format: 'NAMED',
-    eventType: 'AUTH_CODE',
+    eventType: 'CUSTOMER_VERIFY_LINK',
     components: [
       {
-        type: 'BODY',
-        add_authentication_template_state_button: true
+        type: 'HEADER',
+        format: 'TEXT',
+        text: '{{salonname}}',
+        example: { header_text_named_params: [{ param_name: 'salonname', example: 'Bella Studio' }] }
       },
       {
-        type: 'FOOTER',
-        text: 'Güvenliğiniz için bu kodu paylaşmayın.'
+        type: 'BODY',
+        text: MASTER_TEMPLATE_VARIATIONS.kedy_islem_link[0]
       },
       {
         type: 'BUTTONS',
         buttons: [
-          {
-            type: 'OTP',
-            otp_type: 'COPY_CODE',
-            text: 'Kodu Kopyala'
-          }
+          { type: 'URL', text: 'Devam Et', url: 'https://app.berkai.shop/c/v/{{1}}', example: ['Hx7kT3pQmRn2Xs8VyZbCfWdL'] }
+        ]
+      }
+    ]
+  },
+  // ── Team-invite verification link (TEAM_INVITE_PHONE) ──
+  {
+    name: 'kedy_ekip_katilim_link',
+    category: 'UTILITY',
+    parameter_format: 'NAMED',
+    eventType: 'TEAM_INVITE_LINK',
+    components: [
+      {
+        type: 'BODY',
+        text: MASTER_TEMPLATE_VARIATIONS.kedy_ekip_katilim_link[0]
+      },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          { type: 'URL', text: 'Katılımı Tamamla', url: 'https://kedyapp.com/v/{{1}}', example: ['Tx9pRmK3pRmQnBs4'] }
         ]
       }
     ]
@@ -262,8 +333,11 @@ const KEDY_MASTER_TEMPLATES = [
         text: MASTER_TEMPLATE_VARIATIONS.kedy_waitlist_teklif[0],
         example: {
           body_text_named_params: [
-            { param_name: 'customer_name', example: 'Müşteri' },
-            { param_name: 'appointment_date', example: '14 Nisan 15:30' },
+            { param_name: 'customer_name', example: 'Ayşe' },
+            { param_name: 'customer_surname', example: 'Yılmaz' },
+            { param_name: 'customer_honorific', example: 'Hanım' },
+            { param_name: 'appointment_date', example: '14 Nisan' },
+            { param_name: 'appointment_time', example: '15:30' },
             { param_name: 'service_name', example: 'Saç Kesimi' }
           ]
         }
@@ -271,15 +345,12 @@ const KEDY_MASTER_TEMPLATES = [
       {
         type: 'BUTTONS',
         buttons: [
-          {
-            type: 'QUICK_REPLY',
-            text: 'Hemen Al 🏃',
-            payload: 'WAITLIST_ACCEPT'
-          }
+          { type: 'URL', text: 'Teklifi Gör', url: 'https://app.berkai.shop/booking?waitlistOffer={{1}}', example: ['offer_token'] }
         ]
       }
     ]
   },
+  // ── Standard post-appointment feedback (magic link → /feedback/{token}) ──
   {
     name: 'kedy_memnuniyet_anketi',
     category: 'UTILITY',
@@ -291,7 +362,9 @@ const KEDY_MASTER_TEMPLATES = [
         text: MASTER_TEMPLATE_VARIATIONS.kedy_memnuniyet_anketi[0],
         example: {
           body_text_named_params: [
-            { param_name: 'customer_name', example: 'Müşteri' },
+            { param_name: 'customer_name', example: 'Ayşe' },
+            { param_name: 'customer_surname', example: 'Yılmaz' },
+            { param_name: 'customer_honorific', example: 'Hanım' },
             { param_name: 'service_name', example: 'Saç Kesimi' }
           ]
         }
@@ -299,16 +372,34 @@ const KEDY_MASTER_TEMPLATES = [
       {
         type: 'BUTTONS',
         buttons: [
-          {
-            type: 'QUICK_REPLY',
-            text: 'Çok Memnunum 😍',
-            payload: 'FEEDBACK_HAPPY'
-          },
-          {
-            type: 'QUICK_REPLY',
-            text: 'Geliştirilmeli 🛠️',
-            payload: 'FEEDBACK_ISSUE'
-          }
+          { type: 'URL', text: 'Değerlendir', url: 'https://app.berkai.shop/feedback/{{1}}', example: ['feedback_token'] }
+        ]
+      }
+    ]
+  },
+  // ── 3rd-appointment Google Maps review request ──
+  {
+    name: 'kedy_google_maps_yorum',
+    category: 'UTILITY',
+    parameter_format: 'NAMED',
+    eventType: 'GOOGLE_MAPS_REVIEW',
+    components: [
+      {
+        type: 'BODY',
+        text: MASTER_TEMPLATE_VARIATIONS.kedy_google_maps_yorum[0],
+        example: {
+          body_text_named_params: [
+            { param_name: 'customer_name', example: 'Ayşe' },
+            { param_name: 'customer_surname', example: 'Yılmaz' },
+            { param_name: 'customer_honorific', example: 'Hanım' },
+            { param_name: 'salon_name', example: 'Bella Studio' }
+          ]
+        }
+      },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          { type: 'URL', text: "Google'da Yorum Yap", url: 'https://maps.google.com/?q=Salon', example: ['https://maps.google.com/?q=Salon'] }
         ]
       }
     ]
@@ -327,6 +418,7 @@ const KEDY_MASTER_TEMPLATES = [
         example: {
           body_text_named_params: [
             { param_name: 'customer_name', example: 'Ayşe' },
+            { param_name: 'customer_surname', example: 'Yılmaz' },
             { param_name: 'customer_honorific', example: 'Hanım' },
             { param_name: 'discount_amount', example: '%15' },
             { param_name: 'validity_period', example: '7 gün' }
@@ -349,6 +441,7 @@ const KEDY_MASTER_TEMPLATES = [
         example: {
           body_text_named_params: [
             { param_name: 'customer_name', example: 'Ayşe' },
+            { param_name: 'customer_surname', example: 'Yılmaz' },
             { param_name: 'customer_honorific', example: 'Hanım' },
             { param_name: 'discount_amount', example: '%10' },
             { param_name: 'validity_period', example: '30 gün' }

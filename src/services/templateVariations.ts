@@ -68,11 +68,11 @@ const KEDY_RANDEVU_ONAY: TieredVariations = {
 };
 
 // ─────────────────────────────────────────────────────────────────
-// kedy_randevu_hatirlatma — 1 day reminder
+// kedy_randevu_hatirlatma_1_gun — 1 day reminder
 // vars: {{customer_name}}, {{customer_surname}}, {{customer_honorific}},
 //       {{appointment_date}}, {{appointment_time}}, {{service_name}}
 // ─────────────────────────────────────────────────────────────────
-const KEDY_RANDEVU_HATIRLATMA: TieredVariations = {
+const KEDY_RANDEVU_HATIRLATMA_1_GUN: TieredVariations = {
   FRIENDLY: [
     "{{customer_name}}, yarın görüşüyoruz 🎉 {{appointment_time}} için kısa bir onay bırakır mısın?",
     "Selam {{customer_name}}! Yarın {{service_name}} günü 💅 Katılımını bir tıkla seçebilirsin.",
@@ -108,6 +108,140 @@ const KEDY_RANDEVU_HATIRLATMA: TieredVariations = {
     "Sayın {{customer_name}} {{customer_surname}}, yarınki randevunuz için kısa bir teyit alabilir miyiz?",
     "Sayın {{customer_name}} {{customer_surname}}, hizmet planlamamız için katılım bilginiz önem taşımaktadır.",
     "Sayın {{customer_name}} {{customer_surname}}, yarınki randevunuza ilişkin teyit mesajıdır.",
+  ],
+};
+
+// ─────────────────────────────────────────────────────────────────
+// kedy_randevu_hatirlatma_3_gun — 3 day reminder, includes policy hours
+// vars: {{customer_name}}, {{customer_surname}}, {{customer_honorific}},
+//       {{appointment_date}}, {{appointment_time}}, {{service_name}},
+//       {{late_policy_hours}}
+// ─────────────────────────────────────────────────────────────────
+const KEDY_RANDEVU_HATIRLATMA_3_GUN: TieredVariations = {
+  FRIENDLY: [
+    "{{customer_name}}, randevu gününe 3 gün kaldı 🙌 İptal veya değişiklikleri en az {{late_policy_hours}} saat önce haber verirsen harika olur.",
+    "Selam {{customer_name}}! Takvimde geri sayım başladı ⏳ İptal/değişiklik gerekiyorsa en az {{late_policy_hours}} saat önce yaz lütfen.",
+    "Hey {{customer_name}}! Programı birlikte sorunsuz yürütelim ✨ Son dakika yerine en az {{late_policy_hours}} saat önce bildirim rica ediyoruz.",
+    "Merhaba {{customer_name}}! Randevu yaklaşırken nazikçe hatırlatalım 🌸 İptal ve değişiklikler en az {{late_policy_hours}} saat öncesinden.",
+    "{{customer_name}}, küçük politika hatırlatması 💡 İptal/değişiklikler için {{late_policy_hours}} saat sınırını kaçırmamanı rica ederiz.",
+    "{{customer_name}}, 72 saat sonra görüşüyoruz 🌟 Plan değişirse erken haber ver — {{late_policy_hours}} saat öncesine kadar.",
+    "{{customer_name}}, son dakikaya kalmadan haber verirsen çok mutlu oluruz 😊 İptal/değişiklik için {{late_policy_hours}} saat öncesi.",
+    "Selam {{customer_name}}! 3 gün sonra {{service_name}} için buluşuyoruz 💫 Planın değişirse en az {{late_policy_hours}} saat önce bildir.",
+    "{{customer_name}}, no-show yaşamamak için iptal/değişiklik bilgini {{late_policy_hours}} saat öncesinden iletmeyi unutma 🙏",
+    "{{customer_name}}, takvim akışı için erken bilgilendirme bizim için çok kıymetli 🌟 İptal/değişiklik {{late_policy_hours}} saat öncesi.",
+  ],
+  BALANCED: [
+    "Merhaba {{customer_name}} {{customer_honorific}}, randevu tarihinize 3 gün kalmıştır 🙌 İptal veya değişiklik taleplerinizi en az {{late_policy_hours}} saat önce iletmenizi rica ederiz.",
+    "{{customer_name}} {{customer_honorific}}, plan değişikliği ve iptal taleplerinin en az {{late_policy_hours}} saat önceden bildirilmesi süreci kolaylaştırır 🌸",
+    "Selamlar {{customer_name}} {{customer_honorific}}, randevu planlamamızda gecikme yaşanmaması için {{late_policy_hours}} saat sınırına uyum önemli 🌟",
+    "{{customer_name}} {{customer_honorific}}, politika hatırlatması: İptal ve değişiklik talepleri en az {{late_policy_hours}} saat öncesinden ✨",
+    "Merhaba {{customer_name}} {{customer_honorific}}, randevunuz yaklaşırken nazik bir hatırlatma 🤗 İptal/değişiklik için {{late_policy_hours}} saat.",
+    "Merhaba {{customer_name}} {{customer_honorific}}, no-show politikamıza ilişkin küçük bir hatırlatma 💡 İptal/değişiklik {{late_policy_hours}} saat öncesi.",
+    "{{customer_name}} {{customer_honorific}}, takvim akışımız için iptal/değişiklik taleplerinizi {{late_policy_hours}} saat önceden paylaşmanızı rica ederiz 🙏",
+    "{{customer_name}} {{customer_honorific}}, müsaitlik planlamasının korunması için iptal/değişiklik bildirimleri {{late_policy_hours}} saat öncesi olmalı 🙏",
+    "{{customer_name}} {{customer_honorific}}, geç bildirimler operasyonel akışı zorlaştırabilir 🙇 İptal veya değişiklik için lütfen {{late_policy_hours}} saat önce haber verin.",
+    "{{customer_name}} {{customer_honorific}}, zamanında bilgilendirmeniz süreç kalitesini artırır — iptal/değişiklik için {{late_policy_hours}} saat öncesi 💛",
+  ],
+  PROFESSIONAL: [
+    "Sayın {{customer_name}} {{customer_surname}}, randevu tarihinize 72 saat kalmıştır. İptal ve değişiklik bildirimleri en az {{late_policy_hours}} saat önce yapılmalıdır.",
+    "Sayın {{customer_name}} {{customer_surname}}, plan değişikliği ve iptal taleplerinin en az {{late_policy_hours}} saat önceden iletilmesi gerekmektedir.",
+    "Sayın {{customer_name}} {{customer_surname}}, no-show politikamız kapsamında {{late_policy_hours}} saatten daha geç yapılan iptal/değişiklikler değerlendirmeye alınmaktadır.",
+    "Sayın {{customer_name}} {{customer_surname}}, randevu yönetim prosedürlerimiz doğrultusunda iptal/değişiklik bildirimlerinin {{late_policy_hours}} saat öncesinden iletilmesini rica ederiz.",
+    "Sayın {{customer_name}} {{customer_surname}}, hatırlatma: İptal ve değişiklik talepleri için süre {{late_policy_hours}} saat.",
+    "Sayın {{customer_name}} {{customer_surname}}, operasyonel planlamamızın sürdürülebilirliği için {{late_policy_hours}} saat sınırına uyum önem taşımaktadır.",
+    "Sayın {{customer_name}} {{customer_surname}}, belirtilen sürenin dışındaki iptal/değişiklik talepleri uygunluk durumuna bağlı olarak değerlendirilebilir.",
+    "Sayın {{customer_name}} {{customer_surname}}, geç iptal ve değişiklik talepleri mevcut politika kuralları çerçevesinde ele alınmaktadır.",
+    "Sayın {{customer_name}} {{customer_surname}}, randevu sürekliliği için plan değişiklikleri ve iptalleri {{late_policy_hours}} saat öncesinden iletmenizi rica ederiz.",
+    "Sayın {{customer_name}} {{customer_surname}}, politika kurallarına uyum hizmet kalitesi ve kapasite yönetimi açısından önem taşımaktadır.",
+  ],
+};
+
+// ─────────────────────────────────────────────────────────────────
+// kedy_randevu_hatirlatma_2_saat — 2 hour reminder, includes location
+// vars: {{customer_name}}, {{customer_surname}}, {{customer_honorific}},
+//       {{appointment_time}}, {{service_name}}, {{location_url}}
+// ─────────────────────────────────────────────────────────────────
+const KEDY_RANDEVU_HATIRLATMA_2_SAAT: TieredVariations = {
+  FRIENDLY: [
+    "{{customer_name}}, 2 saat sonra buluşuyoruz 👀 Yol tarifi butondan açılıyor.",
+    "Selam {{customer_name}}! Her şey hazır, bir sen eksiksin ✨ Randevuna 2 saat kaldı.",
+    "Hey {{customer_name}}! {{service_name}} seansına 2 saat ⏰ Yola çıkmadan tarife göz at.",
+    "Merhaba {{customer_name}}! {{appointment_time}} için kapımız açık 🌸 Yola çıkarken tarifi unutma.",
+    "Mini hatırlatma {{customer_name}}: 2 saat sonra seni ağırlıyoruz 💫",
+    "{{customer_name}}, kendine ayırdığın zaman yaklaşıyor 🌟 {{appointment_time}} için bekliyoruz.",
+    "{{customer_name}}, sayım başladı 🙌 Bugün {{appointment_time}}, görüşmek üzere.",
+    "{{customer_name}}, yaklaşıyoruz 🚀 Bugün {{appointment_time}} — yol tarifi butonda.",
+    "Selam {{customer_name}}! Bugünkü {{service_name}} için son hatırlatma ✨",
+    "{{customer_name}}, hazır mıyız? 😊 2 saat sonra seansın başlıyor.",
+  ],
+  BALANCED: [
+    "Merhaba {{customer_name}} {{customer_honorific}}, randevunuza yaklaşık 2 saat kaldı 🫶 Yol tarifi butondan açılabilir.",
+    "{{customer_name}} {{customer_honorific}}, bugün {{appointment_time}} randevunuz için sizi ağırlamaya hazırız ✨",
+    "Selamlar {{customer_name}} {{customer_honorific}}, rahat ulaşmanız için yol tarifini ekledik 🗺️",
+    "{{customer_name}} {{customer_honorific}}, planlanan {{service_name}} seansınıza 2 saat kalmıştır ⏰",
+    "Selamlar {{customer_name}} {{customer_honorific}}, gelirken trafiğe karşı tarifi kontrol etmenizi öneririz 🚗",
+    "Merhaba {{customer_name}} {{customer_honorific}}, {{service_name}} seansınız için son hatırlatma 🌸",
+    "{{customer_name}} {{customer_honorific}}, randevu saatiniz yaklaşmaktadır: {{appointment_time}} 🌟",
+    "{{customer_name}} {{customer_honorific}}, bugünkü randevunuz için kısa hatırlatma iletmek istedik 🙌",
+    "Merhaba {{customer_name}} {{customer_honorific}}, {{appointment_time}} için sabırsızlanıyoruz 💫",
+    "{{customer_name}} {{customer_honorific}}, randevu hatırlatması: bugün saat {{appointment_time}} 🌸",
+  ],
+  PROFESSIONAL: [
+    "Sayın {{customer_name}} {{customer_surname}}, randevunuza yaklaşık 2 saat kalmıştır.",
+    "Sayın {{customer_name}} {{customer_surname}}, bugünkü randevu saatiniz {{appointment_time}} olarak planlanmıştır.",
+    "Sayın {{customer_name}} {{customer_surname}}, {{service_name}} seansınız için hatırlatma mesajıdır.",
+    "Sayın {{customer_name}} {{customer_surname}}, konum bilgisi butondan erişiminize sunulmuştur.",
+    "Sayın {{customer_name}} {{customer_surname}}, randevu saatinizden önce ulaşım planlamanızı öneririz.",
+    "Sayın {{customer_name}} {{customer_surname}}, bugün {{appointment_time}} randevusu için hatırlatma süreci başlatılmıştır.",
+    "Sayın {{customer_name}} {{customer_surname}}, ulaşım yönlendirmesi mesajda paylaşılmaktadır.",
+    "Sayın {{customer_name}} {{customer_surname}}, randevu zamanına yaklaşık 2 saat kalmıştır.",
+    "Sayın {{customer_name}} {{customer_surname}}, gecikme yaşanmaması için zamanında yola çıkmanızı rica ederiz.",
+    "Sayın {{customer_name}} {{customer_surname}}, randevu kaydınız aktiftir ve {{appointment_time}} saatinde gerçekleştirilecektir.",
+  ],
+};
+
+// ─────────────────────────────────────────────────────────────────
+// kedy_google_maps_yorum — 3rd-appointment Google review request
+// vars: {{customer_name}}, {{customer_surname}}, {{customer_honorific}},
+//       {{salon_name}}
+// Button (in chakra.ts): URL → salon.googleMapsUrl
+// ─────────────────────────────────────────────────────────────────
+const KEDY_GOOGLE_MAPS_YORUM: TieredVariations = {
+  FRIENDLY: [
+    "{{customer_name}}, 3. kez seni ağırladık 🥹 Google'da bir yorum bırakır mısın?",
+    "Selam {{customer_name}}! Düzenli misafirimizsin artık 💛 Google'da deneyimini paylaşmaya ne dersin?",
+    "Hey {{customer_name}}! Üçüncü ziyaretinin şerefine 🥂 Google haritalar'da bir yorum çok kıymetli.",
+    "Merhaba {{customer_name}}! Üç kez tercih ettiğin için teşekkürler 🙏 Google'da bir cümle yazar mısın?",
+    "{{customer_name}}, başkalarına seni nasıl ağırladığımızı anlatır mısın? ✨ Google harita yorumu çok yardımcı olur.",
+    "{{customer_name}}, 3 randevudur seninle çalışmak güzel 🌟 Bir yorumun başkaları için yol gösterir.",
+    "{{customer_name}}, sadık misafirimiz 💫 Google'da 2 dakikalık bir yorum bizim için çok değerli.",
+    "Selam {{customer_name}}! 3 randevu = sadık misafir 🎉 Google'da minik bir yorum?",
+    "{{customer_name}}, deneyimini paylaşmak ister misin? 🌸 Google haritalar yeni misafirler için rehber.",
+    "Hey {{customer_name}}! Üç ziyaretin için teşekkür ediyoruz 🌟 Google'da kısa bir yorum dilersen.",
+  ],
+  BALANCED: [
+    "Merhaba {{customer_name}} {{customer_honorific}}, {{salon_name}} olarak sizi üçüncü kez ağırlamaktan mutluyuz 🌸",
+    "{{customer_name}} {{customer_honorific}}, düzenli müşterimiz olarak Google Maps yorumunuzu rica edebilir miyiz? ⭐",
+    "Selamlar {{customer_name}} {{customer_honorific}}, deneyiminizi Google üzerinden paylaşmanız bizim için çok kıymetli 💛",
+    "{{customer_name}} {{customer_honorific}}, üç randevu boyunca bizi tercih ettiğiniz için teşekkür ederiz 🙏",
+    "Merhaba {{customer_name}} {{customer_honorific}}, kısa bir Google yorumunuz yeni müşterilerimize yol gösterir ✨",
+    "Merhaba {{customer_name}} {{customer_honorific}}, Google Maps yorumlarınız işletmemizin görünürlüğüne katkı sağlar 🌟",
+    "Merhaba {{customer_name}} {{customer_honorific}}, düzenli müşterimiz olarak görüşlerinizi paylaşmanızı rica ederiz 🌸",
+    "{{customer_name}} {{customer_honorific}}, Google Maps üzerinden bırakacağınız yorum bizim için değerli 💫",
+    "Selamlar {{customer_name}} {{customer_honorific}}, üç randevudur sergilediğiniz güven için teşekkür ederiz 🤗",
+    "{{customer_name}} {{customer_honorific}}, deneyiminizi Google'da paylaşmanız işletmemiz için anlamlı 🙌",
+  ],
+  PROFESSIONAL: [
+    "Sayın {{customer_name}} {{customer_surname}}, düzenli müşterimiz olarak Google Maps üzerinden değerlendirme paylaşmanızı rica ederiz.",
+    "Sayın {{customer_name}} {{customer_surname}}, üç randevu sonrası referans katkınız işletme görünürlüğümüze fayda sağlamaktadır.",
+    "Sayın {{customer_name}} {{customer_surname}}, Google harita üzerindeki yorumunuz potansiyel müşteriler için referans niteliği taşır.",
+    "Sayın {{customer_name}} {{customer_surname}}, müşteri sadakatiniz için teşekkür eder, Google değerlendirmenizi bekleriz.",
+    "Sayın {{customer_name}} {{customer_surname}}, {{salon_name}} olarak Google üzerinden yorumunuzu rica etmekteyiz.",
+    "Sayın {{customer_name}} {{customer_surname}}, deneyim paylaşımınız işletme yönetimi süreçlerimizde dikkate alınmaktadır.",
+    "Sayın {{customer_name}} {{customer_surname}}, Google Maps üzerindeki yorumlarınız hizmet stratejimize katkı sağlamaktadır.",
+    "Sayın {{customer_name}} {{customer_surname}}, üç randevu eşiğini geçmeniz nedeniyle özel referans isteğimizi iletmekteyiz.",
+    "Sayın {{customer_name}} {{customer_surname}}, sadakatiniz için müteşekkiriz; Google değerlendirmesi bizim için kıymetlidir.",
+    "Sayın {{customer_name}} {{customer_surname}}, Google Maps yorumunuz işletme itibarımız açısından önemlidir.",
   ],
 };
 
@@ -339,10 +473,13 @@ const KEDY_GERI_DONUS: TieredVariations = {
 // ─────────────────────────────────────────────────────────────────
 export const TIERED_TEMPLATE_VARIATIONS: Record<string, TieredVariations> = {
   kedy_randevu_onay: KEDY_RANDEVU_ONAY,
-  kedy_randevu_hatirlatma: KEDY_RANDEVU_HATIRLATMA,
+  kedy_randevu_hatirlatma_1_gun: KEDY_RANDEVU_HATIRLATMA_1_GUN,
+  kedy_randevu_hatirlatma_3_gun: KEDY_RANDEVU_HATIRLATMA_3_GUN,
+  kedy_randevu_hatirlatma_2_saat: KEDY_RANDEVU_HATIRLATMA_2_SAAT,
   kedy_no_show_hatirlatma: KEDY_NO_SHOW_HATIRLATMA,
   kedy_waitlist_teklif: KEDY_WAITLIST_TEKLIF,
   kedy_memnuniyet_anketi: KEDY_MEMNUNIYET_ANKETI,
+  kedy_google_maps_yorum: KEDY_GOOGLE_MAPS_YORUM,
   kedy_dogum_gunu_kutlamasi: KEDY_DOGUM_GUNU_KUTLAMASI,
   kedy_geri_donus: KEDY_GERI_DONUS,
 };
