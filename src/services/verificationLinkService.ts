@@ -286,6 +286,35 @@ export interface VerificationStatusView {
   deliveryStatus: string | null;
 }
 
+/**
+ * Read-only peek at a verification link by token — does NOT consume it.
+ * Used by the customer landing page to differentiate the welcome UI for
+ * cross-salon (consent) vs first-time (verification) flows.
+ */
+export async function peekVerificationLink(
+  token: string,
+): Promise<ConsumedVerification | null> {
+  if (!token || typeof token !== 'string') return null;
+  const tokenHash = hashToken(token.trim());
+  const record = await prisma.verificationLink.findUnique({ where: { tokenHash } });
+  if (!record) return null;
+  const now = new Date();
+  if (record.usedAt) return null;
+  if (record.invalidatedAt) return null;
+  if (record.expiresAt.getTime() <= now.getTime()) return null;
+  return {
+    id: record.id,
+    purpose: record.purpose,
+    channel: record.channel,
+    targetIdentityId: record.targetIdentityId,
+    targetSalonId: record.targetSalonId,
+    targetPhone: record.targetPhone,
+    targetEmail: record.targetEmail,
+    payload: (record.payload as Record<string, unknown>) || {},
+    consumedAt: now,
+  };
+}
+
 export async function getStatus(id: string): Promise<VerificationStatusView | null> {
   const record = await prisma.verificationLink.findUnique({ where: { id } });
   if (!record) return null;

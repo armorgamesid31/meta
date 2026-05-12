@@ -18,6 +18,10 @@ import {
   resolveIdentity,
   upsertIdentitySession,
 } from '../services/identityService.js';
+import {
+  isTemplateStatusPayload,
+  processTemplateStatusPayload,
+} from '../services/templateStatusWebhook.js';
 import { upsertConversationMessageEvent } from '../services/conversationMessageEvents.js';
 import { storeConversationAvatarFromUrl } from '../services/conversationAvatarStorage.js';
 
@@ -1361,6 +1365,15 @@ function handleVerification(req: any, res: any, channel?: ChannelType) {
 
 async function handleInbound(req: any, res: any, forcedChannel?: ChannelType) {
   try {
+    // Short-circuit: template status update events go to their own handler
+    // (drives the SalonMessageTemplate submission state machine).
+    if (isTemplateStatusPayload(req.body)) {
+      await processTemplateStatusPayload(req.body).catch(err =>
+        console.error('[channelWebhooks] template status processing failed:', err)
+      );
+      return res.status(200).json({ ok: true, kind: 'template_status' });
+    }
+
     // Log the raw webhook for debugging
     const channel = forcedChannel || (req.body?.object === 'whatsapp_business_account' ? 'WHATSAPP' : req.body?.object === 'instagram' ? 'INSTAGRAM' : 'WHATSAPP');
     

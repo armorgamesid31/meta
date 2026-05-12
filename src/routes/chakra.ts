@@ -9,6 +9,7 @@ import {
   pickVariation,
   pickNextInTier,
 } from '../services/templateVariations.js';
+import { enqueueSalonTemplates, cancelPendingSubmissions } from '../services/salonTemplateSubmitter.js';
 
 const router = Router();
 
@@ -640,13 +641,19 @@ async function syncAndEnsureMasterTemplates(salonId: number, pluginId: string, l
     logs.push(`Chakra'da ${externalTemplates.length} adet mevcut şablon bulundu.`);
 
     for (const master of KEDY_MASTER_TEMPLATES) {
+      // Tone-varied sohbet templates are now handled by the queue-based
+      // submitter (salonTemplateSubmitter.ts) — skip them here. Only the
+      // verification/link templates (kedy_islem_link etc.) still flow
+      // through this legacy path.
+      if (hasTieredVariations(master.name)) {
+        logs.push(`Atlanıyor (queue worker tarafından yönetiliyor): ${master.name}`);
+        continue;
+      }
+
       logs.push(`İşleniyor: ${master.name} (${master.eventType})`);
       const match = externalTemplates.find((ext: any) => ext.name === master.name);
-      
+
       let shouldSubmit = !match;
-      // Tier-aware variation pick: if this template has tiered variations
-      // (defined in templateVariations.ts), pick a random one from the
-      // salon's tone tier. Otherwise fall back to the legacy flat array.
       const useTiered = hasTieredVariations(master.name);
       let variationToSubmit = useTiered
         ? (pickVariation(master.name, tone) ?? MASTER_TEMPLATE_VARIATIONS[master.name]?.[0] ?? '')
@@ -689,22 +696,34 @@ async function syncAndEnsureMasterTemplates(salonId: number, pluginId: string, l
       const bodyComponent = master.components.find(c => c.type === 'BODY');
       const finalBodyText = shouldSubmit ? variationToSubmit : (match?.components?.find((c: any) => c.type === 'BODY')?.text || bodyComponent?.text);
 
+      // Map Meta status → our internal submissionState so the friendly
+      // status endpoint can aggregate link templates alongside tone-varied ones.
+      const metaSt = (match?.status || 'PENDING_SUBMISSION') as string;
+      const internalState =
+        metaSt === 'APPROVED'                   ? 'ACTIVE_VALID'
+        : metaSt === 'REJECTED'                 ? 'REJECTED'
+        : metaSt === 'PENDING' || metaSt === 'IN_APPEAL' ? 'SUBMITTED'
+        : 'NOT_QUEUED';
+
       try {
         await prisma.salonMessageTemplate.upsert({
           where: {
-            salonId_eventType_locale: {
+            salonId_templateName: {
               salonId,
-              eventType: master.eventType as any,
-              locale: 'tr',
+              templateName: master.name,
             }
           },
           update: {
-            templateName: master.name,
             templateContent: finalBodyText,
             externalId: match?.id,
             metaCategory: match?.category || master.category,
-            metaStatus: match?.status || 'PENDING_SUBMISSION',
+            metaStatus: metaSt,
             lastSyncAt: new Date(),
+            templateKey: master.name, // logical key = templateName for link templates
+            expectedCategory: master.category,
+            actualCategory: match?.category || master.category,
+            submissionState: internalState as any,
+            approvedAt: metaSt === 'APPROVED' ? new Date() : undefined,
           },
           create: {
             salonId,
@@ -714,8 +733,13 @@ async function syncAndEnsureMasterTemplates(salonId: number, pluginId: string, l
             templateContent: finalBodyText,
             externalId: match?.id,
             metaCategory: match?.category || master.category,
-            metaStatus: match?.status || 'PENDING_SUBMISSION',
+            metaStatus: metaSt,
             lastSyncAt: new Date(),
+            templateKey: master.name,
+            expectedCategory: master.category,
+            actualCategory: match?.category || master.category,
+            submissionState: internalState as any,
+            approvedAt: metaSt === 'APPROVED' ? new Date() : null,
           }
         });
         logs.push(`Veritabanı güncellendi: ${master.name}`);
@@ -1218,6 +1242,9 @@ router.get('/status', authenticateToken, async (req: any, res: any) => {
             chakraPluginId: null,
             chakraPhoneNumberId: null,
           });
+          await cancelPendingSubmissions(salon.id).catch(err =>
+            console.error('cancelPendingSubmissions failed:', err)
+          );
           await upsertSalonAiAgentFaqAnswers(salon.id, {
             whatsappPluginActive: false,
             whatsappPhoneNumberId: null,
@@ -1454,6 +1481,20 @@ router.post('/connect-event', authenticateToken, async (req: any, res: any) => {
       await syncAndEnsureMasterTemplates(salon.id, pluginId).catch(err => {
         console.error('Initial template sync failed:', err);
       });
+      // Queue the 90 tone-varied primaries (wave-based, active tone first).
+      try {
+        const salonRow = await prisma.salon.findUnique({
+          where: { id: salon.id },
+          select: { communicationTone: true },
+        });
+        const result = await enqueueSalonTemplates({
+          salonId: salon.id,
+          tone: salonRow?.communicationTone || 'BALANCED',
+        });
+        console.log(`[chakra] Enqueued ${result.enqueued} template submissions for salon ${salon.id}`);
+      } catch (err) {
+        console.error('Template queue enqueue failed:', err);
+      }
     } else if (CHAKRA_API_TOKEN) {
       // Popup event adı beklediğimiz formatta gelmese bile canlı plugin durumundan doğrulayalım.
       try {
@@ -1481,6 +1522,19 @@ router.post('/connect-event', authenticateToken, async (req: any, res: any) => {
           await syncAndEnsureMasterTemplates(salon.id, pluginId).catch(err => {
             console.error('Initial template sync (live) failed:', err);
           });
+          try {
+            const salonRow = await prisma.salon.findUnique({
+              where: { id: salon.id },
+              select: { communicationTone: true },
+            });
+            const result = await enqueueSalonTemplates({
+              salonId: salon.id,
+              tone: salonRow?.communicationTone || 'BALANCED',
+            });
+            console.log(`[chakra] Enqueued ${result.enqueued} template submissions for salon ${salon.id} (live)`);
+          } catch (err) {
+            console.error('Template queue enqueue (live) failed:', err);
+          }
         }
       } catch (liveCheckError: any) {
         console.warn('Connect-event live check failed:', liveCheckError?.response?.data || liveCheckError?.message || liveCheckError);

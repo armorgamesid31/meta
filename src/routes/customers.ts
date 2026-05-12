@@ -21,6 +21,7 @@ import {
 import {
   consumeVerificationLink,
   createVerificationLink,
+  peekVerificationLink,
   VerificationError,
   VERIFICATION_TTL_MINUTES,
   VERIFICATION_RESEND_COOLDOWN_SECONDS,
@@ -701,6 +702,35 @@ router.post('/verify-link/start', async (req: any, res: any) => {
     channel: 'whatsapp',
     expiresAt: link.expiresAt.toISOString(),
     resendCooldownSeconds: VERIFICATION_RESEND_COOLDOWN_SECONDS,
+  });
+});
+
+// GET /api/customers/verify-link/peek?token=...
+// Read-only check used by the landing page to differentiate UI:
+//   - CUSTOMER_LINK_CONSENT  → cross-salon, show "Tekrar hoş geldin" CTA
+//   - CUSTOMER_PHONE         → new customer, standard verify UI
+// Does not consume the token. Returns 404 if invalid/expired/used.
+router.get('/verify-link/peek', async (req: any, res: any) => {
+  const token = String(req.query?.token || '').trim();
+  if (!token) {
+    throw new BusinessError('VALIDATION_FAILED', 'token gereklidir.', 400);
+  }
+  const peeked = await peekVerificationLink(token);
+  if (!peeked) {
+    return res.status(404).json({ code: 'VERIFICATION_LINK_NOT_FOUND' });
+  }
+  if (
+    peeked.purpose !== VerificationPurpose.CUSTOMER_PHONE &&
+    peeked.purpose !== VerificationPurpose.CUSTOMER_LINK_CONSENT
+  ) {
+    return res.status(400).json({ code: 'INVALID_PURPOSE' });
+  }
+  const payloadAny = peeked.payload as any;
+  return res.status(200).json({
+    purpose: peeked.purpose,
+    isReturning: peeked.purpose === VerificationPurpose.CUSTOMER_LINK_CONSENT,
+    salonName: (payloadAny?.salonName as string) || null,
+    customerName: (payloadAny?.customerName as string) || null,
   });
 });
 

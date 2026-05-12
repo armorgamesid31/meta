@@ -652,6 +652,9 @@ model Customer {
   instagram            String?
   registrationStatus   CustomerRegistrationStatus       @default(VERIFIED)
   googleReviewRequestedAt DateTime?                     @db.Timestamp(6)
+  globalIdentityId     String?
+  firstAppointmentAt   DateTime?                        @db.Timestamp(6)
+  globalIdentity       GlobalCustomerIdentity?          @relation(fields: [globalIdentityId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   appointments         Appointment[]
   campaignApplications AppointmentCampaignApplication[]
   appointmentLines     AppointmentLine[]
@@ -674,6 +677,37 @@ model Customer {
   @@unique([phone, salonId])
   @@index([salonId, createdAt], map: "idx_customer_salon_created")
   @@index([salonId, id], map: "idx_customer_salon_id")
+  @@index([globalIdentityId], map: "idx_customer_global_identity")
+}
+
+// ─────────────────────────────────────────────────────────────────
+// GlobalCustomerIdentity — platform-wide customer identity, phone-keyed.
+//
+// One row per unique phone. Holds canonical PII only (name, gender,
+// birthday, marketing consent). Behavioral data (appointments, notes,
+// risk score, package balance) stays in the salon-scoped Customer row.
+//
+// Salon B never sees Salon A's data. When a customer messages Salon B
+// for the first time, Salon B sees "new customer" UI. The customer
+// receives a magic link; if their phone is already verified globally,
+// they see a one-click "register at this salon" CTA. Clicking creates
+// the salon-scoped Customer row linked to the existing global identity.
+// ─────────────────────────────────────────────────────────────────
+model GlobalCustomerIdentity {
+  id              String          @id @default(cuid())
+  phoneE164       String          @unique
+  email           String?         @unique
+  firstName       String?
+  lastName        String?
+  gender          CustomerGender?
+  birthDate       DateTime?       @db.Date
+  acceptMarketing Boolean         @default(false)
+  verifiedAt      DateTime?       @db.Timestamp(6)
+  createdAt       DateTime        @default(now()) @db.Timestamp(6)
+  updatedAt       DateTime        @default(now()) @updatedAt @db.Timestamp(6)
+  salonCustomers  Customer[]
+
+  @@index([phoneE164], map: "idx_global_customer_phone")
 }
 
 model CustomerBehaviorLog {
@@ -1071,24 +1105,52 @@ model AppointmentMessageDispatch {
 }
 
 model SalonMessageTemplate {
-  id              Int                         @id @default(autoincrement())
-  salonId         Int
-  eventType       AppointmentMessageEventType
-  locale          LocaleCode                  @default(tr)
-  sessionText     String?
-  templateName    String?
-  templateContent String?
-  isActive        Boolean                     @default(true)
-  createdAt       DateTime?                   @default(now()) @db.Timestamp(6)
-  updatedAt       DateTime?                   @default(now()) @updatedAt @db.Timestamp(6)
-  externalId      String?
-  metaCategory    String?
-  metaStatus      String?
-  lastSyncAt      DateTime?                   @db.Timestamp(6)
-  salon           Salon                       @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id                 Int                         @id @default(autoincrement())
+  salonId            Int
+  eventType          AppointmentMessageEventType
+  locale             LocaleCode                  @default(tr)
+  sessionText        String?
+  templateName       String?
+  templateContent    String?
+  isActive           Boolean                     @default(true)
+  createdAt          DateTime?                   @default(now()) @db.Timestamp(6)
+  updatedAt          DateTime?                   @default(now()) @updatedAt @db.Timestamp(6)
+  externalId         String?
+  metaCategory       String?
+  metaStatus         String?
+  lastSyncAt         DateTime?                   @db.Timestamp(6)
 
-  @@unique([salonId, eventType, locale], map: "uq_salon_message_template")
+  // Tone/variant model — 3 primary + 7 reserve per (key × tone)
+  templateKey        String?
+  tone               SalonCommunicationTone?
+  variantSlot        Int?
+
+  // Submission lifecycle
+  submissionState    TemplateSubmissionState     @default(NOT_QUEUED)
+  expectedCategory   String?
+  actualCategory     String?
+  submissionAttempts Int                         @default(0)
+  scheduledSubmitAt  DateTime?                   @db.Timestamp(6)
+  lastSubmittedAt    DateTime?                   @db.Timestamp(6)
+  approvedAt         DateTime?                   @db.Timestamp(6)
+  rejectedAt         DateTime?                   @db.Timestamp(6)
+  rejectionReason    String?
+
+  salon              Salon                       @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([salonId, templateName], map: "uq_salon_message_template_name")
   @@index([salonId, isActive], map: "idx_salon_message_template_salon_active")
+  @@index([salonId, templateKey, tone, submissionState], map: "idx_salon_template_key_tone_state")
+  @@index([submissionState, scheduledSubmitAt], map: "idx_salon_template_scheduled")
+}
+
+enum TemplateSubmissionState {
+  NOT_QUEUED
+  SUBMITTED
+  ACTIVE_VALID
+  CATEGORY_BUMPED
+  REJECTED
+  POOL_EXHAUSTED
 }
 
 model AnalyticsPreset {
