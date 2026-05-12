@@ -30,32 +30,28 @@ interface TemplateStatusItem {
 function aggregateStatus(
   rows: Array<{ submissionState: string; expectedCategory: string | null; metaStatus: string | null }>,
 ): OperationalStatus {
-  if (rows.length === 0) return 'preparing';
+  if (rows.length === 0) return 'not_queued';
   const states = rows.map(r => r.submissionState);
 
-  // If any row is ACTIVE_VALID → hazır.
+  // 1. At least one variant approved + category preserved → Hazır.
   if (states.includes('ACTIVE_VALID')) return 'active';
 
-  // Legacy fallback: salons connected before the wave-based queue may have
-  // rows with submissionState=NOT_QUEUED but metaStatus=APPROVED from the
-  // old sync path. Treat those as active so we don't show "Meta onayı
-  // bekliyor" for templates that Meta has actually approved.
-  if (rows.some(r => r.metaStatus === 'APPROVED')) return 'active';
-
-  // No active rows. Check if everything is exhausted.
-  const allExhausted = rows.every(r =>
-    r.submissionState === 'POOL_EXHAUSTED' ||
-    r.submissionState === 'REJECTED' ||
-    r.submissionState === 'CATEGORY_BUMPED'
-  );
+  // 2. All slots tried, none valid → Onay alınamadı.
+  const allExhausted = rows.every(r => r.submissionState === 'POOL_EXHAUSTED');
   if (allExhausted) return 'unavailable';
 
-  // If we have at least one REJECTED/CATEGORY_BUMPED with no ACTIVE_VALID, it's a transient issue.
+  // 3. Some failed but worker still has reserves coming → Yedekler deneniyor.
   if (states.some(s => s === 'REJECTED' || s === 'CATEGORY_BUMPED')) {
     return 'transient_issue';
   }
 
-  return 'preparing';
+  // 4. At least one row sent to Meta → Meta onayında.
+  if (states.includes('SUBMITTED')) return 'submitted';
+
+  // 5. Only NOT_QUEUED rows remain → Sırada bekliyor.
+  if (states.includes('NOT_QUEUED')) return 'queued';
+
+  return 'not_queued';
 }
 
 router.get('/templates/status', authenticateToken, async (req: any, res) => {
@@ -79,18 +75,14 @@ router.get('/templates/status', authenticateToken, async (req: any, res) => {
 
   const activeTone = salon.communicationTone || 'BALANCED';
 
-  // Fetch active-tone rows AND legacy (pre-migration) rows where templateName
-  // matches a known logical key. Legacy rows have tone=null/templateKey=null
-  // but their metaStatus may already be APPROVED from the old sync path.
-  const knownLogicalKeys = OPERATIONAL_TEMPLATES.map(t => t.logicalKey);
+  // Only count tone-varied rows for the active tone. Legacy non-tone-varied
+  // rows (templateKey=null) are explicitly ignored — they belong to the old
+  // pre-queue system and no longer reflect the salon's current pipeline.
   const allRows = await prisma.salonMessageTemplate.findMany({
     where: {
       salonId,
-      OR: [
-        { tone: activeTone, templateKey: { not: null } },
-        // Legacy / non-tone-varied rows where templateName is itself a logical key.
-        { templateName: { in: knownLogicalKeys } },
-      ],
+      tone: activeTone,
+      templateKey: { not: null },
     },
     select: {
       templateKey: true,
@@ -121,17 +113,26 @@ router.get('/templates/status', authenticateToken, async (req: any, res) => {
   });
 
   const total = templates.length;
-  const active = templates.filter(t => t.status === 'active').length;
-  const pending = templates.filter(t => t.status === 'preparing' || t.status === 'transient_issue').length;
-  const unavailable = templates.filter(t => t.status === 'unavailable').length;
+  const counts = {
+    active:         templates.filter(t => t.status === 'active').length,
+    submitted:      templates.filter(t => t.status === 'submitted').length,
+    queued:         templates.filter(t => t.status === 'queued').length,
+    notQueued:      templates.filter(t => t.status === 'not_queued').length,
+    transientIssue: templates.filter(t => t.status === 'transient_issue').length,
+    unavailable:    templates.filter(t => t.status === 'unavailable').length,
+  };
 
   return res.status(200).json({
     whatsappConnected: true,
     activeTone,
     total,
-    active,
-    pending,
-    unavailable,
+    active: counts.active,
+    submitted: counts.submitted,
+    queued: counts.queued,
+    notQueued: counts.notQueued,
+    pending: counts.queued + counts.submitted + counts.transientIssue,
+    unavailable: counts.unavailable,
+    counts,
     templates,
   });
 });

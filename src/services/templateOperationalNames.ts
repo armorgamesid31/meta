@@ -95,11 +95,19 @@ export const OPERATIONAL_TEMPLATES: OperationalTemplate[] = [
   },
 ];
 
-export type OperationalStatus = 'preparing' | 'active' | 'transient_issue' | 'unavailable';
+export type OperationalStatus =
+  | 'not_queued'        // logical key has no row in DB yet — sync not run
+  | 'queued'            // NOT_QUEUED row, scheduled but worker hasn't sent to Meta yet
+  | 'submitted'         // SUBMITTED to Meta, waiting for approval decision
+  | 'active'            // ACTIVE_VALID — at least one variant approved + category preserved
+  | 'transient_issue'   // some variants rejected/bumped but reserves are still being tried
+  | 'unavailable';      // POOL_EXHAUSTED — all 10 slots tried, < 3 valid
 
 export const STATUS_LABELS: Record<OperationalStatus, { tr: string; tone: string }> = {
-  preparing:        { tr: 'Meta onayı bekliyor',           tone: 'pending'  },
-  active:           { tr: 'Hazır',                          tone: 'success'  },
-  transient_issue:  { tr: 'Geçici sorun, tekrar deniyoruz', tone: 'warn'     },
-  unavailable:      { tr: 'Onay alınamadı',                 tone: 'error'    },
+  not_queued:       { tr: 'Henüz başlatılmadı',              tone: 'idle'     },
+  queued:           { tr: 'Sırada — Meta\'ya gönderilecek',  tone: 'pending'  },
+  submitted:        { tr: 'Meta onayında',                   tone: 'pending'  },
+  active:           { tr: 'Hazır',                            tone: 'success'  },
+  transient_issue:  { tr: 'Yedekler deneniyor',              tone: 'warn'     },
+  unavailable:      { tr: 'Onay alınamadı',                  tone: 'error'    },
 };
