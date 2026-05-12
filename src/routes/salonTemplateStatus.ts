@@ -283,8 +283,7 @@ router.post('/templates/sync', authenticateToken, async (req: any, res) => {
   // with reason="user_marked_outdated" so the webhook handler won't
   // promote them to ACTIVE_VALID if Meta later approves them. They keep
   // their Meta name (we can't reuse it) but the picker will never serve
-  // them at send time. We then promote a reserve slot for each
-  // (key, tone) pair so a fresh row with corrected body goes out.
+  // them at send time.
   const staleSubmitted = await prisma.salonMessageTemplate.findMany({
     where: { salonId, submissionState: 'SUBMITTED' },
     select: { id: true, templateKey: true, tone: true, templateName: true },
@@ -300,24 +299,32 @@ router.post('/templates/sync', authenticateToken, async (req: any, res) => {
       },
     });
     logs.push(`${staleSubmitted.length} eski içerikli SUBMITTED satır kullanım dışı bırakıldı.`);
-
-    // Promote one reserve per unique (key, tone). promoteReserveVariation
-    // picks the lowest unused 4-10 slot, inserts a fresh row scheduled
-    // immediately.
-    const seen = new Set<string>();
-    let promoted = 0;
-    for (const r of staleSubmitted) {
-      if (!r.templateKey || !r.tone) continue;
-      const k = `${r.templateKey}:${r.tone}`;
-      if (seen.has(k)) continue;
-      seen.add(k);
-      const res = await promoteReserveVariation({
-        salonId, logicalKey: r.templateKey, tone: r.tone,
-      });
-      if (res.created) promoted++;
-    }
-    if (promoted > 0) logs.push(`${promoted} yedek slot devreye alındı.`);
   }
+
+  // Step 2b: pick up CATEGORY_BUMPED rows that haven't had a reserve
+  // promoted yet (e.g. reconciliation marked them, or earlier webhook
+  // handler failed silently). For each unique (key, tone), promote one
+  // reserve so a fresh body variation goes out under a new slot.
+  const bumpedRows = await prisma.salonMessageTemplate.findMany({
+    where: { salonId, submissionState: 'CATEGORY_BUMPED' },
+    select: { id: true, templateKey: true, tone: true },
+  });
+
+  const promoteTargets = new Map<string, { logicalKey: string; tone: any }>();
+  for (const r of [...staleSubmitted, ...bumpedRows]) {
+    if (!r.templateKey || !r.tone) continue;
+    promoteTargets.set(`${r.templateKey}:${r.tone}`, {
+      logicalKey: r.templateKey,
+      tone: r.tone,
+    });
+  }
+
+  let promoted = 0;
+  for (const { logicalKey, tone } of promoteTargets.values()) {
+    const res = await promoteReserveVariation({ salonId, logicalKey, tone });
+    if (res.created) promoted++;
+  }
+  if (promoted > 0) logs.push(`${promoted} yedek slot devreye alındı.`);
 
   // Step 3: enqueue any missing primary rows (90 tone-varied total).
   // skipDuplicates ensures we don't collide with retained stale-SUBMITTED
