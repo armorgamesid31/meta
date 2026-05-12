@@ -22,7 +22,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH eligible AS (\n  SELECT a.id AS \"appointmentId\", a.\"customerId\", a.\"salonId\"\n  FROM \"Appointment\" a\n  WHERE a.status = 'BOOKED'\n    AND a.\"customerId\" IS NOT NULL\n    AND a.\"startTime\" > NOW() + INTERVAL '23 hours'\n    AND a.\"startTime\" < NOW() + INTERVAL '25 hours'\n    AND NOT EXISTS (\n      SELECT 1 FROM \"NotificationLog\" nl\n      WHERE nl.\"appointmentId\" = a.id AND nl.type = 'REMINDER_1_DAY'\n    )\n)\nSELECT * FROM eligible LIMIT 500;"
+        "query": "WITH eligible AS (\n  SELECT a.id AS \"appointmentId\", a.\"customerId\", a.\"salonId\"\n  FROM \"Appointment\" a\n  WHERE a.status = 'BOOKED'\n    AND a.\"customerId\" IS NOT NULL\n    AND a.\"startTime\" > NOW() + INTERVAL '23 hours'\n    AND a.\"startTime\" < NOW() + INTERVAL '25 hours'\n    AND NOT EXISTS (\n      SELECT 1 FROM \"NotificationLog\" nl\n      WHERE nl.\"appointmentId\" = a.id AND nl.type = 'REMINDER_1_DAY'\n    )\n)\nSELECT * FROM eligible LIMIT 2000;"
       },
       "id": "q_reminder_1d",
       "name": "Query: 1-day reminders due",
@@ -40,7 +40,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH eligible AS (\n  SELECT a.id AS \"appointmentId\", a.\"customerId\", a.\"salonId\"\n  FROM \"Appointment\" a\n  WHERE a.status = 'BOOKED'\n    AND a.\"customerId\" IS NOT NULL\n    AND a.\"startTime\" > NOW() + INTERVAL '71 hours'\n    AND a.\"startTime\" < NOW() + INTERVAL '73 hours'\n    AND NOT EXISTS (\n      SELECT 1 FROM \"NotificationLog\" nl\n      WHERE nl.\"appointmentId\" = a.id AND nl.type = 'REMINDER_3_DAY'\n    )\n)\nSELECT * FROM eligible LIMIT 500;"
+        "query": "WITH eligible AS (\n  SELECT a.id AS \"appointmentId\", a.\"customerId\", a.\"salonId\"\n  FROM \"Appointment\" a\n  WHERE a.status = 'BOOKED'\n    AND a.\"customerId\" IS NOT NULL\n    AND a.\"startTime\" > NOW() + INTERVAL '71 hours'\n    AND a.\"startTime\" < NOW() + INTERVAL '73 hours'\n    AND NOT EXISTS (\n      SELECT 1 FROM \"NotificationLog\" nl\n      WHERE nl.\"appointmentId\" = a.id AND nl.type = 'REMINDER_3_DAY'\n    )\n)\nSELECT * FROM eligible LIMIT 2000;"
       },
       "id": "q_reminder_3d",
       "name": "Query: 3-day reminders due",
@@ -58,7 +58,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH eligible AS (\n  SELECT a.id AS \"appointmentId\", a.\"customerId\", a.\"salonId\"\n  FROM \"Appointment\" a\n  WHERE a.status = 'BOOKED'\n    AND a.\"customerId\" IS NOT NULL\n    AND a.\"startTime\" > NOW() + INTERVAL '1 hour 30 minutes'\n    AND a.\"startTime\" < NOW() + INTERVAL '2 hours 30 minutes'\n    AND NOT EXISTS (\n      SELECT 1 FROM \"NotificationLog\" nl\n      WHERE nl.\"appointmentId\" = a.id AND nl.type = 'REMINDER_2_HOUR'\n    )\n)\nSELECT * FROM eligible LIMIT 500;"
+        "query": "WITH eligible AS (\n  SELECT a.id AS \"appointmentId\", a.\"customerId\", a.\"salonId\"\n  FROM \"Appointment\" a\n  WHERE a.status = 'BOOKED'\n    AND a.\"customerId\" IS NOT NULL\n    AND a.\"startTime\" > NOW() + INTERVAL '1 hour 30 minutes'\n    AND a.\"startTime\" < NOW() + INTERVAL '2 hours 30 minutes'\n    AND NOT EXISTS (\n      SELECT 1 FROM \"NotificationLog\" nl\n      WHERE nl.\"appointmentId\" = a.id AND nl.type = 'REMINDER_2_HOUR'\n    )\n)\nSELECT * FROM eligible LIMIT 2000;"
       },
       "id": "q_reminder_2h",
       "name": "Query: 2-hour reminders due",
@@ -76,7 +76,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH eligible AS (\n  SELECT a.id AS \"appointmentId\", a.\"customerId\", a.\"salonId\"\n  FROM \"Appointment\" a\n  WHERE a.\"customerId\" IS NOT NULL\n    AND a.status = 'NO_SHOW'\n    AND a.\"endTime\" > NOW() - INTERVAL '2 hours'\n    AND a.\"endTime\" < NOW()\n    AND NOT EXISTS (\n      SELECT 1 FROM \"NotificationLog\" nl\n      WHERE nl.\"appointmentId\" = a.id AND nl.type = 'NO_SHOW'\n    )\n)\nSELECT * FROM eligible LIMIT 500;"
+        "query": "WITH eligible AS (\n  SELECT a.id AS \"appointmentId\", a.\"customerId\", a.\"salonId\"\n  FROM \"Appointment\" a\n  WHERE a.\"customerId\" IS NOT NULL\n    AND a.status = 'NO_SHOW'\n    AND a.\"endTime\" > NOW() - INTERVAL '2 hours'\n    AND a.\"endTime\" < NOW()\n    AND NOT EXISTS (\n      SELECT 1 FROM \"NotificationLog\" nl\n      WHERE nl.\"appointmentId\" = a.id AND nl.type = 'NO_SHOW'\n    )\n)\nSELECT * FROM eligible LIMIT 2000;"
       },
       "id": "q_no_show",
       "name": "Query: no-show notifications",
@@ -94,7 +94,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH eligible AS (\n  SELECT a.id AS \"appointmentId\", a.\"customerId\", a.\"salonId\"\n  FROM \"Appointment\" a\n  WHERE a.status = 'COMPLETED'\n    AND a.\"customerId\" IS NOT NULL\n    AND a.\"endTime\" > NOW() - INTERVAL '4 hours'\n    AND a.\"endTime\" < NOW() - INTERVAL '2 hours'\n    AND NOT EXISTS (\n      SELECT 1 FROM \"NotificationLog\" nl\n      WHERE nl.\"appointmentId\" = a.id AND nl.type = 'SATISFACTION_SURVEY'\n    )\n)\nSELECT * FROM eligible LIMIT 500;"
+        "query": "WITH eligible AS (\n  SELECT a.id AS \"appointmentId\", a.\"customerId\", a.\"salonId\"\n  FROM \"Appointment\" a\n  WHERE a.status = 'COMPLETED'\n    AND a.\"customerId\" IS NOT NULL\n    AND a.\"endTime\" > NOW() - INTERVAL '4 hours'\n    AND a.\"endTime\" < NOW() - INTERVAL '2 hours'\n    AND NOT EXISTS (\n      SELECT 1 FROM \"NotificationLog\" nl\n      WHERE nl.\"appointmentId\" = a.id AND nl.type = 'SATISFACTION_SURVEY'\n    )\n)\nSELECT * FROM eligible LIMIT 2000;"
       },
       "id": "q_survey",
       "name": "Query: satisfaction surveys due",
@@ -112,7 +112,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "-- Google Maps review request: triggered on the customer's 3rd COMPLETED\n-- appointment, sent ONCE per (customer, salon). Hard-guarded by\n-- Customer.googleReviewRequestedAt set by backend on success.\nWITH counts AS (\n  SELECT a.\"customerId\", a.\"salonId\",\n         COUNT(*) FILTER (WHERE a.status = 'COMPLETED') AS completed_count,\n         MAX(a.\"endTime\") FILTER (WHERE a.status = 'COMPLETED') AS last_completed_at\n  FROM \"Appointment\" a\n  GROUP BY a.\"customerId\", a.\"salonId\"\n)\nSELECT c.id AS \"customerId\", c.\"salonId\"\nFROM \"Customer\" c\nJOIN counts cnt ON cnt.\"customerId\" = c.id AND cnt.\"salonId\" = c.\"salonId\"\nJOIN \"Salon\" s ON s.id = c.\"salonId\"\nWHERE c.\"googleReviewRequestedAt\" IS NULL\n  AND cnt.completed_count >= 3\n  AND cnt.last_completed_at > NOW() - INTERVAL '2 hours'\n  AND s.\"googleMapsUrl\" IS NOT NULL\n  AND s.\"googleMapsUrl\" <> ''\nLIMIT 500;"
+        "query": "-- Google Maps review request: triggered on the customer's 3rd COMPLETED\n-- appointment, sent ONCE per (customer, salon). Hard-guarded by\n-- Customer.googleReviewRequestedAt set by backend on success.\nWITH counts AS (\n  SELECT a.\"customerId\", a.\"salonId\",\n         COUNT(*) FILTER (WHERE a.status = 'COMPLETED') AS completed_count,\n         MAX(a.\"endTime\") FILTER (WHERE a.status = 'COMPLETED') AS last_completed_at\n  FROM \"Appointment\" a\n  GROUP BY a.\"customerId\", a.\"salonId\"\n)\nSELECT c.id AS \"customerId\", c.\"salonId\"\nFROM \"Customer\" c\nJOIN counts cnt ON cnt.\"customerId\" = c.id AND cnt.\"salonId\" = c.\"salonId\"\nJOIN \"Salon\" s ON s.id = c.\"salonId\"\nWHERE c.\"googleReviewRequestedAt\" IS NULL\n  AND cnt.completed_count >= 3\n  AND cnt.last_completed_at > NOW() - INTERVAL '2 hours'\n  AND s.\"googleMapsUrl\" IS NOT NULL\n  AND s.\"googleMapsUrl\" <> ''\nLIMIT 2000;"
       },
       "id": "q_google_maps",
       "name": "Query: Google Maps review (3rd appt)",
@@ -130,7 +130,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "-- Birthday: today is customer's birthday and we haven't sent in the\n-- last 300 days (per-year dedup). Salon must have birthday offer\n-- configured (backend short-circuits if empty).\nSELECT c.id AS \"customerId\", c.\"salonId\"\nFROM \"Customer\" c\nJOIN \"Salon\" s ON s.id = c.\"salonId\"\nWHERE c.\"birthDate\" IS NOT NULL\n  AND c.\"acceptMarketing\" = true\n  AND EXTRACT(MONTH FROM c.\"birthDate\") = EXTRACT(MONTH FROM NOW())\n  AND EXTRACT(DAY FROM c.\"birthDate\") = EXTRACT(DAY FROM NOW())\n  AND s.\"birthdayDiscountText\" IS NOT NULL\n  AND s.\"birthdayDiscountText\" <> ''\n  AND s.\"birthdayValidityText\" IS NOT NULL\n  AND s.\"birthdayValidityText\" <> ''\n  AND NOT EXISTS (\n    SELECT 1 FROM \"NotificationLog\" nl\n    WHERE nl.\"customerId\" = c.id AND nl.type = 'BIRTHDAY'\n      AND nl.\"sentAt\" > NOW() - INTERVAL '300 days'\n  )\nLIMIT 500;"
+        "query": "-- Birthday: today is customer's birthday and we haven't sent in the\n-- last 300 days (per-year dedup). Salon must have birthday offer\n-- configured (backend short-circuits if empty).\nSELECT c.id AS \"customerId\", c.\"salonId\"\nFROM \"Customer\" c\nJOIN \"Salon\" s ON s.id = c.\"salonId\"\nWHERE c.\"birthDate\" IS NOT NULL\n  AND c.\"acceptMarketing\" = true\n  AND EXTRACT(MONTH FROM c.\"birthDate\") = EXTRACT(MONTH FROM NOW())\n  AND EXTRACT(DAY FROM c.\"birthDate\") = EXTRACT(DAY FROM NOW())\n  AND s.\"birthdayDiscountText\" IS NOT NULL\n  AND s.\"birthdayDiscountText\" <> ''\n  AND s.\"birthdayValidityText\" IS NOT NULL\n  AND s.\"birthdayValidityText\" <> ''\n  AND NOT EXISTS (\n    SELECT 1 FROM \"NotificationLog\" nl\n    WHERE nl.\"customerId\" = c.id AND nl.type = 'BIRTHDAY'\n      AND nl.\"sentAt\" > NOW() - INTERVAL '300 days'\n  )\nLIMIT 2000;"
       },
       "id": "q_birthday",
       "name": "Query: birthdays today",
@@ -148,7 +148,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "-- Winback: customer's last appointment is 45-46 days ago, hasn't been\n-- winback-targeted in last 30 days, opted into marketing, salon has\n-- winback offer set.\nWITH last_visits AS (\n  SELECT a.\"customerId\", a.\"salonId\", MAX(a.\"startTime\") AS last_visit\n  FROM \"Appointment\" a\n  WHERE a.status = 'COMPLETED'\n  GROUP BY a.\"customerId\", a.\"salonId\"\n)\nSELECT c.id AS \"customerId\", c.\"salonId\"\nFROM \"Customer\" c\nJOIN last_visits lv ON lv.\"customerId\" = c.id AND lv.\"salonId\" = c.\"salonId\"\nJOIN \"Salon\" s ON s.id = c.\"salonId\"\nWHERE c.\"acceptMarketing\" = true\n  AND lv.last_visit < NOW() - INTERVAL '45 days'\n  AND lv.last_visit > NOW() - INTERVAL '46 days'\n  AND s.\"winbackDiscountText\" IS NOT NULL\n  AND s.\"winbackDiscountText\" <> ''\n  AND s.\"winbackValidityText\" IS NOT NULL\n  AND s.\"winbackValidityText\" <> ''\n  AND NOT EXISTS (\n    SELECT 1 FROM \"NotificationLog\" nl\n    WHERE nl.\"customerId\" = c.id AND nl.type = 'WINBACK'\n      AND nl.\"sentAt\" > NOW() - INTERVAL '30 days'\n  )\nLIMIT 500;"
+        "query": "-- Winback: customer's last appointment is 45-46 days ago, hasn't been\n-- winback-targeted in last 30 days, opted into marketing, salon has\n-- winback offer set.\nWITH last_visits AS (\n  SELECT a.\"customerId\", a.\"salonId\", MAX(a.\"startTime\") AS last_visit\n  FROM \"Appointment\" a\n  WHERE a.status = 'COMPLETED'\n  GROUP BY a.\"customerId\", a.\"salonId\"\n)\nSELECT c.id AS \"customerId\", c.\"salonId\"\nFROM \"Customer\" c\nJOIN last_visits lv ON lv.\"customerId\" = c.id AND lv.\"salonId\" = c.\"salonId\"\nJOIN \"Salon\" s ON s.id = c.\"salonId\"\nWHERE c.\"acceptMarketing\" = true\n  AND lv.last_visit < NOW() - INTERVAL '45 days'\n  AND lv.last_visit > NOW() - INTERVAL '46 days'\n  AND s.\"winbackDiscountText\" IS NOT NULL\n  AND s.\"winbackDiscountText\" <> ''\n  AND s.\"winbackValidityText\" IS NOT NULL\n  AND s.\"winbackValidityText\" <> ''\n  AND NOT EXISTS (\n    SELECT 1 FROM \"NotificationLog\" nl\n    WHERE nl.\"customerId\" = c.id AND nl.type = 'WINBACK'\n      AND nl.\"sentAt\" > NOW() - INTERVAL '30 days'\n  )\nLIMIT 2000;"
       },
       "id": "q_winback",
       "name": "Query: winback candidates",
@@ -177,8 +177,8 @@
           "redirect": { "redirect": {} },
           "batching": {
             "batch": {
-              "batchSize": 20,
-              "batchInterval": 200
+              "batchSize": 30,
+              "batchInterval": 150
             }
           }
         }
@@ -213,8 +213,8 @@
           "timeout": 30000,
           "batching": {
             "batch": {
-              "batchSize": 20,
-              "batchInterval": 200
+              "batchSize": 30,
+              "batchInterval": 150
             }
           }
         }
@@ -249,8 +249,8 @@
           "timeout": 30000,
           "batching": {
             "batch": {
-              "batchSize": 20,
-              "batchInterval": 200
+              "batchSize": 30,
+              "batchInterval": 150
             }
           }
         }
@@ -285,8 +285,8 @@
           "timeout": 30000,
           "batching": {
             "batch": {
-              "batchSize": 20,
-              "batchInterval": 200
+              "batchSize": 30,
+              "batchInterval": 150
             }
           }
         }
@@ -321,8 +321,8 @@
           "timeout": 30000,
           "batching": {
             "batch": {
-              "batchSize": 20,
-              "batchInterval": 200
+              "batchSize": 30,
+              "batchInterval": 150
             }
           }
         }
@@ -357,8 +357,8 @@
           "timeout": 30000,
           "batching": {
             "batch": {
-              "batchSize": 20,
-              "batchInterval": 200
+              "batchSize": 30,
+              "batchInterval": 150
             }
           }
         }
@@ -393,8 +393,8 @@
           "timeout": 30000,
           "batching": {
             "batch": {
-              "batchSize": 20,
-              "batchInterval": 200
+              "batchSize": 30,
+              "batchInterval": 150
             }
           }
         }
@@ -429,8 +429,8 @@
           "timeout": 30000,
           "batching": {
             "batch": {
-              "batchSize": 20,
-              "batchInterval": 200
+              "batchSize": 30,
+              "batchInterval": 150
             }
           }
         }
