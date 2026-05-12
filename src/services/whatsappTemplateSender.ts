@@ -1,4 +1,4 @@
-// WhatsApp UTILITY-template sender — sends the kedy_dogrulama_link template
+// WhatsApp UTILITY-template sender — sends the kdy_dogrulama_link template
 // from a salon's connected WABA via Chakra.
 //
 // This is intentionally separate from phoneVerification.ts (which still
@@ -15,7 +15,7 @@ const CHAKRA_API_BASE = (process.env.CHAKRA_API_BASE || 'https://api.chakrahq.co
   .trim()
   .replace(/\/+$/, '');
 
-const TEMPLATE_NAME = 'kedy_dogrulama_link';
+const TEMPLATE_NAME = 'kdy_dogrulama_link';
 const TEMPLATE_LANG = 'tr';
 
 function buildSendUrl(pluginId: string, phoneNumberId: string): string {

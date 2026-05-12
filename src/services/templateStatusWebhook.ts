@@ -179,7 +179,7 @@ async function handleSingleStatusEvent(opts: {
   const { templateName, event, newCategory, reason } = opts;
 
   // templateName is unique within a WABA. Across all salons it should still
-  // resolve uniquely because the name pattern is kedy_<key>_<tone><slot>
+  // resolve uniquely because the name pattern is kdy_<key>_<tone><slot>
   // (no salon prefix). But Meta sends the same name for multiple salons;
   // we have to look up by templateName + whatever scoping we have.
   //

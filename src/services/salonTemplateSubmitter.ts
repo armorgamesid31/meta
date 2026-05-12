@@ -79,11 +79,11 @@ const PARAM_EXAMPLES: Record<string, string> = {
 // characters (math symbol + Latin letter), not emojis or formatting markup,
 // and their meaning matches the button action.
 const TEMPLATES: TemplateMeta[] = [
-  // kedy_randevu_onay removed — appointment confirmation no longer sent
+  // kdy_randevu_onay removed — appointment confirmation no longer sent
   // as a separate outbound template (salon's booking confirmation flow
   // already covers this in the customer's inbound conversation thread).
   {
-    logicalKey: 'kedy_randevu_hatirlatma_1_gun',
+    logicalKey: 'kdy_randevu_hatirlatma_1_gun',
     eventType: 'REMINDER_1_DAY',
     paramNames: ['customer_name', 'customer_surname', 'customer_honorific', 'appointment_date', 'appointment_time', 'service_name'],
     paramExamples: PARAM_EXAMPLES,
@@ -93,7 +93,7 @@ const TEMPLATES: TemplateMeta[] = [
     ],
   },
   {
-    logicalKey: 'kedy_randevu_hatirlatma_3_gun',
+    logicalKey: 'kdy_randevu_hatirlatma_3_gun',
     eventType: 'REMINDER_3_DAY',
     paramNames: ['customer_name', 'customer_surname', 'customer_honorific', 'appointment_date', 'appointment_time', 'service_name', 'late_policy_hours'],
     paramExamples: PARAM_EXAMPLES,
@@ -104,7 +104,7 @@ const TEMPLATES: TemplateMeta[] = [
     ],
   },
   {
-    logicalKey: 'kedy_randevu_hatirlatma_2_saat',
+    logicalKey: 'kdy_randevu_hatirlatma_2_saat',
     eventType: 'REMINDER_2_HOUR',
     paramNames: ['customer_name', 'customer_surname', 'customer_honorific', 'appointment_time', 'service_name'],
     paramExamples: PARAM_EXAMPLES,
@@ -115,7 +115,7 @@ const TEMPLATES: TemplateMeta[] = [
     ],
   },
   {
-    logicalKey: 'kedy_no_show_hatirlatma',
+    logicalKey: 'kdy_no_show_hatirlatma',
     eventType: 'NO_SHOW',
     paramNames: ['customer_name', 'customer_surname', 'customer_honorific', 'appointment_date', 'appointment_time', 'service_name', 'late_policy_hours'],
     paramExamples: PARAM_EXAMPLES,
@@ -126,7 +126,7 @@ const TEMPLATES: TemplateMeta[] = [
     ],
   },
   {
-    logicalKey: 'kedy_waitlist_teklif',
+    logicalKey: 'kdy_waitlist_teklif',
     eventType: 'WAITLIST_OFFER',
     paramNames: ['customer_name', 'customer_surname', 'customer_honorific', 'appointment_date', 'appointment_time', 'service_name'],
     paramExamples: PARAM_EXAMPLES,
@@ -135,7 +135,7 @@ const TEMPLATES: TemplateMeta[] = [
     ],
   },
   {
-    logicalKey: 'kedy_memnuniyet_anketi',
+    logicalKey: 'kdy_memnuniyet_anketi',
     eventType: 'SATISFACTION_SURVEY',
     paramNames: ['customer_name', 'customer_surname', 'customer_honorific', 'service_name'],
     paramExamples: PARAM_EXAMPLES,
@@ -144,7 +144,7 @@ const TEMPLATES: TemplateMeta[] = [
     ],
   },
   {
-    logicalKey: 'kedy_google_maps_yorum',
+    logicalKey: 'kdy_google_maps_yorum',
     eventType: 'GOOGLE_MAPS_REVIEW',
     paramNames: ['customer_name', 'customer_surname', 'customer_honorific', 'salon_name'],
     paramExamples: PARAM_EXAMPLES,
@@ -155,7 +155,7 @@ const TEMPLATES: TemplateMeta[] = [
     ],
   },
   {
-    logicalKey: 'kedy_dogum_gunu_kutlamasi',
+    logicalKey: 'kdy_dogum_gunu_kutlamasi',
     eventType: 'BIRTHDAY',
     paramNames: ['customer_name', 'customer_surname', 'customer_honorific', 'discount_amount', 'validity_period'],
     paramExamples: PARAM_EXAMPLES,
@@ -164,7 +164,7 @@ const TEMPLATES: TemplateMeta[] = [
     ],
   },
   {
-    logicalKey: 'kedy_geri_donus',
+    logicalKey: 'kdy_geri_donus',
     eventType: 'WINBACK',
     paramNames: ['customer_name', 'customer_surname', 'customer_honorific', 'discount_amount', 'validity_period'],
     paramExamples: PARAM_EXAMPLES,
@@ -672,7 +672,7 @@ export async function shouldPromoteReserve(opts: {
 }
 
 /**
- * Send-time picker: resolves a logical template key (e.g. 'kedy_randevu_onay')
+ * Send-time picker: resolves a logical template key (e.g. 'kdy_randevu_onay')
  * to an actual Meta-side template name to use right now.
  *
  * Algorithm:

@@ -144,7 +144,7 @@ export async function resolveTemplateContext(input: ResolveInput): Promise<Resol
     customer_honorific: honorific,
     // Salon
     salon_name: salon.name,
-    salonname: salon.name, // alias used by kedy_islem_link header
+    salonname: salon.name, // alias used by kdy_islem_link header
     location_url: salon.googleMapsUrl || '',
     // Policy
     late_policy_hours: latePolicyHours,

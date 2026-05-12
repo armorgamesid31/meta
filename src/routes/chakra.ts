@@ -26,39 +26,39 @@ const CHAKRA_PASSTHROUGH_WEBHOOK_URL = (
 ).trim();
 
 // WhatsApp Master Template Variations
-// Flat fallback for legacy callers — kedy_randevu_onay removed.
+// Flat fallback for legacy callers — kdy_randevu_onay removed.
 const MASTER_TEMPLATE_VARIATIONS: Record<string, string[]> = {
   // Tier-aware: variations live in templateVariations.ts.
-  kedy_randevu_hatirlatma_1_gun: [
+  kdy_randevu_hatirlatma_1_gun: [
     "Merhaba {{customer_name}} {{customer_honorific}}, yarın {{appointment_time}} randevunuz için kısa bir teyit alabilir miyiz? 🙌"
   ],
-  kedy_randevu_hatirlatma_3_gun: [
+  kdy_randevu_hatirlatma_3_gun: [
     "Merhaba {{customer_name}} {{customer_honorific}}, randevu tarihinize 3 gün kalmıştır 🙌 İptal veya değişiklik taleplerinizi en az {{late_policy_hours}} saat önce iletmenizi rica ederiz."
   ],
-  kedy_randevu_hatirlatma_2_saat: [
+  kdy_randevu_hatirlatma_2_saat: [
     "Merhaba {{customer_name}} {{customer_honorific}}, randevunuza yaklaşık 2 saat kaldı 🫶 Yol tarifi butondan açılabilir."
   ],
-  kedy_google_maps_yorum: [
+  kdy_google_maps_yorum: [
     "Merhaba {{customer_name}} {{customer_honorific}}, {{salon_name}} olarak sizi üçüncü kez ağırlamaktan mutluyuz 🌸 Google Maps yorumunuz bizim için kıymetli."
   ],
-  kedy_islem_link: [
+  kdy_islem_link: [
     "Bekleyen işleminizi tamamlamak için aşağıdaki butona dokunun.\n\nBağlantı kısa süreliğine geçerlidir."
   ],
-  kedy_ekip_katilim_link: [
+  kdy_ekip_katilim_link: [
     "Kedy ekip katılımınızı tamamlamak için aşağıdaki butona dokunun.\n\nBağlantı kısa süreliğine geçerlidir.\n\n— Kedy"
   ],
   // Tier-aware: variations live in templateVariations.ts.
   // Flat fallback for legacy callers.
-  kedy_no_show_hatirlatma: [
+  kdy_no_show_hatirlatma: [
     "Merhaba {{customer_name}} {{customer_honorific}}, bugünkü randevunuza gelemediğinizi fark ettik. İsterseniz yeni bir tarih ayarlayalım. Plan değişikliği için en az {{late_policy_hours}} saat öncesinden bildirim rica ederiz."
   ],
-  kedy_dogum_gunu_kutlamasi: [
+  kdy_dogum_gunu_kutlamasi: [
     "Merhaba {{customer_name}} {{customer_honorific}}, doğum gününüzü kutlar, size özel {{discount_amount}} indirim hediyemizi sunarız 🎉 ({{validity_period}} geçerli)"
   ],
-  kedy_geri_donus: [
+  kdy_geri_donus: [
     "Merhaba {{customer_name}} {{customer_honorific}}, uzun süredir görüşmedik 🌸 Size özel {{discount_amount}} indirim hediyemizi sunarız ({{validity_period}})."
   ],
-  kedy_waitlist_teklif: [
+  kdy_waitlist_teklif: [
     "Güzel haber {{customer_name}}! Bekleme listenizde olduğunuz {{service_name}} için {{appointment_date}} vaktinde bir boşluk oluştu! ✨",
     "Merhaba! {{appointment_date}} saatindeki {{service_name}} hizmeti artık müsait. Sizinle doldurabiliriz! ⏰",
     "Beklediğiniz an geldi {{customer_name}}! {{appointment_date}} tarihinde {{service_name}} için yerimiz var. 🌟",
@@ -70,7 +70,7 @@ const MASTER_TEMPLATE_VARIATIONS: Record<string, string[]> = {
     "Merhaba {{customer_name}}, bekleme listesinden size haber veriyoruz: {{appointment_date}} | {{service_name}} müsait! 🌺",
     "Selamlar, {{appointment_date}} tarihli seansımızda bir kişilik boşluk var. Bekliyoruz! 👋"
   ],
-  kedy_memnuniyet_anketi: [
+  kdy_memnuniyet_anketi: [
     "Merhaba {{customer_name}}! Aldığınız {{service_name}} hizmetinden memnun kaldınız mı? Değerlendirmeniz bizim için çok önemli. ✨",
     "Bizi oylayın! {{service_name}} deneyiminizi merak ediyoruz. Görüşlerinizi bizimle paylaşır mısınız {{customer_name}}? 🌟",
     "Selam {{customer_name}}! Bugün aldığınız {{service_name}} hizmetimize dair yorumlarınızı bekliyoruz. 🌸",
@@ -82,7 +82,7 @@ const MASTER_TEMPLATE_VARIATIONS: Record<string, string[]> = {
     "Merhaba {{customer_name}}, {{service_name}} ile gününüzün güzelleştiğini umuyoruz. Bir yorum bırakmak ister misiniz? 🌸",
     "Selamlar, {{service_name}} randevunuzu değerlendirmek için vakit ayırdığınız için teşekkürler! 👋"
   ],
-  kedy_dogrulama_link: [
+  kdy_dogrulama_link: [
     "Merhaba {{name}}, {{salon_or_action}} işleminizi tamamlamak için linke dokunun: {{verification_link}} — Link {{ttl}} dakika geçerlidir. — {{footer_brand}}",
     "Selam {{name}}! {{salon_or_action}} için kısa onay linkin hazır: {{verification_link}} (Link {{ttl}} dk geçerli) — {{footer_brand}}",
     "Merhaba {{name}}, {{salon_or_action}} işlemini bu güvenli bağlantıyla onaylayabilirsin: {{verification_link}}. Süre: {{ttl}} dk. — {{footer_brand}}",
@@ -94,24 +94,24 @@ const MASTER_TEMPLATE_VARIATIONS: Record<string, string[]> = {
     "Merhaba {{name}}, {{salon_or_action}} adımını tamamlamak için bağlantıyı açın: {{verification_link}}. Süre: {{ttl}} dakika. — {{footer_brand}}",
     "Hoş geldiniz {{name}}, {{salon_or_action}} işleminize devam etmek için: {{verification_link}} — {{ttl}} dakika içinde kullanın. — {{footer_brand}}"
   ],
-  // NOTE: kedy_auth_code (legacy AUTHENTICATION template) removed. UTILITY-link
-  // flow (kedy_islem_link / kedy_ekip_katilim_link) replaces it.
+  // NOTE: kdy_auth_code (legacy AUTHENTICATION template) removed. UTILITY-link
+  // flow (kdy_islem_link / kdy_ekip_katilim_link) replaces it.
 };
 
 // WhatsApp Master Templates Definitions
-// kedy_randevu_onay removed — confirmation now handled inline via salon's
+// kdy_randevu_onay removed — confirmation now handled inline via salon's
 // existing booking-flow inbound conversation thread.
 const KEDY_MASTER_TEMPLATES = [
   // ── Reminder: 1 day before ──
   {
-    name: 'kedy_randevu_hatirlatma_1_gun',
+    name: 'kdy_randevu_hatirlatma_1_gun',
     category: 'UTILITY',
     parameter_format: 'NAMED',
     eventType: 'REMINDER_1_DAY',
     components: [
       {
         type: 'BODY',
-        text: MASTER_TEMPLATE_VARIATIONS.kedy_randevu_hatirlatma_1_gun[0],
+        text: MASTER_TEMPLATE_VARIATIONS.kdy_randevu_hatirlatma_1_gun[0],
         example: {
           body_text_named_params: [
             { param_name: 'customer_name', example: 'Ayşe' },
@@ -134,14 +134,14 @@ const KEDY_MASTER_TEMPLATES = [
   },
   // ── Reminder: 3 days before (includes salon cancellation policy hours) ──
   {
-    name: 'kedy_randevu_hatirlatma_3_gun',
+    name: 'kdy_randevu_hatirlatma_3_gun',
     category: 'UTILITY',
     parameter_format: 'NAMED',
     eventType: 'REMINDER_3_DAY',
     components: [
       {
         type: 'BODY',
-        text: MASTER_TEMPLATE_VARIATIONS.kedy_randevu_hatirlatma_3_gun[0],
+        text: MASTER_TEMPLATE_VARIATIONS.kdy_randevu_hatirlatma_3_gun[0],
         example: {
           body_text_named_params: [
             { param_name: 'customer_name', example: 'Ayşe' },
@@ -158,14 +158,14 @@ const KEDY_MASTER_TEMPLATES = [
   },
   // ── Reminder: 2 hours before (includes location button) ──
   {
-    name: 'kedy_randevu_hatirlatma_2_saat',
+    name: 'kdy_randevu_hatirlatma_2_saat',
     category: 'UTILITY',
     parameter_format: 'NAMED',
     eventType: 'REMINDER_2_HOUR',
     components: [
       {
         type: 'BODY',
-        text: MASTER_TEMPLATE_VARIATIONS.kedy_randevu_hatirlatma_2_saat[0],
+        text: MASTER_TEMPLATE_VARIATIONS.kdy_randevu_hatirlatma_2_saat[0],
         example: {
           body_text_named_params: [
             { param_name: 'customer_name', example: 'Ayşe' },
@@ -186,14 +186,14 @@ const KEDY_MASTER_TEMPLATES = [
     ]
   },
   {
-    name: 'kedy_no_show_hatirlatma',
+    name: 'kdy_no_show_hatirlatma',
     category: 'UTILITY',
     parameter_format: 'NAMED',
     eventType: 'NO_SHOW',
     components: [
       {
         type: 'BODY',
-        text: MASTER_TEMPLATE_VARIATIONS.kedy_no_show_hatirlatma[0],
+        text: MASTER_TEMPLATE_VARIATIONS.kdy_no_show_hatirlatma[0],
         example: {
           body_text_named_params: [
             { param_name: 'customer_name', example: 'Ayşe' },
@@ -209,16 +209,16 @@ const KEDY_MASTER_TEMPLATES = [
     ]
   },
   // ── Legacy verification link template (deprecated for customer flows;
-  //    superseded by kedy_islem_link). Kept for backwards compat.
+  //    superseded by kdy_islem_link). Kept for backwards compat.
   {
-    name: 'kedy_dogrulama_link',
+    name: 'kdy_dogrulama_link',
     category: 'UTILITY',
     parameter_format: 'NAMED',
     eventType: 'VERIFICATION_LINK',
     components: [
       {
         type: 'BODY',
-        text: MASTER_TEMPLATE_VARIATIONS.kedy_dogrulama_link[0],
+        text: MASTER_TEMPLATE_VARIATIONS.kdy_dogrulama_link[0],
         example: {
           body_text_named_params: [
             { param_name: 'name', example: 'Müşteri' },
@@ -234,7 +234,7 @@ const KEDY_MASTER_TEMPLATES = [
   // ── Customer transactional verify (CUSTOMER_PHONE / CUSTOMER_LINK_CONSENT
   //    / PHONE_CHANGE). Body is static; only URL button carries the token. ──
   {
-    name: 'kedy_islem_link',
+    name: 'kdy_islem_link',
     category: 'UTILITY',
     parameter_format: 'NAMED',
     eventType: 'CUSTOMER_VERIFY_LINK',
@@ -247,7 +247,7 @@ const KEDY_MASTER_TEMPLATES = [
       },
       {
         type: 'BODY',
-        text: MASTER_TEMPLATE_VARIATIONS.kedy_islem_link[0]
+        text: MASTER_TEMPLATE_VARIATIONS.kdy_islem_link[0]
       },
       {
         type: 'BUTTONS',
@@ -259,14 +259,14 @@ const KEDY_MASTER_TEMPLATES = [
   },
   // ── Team-invite verification link (TEAM_INVITE_PHONE) ──
   {
-    name: 'kedy_ekip_katilim_link',
+    name: 'kdy_ekip_katilim_link',
     category: 'UTILITY',
     parameter_format: 'NAMED',
     eventType: 'TEAM_INVITE_LINK',
     components: [
       {
         type: 'BODY',
-        text: MASTER_TEMPLATE_VARIATIONS.kedy_ekip_katilim_link[0]
+        text: MASTER_TEMPLATE_VARIATIONS.kdy_ekip_katilim_link[0]
       },
       {
         type: 'BUTTONS',
@@ -277,14 +277,14 @@ const KEDY_MASTER_TEMPLATES = [
     ]
   },
   {
-    name: 'kedy_waitlist_teklif',
+    name: 'kdy_waitlist_teklif',
     category: 'UTILITY',
     parameter_format: 'NAMED',
     eventType: 'WAITLIST_OFFER',
     components: [
       {
         type: 'BODY',
-        text: MASTER_TEMPLATE_VARIATIONS.kedy_waitlist_teklif[0],
+        text: MASTER_TEMPLATE_VARIATIONS.kdy_waitlist_teklif[0],
         example: {
           body_text_named_params: [
             { param_name: 'customer_name', example: 'Ayşe' },
@@ -306,14 +306,14 @@ const KEDY_MASTER_TEMPLATES = [
   },
   // ── Standard post-appointment feedback (magic link → /feedback/{token}) ──
   {
-    name: 'kedy_memnuniyet_anketi',
+    name: 'kdy_memnuniyet_anketi',
     category: 'UTILITY',
     parameter_format: 'NAMED',
     eventType: 'SATISFACTION_SURVEY',
     components: [
       {
         type: 'BODY',
-        text: MASTER_TEMPLATE_VARIATIONS.kedy_memnuniyet_anketi[0],
+        text: MASTER_TEMPLATE_VARIATIONS.kdy_memnuniyet_anketi[0],
         example: {
           body_text_named_params: [
             { param_name: 'customer_name', example: 'Ayşe' },
@@ -333,14 +333,14 @@ const KEDY_MASTER_TEMPLATES = [
   },
   // ── 3rd-appointment Google Maps review request ──
   {
-    name: 'kedy_google_maps_yorum',
+    name: 'kdy_google_maps_yorum',
     category: 'UTILITY',
     parameter_format: 'NAMED',
     eventType: 'GOOGLE_MAPS_REVIEW',
     components: [
       {
         type: 'BODY',
-        text: MASTER_TEMPLATE_VARIATIONS.kedy_google_maps_yorum[0],
+        text: MASTER_TEMPLATE_VARIATIONS.kdy_google_maps_yorum[0],
         example: {
           body_text_named_params: [
             { param_name: 'customer_name', example: 'Ayşe' },
@@ -361,14 +361,14 @@ const KEDY_MASTER_TEMPLATES = [
   {
     // MARKETING category (NOT UTILITY) — contains discount/offer language.
     // Requires Customer.acceptMarketing = true at send-time.
-    name: 'kedy_dogum_gunu_kutlamasi',
+    name: 'kdy_dogum_gunu_kutlamasi',
     category: 'MARKETING',
     parameter_format: 'NAMED',
     eventType: 'BIRTHDAY',
     components: [
       {
         type: 'BODY',
-        text: MASTER_TEMPLATE_VARIATIONS.kedy_dogum_gunu_kutlamasi[0],
+        text: MASTER_TEMPLATE_VARIATIONS.kdy_dogum_gunu_kutlamasi[0],
         example: {
           body_text_named_params: [
             { param_name: 'customer_name', example: 'Ayşe' },
@@ -384,14 +384,14 @@ const KEDY_MASTER_TEMPLATES = [
   {
     // MARKETING category — contains discount/offer language.
     // Requires Customer.acceptMarketing = true at send-time.
-    name: 'kedy_geri_donus',
+    name: 'kdy_geri_donus',
     category: 'MARKETING',
     parameter_format: 'NAMED',
     eventType: 'WINBACK',
     components: [
       {
         type: 'BODY',
-        text: MASTER_TEMPLATE_VARIATIONS.kedy_geri_donus[0],
+        text: MASTER_TEMPLATE_VARIATIONS.kdy_geri_donus[0],
         example: {
           body_text_named_params: [
             { param_name: 'customer_name', example: 'Ayşe' },
@@ -596,7 +596,7 @@ async function syncAndEnsureMasterTemplates(salonId: number, pluginId: string, l
     for (const master of KEDY_MASTER_TEMPLATES) {
       // Tone-varied sohbet templates are now handled by the queue-based
       // submitter (salonTemplateSubmitter.ts) — skip them here. Only the
-      // verification/link templates (kedy_islem_link etc.) still flow
+      // verification/link templates (kdy_islem_link etc.) still flow
       // through this legacy path.
       if (hasTieredVariations(master.name)) {
         logs.push(`Atlanıyor (queue worker tarafından yönetiliyor): ${master.name}`);

@@ -15,15 +15,15 @@ const rows = await prisma.salonMessageTemplate.findMany({
 });
 
 const FRIENDLY_NAME = {
-  kedy_randevu_hatirlatma_1_gun: '1 Gün Hatırlatma',
-  kedy_randevu_hatirlatma_3_gun: '3 Gün Hatırlatma',
-  kedy_randevu_hatirlatma_2_saat: '2 Saat Kala',
-  kedy_no_show_hatirlatma: 'Gelmeyene Bildirim',
-  kedy_waitlist_teklif: 'Bekleme Listesi',
-  kedy_memnuniyet_anketi: 'Memnuniyet Anketi',
-  kedy_google_maps_yorum: 'Google Yorum',
-  kedy_dogum_gunu_kutlamasi: 'Doğum Günü',
-  kedy_geri_donus: 'Geri Kazanım',
+  kdy_randevu_hatirlatma_1_gun: '1 Gün Hatırlatma',
+  kdy_randevu_hatirlatma_3_gun: '3 Gün Hatırlatma',
+  kdy_randevu_hatirlatma_2_saat: '2 Saat Kala',
+  kdy_no_show_hatirlatma: 'Gelmeyene Bildirim',
+  kdy_waitlist_teklif: 'Bekleme Listesi',
+  kdy_memnuniyet_anketi: 'Memnuniyet Anketi',
+  kdy_google_maps_yorum: 'Google Yorum',
+  kdy_dogum_gunu_kutlamasi: 'Doğum Günü',
+  kdy_geri_donus: 'Geri Kazanım',
 };
 const TONE_ORDER = ['FRIENDLY', 'BALANCED', 'PROFESSIONAL'];
 const KEY_ORDER = Object.keys(FRIENDLY_NAME);

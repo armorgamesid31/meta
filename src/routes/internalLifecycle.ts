@@ -44,7 +44,7 @@ function respond(result: NotificationResult, res: any) {
 // Appointment-bound sends
 // ─────────────────────────────────────────────────────────────────
 
-// /appointment-confirmation removed — kedy_randevu_onay template
+// /appointment-confirmation removed — kdy_randevu_onay template
 // retired. n8n workflow should drop calls to this endpoint.
 
 router.post('/reminder-1-day', async (req: any, res: any) => {

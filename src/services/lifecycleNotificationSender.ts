@@ -20,7 +20,7 @@ import { pickTemplateForSend } from './salonTemplateSubmitter.js';
 import { createFeedbackMagicLink } from './feedbackService.js';
 
 export type NotificationKind =
-  // CONFIRMATION retired with kedy_randevu_onay
+  // CONFIRMATION retired with kdy_randevu_onay
   | 'REMINDER_1_DAY'
   | 'REMINDER_3_DAY'
   | 'REMINDER_2_HOUR'
@@ -97,11 +97,11 @@ async function buildButtonParamsForLogicalKey(
   logicalKey: string,
 ): Promise<Array<{ type: 'url' | 'quick_reply'; value: string }> | undefined> {
   const slugButtons = new Set([
-    'kedy_randevu_hatirlatma_2_saat', // Yol Tarifi → /r/maps/:slug
-    'kedy_no_show_hatirlatma',         // Yeni Randevu Al → /r/booking/:slug
-    'kedy_dogum_gunu_kutlamasi',       // Randevu Al → /r/booking/:slug
-    'kedy_geri_donus',                 // Randevu Al → /r/booking/:slug
-    'kedy_google_maps_yorum',          // Google'da Yorum Yap → /r/maps/:slug
+    'kdy_randevu_hatirlatma_2_saat', // Yol Tarifi → /r/maps/:slug
+    'kdy_no_show_hatirlatma',         // Yeni Randevu Al → /r/booking/:slug
+    'kdy_dogum_gunu_kutlamasi',       // Randevu Al → /r/booking/:slug
+    'kdy_geri_donus',                 // Randevu Al → /r/booking/:slug
+    'kdy_google_maps_yorum',          // Google'da Yorum Yap → /r/maps/:slug
   ]);
   if (!slugButtons.has(logicalKey)) return undefined;
 
@@ -155,23 +155,23 @@ async function sendAppointmentBound(
   return result;
 }
 
-// sendAppointmentConfirmation removed — kedy_randevu_onay template is no
+// sendAppointmentConfirmation removed — kdy_randevu_onay template is no
 // longer part of the salon pipeline.
 
 export function sendReminder1Day(input: AppointmentInput) {
-  return sendAppointmentBound('REMINDER_1_DAY', 'kedy_randevu_hatirlatma_1_gun', input);
+  return sendAppointmentBound('REMINDER_1_DAY', 'kdy_randevu_hatirlatma_1_gun', input);
 }
 
 export function sendReminder3Day(input: AppointmentInput) {
-  return sendAppointmentBound('REMINDER_3_DAY', 'kedy_randevu_hatirlatma_3_gun', input);
+  return sendAppointmentBound('REMINDER_3_DAY', 'kdy_randevu_hatirlatma_3_gun', input);
 }
 
 export function sendReminder2Hour(input: AppointmentInput) {
-  return sendAppointmentBound('REMINDER_2_HOUR', 'kedy_randevu_hatirlatma_2_saat', input);
+  return sendAppointmentBound('REMINDER_2_HOUR', 'kdy_randevu_hatirlatma_2_saat', input);
 }
 
 export function sendNoShow(input: AppointmentInput) {
-  return sendAppointmentBound('NO_SHOW', 'kedy_no_show_hatirlatma', input);
+  return sendAppointmentBound('NO_SHOW', 'kdy_no_show_hatirlatma', input);
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -196,7 +196,7 @@ export async function sendSatisfactionSurvey(input: AppointmentInput): Promise<N
   // Mint a feedback magic link — single-use, no TTL
   const link = await createFeedbackMagicLink({ appointmentId: input.appointmentId });
 
-  const templateName = await pickTemplateForSend({ salonId: input.salonId, logicalKey: 'kedy_memnuniyet_anketi' });
+  const templateName = await pickTemplateForSend({ salonId: input.salonId, logicalKey: 'kdy_memnuniyet_anketi' });
   if (!templateName) return { ok: false, reason: 'no_approved_template_variation' };
 
   const result = await sendTemplate({
@@ -238,10 +238,10 @@ export async function sendGoogleMapsReview(input: {
 
   // Button now uses the slug-based /r/maps/:slug short link; the redirect
   // route resolves the real googleMapsUrl on click.
-  const templateName = await pickTemplateForSend({ salonId: input.salonId, logicalKey: 'kedy_google_maps_yorum' });
+  const templateName = await pickTemplateForSend({ salonId: input.salonId, logicalKey: 'kdy_google_maps_yorum' });
   if (!templateName) return { ok: false, reason: 'no_approved_template_variation' };
 
-  const buttonParams = await buildButtonParamsForLogicalKey(input.salonId, 'kedy_google_maps_yorum');
+  const buttonParams = await buildButtonParamsForLogicalKey(input.salonId, 'kdy_google_maps_yorum');
 
   const result = await sendTemplate({
     salonId: input.salonId,
@@ -291,10 +291,10 @@ export async function sendBirthday(input: {
   if (!ctx.salonWabaReady) return { ok: false, reason: 'salon_waba_not_connected' };
   if (!ctx.recipientPhone) return { ok: false, reason: 'recipient_phone_missing' };
 
-  const templateName = await pickTemplateForSend({ salonId: input.salonId, logicalKey: 'kedy_dogum_gunu_kutlamasi' });
+  const templateName = await pickTemplateForSend({ salonId: input.salonId, logicalKey: 'kdy_dogum_gunu_kutlamasi' });
   if (!templateName) return { ok: false, reason: 'no_approved_template_variation' };
 
-  const buttonParams = await buildButtonParamsForLogicalKey(input.salonId, 'kedy_dogum_gunu_kutlamasi');
+  const buttonParams = await buildButtonParamsForLogicalKey(input.salonId, 'kdy_dogum_gunu_kutlamasi');
 
   const result = await sendTemplate({
     salonId: input.salonId,
@@ -338,10 +338,10 @@ export async function sendWinback(input: {
   if (!ctx.salonWabaReady) return { ok: false, reason: 'salon_waba_not_connected' };
   if (!ctx.recipientPhone) return { ok: false, reason: 'recipient_phone_missing' };
 
-  const templateName = await pickTemplateForSend({ salonId: input.salonId, logicalKey: 'kedy_geri_donus' });
+  const templateName = await pickTemplateForSend({ salonId: input.salonId, logicalKey: 'kdy_geri_donus' });
   if (!templateName) return { ok: false, reason: 'no_approved_template_variation' };
 
-  const buttonParams = await buildButtonParamsForLogicalKey(input.salonId, 'kedy_geri_donus');
+  const buttonParams = await buildButtonParamsForLogicalKey(input.salonId, 'kdy_geri_donus');
 
   const result = await sendTemplate({
     salonId: input.salonId,
@@ -371,7 +371,7 @@ export async function sendWaitlistOfferTemplate(input: {
   if (!ctx.salonWabaReady) return { ok: false, reason: 'salon_waba_not_connected' };
   if (!ctx.recipientPhone) return { ok: false, reason: 'recipient_phone_missing' };
 
-  const templateName = await pickTemplateForSend({ salonId: input.salonId, logicalKey: 'kedy_waitlist_teklif' });
+  const templateName = await pickTemplateForSend({ salonId: input.salonId, logicalKey: 'kdy_waitlist_teklif' });
   if (!templateName) return { ok: false, reason: 'no_approved_template_variation' };
 
   const result = await sendTemplate({

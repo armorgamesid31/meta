@@ -5,7 +5,7 @@
 //
 // Submission flow (handled by salonTemplateSubmitter):
 //   1. Submit all 3 PRIMARY variations per (template × tone) as separate Meta templates.
-//      Naming: kedy_<key>_<toneCode><variantSlot>  e.g. kedy_randevu_onay_f1, _f2, _f3
+//      Naming: kdy_<key>_<toneCode><variantSlot>  e.g. kdy_randevu_onay_f1, _f2, _f3
 //   2. Wait for Meta webhook on each:
 //      - APPROVED + category preserved → ACTIVE_VALID ✓ (counts toward 3 valid)
 //      - APPROVED + category bumped (UTILITY→MARKETING) → CATEGORY_BUMPED (does NOT count)
@@ -33,13 +33,13 @@ export interface TieredVariations {
   PROFESSIONAL: TonePool;
 }
 
-// kedy_randevu_onay (appointment confirmation) removed per business
+// kdy_randevu_onay (appointment confirmation) removed per business
 // decision — the salon's existing booking flow already shows the
 // confirmation in the customer's WhatsApp inbound thread; a separate
 // outbound template was redundant.
 
 // ─────────────────────────────────────────────────────────────────
-// kedy_randevu_hatirlatma_1_gun — UTILITY 1 day reminder
+// kdy_randevu_hatirlatma_1_gun — UTILITY 1 day reminder
 // ─────────────────────────────────────────────────────────────────
 const KEDY_RANDEVU_HATIRLATMA_1_GUN: TieredVariations = {
   FRIENDLY: {
@@ -93,7 +93,7 @@ const KEDY_RANDEVU_HATIRLATMA_1_GUN: TieredVariations = {
 };
 
 // ─────────────────────────────────────────────────────────────────
-// kedy_randevu_hatirlatma_3_gun — UTILITY 3 day reminder
+// kdy_randevu_hatirlatma_3_gun — UTILITY 3 day reminder
 // vars include {{late_policy_hours}}
 // ─────────────────────────────────────────────────────────────────
 const KEDY_RANDEVU_HATIRLATMA_3_GUN: TieredVariations = {
@@ -148,7 +148,7 @@ const KEDY_RANDEVU_HATIRLATMA_3_GUN: TieredVariations = {
 };
 
 // ─────────────────────────────────────────────────────────────────
-// kedy_randevu_hatirlatma_2_saat — UTILITY 2 hour reminder
+// kdy_randevu_hatirlatma_2_saat — UTILITY 2 hour reminder
 // ─────────────────────────────────────────────────────────────────
 const KEDY_RANDEVU_HATIRLATMA_2_SAAT: TieredVariations = {
   FRIENDLY: {
@@ -202,7 +202,7 @@ const KEDY_RANDEVU_HATIRLATMA_2_SAAT: TieredVariations = {
 };
 
 // ─────────────────────────────────────────────────────────────────
-// kedy_no_show_hatirlatma — UTILITY no-show notification
+// kdy_no_show_hatirlatma — UTILITY no-show notification
 // ─────────────────────────────────────────────────────────────────
 const KEDY_NO_SHOW_HATIRLATMA: TieredVariations = {
   FRIENDLY: {
@@ -260,7 +260,7 @@ const KEDY_NO_SHOW_HATIRLATMA: TieredVariations = {
 };
 
 // ─────────────────────────────────────────────────────────────────
-// kedy_waitlist_teklif — UTILITY waitlist offer
+// kdy_waitlist_teklif — UTILITY waitlist offer
 // ─────────────────────────────────────────────────────────────────
 // Rewritten to read as transactional notification (not promotional offer).
 // Key changes vs the original: removed "teklif/fırsat/müjde" vocabulary,
@@ -319,7 +319,7 @@ const KEDY_WAITLIST_TEKLIF: TieredVariations = {
 };
 
 // ─────────────────────────────────────────────────────────────────
-// kedy_memnuniyet_anketi — UTILITY satisfaction survey
+// kdy_memnuniyet_anketi — UTILITY satisfaction survey
 // ─────────────────────────────────────────────────────────────────
 const KEDY_MEMNUNIYET_ANKETI: TieredVariations = {
   FRIENDLY: {
@@ -373,7 +373,7 @@ const KEDY_MEMNUNIYET_ANKETI: TieredVariations = {
 };
 
 // ─────────────────────────────────────────────────────────────────
-// kedy_google_maps_yorum — UTILITY 3rd-visit Google review request
+// kdy_google_maps_yorum — UTILITY 3rd-visit Google review request
 // ─────────────────────────────────────────────────────────────────
 const KEDY_GOOGLE_MAPS_YORUM: TieredVariations = {
   FRIENDLY: {
@@ -427,7 +427,7 @@ const KEDY_GOOGLE_MAPS_YORUM: TieredVariations = {
 };
 
 // ─────────────────────────────────────────────────────────────────
-// kedy_dogum_gunu_kutlamasi — MARKETING birthday
+// kdy_dogum_gunu_kutlamasi — MARKETING birthday
 // ─────────────────────────────────────────────────────────────────
 const KEDY_DOGUM_GUNU_KUTLAMASI: TieredVariations = {
   FRIENDLY: {
@@ -481,7 +481,7 @@ const KEDY_DOGUM_GUNU_KUTLAMASI: TieredVariations = {
 };
 
 // ─────────────────────────────────────────────────────────────────
-// kedy_geri_donus — MARKETING winback
+// kdy_geri_donus — MARKETING winback
 // ─────────────────────────────────────────────────────────────────
 const KEDY_GERI_DONUS: TieredVariations = {
   FRIENDLY: {
@@ -538,32 +538,32 @@ const KEDY_GERI_DONUS: TieredVariations = {
 // Registry
 // ─────────────────────────────────────────────────────────────────
 export const TIERED_TEMPLATE_VARIATIONS: Record<string, TieredVariations> = {
-  kedy_randevu_hatirlatma_1_gun: KEDY_RANDEVU_HATIRLATMA_1_GUN,
-  kedy_randevu_hatirlatma_3_gun: KEDY_RANDEVU_HATIRLATMA_3_GUN,
-  kedy_randevu_hatirlatma_2_saat: KEDY_RANDEVU_HATIRLATMA_2_SAAT,
-  kedy_no_show_hatirlatma: KEDY_NO_SHOW_HATIRLATMA,
-  kedy_waitlist_teklif: KEDY_WAITLIST_TEKLIF,
-  kedy_memnuniyet_anketi: KEDY_MEMNUNIYET_ANKETI,
-  kedy_google_maps_yorum: KEDY_GOOGLE_MAPS_YORUM,
-  kedy_dogum_gunu_kutlamasi: KEDY_DOGUM_GUNU_KUTLAMASI,
-  kedy_geri_donus: KEDY_GERI_DONUS,
+  kdy_randevu_hatirlatma_1_gun: KEDY_RANDEVU_HATIRLATMA_1_GUN,
+  kdy_randevu_hatirlatma_3_gun: KEDY_RANDEVU_HATIRLATMA_3_GUN,
+  kdy_randevu_hatirlatma_2_saat: KEDY_RANDEVU_HATIRLATMA_2_SAAT,
+  kdy_no_show_hatirlatma: KEDY_NO_SHOW_HATIRLATMA,
+  kdy_waitlist_teklif: KEDY_WAITLIST_TEKLIF,
+  kdy_memnuniyet_anketi: KEDY_MEMNUNIYET_ANKETI,
+  kdy_google_maps_yorum: KEDY_GOOGLE_MAPS_YORUM,
+  kdy_dogum_gunu_kutlamasi: KEDY_DOGUM_GUNU_KUTLAMASI,
+  kdy_geri_donus: KEDY_GERI_DONUS,
 };
 
 // Logical-key → category mapping for category-bump watchdog.
-// kedy_dogum_gunu_kutlamasi & kedy_geri_donus go up as MARKETING; rest as UTILITY.
+// kdy_dogum_gunu_kutlamasi & kdy_geri_donus go up as MARKETING; rest as UTILITY.
 export const TEMPLATE_EXPECTED_CATEGORY: Record<string, 'UTILITY' | 'MARKETING'> = {
-  kedy_randevu_hatirlatma_1_gun: 'UTILITY',
-  kedy_randevu_hatirlatma_3_gun: 'UTILITY',
-  kedy_randevu_hatirlatma_2_saat: 'UTILITY',
-  kedy_no_show_hatirlatma: 'UTILITY',
-  kedy_waitlist_teklif: 'UTILITY',
-  kedy_memnuniyet_anketi: 'UTILITY',
+  kdy_randevu_hatirlatma_1_gun: 'UTILITY',
+  kdy_randevu_hatirlatma_3_gun: 'UTILITY',
+  kdy_randevu_hatirlatma_2_saat: 'UTILITY',
+  kdy_no_show_hatirlatma: 'UTILITY',
+  kdy_waitlist_teklif: 'UTILITY',
+  kdy_memnuniyet_anketi: 'UTILITY',
   // Google review requests are fundamentally promotional from Meta's view —
   // every variation gets bumped to MARKETING. Accept it: requires
   // Customer.acceptMarketing to send.
-  kedy_google_maps_yorum: 'MARKETING',
-  kedy_dogum_gunu_kutlamasi: 'MARKETING',
-  kedy_geri_donus: 'MARKETING',
+  kdy_google_maps_yorum: 'MARKETING',
+  kdy_dogum_gunu_kutlamasi: 'MARKETING',
+  kdy_geri_donus: 'MARKETING',
 };
 
 // ─────────────────────────────────────────────────────────────────
@@ -584,7 +584,7 @@ export function toneCode(tone: ToneTier): 'f' | 'b' | 'p' {
 
 /**
  * Compose the Meta template name for a given logical key, tone, and variant slot.
- *   buildTemplateName('kedy_randevu_onay', 'FRIENDLY', 1) → 'kedy_randevu_onay_f1'
+ *   buildTemplateName('kdy_randevu_onay', 'FRIENDLY', 1) → 'kdy_randevu_onay_f1'
  * Slot is 1-based: 1-3 = primary, 4-10 = reserve.
  */
 export function buildTemplateName(logicalKey: string, tone: ToneTier, slot: number): string {

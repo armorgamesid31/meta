@@ -588,7 +588,7 @@ router.post('/verify-phone/confirm', async (req: any, res: any) => {
 // UTILITY-link based customer phone verification.
 //
 // Replaces the OTP code flow with a magic-link sent via the salon's
-// own WABA using the kedy_dogrulama_link template. Two paths:
+// own WABA using the kdy_dogrulama_link template. Two paths:
 //
 //   FAST PATH — phone has a PhoneIdentity AND is already linked to
 //   this salon → return VERIFIED immediately, no message sent.
