@@ -536,6 +536,75 @@ export function stopSubmissionWorker(): void {
 }
 
 /**
+ * Send-time picker: resolves a logical template key (e.g. 'kedy_randevu_onay')
+ * to an actual Meta-side template name to use right now.
+ *
+ * Algorithm:
+ *   1. Read salon's communicationTone.
+ *   2. Find ACTIVE_VALID rows for (salon, key, tone). If any, pick random.
+ *   3. Fallback: try ACTIVE_VALID rows for (salon, key) in any tone.
+ *   4. Final fallback: return logicalKey itself (legacy/pre-migration salons
+ *      that still have a row with templateName=logicalKey).
+ *
+ * Returns null only if there's no usable template at all (caller should
+ * skip sending).
+ */
+export async function pickTemplateForSend(opts: {
+  salonId: number;
+  logicalKey: string;
+}): Promise<string | null> {
+  const { salonId, logicalKey } = opts;
+
+  const salon = await prisma.salon.findUnique({
+    where: { id: salonId },
+    select: { communicationTone: true },
+  });
+  const tone = salon?.communicationTone || 'BALANCED';
+
+  // 1. Active-tone picks.
+  const inToneCandidates = await prisma.salonMessageTemplate.findMany({
+    where: {
+      salonId,
+      templateKey: logicalKey,
+      tone,
+      submissionState: 'ACTIVE_VALID',
+      templateName: { not: null },
+    },
+    select: { templateName: true },
+  });
+  if (inToneCandidates.length > 0) {
+    const pick = inToneCandidates[Math.floor(Math.random() * inToneCandidates.length)];
+    return pick.templateName;
+  }
+
+  // 2. Any-tone fallback.
+  const anyToneCandidates = await prisma.salonMessageTemplate.findMany({
+    where: {
+      salonId,
+      templateKey: logicalKey,
+      submissionState: 'ACTIVE_VALID',
+      templateName: { not: null },
+    },
+    select: { templateName: true },
+  });
+  if (anyToneCandidates.length > 0) {
+    const pick = anyToneCandidates[Math.floor(Math.random() * anyToneCandidates.length)];
+    return pick.templateName;
+  }
+
+  // 3. Legacy fallback: a row with templateName === logicalKey from the old
+  // (pre-migration) sync path, regardless of submissionState. Lets pre-existing
+  // salons keep sending while the new wave-based queue catches up.
+  const legacy = await prisma.salonMessageTemplate.findFirst({
+    where: { salonId, templateName: logicalKey },
+    select: { templateName: true, metaStatus: true },
+  });
+  if (legacy?.metaStatus === 'APPROVED') return legacy.templateName;
+
+  return null;
+}
+
+/**
  * Cancel all queued (NOT_QUEUED/SUBMITTED) template submissions for a salon.
  * Call this when WABA is disconnected — prevents the worker from looping on
  * a now-invalid pluginId. Approved (ACTIVE_VALID) and rejected rows are left

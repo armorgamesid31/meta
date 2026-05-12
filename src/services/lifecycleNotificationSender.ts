@@ -16,6 +16,7 @@ import {
   getWinbackOfferConfig,
 } from './templateContextResolver.js';
 import { sendTemplate } from './whatsappTemplateSender.js';
+import { pickTemplateForSend } from './salonTemplateSubmitter.js';
 import { createFeedbackMagicLink } from './feedbackService.js';
 
 export type NotificationKind =
@@ -81,7 +82,7 @@ interface AppointmentInput {
 
 async function sendAppointmentBound(
   kind: NotificationKind,
-  templateName: string,
+  logicalKey: string,
   input: AppointmentInput,
   options: {
     dedupHours?: number;
@@ -101,6 +102,10 @@ async function sendAppointmentBound(
 
   if (!ctx.salonWabaReady) return { ok: false, reason: 'salon_waba_not_connected' };
   if (!ctx.recipientPhone) return { ok: false, reason: 'recipient_phone_missing' };
+
+  // Resolve logical key to a tone-appropriate approved Meta template name.
+  const templateName = await pickTemplateForSend({ salonId: input.salonId, logicalKey });
+  if (!templateName) return { ok: false, reason: 'no_approved_template_variation' };
 
   const result = await sendTemplate({
     salonId: input.salonId,
@@ -158,9 +163,12 @@ export async function sendSatisfactionSurvey(input: AppointmentInput): Promise<N
   // Mint a feedback magic link — single-use, no TTL
   const link = await createFeedbackMagicLink({ appointmentId: input.appointmentId });
 
+  const templateName = await pickTemplateForSend({ salonId: input.salonId, logicalKey: 'kedy_memnuniyet_anketi' });
+  if (!templateName) return { ok: false, reason: 'no_approved_template_variation' };
+
   const result = await sendTemplate({
     salonId: input.salonId,
-    templateName: 'kedy_memnuniyet_anketi',
+    templateName,
     recipientPhone: ctx.recipientPhone,
     bodyParams: ctx.params,
     buttonParams: [{ type: 'url', value: link.token }],
@@ -203,9 +211,12 @@ export async function sendGoogleMapsReview(input: {
     return { ok: false, reason: 'salon_google_maps_url_missing' };
   }
 
+  const templateName = await pickTemplateForSend({ salonId: input.salonId, logicalKey: 'kedy_google_maps_yorum' });
+  if (!templateName) return { ok: false, reason: 'no_approved_template_variation' };
+
   const result = await sendTemplate({
     salonId: input.salonId,
-    templateName: 'kedy_google_maps_yorum',
+    templateName,
     recipientPhone: ctx.recipientPhone,
     bodyParams: ctx.params,
     buttonParams: [{ type: 'url', value: salonWithMaps.googleMapsUrl }],
@@ -251,9 +262,12 @@ export async function sendBirthday(input: {
   if (!ctx.salonWabaReady) return { ok: false, reason: 'salon_waba_not_connected' };
   if (!ctx.recipientPhone) return { ok: false, reason: 'recipient_phone_missing' };
 
+  const templateName = await pickTemplateForSend({ salonId: input.salonId, logicalKey: 'kedy_dogum_gunu_kutlamasi' });
+  if (!templateName) return { ok: false, reason: 'no_approved_template_variation' };
+
   const result = await sendTemplate({
     salonId: input.salonId,
-    templateName: 'kedy_dogum_gunu_kutlamasi',
+    templateName,
     recipientPhone: ctx.recipientPhone,
     bodyParams: ctx.params,
   });
@@ -292,9 +306,12 @@ export async function sendWinback(input: {
   if (!ctx.salonWabaReady) return { ok: false, reason: 'salon_waba_not_connected' };
   if (!ctx.recipientPhone) return { ok: false, reason: 'recipient_phone_missing' };
 
+  const templateName = await pickTemplateForSend({ salonId: input.salonId, logicalKey: 'kedy_geri_donus' });
+  if (!templateName) return { ok: false, reason: 'no_approved_template_variation' };
+
   const result = await sendTemplate({
     salonId: input.salonId,
-    templateName: 'kedy_geri_donus',
+    templateName,
     recipientPhone: ctx.recipientPhone,
     bodyParams: ctx.params,
   });
@@ -319,9 +336,12 @@ export async function sendWaitlistOfferTemplate(input: {
   if (!ctx.salonWabaReady) return { ok: false, reason: 'salon_waba_not_connected' };
   if (!ctx.recipientPhone) return { ok: false, reason: 'recipient_phone_missing' };
 
+  const templateName = await pickTemplateForSend({ salonId: input.salonId, logicalKey: 'kedy_waitlist_teklif' });
+  if (!templateName) return { ok: false, reason: 'no_approved_template_variation' };
+
   const result = await sendTemplate({
     salonId: input.salonId,
-    templateName: 'kedy_waitlist_teklif',
+    templateName,
     recipientPhone: ctx.recipientPhone,
     bodyParams: ctx.params,
     buttonParams: [{ type: 'url', value: input.offerToken }],
