@@ -22,7 +22,10 @@ const RESEND_COOLDOWN_SECONDS = Number(process.env.VERIFICATION_RESEND_COOLDOWN_
 const TOKEN_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
 const TOKEN_BYTE_LEN = 18; // 18 random bytes → ~24 base58 chars
 
-const BASE_URL_KEDY = (process.env.VERIFICATION_BASE_URL_KEDY || 'https://app.kedyapp.com').replace(/\/+$/, '');
+// BASE_URL_KEDY → marketing site (kedyapp.com/v/[token]) — Kedy auth flows
+// BASE_URL_CUSTOMER → booking frontend (app.berkai.shop/c/v/[token]) —
+// customer-side verify (same host serves booking pages + the backend API).
+const BASE_URL_KEDY = (process.env.VERIFICATION_BASE_URL_KEDY || 'https://kedyapp.com').replace(/\/+$/, '');
 const BASE_URL_CUSTOMER = (process.env.VERIFICATION_BASE_URL_CUSTOMER || 'https://app.berkai.shop').replace(/\/+$/, '');
 
 // ─────────────────────────────────────────────────────────────────
