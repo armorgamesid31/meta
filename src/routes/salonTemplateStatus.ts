@@ -14,7 +14,11 @@ import {
   OPERATIONAL_TEMPLATES,
   OperationalStatus,
 } from '../services/templateOperationalNames.js';
-import { enqueueSalonTemplates, promoteReserveVariation } from '../services/salonTemplateSubmitter.js';
+import {
+  enqueueSalonTemplates,
+  promoteReserveVariation,
+  shouldPromoteReserve,
+} from '../services/salonTemplateSubmitter.js';
 import { listTemplateKeys, ALL_TONES } from '../services/templateVariations.js';
 
 const router = Router();
@@ -321,6 +325,11 @@ router.post('/templates/sync', authenticateToken, async (req: any, res) => {
 
   let promoted = 0;
   for (const { logicalKey, tone } of promoteTargets.values()) {
+    // Only promote when we don't already have enough valid + in-flight rows.
+    // Prevents the cascade where every sync press burned a fresh reserve
+    // slot even though siblings were still pending Meta review.
+    const gate = await shouldPromoteReserve({ salonId, logicalKey, tone });
+    if (!gate.should) continue;
     const res = await promoteReserveVariation({ salonId, logicalKey, tone });
     if (res.created) promoted++;
   }

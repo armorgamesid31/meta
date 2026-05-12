@@ -435,20 +435,22 @@ export async function runSubmissionTick(opts?: { batchSize?: number }): Promise<
             rejectionReason: (result.error || '').slice(0, 500),
           },
         });
-        // Promote a reserve slot for the same (templateKey, tone) so a
-        // fresh variation goes out instead of looping on this dead name.
+        // Promote a reserve slot ONLY if we don't already have enough
+        // valid + in-flight rows to reach the 3-valid target. Avoids
+        // cascading promotes while siblings are still pending review.
         if (row.templateKey && row.tone) {
-          const promoted = await promoteReserveVariation({
-            salonId: row.salonId,
-            logicalKey: row.templateKey,
-            tone: row.tone,
+          const gate = await shouldPromoteReserve({
+            salonId: row.salonId, logicalKey: row.templateKey, tone: row.tone,
           });
-          if (!promoted.created) {
-            await markPoolExhaustedIfNeeded({
-              salonId: row.salonId,
-              logicalKey: row.templateKey,
-              tone: row.tone,
+          if (gate.should) {
+            const promoted = await promoteReserveVariation({
+              salonId: row.salonId, logicalKey: row.templateKey, tone: row.tone,
             });
+            if (!promoted.created) {
+              await markPoolExhaustedIfNeeded({
+                salonId: row.salonId, logicalKey: row.templateKey, tone: row.tone,
+              });
+            }
           }
         }
         failed++;
@@ -640,6 +642,33 @@ export function stopSubmissionWorker(): void {
     clearInterval(workerTimer);
     workerTimer = null;
   }
+}
+
+/**
+ * Should we promote a reserve slot for (salon, key, tone) right now?
+ *
+ * Returns true only when we don't already have enough chances pending
+ * to reach 3 valid approvals. "Chances" = ACTIVE_VALID (already valid)
+ * + SUBMITTED (Meta is reviewing, might become valid) + NOT_QUEUED
+ * (worker will submit shortly). Without this gate every transient
+ * failure triggered an immediate promote regardless of how many other
+ * primary slots were still in flight — burning through the 10-slot
+ * reserve pool before Meta even decided on the originals.
+ */
+export async function shouldPromoteReserve(opts: {
+  salonId: number;
+  logicalKey: string;
+  tone: SalonCommunicationTone;
+}): Promise<{ should: boolean; valid: number; inFlight: number }> {
+  const rows = await prisma.salonMessageTemplate.findMany({
+    where: { salonId: opts.salonId, templateKey: opts.logicalKey, tone: opts.tone },
+    select: { submissionState: true },
+  });
+  const valid = rows.filter(r => r.submissionState === 'ACTIVE_VALID').length;
+  const inFlight = rows.filter(r =>
+    r.submissionState === 'SUBMITTED' || r.submissionState === 'NOT_QUEUED'
+  ).length;
+  return { should: valid + inFlight < 3, valid, inFlight };
 }
 
 /**

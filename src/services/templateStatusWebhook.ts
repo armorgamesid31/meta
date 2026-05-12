@@ -19,6 +19,7 @@ import { prisma } from '../prisma.js';
 import {
   promoteReserveVariation,
   markPoolExhaustedIfNeeded,
+  shouldPromoteReserve,
 } from './salonTemplateSubmitter.js';
 
 interface TemplateStatusEvent {
@@ -152,17 +153,18 @@ async function handleCategoryUpdate(opts: {
     });
 
     if (!categoryMatches && row.templateKey && row.tone) {
-      const promoted = await promoteReserveVariation({
-        salonId: row.salonId,
-        logicalKey: row.templateKey,
-        tone: row.tone,
+      const gate = await shouldPromoteReserve({
+        salonId: row.salonId, logicalKey: row.templateKey, tone: row.tone,
       });
-      if (!promoted.created) {
-        await markPoolExhaustedIfNeeded({
-          salonId: row.salonId,
-          logicalKey: row.templateKey,
-          tone: row.tone,
+      if (gate.should) {
+        const promoted = await promoteReserveVariation({
+          salonId: row.salonId, logicalKey: row.templateKey, tone: row.tone,
         });
+        if (!promoted.created) {
+          await markPoolExhaustedIfNeeded({
+            salonId: row.salonId, logicalKey: row.templateKey, tone: row.tone,
+          });
+        }
       }
     }
   }
@@ -230,18 +232,19 @@ async function handleSingleStatusEvent(opts: {
       });
 
       if (!categoryMatches && row.templateKey && row.tone) {
-        // Promote a reserve to compensate for the category bump.
-        const promoted = await promoteReserveVariation({
-          salonId: row.salonId,
-          logicalKey: row.templateKey,
-          tone: row.tone,
+        // Only promote a reserve if we don't already have 3 valid + in-flight.
+        const gate = await shouldPromoteReserve({
+          salonId: row.salonId, logicalKey: row.templateKey, tone: row.tone,
         });
-        if (!promoted.created) {
-          await markPoolExhaustedIfNeeded({
-            salonId: row.salonId,
-            logicalKey: row.templateKey,
-            tone: row.tone,
+        if (gate.should) {
+          const promoted = await promoteReserveVariation({
+            salonId: row.salonId, logicalKey: row.templateKey, tone: row.tone,
           });
+          if (!promoted.created) {
+            await markPoolExhaustedIfNeeded({
+              salonId: row.salonId, logicalKey: row.templateKey, tone: row.tone,
+            });
+          }
         }
       }
     } else if (event === 'REJECTED' || event === 'FLAGGED' || event === 'PAUSED' || event === 'DISABLED') {
@@ -256,17 +259,18 @@ async function handleSingleStatusEvent(opts: {
       });
 
       if (row.templateKey && row.tone) {
-        const promoted = await promoteReserveVariation({
-          salonId: row.salonId,
-          logicalKey: row.templateKey,
-          tone: row.tone,
+        const gate = await shouldPromoteReserve({
+          salonId: row.salonId, logicalKey: row.templateKey, tone: row.tone,
         });
-        if (!promoted.created) {
-          await markPoolExhaustedIfNeeded({
-            salonId: row.salonId,
-            logicalKey: row.templateKey,
-            tone: row.tone,
+        if (gate.should) {
+          const promoted = await promoteReserveVariation({
+            salonId: row.salonId, logicalKey: row.templateKey, tone: row.tone,
           });
+          if (!promoted.created) {
+            await markPoolExhaustedIfNeeded({
+              salonId: row.salonId, logicalKey: row.templateKey, tone: row.tone,
+            });
+          }
         }
       }
     } else {
