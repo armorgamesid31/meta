@@ -408,30 +408,76 @@ export async function runSubmissionTick(opts?: { batchSize?: number }): Promise<
       });
       submitted++;
     } else {
-      // Exponential backoff: 5min × 2^attempts, capped at 1 hour.
-      // Gives Meta API time to recover on rate-limit / transient failures
-      // without abandoning the row.
-      const attemptCount = row.submissionAttempts + 1;
-      const backoffMs = Math.min(
-        5 * 60 * 1000 * Math.pow(2, Math.min(attemptCount - 1, 4)),
-        60 * 60 * 1000,
-      );
-      await prisma.salonMessageTemplate.update({
-        where: { id: row.id },
-        data: {
-          submissionAttempts: { increment: 1 },
-          rejectionReason: (result.error || '').slice(0, 500),
-          scheduledSubmitAt: new Date(Date.now() + backoffMs),
-        },
-      });
-      failed++;
-      console.warn('[salonTemplateSubmitter] submit failed', {
-        rowId: row.id,
-        templateName: row.templateName,
-        error: result.error,
-        nextRetryInSec: Math.round(backoffMs / 1000),
-        attempts: attemptCount,
-      });
+      // Distinguish permanent (template-content) errors from transient
+      // (network / rate-limit) errors. Permanent ones won't recover
+      // through retries — mark REJECTED and promote a reserve slot.
+      const errStr = String(result.error || '').toLowerCase();
+      const isPermanent =
+        errStr.includes('already exists') ||
+        errStr.includes('content in this language') ||
+        errStr.includes('button format') ||
+        errStr.includes('formatting character') ||
+        errStr.includes("variables can't") ||
+        errStr.includes('parameter_format') ||
+        errStr.includes('invalid template') ||
+        errStr.includes('leading or trailing');
+
+      if (isPermanent) {
+        await prisma.salonMessageTemplate.update({
+          where: { id: row.id },
+          data: {
+            submissionState: 'REJECTED',
+            rejectedAt: new Date(),
+            submissionAttempts: { increment: 1 },
+            rejectionReason: (result.error || '').slice(0, 500),
+          },
+        });
+        // Promote a reserve slot for the same (templateKey, tone) so a
+        // fresh variation goes out instead of looping on this dead name.
+        if (row.templateKey && row.tone) {
+          const promoted = await promoteReserveVariation({
+            salonId: row.salonId,
+            logicalKey: row.templateKey,
+            tone: row.tone,
+          });
+          if (!promoted.created) {
+            await markPoolExhaustedIfNeeded({
+              salonId: row.salonId,
+              logicalKey: row.templateKey,
+              tone: row.tone,
+            });
+          }
+        }
+        failed++;
+        console.warn('[salonTemplateSubmitter] permanent failure → REJECTED + promote', {
+          rowId: row.id,
+          templateName: row.templateName,
+          error: result.error,
+        });
+      } else {
+        // Transient — exponential backoff: 5min × 2^attempts, capped at 1h.
+        const attemptCount = row.submissionAttempts + 1;
+        const backoffMs = Math.min(
+          5 * 60 * 1000 * Math.pow(2, Math.min(attemptCount - 1, 4)),
+          60 * 60 * 1000,
+        );
+        await prisma.salonMessageTemplate.update({
+          where: { id: row.id },
+          data: {
+            submissionAttempts: { increment: 1 },
+            rejectionReason: (result.error || '').slice(0, 500),
+            scheduledSubmitAt: new Date(Date.now() + backoffMs),
+          },
+        });
+        failed++;
+        console.warn('[salonTemplateSubmitter] transient failure → retry', {
+          rowId: row.id,
+          templateName: row.templateName,
+          error: result.error,
+          nextRetryInSec: Math.round(backoffMs / 1000),
+          attempts: attemptCount,
+        });
+      }
     }
   }
 
