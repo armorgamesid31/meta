@@ -25,12 +25,20 @@ interface TemplateStatusItem {
   status: OperationalStatus;
 }
 
-function aggregateStatus(rows: Array<{ submissionState: string; expectedCategory: string | null }>): OperationalStatus {
+function aggregateStatus(
+  rows: Array<{ submissionState: string; expectedCategory: string | null; metaStatus: string | null }>,
+): OperationalStatus {
   if (rows.length === 0) return 'preparing';
   const states = rows.map(r => r.submissionState);
 
   // If any row is ACTIVE_VALID → hazır.
   if (states.includes('ACTIVE_VALID')) return 'active';
+
+  // Legacy fallback: salons connected before the wave-based queue may have
+  // rows with submissionState=NOT_QUEUED but metaStatus=APPROVED from the
+  // old sync path. Treat those as active so we don't show "Meta onayı
+  // bekliyor" for templates that Meta has actually approved.
+  if (rows.some(r => r.metaStatus === 'APPROVED')) return 'active';
 
   // No active rows. Check if everything is exhausted.
   const allExhausted = rows.every(r =>
@@ -69,15 +77,17 @@ router.get('/templates/status', authenticateToken, async (req: any, res) => {
 
   const activeTone = salon.communicationTone || 'BALANCED';
 
-  // Fetch only rows for the active tone (the picker only ever sends from
-  // active-tone variants).
+  // Fetch active-tone rows AND legacy (pre-migration) rows where templateName
+  // matches a known logical key. Legacy rows have tone=null/templateKey=null
+  // but their metaStatus may already be APPROVED from the old sync path.
+  const knownLogicalKeys = OPERATIONAL_TEMPLATES.map(t => t.logicalKey);
   const allRows = await prisma.salonMessageTemplate.findMany({
     where: {
       salonId,
       OR: [
         { tone: activeTone, templateKey: { not: null } },
-        // Non-tone-varied link templates (kedy_islem_link)
-        { templateName: 'kedy_islem_link' },
+        // Legacy / non-tone-varied rows where templateName is itself a logical key.
+        { templateName: { in: knownLogicalKeys } },
       ],
     },
     select: {
@@ -85,6 +95,7 @@ router.get('/templates/status', authenticateToken, async (req: any, res) => {
       templateName: true,
       submissionState: true,
       expectedCategory: true,
+      metaStatus: true,
     },
   });
 
