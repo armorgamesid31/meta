@@ -25,24 +25,10 @@ const CHAKRA_PASSTHROUGH_WEBHOOK_URL = (
   DEFAULT_CHAKRA_PASSTHROUGH_WEBHOOK_URL
 ).trim();
 
-// WhatsApp Master Templates Definitions
 // WhatsApp Master Template Variations
+// Flat fallback for legacy callers — kedy_randevu_onay removed.
 const MASTER_TEMPLATE_VARIATIONS: Record<string, string[]> = {
-  kedy_randevu_onay: [
-    "Merhaba! {{customer_name}}, {{appointment_date}} tarihindeki {{service_name}} randevunuz onaylanmıştır. Konumumuz: {{location_url}} ✨",
-    "Harika haber! {{customer_name}}, {{appointment_date}} vaktindeki {{service_name}} randevunuz başarıyla oluşturuldu. Adresimiz: {{location_url}} 🗓️",
-    "{{customer_name}} randevunuz hazır! {{appointment_date}} tarihinde {{service_name}} için sizi bekliyoruz. Detaylar: {{location_url}} 💖",
-    "Selam! {{appointment_date}} tarihinde {{service_name}} hizmeti için {{customer_name}} randevunuz konfirme edildi. Yol tarifi: {{location_url}} 🌸",
-    "Randevu Onayı: {{appointment_date}} tarihinde {{service_name}} için yeriniz ayrıldı. Teşekkürler {{customer_name}}! {{location_url}} 🙏",
-    "Merhaba, {{appointment_date}} tarihinde {{service_name}} randevunuzu heyecanla bekliyoruz {{customer_name}}. Konum: {{location_url}} 🌟",
-    "{{appointment_date}} tarihindeki {{service_name}} randevunuzun onaylandığını bildirmekten mutluluk duyarız. ✅ Harita: {{location_url}}",
-    "Randevunuz Onaylandı! {{appointment_date}} | {{service_name}} | {{customer_name}}. Sabırsızlıkla bekliyoruz! 😊 {{location_url}}",
-    "{{appointment_date}} vaktinde {{service_name}} için hazırız. Sizi de bekliyoruz {{customer_name}}! 🌺 Adres: {{location_url}}",
-    "Selamlar, {{appointment_date}} tarihli {{service_name}} randevunuz sisteme kaydedildi {{customer_name}}. İşte konumumuz: {{location_url}} 👋"
-  ],
   // Tier-aware: variations live in templateVariations.ts.
-  // Flat fallback for legacy callers below. All 3 reminder timings live
-  // in separate templates (1g / 3g / 2s) — see templateVariations.ts.
   kedy_randevu_hatirlatma_1_gun: [
     "Merhaba {{customer_name}} {{customer_honorific}}, yarın {{appointment_time}} randevunuz için kısa bir teyit alabilir miyiz? 🙌"
   ],
@@ -113,42 +99,9 @@ const MASTER_TEMPLATE_VARIATIONS: Record<string, string[]> = {
 };
 
 // WhatsApp Master Templates Definitions
+// kedy_randevu_onay removed — confirmation now handled inline via salon's
+// existing booking-flow inbound conversation thread.
 const KEDY_MASTER_TEMPLATES = [
-  // ── Appointment confirmation ──
-  // Variables in body (union of tiers): customer_name, customer_surname,
-  // customer_honorific, appointment_date, appointment_time, service_name,
-  // location_url. Meta requires example for each {{var}} actually in the
-  // submitted body — sync logic builds examples dynamically per pick.
-  {
-    name: 'kedy_randevu_onay',
-    category: 'UTILITY',
-    parameter_format: 'NAMED',
-    eventType: 'CONFIRMATION',
-    components: [
-      {
-        type: 'BODY',
-        text: MASTER_TEMPLATE_VARIATIONS.kedy_randevu_onay[0],
-        example: {
-          body_text_named_params: [
-            { param_name: 'customer_name', example: 'Ayşe' },
-            { param_name: 'customer_surname', example: 'Yılmaz' },
-            { param_name: 'customer_honorific', example: 'Hanım' },
-            { param_name: 'appointment_date', example: '14 Nisan' },
-            { param_name: 'appointment_time', example: '15:30' },
-            { param_name: 'service_name', example: 'Saç Kesimi' },
-            { param_name: 'location_url', example: 'https://maps.google.com/?q=Salon' }
-          ]
-        }
-      },
-      {
-        type: 'BUTTONS',
-        buttons: [
-          { type: 'QUICK_REPLY', text: 'Onaylıyorum ✅', payload: 'CONFIRM_APPOINTMENT' },
-          { type: 'QUICK_REPLY', text: 'İptal Et ❌', payload: 'CANCEL_APPOINTMENT' }
-        ]
-      }
-    ]
-  },
   // ── Reminder: 1 day before ──
   {
     name: 'kedy_randevu_hatirlatma_1_gun',

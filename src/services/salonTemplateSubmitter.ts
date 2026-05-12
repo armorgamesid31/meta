@@ -79,16 +79,9 @@ const PARAM_EXAMPLES: Record<string, string> = {
 // characters (math symbol + Latin letter), not emojis or formatting markup,
 // and their meaning matches the button action.
 const TEMPLATES: TemplateMeta[] = [
-  {
-    logicalKey: 'kedy_randevu_onay',
-    eventType: 'CONFIRMATION',
-    paramNames: ['customer_name', 'customer_surname', 'customer_honorific', 'appointment_date', 'appointment_time', 'service_name'],
-    paramExamples: PARAM_EXAMPLES,
-    buttons: [
-      { type: 'QUICK_REPLY', text: 'Onaylıyorum √' },
-      { type: 'QUICK_REPLY', text: 'İptal Et X' },
-    ],
-  },
+  // kedy_randevu_onay removed — appointment confirmation no longer sent
+  // as a separate outbound template (salon's booking confirmation flow
+  // already covers this in the customer's inbound conversation thread).
   {
     logicalKey: 'kedy_randevu_hatirlatma_1_gun',
     eventType: 'REMINDER_1_DAY',
@@ -116,8 +109,9 @@ const TEMPLATES: TemplateMeta[] = [
     paramNames: ['customer_name', 'customer_surname', 'customer_honorific', 'appointment_time', 'service_name'],
     paramExamples: PARAM_EXAMPLES,
     buttons: [
-      // {{1}} = salon-specific Google Maps URL injected at send time.
-      { type: 'URL', text: 'Yol Tarifi »', url: 'https://maps.google.com/?q={{1}}', example: ['Bella+Studio+Istanbul'] },
+      // {{1}} = salon slug. Backend /r/maps/:slug 302-redirects to the
+      // salon's configured googleMapsUrl (or a search fallback).
+      { type: 'URL', text: 'Yol Tarifi »', url: 'https://app.berkai.shop/r/maps/{{1}}', example: ['bella-studio'] },
     ],
   },
   {
@@ -126,8 +120,9 @@ const TEMPLATES: TemplateMeta[] = [
     paramNames: ['customer_name', 'customer_surname', 'customer_honorific', 'appointment_date', 'appointment_time', 'service_name', 'late_policy_hours'],
     paramExamples: PARAM_EXAMPLES,
     buttons: [
-      // {{1}} = salon slug injected at send time → /:slug/booking.
-      { type: 'URL', text: 'Yeni Randevu Al', url: 'https://app.berkai.shop/{{1}}/booking', example: ['bella-studio'] },
+      // {{1}} = salon slug; backend /r/booking/:slug redirects to the
+      // salon's public booking page.
+      { type: 'URL', text: 'Yeni Randevu Al', url: 'https://app.berkai.shop/r/booking/{{1}}', example: ['bella-studio'] },
     ],
   },
   {
@@ -154,8 +149,9 @@ const TEMPLATES: TemplateMeta[] = [
     paramNames: ['customer_name', 'customer_surname', 'customer_honorific', 'salon_name'],
     paramExamples: PARAM_EXAMPLES,
     buttons: [
-      // {{1}} = salon.googleMapsUrl path injected at send time.
-      { type: 'URL', text: "Google'da Yorum Yap", url: 'https://www.google.com/maps/place/{{1}}', example: ['Bella+Studio'] },
+      // Same /r/maps/:slug redirect — sends the customer to the salon's
+      // Google Maps page where they can leave a review.
+      { type: 'URL', text: "Google'da Yorum Yap", url: 'https://app.berkai.shop/r/maps/{{1}}', example: ['bella-studio'] },
     ],
   },
   {
@@ -164,7 +160,7 @@ const TEMPLATES: TemplateMeta[] = [
     paramNames: ['customer_name', 'customer_surname', 'customer_honorific', 'discount_amount', 'validity_period'],
     paramExamples: PARAM_EXAMPLES,
     buttons: [
-      { type: 'URL', text: 'Randevu Al', url: 'https://app.berkai.shop/{{1}}/booking', example: ['bella-studio'] },
+      { type: 'URL', text: 'Randevu Al', url: 'https://app.berkai.shop/r/booking/{{1}}', example: ['bella-studio'] },
     ],
   },
   {
@@ -173,7 +169,7 @@ const TEMPLATES: TemplateMeta[] = [
     paramNames: ['customer_name', 'customer_surname', 'customer_honorific', 'discount_amount', 'validity_period'],
     paramExamples: PARAM_EXAMPLES,
     buttons: [
-      { type: 'URL', text: 'Randevu Al', url: 'https://app.berkai.shop/{{1}}/booking', example: ['bella-studio'] },
+      { type: 'URL', text: 'Randevu Al', url: 'https://app.berkai.shop/r/booking/{{1}}', example: ['bella-studio'] },
     ],
   },
 ];

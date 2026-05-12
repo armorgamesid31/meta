@@ -11,7 +11,6 @@ import { Router } from 'express';
 import { BusinessError } from '../lib/errors.js';
 import { requireInternalApiKey } from '../middleware/internal.js';
 import {
-  sendAppointmentConfirmation,
   sendReminder1Day,
   sendReminder3Day,
   sendReminder2Hour,
@@ -45,14 +44,8 @@ function respond(result: NotificationResult, res: any) {
 // Appointment-bound sends
 // ─────────────────────────────────────────────────────────────────
 
-router.post('/appointment-confirmation', async (req: any, res: any) => {
-  const input = {
-    salonId: asInt(req.body?.salonId, 'salonId'),
-    customerId: asInt(req.body?.customerId, 'customerId'),
-    appointmentId: asInt(req.body?.appointmentId, 'appointmentId'),
-  };
-  return respond(await sendAppointmentConfirmation(input), res);
-});
+// /appointment-confirmation removed — kedy_randevu_onay template
+// retired. n8n workflow should drop calls to this endpoint.
 
 router.post('/reminder-1-day', async (req: any, res: any) => {
   const input = {

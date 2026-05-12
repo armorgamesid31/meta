@@ -33,61 +33,10 @@ export interface TieredVariations {
   PROFESSIONAL: TonePool;
 }
 
-// ─────────────────────────────────────────────────────────────────
-// kedy_randevu_onay — UTILITY appointment confirmation
-// vars: {{customer_name}}, {{customer_surname}}, {{customer_honorific}},
-//       {{appointment_date}}, {{appointment_time}}, {{service_name}}, {{location_url}}
-// ─────────────────────────────────────────────────────────────────
-const KEDY_RANDEVU_ONAY: TieredVariations = {
-  FRIENDLY: {
-    primary: [
-      "Merhaba {{customer_name}}! {{appointment_date}} {{appointment_time}} için {{service_name}} randevun hazır ✨",
-      "Randevun tamam {{customer_name}}! 💫 {{service_name}} için {{appointment_date}} {{appointment_time}} görüşüyoruz",
-      "Kayıt tamam {{customer_name}} 🙌 {{service_name}} | {{appointment_date}} {{appointment_time}}.",
-    ],
-    reserve: [
-      "Harika {{customer_name}}! 🎉 {{appointment_date}} saat {{appointment_time}} randevun onaylandı.",
-      "Selam {{customer_name}}! {{service_name}} randevun kesinleşti 🗓️ {{appointment_date}} {{appointment_time}} »",
-      "Hey {{customer_name}}, süper haber 🌟 {{appointment_date}} {{appointment_time}} için seni bekliyoruz.",
-      "Hey {{customer_name}}, randevun onaylandı 🎉 {{appointment_date}} {{appointment_time}} için hazırız.",
-      "Hey {{customer_name}}! 🌸 {{service_name}} randevun {{appointment_date}} {{appointment_time}} olarak kayıtta",
-      "Her şey hazır {{customer_name}}! ✨ {{appointment_date}} {{appointment_time}} randevunda seni bekliyoruz",
-      "Hey {{customer_name}}, randevu onayını iletiyoruz 💛 {{appointment_date}} {{appointment_time}} için görüşürüz",
-    ],
-  },
-  BALANCED: {
-    primary: [
-      "Merhaba {{customer_name}} {{customer_honorific}}, {{appointment_date}} {{appointment_time}} tarihli {{service_name}} randevunuz onaylandı 🙌",
-      "Merhaba {{customer_name}} {{customer_honorific}}, {{service_name}} randevunuz {{appointment_date}} {{appointment_time}} için oluşturuldu ✨",
-      "Merhaba {{customer_name}} {{customer_honorific}}, {{service_name}} hizmetiniz {{appointment_date}} {{appointment_time}} tarihinde 💫",
-    ],
-    reserve: [
-      "Selamlar {{customer_name}} {{customer_honorific}}, randevunuz {{appointment_date}} {{appointment_time}} olarak planlandı 🌟",
-      "Merhaba {{customer_name}} {{customer_honorific}}, {{appointment_date}} saat {{appointment_time}} rezervasyonunuz başarıyla tamamlandı 🌸",
-      "Merhaba {{customer_name}} {{customer_honorific}}, randevu kaydınız alındı 🙌 Tarih-saat: {{appointment_date}} {{appointment_time}}.",
-      "Merhaba {{customer_name}} {{customer_honorific}}, {{appointment_date}} {{appointment_time}} randevunuz aktif ✨",
-      "Merhaba {{customer_name}} {{customer_honorific}}, planladığımız randevu detayları: {{service_name}} / {{appointment_date}} {{appointment_time}} 🌟",
-      "Selamlar {{customer_name}} {{customer_honorific}}, rezervasyonunuz kesinleşti 🌸 Görüşme zamanı: {{appointment_date}} {{appointment_time}} »",
-      "Merhaba {{customer_name}} {{customer_honorific}}, randevu durumunuz onaylı 💛",
-    ],
-  },
-  PROFESSIONAL: {
-    primary: [
-      "Sayın {{customer_name}} {{customer_surname}}, {{appointment_date}} {{appointment_time}} tarihli {{service_name}} randevunuz onaylanmıştır.",
-      "Sayın {{customer_name}} {{customer_surname}}, {{appointment_date}} {{appointment_time}} için randevu planlamanız tamamlanmıştır.",
-      "Sayın {{customer_name}} {{customer_surname}}, {{service_name}} randevunuz aktif durumdadır",
-    ],
-    reserve: [
-      "Sayın {{customer_name}} {{customer_surname}}, rezervasyon işleminiz tamamlanmıştır. Randevu: {{appointment_date}} {{appointment_time}}.",
-      "Sayın {{customer_name}} {{customer_surname}}, {{service_name}} randevunuz sistemimizde onaylıdır.",
-      "Sayın {{customer_name}} {{customer_surname}}, randevu kaydınız başarıyla oluşturulmuştur. Tarih-saat: {{appointment_date}} {{appointment_time}}.",
-      "Sayın {{customer_name}} {{customer_surname}}, hizmet randevunuz aşağıdaki tarihte gerçekleştirilecektir: {{appointment_date}} {{appointment_time}}.",
-      "Sayın {{customer_name}} {{customer_surname}}, rezervasyon teyidiniz alınmıştır.",
-      "Sayın {{customer_name}} {{customer_surname}}, randevu kaydınız onaylanmıştır. Saat: {{appointment_time}}, Tarih: {{appointment_date}}.",
-      "Sayın {{customer_name}} {{customer_surname}}, randevu süreciniz başarıyla tamamlanmış olup detaylar bu mesajda paylaşılmıştır.",
-    ],
-  },
-};
+// kedy_randevu_onay (appointment confirmation) removed per business
+// decision — the salon's existing booking flow already shows the
+// confirmation in the customer's WhatsApp inbound thread; a separate
+// outbound template was redundant.
 
 // ─────────────────────────────────────────────────────────────────
 // kedy_randevu_hatirlatma_1_gun — UTILITY 1 day reminder
@@ -580,7 +529,6 @@ const KEDY_GERI_DONUS: TieredVariations = {
 // Registry
 // ─────────────────────────────────────────────────────────────────
 export const TIERED_TEMPLATE_VARIATIONS: Record<string, TieredVariations> = {
-  kedy_randevu_onay: KEDY_RANDEVU_ONAY,
   kedy_randevu_hatirlatma_1_gun: KEDY_RANDEVU_HATIRLATMA_1_GUN,
   kedy_randevu_hatirlatma_3_gun: KEDY_RANDEVU_HATIRLATMA_3_GUN,
   kedy_randevu_hatirlatma_2_saat: KEDY_RANDEVU_HATIRLATMA_2_SAAT,
@@ -595,7 +543,6 @@ export const TIERED_TEMPLATE_VARIATIONS: Record<string, TieredVariations> = {
 // Logical-key → category mapping for category-bump watchdog.
 // kedy_dogum_gunu_kutlamasi & kedy_geri_donus go up as MARKETING; rest as UTILITY.
 export const TEMPLATE_EXPECTED_CATEGORY: Record<string, 'UTILITY' | 'MARKETING'> = {
-  kedy_randevu_onay: 'UTILITY',
   kedy_randevu_hatirlatma_1_gun: 'UTILITY',
   kedy_randevu_hatirlatma_3_gun: 'UTILITY',
   kedy_randevu_hatirlatma_2_saat: 'UTILITY',

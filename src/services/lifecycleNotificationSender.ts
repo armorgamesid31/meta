@@ -20,7 +20,7 @@ import { pickTemplateForSend } from './salonTemplateSubmitter.js';
 import { createFeedbackMagicLink } from './feedbackService.js';
 
 export type NotificationKind =
-  | 'CONFIRMATION'
+  // CONFIRMATION retired with kedy_randevu_onay
   | 'REMINDER_1_DAY'
   | 'REMINDER_3_DAY'
   | 'REMINDER_2_HOUR'
@@ -80,6 +80,36 @@ interface AppointmentInput {
   appointmentId: number;
 }
 
+// Resolve the salon slug that fills the {{1}} placeholder in URL buttons
+// (e.g. https://app.berkai.shop/r/booking/{{1}} → r/booking/bella-studio).
+async function resolveSalonSlug(salonId: number): Promise<string | null> {
+  const salon = await prisma.salon.findUnique({
+    where: { id: salonId },
+    select: { slug: true },
+  });
+  return salon?.slug?.trim().toLowerCase() || null;
+}
+
+// Logical-key → buttonParams resolver. Returns the buttonParams array to
+// pass to sendTemplate, populating the {{1}} URL placeholder per template.
+async function buildButtonParamsForLogicalKey(
+  salonId: number,
+  logicalKey: string,
+): Promise<Array<{ type: 'url' | 'quick_reply'; value: string }> | undefined> {
+  const slugButtons = new Set([
+    'kedy_randevu_hatirlatma_2_saat', // Yol Tarifi → /r/maps/:slug
+    'kedy_no_show_hatirlatma',         // Yeni Randevu Al → /r/booking/:slug
+    'kedy_dogum_gunu_kutlamasi',       // Randevu Al → /r/booking/:slug
+    'kedy_geri_donus',                 // Randevu Al → /r/booking/:slug
+    'kedy_google_maps_yorum',          // Google'da Yorum Yap → /r/maps/:slug
+  ]);
+  if (!slugButtons.has(logicalKey)) return undefined;
+
+  const slug = await resolveSalonSlug(salonId);
+  if (!slug) return undefined;
+  return [{ type: 'url', value: slug }];
+}
+
 async function sendAppointmentBound(
   kind: NotificationKind,
   logicalKey: string,
@@ -107,12 +137,16 @@ async function sendAppointmentBound(
   const templateName = await pickTemplateForSend({ salonId: input.salonId, logicalKey });
   if (!templateName) return { ok: false, reason: 'no_approved_template_variation' };
 
+  // If caller passed explicit buttons, use them; otherwise derive from the
+  // logical key (slug-based URL button injection for the standard set).
+  const buttonParams = options.buttons ?? (await buildButtonParamsForLogicalKey(input.salonId, logicalKey));
+
   const result = await sendTemplate({
     salonId: input.salonId,
     templateName,
     recipientPhone: ctx.recipientPhone,
     bodyParams: ctx.params,
-    buttonParams: options.buttons,
+    buttonParams,
   });
 
   if (result.ok) {
@@ -121,9 +155,8 @@ async function sendAppointmentBound(
   return result;
 }
 
-export function sendAppointmentConfirmation(input: AppointmentInput) {
-  return sendAppointmentBound('CONFIRMATION', 'kedy_randevu_onay', input, { dedupHours: 48 });
-}
+// sendAppointmentConfirmation removed — kedy_randevu_onay template is no
+// longer part of the salon pipeline.
 
 export function sendReminder1Day(input: AppointmentInput) {
   return sendAppointmentBound('REMINDER_1_DAY', 'kedy_randevu_hatirlatma_1_gun', input);
@@ -203,23 +236,19 @@ export async function sendGoogleMapsReview(input: {
   if (!ctx.salonWabaReady) return { ok: false, reason: 'salon_waba_not_connected' };
   if (!ctx.recipientPhone) return { ok: false, reason: 'recipient_phone_missing' };
 
-  const salonWithMaps = await prisma.salon.findUnique({
-    where: { id: input.salonId },
-    select: { googleMapsUrl: true },
-  });
-  if (!salonWithMaps?.googleMapsUrl) {
-    return { ok: false, reason: 'salon_google_maps_url_missing' };
-  }
-
+  // Button now uses the slug-based /r/maps/:slug short link; the redirect
+  // route resolves the real googleMapsUrl on click.
   const templateName = await pickTemplateForSend({ salonId: input.salonId, logicalKey: 'kedy_google_maps_yorum' });
   if (!templateName) return { ok: false, reason: 'no_approved_template_variation' };
+
+  const buttonParams = await buildButtonParamsForLogicalKey(input.salonId, 'kedy_google_maps_yorum');
 
   const result = await sendTemplate({
     salonId: input.salonId,
     templateName,
     recipientPhone: ctx.recipientPhone,
     bodyParams: ctx.params,
-    buttonParams: [{ type: 'url', value: salonWithMaps.googleMapsUrl }],
+    buttonParams,
   });
 
   if (result.ok) {
@@ -265,11 +294,14 @@ export async function sendBirthday(input: {
   const templateName = await pickTemplateForSend({ salonId: input.salonId, logicalKey: 'kedy_dogum_gunu_kutlamasi' });
   if (!templateName) return { ok: false, reason: 'no_approved_template_variation' };
 
+  const buttonParams = await buildButtonParamsForLogicalKey(input.salonId, 'kedy_dogum_gunu_kutlamasi');
+
   const result = await sendTemplate({
     salonId: input.salonId,
     templateName,
     recipientPhone: ctx.recipientPhone,
     bodyParams: ctx.params,
+    buttonParams,
   });
 
   if (result.ok) await logSent(kind, input.customerId, null);
@@ -309,11 +341,14 @@ export async function sendWinback(input: {
   const templateName = await pickTemplateForSend({ salonId: input.salonId, logicalKey: 'kedy_geri_donus' });
   if (!templateName) return { ok: false, reason: 'no_approved_template_variation' };
 
+  const buttonParams = await buildButtonParamsForLogicalKey(input.salonId, 'kedy_geri_donus');
+
   const result = await sendTemplate({
     salonId: input.salonId,
     templateName,
     recipientPhone: ctx.recipientPhone,
     bodyParams: ctx.params,
+    buttonParams,
   });
 
   if (result.ok) await logSent(kind, input.customerId, null);

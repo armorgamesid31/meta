@@ -14,13 +14,7 @@ export interface OperationalTemplate {
 
 export const OPERATIONAL_TEMPLATES: OperationalTemplate[] = [
   // Müşteri mesajları
-  {
-    logicalKey: 'kedy_randevu_onay',
-    displayName: 'Randevu Onayı',
-    category: 'musteri',
-    description: 'Yeni randevu oluşturulduğunda otomatik gönderilir',
-    expectedCategory: 'UTILITY',
-  },
+  // kedy_randevu_onay removed — see templateVariations.ts comment.
   {
     logicalKey: 'kedy_randevu_hatirlatma_1_gun',
     displayName: '1 Gün Önce Hatırlatma',
