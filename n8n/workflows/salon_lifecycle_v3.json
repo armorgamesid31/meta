@@ -174,7 +174,13 @@
         "jsonBody": "={\n  \"salonId\": {{ $json.salonId }},\n  \"customerId\": {{ $json.customerId }},\n  \"appointmentId\": {{ $json.appointmentId }}\n}",
         "options": {
           "timeout": 30000,
-          "redirect": { "redirect": {} }
+          "redirect": { "redirect": {} },
+          "batching": {
+            "batch": {
+              "batchSize": 20,
+              "batchInterval": 200
+            }
+          }
         }
       },
       "id": "send_reminder_1d",
@@ -203,7 +209,15 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={\n  \"salonId\": {{ $json.salonId }},\n  \"customerId\": {{ $json.customerId }},\n  \"appointmentId\": {{ $json.appointmentId }}\n}",
-        "options": { "timeout": 30000 }
+        "options": {
+          "timeout": 30000,
+          "batching": {
+            "batch": {
+              "batchSize": 20,
+              "batchInterval": 200
+            }
+          }
+        }
       },
       "id": "send_reminder_3d",
       "name": "Send: reminder 3-day",
@@ -231,7 +245,15 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={\n  \"salonId\": {{ $json.salonId }},\n  \"customerId\": {{ $json.customerId }},\n  \"appointmentId\": {{ $json.appointmentId }}\n}",
-        "options": { "timeout": 30000 }
+        "options": {
+          "timeout": 30000,
+          "batching": {
+            "batch": {
+              "batchSize": 20,
+              "batchInterval": 200
+            }
+          }
+        }
       },
       "id": "send_reminder_2h",
       "name": "Send: reminder 2-hour",
@@ -259,7 +281,15 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={\n  \"salonId\": {{ $json.salonId }},\n  \"customerId\": {{ $json.customerId }},\n  \"appointmentId\": {{ $json.appointmentId }}\n}",
-        "options": { "timeout": 30000 }
+        "options": {
+          "timeout": 30000,
+          "batching": {
+            "batch": {
+              "batchSize": 20,
+              "batchInterval": 200
+            }
+          }
+        }
       },
       "id": "send_no_show",
       "name": "Send: no-show",
@@ -287,7 +317,15 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={\n  \"salonId\": {{ $json.salonId }},\n  \"customerId\": {{ $json.customerId }},\n  \"appointmentId\": {{ $json.appointmentId }}\n}",
-        "options": { "timeout": 30000 }
+        "options": {
+          "timeout": 30000,
+          "batching": {
+            "batch": {
+              "batchSize": 20,
+              "batchInterval": 200
+            }
+          }
+        }
       },
       "id": "send_survey",
       "name": "Send: satisfaction survey",
@@ -315,7 +353,15 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={\n  \"salonId\": {{ $json.salonId }},\n  \"customerId\": {{ $json.customerId }}\n}",
-        "options": { "timeout": 30000 }
+        "options": {
+          "timeout": 30000,
+          "batching": {
+            "batch": {
+              "batchSize": 20,
+              "batchInterval": 200
+            }
+          }
+        }
       },
       "id": "send_google_maps",
       "name": "Send: Google Maps review",
@@ -343,7 +389,15 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={\n  \"salonId\": {{ $json.salonId }},\n  \"customerId\": {{ $json.customerId }}\n}",
-        "options": { "timeout": 30000 }
+        "options": {
+          "timeout": 30000,
+          "batching": {
+            "batch": {
+              "batchSize": 20,
+              "batchInterval": 200
+            }
+          }
+        }
       },
       "id": "send_birthday",
       "name": "Send: birthday",
@@ -371,7 +425,15 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={\n  \"salonId\": {{ $json.salonId }},\n  \"customerId\": {{ $json.customerId }}\n}",
-        "options": { "timeout": 30000 }
+        "options": {
+          "timeout": 30000,
+          "batching": {
+            "batch": {
+              "batchSize": 20,
+              "batchInterval": 200
+            }
+          }
+        }
       },
       "id": "send_winback",
       "name": "Send: winback",
