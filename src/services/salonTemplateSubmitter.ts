@@ -71,15 +71,20 @@ const PARAM_EXAMPLES: Record<string, string> = {
   validity_period: '7 gün',
 };
 
+// Meta WhatsApp template button rules (enforced 2026):
+//   - No emojis, no newlines, no formatting characters in button text
+//   - Variables (placeholders) only allowed in URL button paths, never in text
+// So we use plain ASCII chevrons (› ‹) via the Alt+Gr keyboard layer as
+// subtle directional cues without tripping Meta's emoji filter.
 const TEMPLATES: TemplateMeta[] = [
   {
     logicalKey: 'kedy_randevu_onay',
     eventType: 'CONFIRMATION',
-    paramNames: ['customer_name', 'customer_surname', 'customer_honorific', 'appointment_date', 'appointment_time', 'service_name', 'location_url'],
+    paramNames: ['customer_name', 'customer_surname', 'customer_honorific', 'appointment_date', 'appointment_time', 'service_name'],
     paramExamples: PARAM_EXAMPLES,
     buttons: [
-      { type: 'QUICK_REPLY', text: 'Onaylıyorum ✅' },
-      { type: 'QUICK_REPLY', text: 'İptal Et ❌' },
+      { type: 'QUICK_REPLY', text: 'Onaylıyorum' },
+      { type: 'QUICK_REPLY', text: 'İptal Et' },
     ],
   },
   {
@@ -88,8 +93,8 @@ const TEMPLATES: TemplateMeta[] = [
     paramNames: ['customer_name', 'customer_surname', 'customer_honorific', 'appointment_date', 'appointment_time', 'service_name'],
     paramExamples: PARAM_EXAMPLES,
     buttons: [
-      { type: 'QUICK_REPLY', text: 'Geliyorum 👍' },
-      { type: 'QUICK_REPLY', text: 'Gelemiyorum 👎' },
+      { type: 'QUICK_REPLY', text: 'Geliyorum' },
+      { type: 'QUICK_REPLY', text: 'Gelemiyorum' },
     ],
   },
   {
@@ -101,7 +106,7 @@ const TEMPLATES: TemplateMeta[] = [
   {
     logicalKey: 'kedy_randevu_hatirlatma_2_saat',
     eventType: 'REMINDER_2_HOUR',
-    paramNames: ['customer_name', 'customer_surname', 'customer_honorific', 'appointment_time', 'service_name', 'location_url'],
+    paramNames: ['customer_name', 'customer_surname', 'customer_honorific', 'appointment_time', 'service_name'],
     paramExamples: PARAM_EXAMPLES,
     buttons: [
       { type: 'URL', text: 'Yol Tarifi', url: 'https://maps.google.com/?q=Salon' },
