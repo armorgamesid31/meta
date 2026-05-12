@@ -33,7 +33,12 @@ import {
 } from './templateVariations.js';
 import { OPERATIONAL_TEMPLATES } from './templateOperationalNames.js';
 
-const CHAKRA_API_BASE = (process.env.CHAKRA_WHATSAPP_SEND_URL || '').replace(/\/$/, '') || 'https://chakra.berkai.shop';
+// Same base URL chakra.ts uses for plugin and template management.
+// CHAKRA_WHATSAPP_SEND_URL is a SEND endpoint and does not host /plugin/:id
+// or /v1/ext/plugin/whatsapp/...; using it here caused "self-signed certificate"
+// errors because requests were going to the wrong host (chakra.berkai.shop
+// fallback) instead of api.chakrahq.com.
+const CHAKRA_API_BASE = 'https://api.chakrahq.com';
 const CHAKRA_API_TOKEN = process.env.CHAKRA_API_TOKEN || '';
 const SUBMIT_INTERVAL_SEC = 30;
 const WAVE_GAP_SEC = 300;
