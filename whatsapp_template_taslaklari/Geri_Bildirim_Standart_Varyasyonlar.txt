@@ -1,48 +1,61 @@
-# Standart Geri Bildirim Şablon Varyasyonları (30 Adet)
+# Standart Geri Bildirim Şablon Varyasyonları (30 Adet — 15 Seçilen, 15 Yedek)
 # Tetik: Her tamamlanan randevu sonrası (Google Maps tetikleri hariç)
 # Davranış: Magic link → /feedback/{token}, tek kullanımlık, süre sınırsız
 # Form: 2 soru × 5 yıldız (hizmet memnuniyeti + salon memnuniyeti)
 #
 # Değişkenler: {{customer_name}}, {{customer_surname}}, {{customer_honorific}}, {{service_name}}
 # Buton: [Değerlendir -> https://app.berkai.shop/feedback/{{magic_token}}]
-#
-# Ton hiyerarşisi:
-#   FRIENDLY     — emoji + {{customer_name}}
-#   BALANCED     — emoji + {{customer_name}} {{customer_honorific}}
-#   PROFESSIONAL — emojisiz + Sayın {{customer_name}} {{customer_surname}}
 
-# --- FRIENDLY (10) ---
+# ═══════════════════════════════════════════════════════════════════
+# FRIENDLY
+# ═══════════════════════════════════════════════════════════════════
+
+## SEÇİLEN (Production) — 5 adet
 1. Merhaba {{customer_name}}! {{service_name}} deneyimin nasıldı? ⭐ 30 saniyede değerlendir.
 2. {{customer_name}}, bugün seni ağırlamak çok güzeldi 💛 Kısa bir puan bırakır mısın?
 3. Selam {{customer_name}}! Görüşüne ihtiyacımız var 🌟 İki sorulu mini değerlendirme.
-4. {{customer_name}}, son randevun nasıldı? 🌸 Tek dokunuşla puanlayabilirsin.
-5. Bize puan ver {{customer_name}} ⭐ Yorumun ekibimize yol gösteriyor.
-6. {{customer_name}}, memnuniyetini ölçmek için iki soru ✨ Cevapların 1 dakikadan az sürer.
-7. Hey {{customer_name}}! {{service_name}} sonrası geri bildirimini bekliyoruz 💫
-8. {{customer_name}}, daha iyi olmak için yorumuna ihtiyacımız var 🙏
-9. Mini değerlendirme {{customer_name}}? 🌟 Linke dokunup yıldızlarını ver.
+4. Hey {{customer_name}}! {{service_name}} sonrası geri bildirimini bekliyoruz 💫
+5. Mini değerlendirme {{customer_name}}? 🌟 Linke dokunup yıldızlarını ver.
+
+## YEDEK (Henüz onaya gitmiyor) — 5 adet
+6. {{customer_name}}, son randevun nasıldı? 🌸 Tek dokunuşla puanlayabilirsin.
+7. Bize puan ver {{customer_name}} ⭐ Yorumun ekibimize yol gösteriyor.
+8. {{customer_name}}, memnuniyetini ölçmek için iki soru ✨ Cevapların 1 dakikadan az sürer.
+9. {{customer_name}}, daha iyi olmak için yorumuna ihtiyacımız var 🙏
 10. Teşekkürler {{customer_name}}! 💛 Deneyiminizi paylaşır mısınız?
 
-# --- BALANCED (10) | {{customer_name}} {{customer_honorific}} + emoji ---
-11. Merhaba {{customer_name}} {{customer_honorific}}, aldığınız {{service_name}} hizmetini değerlendirmenizi rica ederiz ⭐
-12. {{customer_name}} {{customer_honorific}}, kısa memnuniyet anketimize katılabilir misiniz? 🌟
-13. Merhaba {{customer_name}} {{customer_honorific}}, hizmet kalitemizi artırmak için değerlendirmenize ihtiyaç duyuyoruz 🙏
-14. {{customer_name}} {{customer_honorific}}, yorumlarınız süreçlerimizi geliştirmemize katkı sağlar 💛
-15. Selamlar {{customer_name}} {{customer_honorific}}, deneyiminizi iki kısa soruyla puanlayabilirsiniz ✨
-16. {{customer_name}} {{customer_honorific}}, hizmet sonu geri bildiriminiz bizim için kıymetli 🌸
-17. Merhaba {{customer_name}} {{customer_honorific}}, {{service_name}} süreciniz hakkında görüş paylaşabilir misiniz? 🌟
-18. {{customer_name}} {{customer_honorific}}, kısa anketi tamamlamanız yeterli — 30 saniye sürmez ⏱️
-19. Selamlar {{customer_name}} {{customer_honorific}}, geri bildirimleriniz ekibimiz tarafından titizlikle incelenir 🙏
-20. {{customer_name}} {{customer_honorific}}, memnuniyet puanınızı iletmenizi rica ederiz 💫
+# ═══════════════════════════════════════════════════════════════════
+# BALANCED — {{customer_name}} {{customer_honorific}} + emoji
+# ═══════════════════════════════════════════════════════════════════
 
-# --- PROFESSIONAL (10) | Sayın {{customer_name}} {{customer_surname}} + emojisiz ---
-21. Sayın {{customer_name}} {{customer_surname}}, hizmet kalitesi değerlendirme sürecine katkınızı rica ederiz.
-22. Sayın {{customer_name}} {{customer_surname}}, {{service_name}} sonrası memnuniyet geri bildiriminizi bekliyoruz.
-23. Sayın {{customer_name}} {{customer_surname}}, geri bildiriminiz kalite standartlarımızın iyileştirilmesinde kullanılacaktır.
-24. Sayın {{customer_name}} {{customer_surname}}, kısa değerlendirme formunu tamamlamanızı rica ederiz.
-25. Sayın {{customer_name}} {{customer_surname}}, müşteri deneyim puanlaması iyileştirme süreçlerimiz için önem taşımaktadır.
-26. Sayın {{customer_name}} {{customer_surname}}, görüşleriniz hizmet denetim süreçlerimize dahil edilmektedir.
-27. Sayın {{customer_name}} {{customer_surname}}, tarafınıza iletilen bağlantı üzerinden puanlama yapabilirsiniz.
-28. Sayın {{customer_name}} {{customer_surname}}, memnuniyet süreci kapsamında değerlendirme paylaşmanızı bekliyoruz.
-29. Sayın {{customer_name}} {{customer_surname}}, zaman ayırdığınız için teşekkür ederiz.
-30. Sayın {{customer_name}} {{customer_surname}}, geri bildiriminiz sistem kayıtlarına işlenecektir.
+## SEÇİLEN (Production) — 5 adet
+1. Merhaba {{customer_name}} {{customer_honorific}}, aldığınız {{service_name}} hizmetini değerlendirmenizi rica ederiz ⭐
+2. {{customer_name}} {{customer_honorific}}, kısa memnuniyet anketimize katılabilir misiniz? 🌟
+3. Selamlar {{customer_name}} {{customer_honorific}}, deneyiminizi iki kısa soruyla puanlayabilirsiniz ✨
+4. {{customer_name}} {{customer_honorific}}, hizmet sonu geri bildiriminiz bizim için kıymetli 🌸
+5. {{customer_name}} {{customer_honorific}}, kısa anketi tamamlamanız yeterli — 30 saniye sürmez ⏱️
+
+## YEDEK (Henüz onaya gitmiyor) — 5 adet
+6. Merhaba {{customer_name}} {{customer_honorific}}, hizmet kalitemizi artırmak için değerlendirmenize ihtiyaç duyuyoruz 🙏
+7. {{customer_name}} {{customer_honorific}}, yorumlarınız süreçlerimizi geliştirmemize katkı sağlar 💛
+8. Merhaba {{customer_name}} {{customer_honorific}}, {{service_name}} süreciniz hakkında görüş paylaşabilir misiniz? 🌟
+9. Selamlar {{customer_name}} {{customer_honorific}}, geri bildirimleriniz ekibimiz tarafından titizlikle incelenir 🙏
+10. {{customer_name}} {{customer_honorific}}, memnuniyet puanınızı iletmenizi rica ederiz 💫
+
+# ═══════════════════════════════════════════════════════════════════
+# PROFESSIONAL — Sayın {{customer_name}} {{customer_surname}} + emojisiz
+# ═══════════════════════════════════════════════════════════════════
+
+## SEÇİLEN (Production) — 5 adet
+1. Sayın {{customer_name}} {{customer_surname}}, hizmet kalitesi değerlendirme sürecine katkınızı rica ederiz.
+2. Sayın {{customer_name}} {{customer_surname}}, {{service_name}} sonrası memnuniyet geri bildiriminizi bekliyoruz.
+3. Sayın {{customer_name}} {{customer_surname}}, kısa değerlendirme formunu tamamlamanızı rica ederiz.
+4. Sayın {{customer_name}} {{customer_surname}}, tarafınıza iletilen bağlantı üzerinden puanlama yapabilirsiniz.
+5. Sayın {{customer_name}} {{customer_surname}}, zaman ayırdığınız için teşekkür ederiz.
+
+## YEDEK (Henüz onaya gitmiyor) — 5 adet
+6. Sayın {{customer_name}} {{customer_surname}}, geri bildiriminiz kalite standartlarımızın iyileştirilmesinde kullanılacaktır.
+7. Sayın {{customer_name}} {{customer_surname}}, müşteri deneyim puanlaması iyileştirme süreçlerimiz için önem taşımaktadır.
+8. Sayın {{customer_name}} {{customer_surname}}, görüşleriniz hizmet denetim süreçlerimize dahil edilmektedir.
+9. Sayın {{customer_name}} {{customer_surname}}, memnuniyet süreci kapsamında değerlendirme paylaşmanızı bekliyoruz.
+10. Sayın {{customer_name}} {{customer_surname}}, geri bildiriminiz sistem kayıtlarına işlenecektir.

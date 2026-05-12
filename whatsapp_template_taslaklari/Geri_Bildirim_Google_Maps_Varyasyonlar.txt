@@ -1,48 +1,60 @@
-# Google Maps Yorum İsteği Şablon Varyasyonları (30 Adet)
+# Google Maps Yorum İsteği Şablon Varyasyonları (30 Adet — 15 Seçilen, 15 Yedek)
 # Tetik: Müşterinin TAMAMLANAN 3. randevusu (per-salon sayım)
 # Davranış: Her müşteriye salon başına SADECE BİR KEZ gönderilir.
-#           Customer.googleReviewRequestedAt set edilince bir daha gönderilmez.
 # Buton: Google Maps yorum URL'sine doğrudan yönlendirir (salon.googleMapsUrl)
 #
 # Değişkenler: {{customer_name}}, {{customer_surname}}, {{customer_honorific}}, {{salon_name}}
-#
-# Ton hiyerarşisi:
-#   FRIENDLY     — emoji + {{customer_name}}
-#   BALANCED     — emoji + {{customer_name}} {{customer_honorific}}
-#   PROFESSIONAL — emojisiz + Sayın {{customer_name}} {{customer_surname}}
 
-# --- FRIENDLY (10) ---
+# ═══════════════════════════════════════════════════════════════════
+# FRIENDLY
+# ═══════════════════════════════════════════════════════════════════
+
+## SEÇİLEN (Production) — 5 adet
 1. {{customer_name}}, 3. kez seni ağırladık 🥹 Google'da bir yorum bırakır mısın?
 2. Selam {{customer_name}}! Düzenli misafirimizsin artık 💛 Google'da deneyimini paylaşmaya ne dersin?
-3. {{customer_name}}, 3 randevudur seninle çalışmak güzel 🌟 Bir yorumun başkaları için yol gösterir.
-4. Hey {{customer_name}}! Üçüncü ziyaretinin şerefine 🥂 Google haritalar'da bir yorum çok kıymetli.
-5. {{customer_name}}, sadık misafirimiz 💫 Google'da 2 dakikalık bir yorum bizim için çok değerli.
-6. Merhaba {{customer_name}}! Üç kez tercih ettiğin için teşekkürler 🙏 Google'da bir cümle yazar mısın?
-7. {{customer_name}}, başkalarına seni nasıl ağırladığımızı anlatır mısın? ✨ Google harita yorumu çok yardımcı olur.
+3. Hey {{customer_name}}! Üçüncü ziyaretinin şerefine 🥂 Google haritalar'da bir yorum çok kıymetli.
+4. Merhaba {{customer_name}}! Üç kez tercih ettiğin için teşekkürler 🙏 Google'da bir cümle yazar mısın?
+5. {{customer_name}}, başkalarına seni nasıl ağırladığımızı anlatır mısın? ✨ Google harita yorumu çok yardımcı olur.
+
+## YEDEK (Henüz onaya gitmiyor) — 5 adet
+6. {{customer_name}}, 3 randevudur seninle çalışmak güzel 🌟 Bir yorumun başkaları için yol gösterir.
+7. {{customer_name}}, sadık misafirimiz 💫 Google'da 2 dakikalık bir yorum bizim için çok değerli.
 8. Selam {{customer_name}}! 3 randevu = sadık misafir 🎉 Google'da minik bir yorum?
 9. {{customer_name}}, deneyimini paylaşmak ister misin? 🌸 Google haritalar yeni misafirler için rehber.
 10. Hey {{customer_name}}! Üç ziyaretin için teşekkür ediyoruz 🌟 Google'da kısa bir yorum dilersen.
 
-# --- BALANCED (10) | {{customer_name}} {{customer_honorific}} + emoji ---
-11. Merhaba {{customer_name}} {{customer_honorific}}, {{salon_name}} olarak sizi üçüncü kez ağırlamaktan mutluyuz 🌸
-12. {{customer_name}} {{customer_honorific}}, düzenli müşterimiz olarak Google Maps yorumunuzu rica edebilir miyiz? ⭐
-13. Selamlar {{customer_name}} {{customer_honorific}}, deneyiminizi Google üzerinden paylaşmanız bizim için çok kıymetli 💛
-14. {{customer_name}} {{customer_honorific}}, üç randevu boyunca bizi tercih ettiğiniz için teşekkür ederiz 🙏
-15. Merhaba {{customer_name}} {{customer_honorific}}, Google Maps yorumlarınız işletmemizin görünürlüğüne katkı sağlar 🌟
-16. {{customer_name}} {{customer_honorific}}, kısa bir Google yorumunuz yeni müşterilerimize yol gösterir ✨
-17. Merhaba {{customer_name}} {{customer_honorific}}, düzenli müşterimiz olarak görüşlerinizi paylaşmanızı rica ederiz 🌸
-18. {{customer_name}} {{customer_honorific}}, Google Maps üzerinden bırakacağınız yorum bizim için değerli 💫
-19. Selamlar {{customer_name}} {{customer_honorific}}, üç randevudur sergilediğiniz güven için teşekkür ederiz 🤗
-20. {{customer_name}} {{customer_honorific}}, deneyiminizi Google'da paylaşmanız işletmemiz için anlamlı 🙌
+# ═══════════════════════════════════════════════════════════════════
+# BALANCED — {{customer_name}} {{customer_honorific}} + emoji
+# ═══════════════════════════════════════════════════════════════════
 
-# --- PROFESSIONAL (10) | Sayın {{customer_name}} {{customer_surname}} + emojisiz ---
-21. Sayın {{customer_name}} {{customer_surname}}, düzenli müşterimiz olarak Google Maps üzerinden değerlendirme paylaşmanızı rica ederiz.
-22. Sayın {{customer_name}} {{customer_surname}}, üç randevu sonrası referans katkınız işletme görünürlüğümüze fayda sağlamaktadır.
-23. Sayın {{customer_name}} {{customer_surname}}, Google harita üzerindeki yorumunuz potansiyel müşteriler için referans niteliği taşır.
-24. Sayın {{customer_name}} {{customer_surname}}, müşteri sadakatiniz için teşekkür eder, Google değerlendirmenizi bekleriz.
-25. Sayın {{customer_name}} {{customer_surname}}, deneyim paylaşımınız işletme yönetimi süreçlerimizde dikkate alınmaktadır.
-26. Sayın {{customer_name}} {{customer_surname}}, Google Maps üzerindeki yorumlarınız hizmet stratejimize katkı sağlamaktadır.
-27. Sayın {{customer_name}} {{customer_surname}}, üç randevu eşiğini geçmeniz nedeniyle özel referans isteğimizi iletmekteyiz.
-28. Sayın {{customer_name}} {{customer_surname}}, {{salon_name}} olarak Google üzerinden yorumunuzu rica etmekteyiz.
-29. Sayın {{customer_name}} {{customer_surname}}, sadakatiniz için müteşekkiriz; Google değerlendirmesi bizim için kıymetlidir.
-30. Sayın {{customer_name}} {{customer_surname}}, Google Maps yorumunuz işletme itibarımız açısından önemlidir.
+## SEÇİLEN (Production) — 5 adet
+1. Merhaba {{customer_name}} {{customer_honorific}}, {{salon_name}} olarak sizi üçüncü kez ağırlamaktan mutluyuz 🌸
+2. {{customer_name}} {{customer_honorific}}, düzenli müşterimiz olarak Google Maps yorumunuzu rica edebilir miyiz? ⭐
+3. Selamlar {{customer_name}} {{customer_honorific}}, deneyiminizi Google üzerinden paylaşmanız bizim için çok kıymetli 💛
+4. {{customer_name}} {{customer_honorific}}, üç randevu boyunca bizi tercih ettiğiniz için teşekkür ederiz 🙏
+5. Merhaba {{customer_name}} {{customer_honorific}}, kısa bir Google yorumunuz yeni müşterilerimize yol gösterir ✨
+
+## YEDEK (Henüz onaya gitmiyor) — 5 adet
+6. Merhaba {{customer_name}} {{customer_honorific}}, Google Maps yorumlarınız işletmemizin görünürlüğüne katkı sağlar 🌟
+7. Merhaba {{customer_name}} {{customer_honorific}}, düzenli müşterimiz olarak görüşlerinizi paylaşmanızı rica ederiz 🌸
+8. {{customer_name}} {{customer_honorific}}, Google Maps üzerinden bırakacağınız yorum bizim için değerli 💫
+9. Selamlar {{customer_name}} {{customer_honorific}}, üç randevudur sergilediğiniz güven için teşekkür ederiz 🤗
+10. {{customer_name}} {{customer_honorific}}, deneyiminizi Google'da paylaşmanız işletmemiz için anlamlı 🙌
+
+# ═══════════════════════════════════════════════════════════════════
+# PROFESSIONAL — Sayın {{customer_name}} {{customer_surname}} + emojisiz
+# ═══════════════════════════════════════════════════════════════════
+
+## SEÇİLEN (Production) — 5 adet
+1. Sayın {{customer_name}} {{customer_surname}}, düzenli müşterimiz olarak Google Maps üzerinden değerlendirme paylaşmanızı rica ederiz.
+2. Sayın {{customer_name}} {{customer_surname}}, üç randevu sonrası referans katkınız işletme görünürlüğümüze fayda sağlamaktadır.
+3. Sayın {{customer_name}} {{customer_surname}}, Google harita üzerindeki yorumunuz potansiyel müşteriler için referans niteliği taşır.
+4. Sayın {{customer_name}} {{customer_surname}}, müşteri sadakatiniz için teşekkür eder, Google değerlendirmenizi bekleriz.
+5. Sayın {{customer_name}} {{customer_surname}}, {{salon_name}} olarak Google üzerinden yorumunuzu rica etmekteyiz.
+
+## YEDEK (Henüz onaya gitmiyor) — 5 adet
+6. Sayın {{customer_name}} {{customer_surname}}, deneyim paylaşımınız işletme yönetimi süreçlerimizde dikkate alınmaktadır.
+7. Sayın {{customer_name}} {{customer_surname}}, Google Maps üzerindeki yorumlarınız hizmet stratejimize katkı sağlamaktadır.
+8. Sayın {{customer_name}} {{customer_surname}}, üç randevu eşiğini geçmeniz nedeniyle özel referans isteğimizi iletmekteyiz.
+9. Sayın {{customer_name}} {{customer_surname}}, sadakatiniz için müteşekkiriz; Google değerlendirmesi bizim için kıymetlidir.
+10. Sayın {{customer_name}} {{customer_surname}}, Google Maps yorumunuz işletme itibarımız açısından önemlidir.

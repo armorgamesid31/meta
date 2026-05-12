@@ -1,44 +1,57 @@
-# Randevu Hatırlatma 2 Saat Kala Şablon Varyasyonları (30 Adet)
+# Randevu Hatırlatma 2 Saat Kala Şablon Varyasyonları (30 Adet — 15 Seçilen, 15 Yedek)
 # Değişkenler: {{customer_name}}, {{customer_surname}}, {{customer_honorific}}, {{appointment_time}}, {{service_name}}, {{location_url}}
 # Buton: [Yol Tarifi -> {{location_url}}]
-#
-# Ton hiyerarşisi:
-#   FRIENDLY     — emoji + {{customer_name}}
-#   BALANCED     — emoji + {{customer_name}} {{customer_honorific}}
-#   PROFESSIONAL — emojisiz + Sayın {{customer_name}} {{customer_surname}}
 
-# --- FRIENDLY (10) ---
+# ═══════════════════════════════════════════════════════════════════
+# FRIENDLY
+# ═══════════════════════════════════════════════════════════════════
+
+## SEÇİLEN (Production) — 5 adet
 1. {{customer_name}}, 2 saat sonra buluşuyoruz 👀 Yol tarifi butondan açılıyor.
 2. Selam {{customer_name}}! Her şey hazır, bir sen eksiksin ✨ Randevuna 2 saat kaldı.
-3. {{customer_name}}, kendine ayırdığın zaman yaklaşıyor 🌟 {{appointment_time}} için bekliyoruz.
-4. Hey {{customer_name}}! {{service_name}} seansına 2 saat ⏰ Yola çıkmadan tarife göz at.
-5. {{customer_name}}, sayım başladı 🙌 Bugün {{appointment_time}}, görüşmek üzere.
-6. Mini hatırlatma {{customer_name}}: 2 saat sonra seni ağırlıyoruz 💫
-7. {{customer_name}}, yaklaşıyoruz 🚀 Bugün {{appointment_time}} — yol tarifi butonda.
-8. Selam {{customer_name}}! Bugünkü {{service_name}} için son hatırlatma ✨
-9. {{customer_name}}, hazır mıyız? 😊 2 saat sonra seansın başlıyor.
-10. Hey {{customer_name}}! {{appointment_time}} için kapımız açık 🌸 Yola çıkarken tarifi unutma.
+3. Hey {{customer_name}}! {{service_name}} seansına 2 saat ⏰ Yola çıkmadan tarife göz at.
+4. Merhaba {{customer_name}}! {{appointment_time}} için kapımız açık 🌸 Yola çıkarken tarifi unutma.
+5. Mini hatırlatma {{customer_name}}: 2 saat sonra seni ağırlıyoruz 💫
 
-# --- BALANCED (10) | {{customer_name}} {{customer_honorific}} + emoji ---
-11. Merhaba {{customer_name}} {{customer_honorific}}, randevunuza yaklaşık 2 saat kaldı 🫶 Yol tarifi butondan açılabilir.
-12. {{customer_name}} {{customer_honorific}}, bugün {{appointment_time}} randevunuz için sizi ağırlamaya hazırız ✨
-13. Merhaba {{customer_name}} {{customer_honorific}}, {{service_name}} seansınız için son hatırlatma 🌸
-14. {{customer_name}} {{customer_honorific}}, randevu saatiniz yaklaşmaktadır: {{appointment_time}} 🌟
-15. Selamlar {{customer_name}} {{customer_honorific}}, rahat ulaşmanız için yol tarifini ekledik 🗺️
-16. {{customer_name}} {{customer_honorific}}, bugünkü randevunuz için kısa hatırlatma iletmek istedik 🙌
-17. Merhaba {{customer_name}} {{customer_honorific}}, {{appointment_time}} için sabırsızlanıyoruz 💫
-18. {{customer_name}} {{customer_honorific}}, planlanan {{service_name}} seansınıza 2 saat kalmıştır ⏰
-19. Selamlar {{customer_name}} {{customer_honorific}}, gelirken trafiğe karşı tarifi kontrol etmenizi öneririz 🚗
-20. {{customer_name}} {{customer_honorific}}, randevu hatırlatması: bugün saat {{appointment_time}} 🌸
+## YEDEK (Henüz onaya gitmiyor) — 5 adet
+6. {{customer_name}}, kendine ayırdığın zaman yaklaşıyor 🌟 {{appointment_time}} için bekliyoruz.
+7. {{customer_name}}, sayım başladı 🙌 Bugün {{appointment_time}}, görüşmek üzere.
+8. {{customer_name}}, yaklaşıyoruz 🚀 Bugün {{appointment_time}} — yol tarifi butonda.
+9. Selam {{customer_name}}! Bugünkü {{service_name}} için son hatırlatma ✨
+10. {{customer_name}}, hazır mıyız? 😊 2 saat sonra seansın başlıyor.
 
-# --- PROFESSIONAL (10) | Sayın {{customer_name}} {{customer_surname}} + emojisiz ---
-21. Sayın {{customer_name}} {{customer_surname}}, randevunuza yaklaşık 2 saat kalmıştır.
-22. Sayın {{customer_name}} {{customer_surname}}, bugünkü randevu saatiniz {{appointment_time}} olarak planlanmıştır.
-23. Sayın {{customer_name}} {{customer_surname}}, {{service_name}} seansınız için hatırlatma mesajıdır.
-24. Sayın {{customer_name}} {{customer_surname}}, konum bilgisi butondan erişiminize sunulmuştur.
-25. Sayın {{customer_name}} {{customer_surname}}, randevu saatinizden önce ulaşım planlamanızı öneririz.
-26. Sayın {{customer_name}} {{customer_surname}}, bugün {{appointment_time}} randevusu için hatırlatma süreci başlatılmıştır.
-27. Sayın {{customer_name}} {{customer_surname}}, ulaşım yönlendirmesi mesajda paylaşılmaktadır.
-28. Sayın {{customer_name}} {{customer_surname}}, randevu zamanına yaklaşık 2 saat kalmıştır.
-29. Sayın {{customer_name}} {{customer_surname}}, gecikme yaşanmaması için zamanında yola çıkmanızı rica ederiz.
-30. Sayın {{customer_name}} {{customer_surname}}, randevu kaydınız aktiftir ve {{appointment_time}} saatinde gerçekleştirilecektir.
+# ═══════════════════════════════════════════════════════════════════
+# BALANCED — {{customer_name}} {{customer_honorific}} + emoji
+# ═══════════════════════════════════════════════════════════════════
+
+## SEÇİLEN (Production) — 5 adet
+1. Merhaba {{customer_name}} {{customer_honorific}}, randevunuza yaklaşık 2 saat kaldı 🫶 Yol tarifi butondan açılabilir.
+2. {{customer_name}} {{customer_honorific}}, bugün {{appointment_time}} randevunuz için sizi ağırlamaya hazırız ✨
+3. Selamlar {{customer_name}} {{customer_honorific}}, rahat ulaşmanız için yol tarifini ekledik 🗺️
+4. {{customer_name}} {{customer_honorific}}, planlanan {{service_name}} seansınıza 2 saat kalmıştır ⏰
+5. Selamlar {{customer_name}} {{customer_honorific}}, gelirken trafiğe karşı tarifi kontrol etmenizi öneririz 🚗
+
+## YEDEK (Henüz onaya gitmiyor) — 5 adet
+6. Merhaba {{customer_name}} {{customer_honorific}}, {{service_name}} seansınız için son hatırlatma 🌸
+7. {{customer_name}} {{customer_honorific}}, randevu saatiniz yaklaşmaktadır: {{appointment_time}} 🌟
+8. {{customer_name}} {{customer_honorific}}, bugünkü randevunuz için kısa hatırlatma iletmek istedik 🙌
+9. Merhaba {{customer_name}} {{customer_honorific}}, {{appointment_time}} için sabırsızlanıyoruz 💫
+10. {{customer_name}} {{customer_honorific}}, randevu hatırlatması: bugün saat {{appointment_time}} 🌸
+
+# ═══════════════════════════════════════════════════════════════════
+# PROFESSIONAL — Sayın {{customer_name}} {{customer_surname}} + emojisiz
+# ═══════════════════════════════════════════════════════════════════
+
+## SEÇİLEN (Production) — 5 adet
+1. Sayın {{customer_name}} {{customer_surname}}, randevunuza yaklaşık 2 saat kalmıştır.
+2. Sayın {{customer_name}} {{customer_surname}}, bugünkü randevu saatiniz {{appointment_time}} olarak planlanmıştır.
+3. Sayın {{customer_name}} {{customer_surname}}, {{service_name}} seansınız için hatırlatma mesajıdır.
+4. Sayın {{customer_name}} {{customer_surname}}, konum bilgisi butondan erişiminize sunulmuştur.
+5. Sayın {{customer_name}} {{customer_surname}}, randevu saatinizden önce ulaşım planlamanızı öneririz.
+
+## YEDEK (Henüz onaya gitmiyor) — 5 adet
+6. Sayın {{customer_name}} {{customer_surname}}, bugün {{appointment_time}} randevusu için hatırlatma süreci başlatılmıştır.
+7. Sayın {{customer_name}} {{customer_surname}}, ulaşım yönlendirmesi mesajda paylaşılmaktadır.
+8. Sayın {{customer_name}} {{customer_surname}}, randevu zamanına yaklaşık 2 saat kalmıştır.
+9. Sayın {{customer_name}} {{customer_surname}}, gecikme yaşanmaması için zamanında yola çıkmanızı rica ederiz.
+10. Sayın {{customer_name}} {{customer_surname}}, randevu kaydınız aktiftir ve {{appointment_time}} saatinde gerçekleştirilecektir.

@@ -1,48 +1,57 @@
-# Waitlist Teklifi Şablon Varyasyonları (30 Adet)
+# Waitlist Teklifi Şablon Varyasyonları (30 Adet — 15 Seçilen, 15 Yedek)
 # Değişkenler: {{customer_name}}, {{customer_surname}}, {{customer_honorific}}, {{appointment_date}}, {{appointment_time}}, {{service_name}}
 # Buton: [Teklifi Gör -> https://{salon-slug}.kedyapp.com/booking?waitlistOffer={{1}}]
-#        Magic linke tıklayınca booking sayfası açılır:
-#          - Bekleme listesine eklediği hizmetler otomatik seçili gelir
-#          - Seçtiği gün için müsait slotlar otomatik gösterilir
-#          - Sayfa slot kısmına otomatik kayar
-#
-# Ton hiyerarşisi:
-#   FRIENDLY     — emoji + {{customer_name}}
-#   BALANCED     — emoji + {{customer_name}} {{customer_honorific}}
-#   PROFESSIONAL — emojisiz + Sayın {{customer_name}} {{customer_surname}}
 
-# --- FRIENDLY (10) ---
+# ═══════════════════════════════════════════════════════════════════
+# FRIENDLY
+# ═══════════════════════════════════════════════════════════════════
+
+## SEÇİLEN (Production) — 5 adet
 1. {{customer_name}}, müjde 🎉 {{appointment_date}} {{appointment_time}} için bir yer açıldı!
 2. Selam {{customer_name}}! Bekleme listesindeki {{service_name}} için sıra sana geldi ✨
-3. {{customer_name}}, sürpriz var 🍀 {{appointment_date}} {{appointment_time}} aralığında müsait bir slot oluştu.
-4. Hey {{customer_name}}! Beklediğin teklif kapına geldi 🌟 {{appointment_time}} için yer ayıralım mı?
-5. {{customer_name}}, bir iptal oldu ve sana uygun bir slot çıktı 🙌 Hemen değerlendir.
-6. Merhaba {{customer_name}}! {{service_name}} için müsaitlik açıldı 💫 Onaylarsan rezerve edelim.
-7. {{customer_name}}, sıradaki teklif sende ⏰ {{appointment_date}} {{appointment_time}} — istersen senin olsun.
-8. Selam {{customer_name}}! Bekleme listesi sırası sende 🌸 Onayını bekliyoruz.
-9. Hızlı not {{customer_name}}: {{service_name}} için yerimiz var 😊 Senin tercihin?
-10. {{customer_name}}, fırsat kapıda 🚪 {{appointment_time}} slotunu senin için ayıralım mı?
+3. Hey {{customer_name}}! Beklediğin teklif kapına geldi 🌟 {{appointment_time}} için yer ayıralım mı?
+4. Merhaba {{customer_name}}! {{service_name}} için müsaitlik açıldı 💫 Onaylarsan rezerve edelim.
+5. {{customer_name}}, fırsat kapıda 🚪 {{appointment_time}} slotunu senin için ayıralım mı?
 
-# --- BALANCED (10) | {{customer_name}} {{customer_honorific}} + emoji ---
-11. Merhaba {{customer_name}} {{customer_honorific}}, bekleme listesi talebiniz için uygun slot oluştu 🙌
-12. {{customer_name}} {{customer_honorific}}, {{appointment_date}} {{appointment_time}} için müsaitlik mevcut ✨
-13. Selamlar {{customer_name}} {{customer_honorific}}, {{service_name}} için teklif hakkınız açıldı 🌟
-14. {{customer_name}} {{customer_honorific}}, sıradaki uygunluk tarafınıza tahsis edildi 🌸
-15. Merhaba {{customer_name}} {{customer_honorific}}, teklifi onaylamanız halinde randevu kaydınız oluşturulacak 💫
-16. {{customer_name}} {{customer_honorific}}, bekleme listesi durumunuz güncellendi — size öncelik tanımlandı 🙌
-17. Merhaba {{customer_name}} {{customer_honorific}}, uygunluk bildirimi: {{appointment_date}} {{appointment_time}} ⏰
-18. {{customer_name}} {{customer_honorific}}, talep ettiğiniz {{service_name}} için boşluk oluştu 🌟
-19. Selamlar {{customer_name}} {{customer_honorific}}, teklif süresi dolmadan yanıt vermenizi rica ederiz 🙏
-20. {{customer_name}} {{customer_honorific}}, slotu değerlendirmek isterseniz butondan onaylayabilirsiniz ✨
+## YEDEK (Henüz onaya gitmiyor) — 5 adet
+6. {{customer_name}}, sürpriz var 🍀 {{appointment_date}} {{appointment_time}} aralığında müsait bir slot oluştu.
+7. {{customer_name}}, bir iptal oldu ve sana uygun bir slot çıktı 🙌 Hemen değerlendir.
+8. {{customer_name}}, sıradaki teklif sende ⏰ {{appointment_date}} {{appointment_time}} — istersen senin olsun.
+9. Selam {{customer_name}}! Bekleme listesi sırası sende 🌸 Onayını bekliyoruz.
+10. Hızlı not {{customer_name}}: {{service_name}} için yerimiz var 😊 Senin tercihin?
 
-# --- PROFESSIONAL (10) | Sayın {{customer_name}} {{customer_surname}} + emojisiz ---
-21. Sayın {{customer_name}} {{customer_surname}}, bekleme listesi kapsamında tarafınıza özel uygun randevu slotu açılmıştır.
-22. Sayın {{customer_name}} {{customer_surname}}, {{appointment_date}} {{appointment_time}} aralığında kapasite oluşmuştur.
-23. Sayın {{customer_name}} {{customer_surname}}, {{service_name}} talebiniz için teklif hakkınız aktif durumdadır.
-24. Sayın {{customer_name}} {{customer_surname}}, yanıtınız doğrultusunda rezervasyon işlemi tamamlanacaktır.
-25. Sayın {{customer_name}} {{customer_surname}}, bekleme listesi sıralamanız çerçevesinde öncelik tanımlanmıştır.
-26. Sayın {{customer_name}} {{customer_surname}}, teklif geçerlilik süresi içinde dönüş yapmanızı rica ederiz.
-27. Sayın {{customer_name}} {{customer_surname}}, müsait slot bilgisi sistemimiz tarafından tarafınıza iletilmiştir.
-28. Sayın {{customer_name}} {{customer_surname}}, teklif onayı alınmadığı durumda slot bir sonraki müşteriye devredilecektir.
-29. Sayın {{customer_name}} {{customer_surname}}, uygunluk durumunuzu onaylamak için butonu kullanabilirsiniz.
-30. Sayın {{customer_name}} {{customer_surname}}, anlayışınız ve takip etmeniz için teşekkür ederiz.
+# ═══════════════════════════════════════════════════════════════════
+# BALANCED — {{customer_name}} {{customer_honorific}} + emoji
+# ═══════════════════════════════════════════════════════════════════
+
+## SEÇİLEN (Production) — 5 adet
+1. Merhaba {{customer_name}} {{customer_honorific}}, bekleme listesi talebiniz için uygun slot oluştu 🙌
+2. {{customer_name}} {{customer_honorific}}, {{appointment_date}} {{appointment_time}} için müsaitlik mevcut ✨
+3. Selamlar {{customer_name}} {{customer_honorific}}, {{service_name}} için teklif hakkınız açıldı 🌟
+4. Merhaba {{customer_name}} {{customer_honorific}}, teklifi onaylamanız halinde randevu kaydınız oluşturulacak 💫
+5. {{customer_name}} {{customer_honorific}}, slotu değerlendirmek isterseniz butondan onaylayabilirsiniz ✨
+
+## YEDEK (Henüz onaya gitmiyor) — 5 adet
+6. {{customer_name}} {{customer_honorific}}, sıradaki uygunluk tarafınıza tahsis edildi 🌸
+7. {{customer_name}} {{customer_honorific}}, bekleme listesi durumunuz güncellendi — size öncelik tanımlandı 🙌
+8. Merhaba {{customer_name}} {{customer_honorific}}, uygunluk bildirimi: {{appointment_date}} {{appointment_time}} ⏰
+9. {{customer_name}} {{customer_honorific}}, talep ettiğiniz {{service_name}} için boşluk oluştu 🌟
+10. Selamlar {{customer_name}} {{customer_honorific}}, teklif süresi dolmadan yanıt vermenizi rica ederiz 🙏
+
+# ═══════════════════════════════════════════════════════════════════
+# PROFESSIONAL — Sayın {{customer_name}} {{customer_surname}} + emojisiz
+# ═══════════════════════════════════════════════════════════════════
+
+## SEÇİLEN (Production) — 5 adet
+1. Sayın {{customer_name}} {{customer_surname}}, bekleme listesi kapsamında tarafınıza özel uygun randevu slotu açılmıştır.
+2. Sayın {{customer_name}} {{customer_surname}}, {{appointment_date}} {{appointment_time}} aralığında kapasite oluşmuştur.
+3. Sayın {{customer_name}} {{customer_surname}}, {{service_name}} talebiniz için teklif hakkınız aktif durumdadır.
+4. Sayın {{customer_name}} {{customer_surname}}, teklif geçerlilik süresi içinde dönüş yapmanızı rica ederiz.
+5. Sayın {{customer_name}} {{customer_surname}}, uygunluk durumunuzu onaylamak için butonu kullanabilirsiniz.
+
+## YEDEK (Henüz onaya gitmiyor) — 5 adet
+6. Sayın {{customer_name}} {{customer_surname}}, yanıtınız doğrultusunda rezervasyon işlemi tamamlanacaktır.
+7. Sayın {{customer_name}} {{customer_surname}}, bekleme listesi sıralamanız çerçevesinde öncelik tanımlanmıştır.
+8. Sayın {{customer_name}} {{customer_surname}}, müsait slot bilgisi sistemimiz tarafından tarafınıza iletilmiştir.
+9. Sayın {{customer_name}} {{customer_surname}}, teklif onayı alınmadığı durumda slot bir sonraki müşteriye devredilecektir.
+10. Sayın {{customer_name}} {{customer_surname}}, anlayışınız ve takip etmeniz için teşekkür ederiz.

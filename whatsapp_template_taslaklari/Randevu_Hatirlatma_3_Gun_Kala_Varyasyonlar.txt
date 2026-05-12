@@ -1,45 +1,57 @@
-# Randevu Hatırlatma 3 Gün Kala Şablon Varyasyonları (30 Adet)
+# Randevu Hatırlatma 3 Gün Kala Şablon Varyasyonları (30 Adet — 15 Seçilen, 15 Yedek)
 # Değişkenler: {{customer_name}}, {{customer_surname}}, {{customer_honorific}}, {{appointment_date}}, {{appointment_time}}, {{service_name}}, {{late_policy_hours}}
 # Politika: İptal VE değişiklik talepleri en az {{late_policy_hours}} saat önce bildirilmelidir.
-#           (Tek eşik — uygulamada da ayrı ayrı ayarlanamaz)
-#
-# Ton hiyerarşisi:
-#   FRIENDLY     — emoji + {{customer_name}}
-#   BALANCED     — emoji + {{customer_name}} {{customer_honorific}}
-#   PROFESSIONAL — emojisiz + Sayın {{customer_name}} {{customer_surname}}
 
-# --- FRIENDLY (10) ---
+# ═══════════════════════════════════════════════════════════════════
+# FRIENDLY
+# ═══════════════════════════════════════════════════════════════════
+
+## SEÇİLEN (Production) — 5 adet
 1. {{customer_name}}, randevu gününe 3 gün kaldı 🙌 İptal veya değişiklikleri en az {{late_policy_hours}} saat önce haber verirsen harika olur.
 2. Selam {{customer_name}}! Takvimde geri sayım başladı ⏳ İptal/değişiklik gerekiyorsa en az {{late_policy_hours}} saat önce yaz lütfen.
-3. {{customer_name}}, 72 saat sonra görüşüyoruz 🌟 Plan değişirse erken haber ver — {{late_policy_hours}} saat öncesine kadar.
-4. Hey {{customer_name}}! Programı birlikte sorunsuz yürütelim ✨ Son dakika yerine en az {{late_policy_hours}} saat önce bildirim rica ediyoruz.
+3. Hey {{customer_name}}! Programı birlikte sorunsuz yürütelim ✨ Son dakika yerine en az {{late_policy_hours}} saat önce bildirim rica ediyoruz.
+4. Merhaba {{customer_name}}! Randevu yaklaşırken nazikçe hatırlatalım 🌸 İptal ve değişiklikler en az {{late_policy_hours}} saat öncesinden.
 5. {{customer_name}}, küçük politika hatırlatması 💡 İptal/değişiklikler için {{late_policy_hours}} saat sınırını kaçırmamanı rica ederiz.
-6. Merhaba {{customer_name}}! Randevu yaklaşırken nazikçe hatırlatalım 🌸 İptal ve değişiklikler en az {{late_policy_hours}} saat öncesinden.
+
+## YEDEK (Henüz onaya gitmiyor) — 5 adet
+6. {{customer_name}}, 72 saat sonra görüşüyoruz 🌟 Plan değişirse erken haber ver — {{late_policy_hours}} saat öncesine kadar.
 7. {{customer_name}}, son dakikaya kalmadan haber verirsen çok mutlu oluruz 😊 İptal/değişiklik için {{late_policy_hours}} saat öncesi.
 8. Selam {{customer_name}}! 3 gün sonra {{service_name}} için buluşuyoruz 💫 Planın değişirse en az {{late_policy_hours}} saat önce bildir.
 9. {{customer_name}}, no-show yaşamamak için iptal/değişiklik bilgini {{late_policy_hours}} saat öncesinden iletmeyi unutma 🙏
 10. {{customer_name}}, takvim akışı için erken bilgilendirme bizim için çok kıymetli 🌟 İptal/değişiklik {{late_policy_hours}} saat öncesi.
 
-# --- BALANCED (10) | {{customer_name}} {{customer_honorific}} + emoji ---
-11. Merhaba {{customer_name}} {{customer_honorific}}, randevu tarihinize 3 gün kalmıştır 🙌 İptal veya değişiklik taleplerinizi en az {{late_policy_hours}} saat önce iletmenizi rica ederiz.
-12. {{customer_name}} {{customer_honorific}}, plan değişikliği ve iptal taleplerinin en az {{late_policy_hours}} saat önceden bildirilmesi süreci kolaylaştırır 🌸
-13. Merhaba {{customer_name}} {{customer_honorific}}, no-show politikamıza ilişkin küçük bir hatırlatma 💡 İptal/değişiklik {{late_policy_hours}} saat öncesi.
-14. {{customer_name}} {{customer_honorific}}, takvim akışımız için iptal/değişiklik taleplerinizi {{late_policy_hours}} saat önceden paylaşmanızı rica ederiz 🙏
-15. Selamlar {{customer_name}} {{customer_honorific}}, randevu planlamamızda gecikme yaşanmaması için {{late_policy_hours}} saat sınırına uyum önemli 🌟
-16. {{customer_name}} {{customer_honorific}}, politika hatırlatması: İptal ve değişiklik talepleri en az {{late_policy_hours}} saat öncesinden ✨
-17. Merhaba {{customer_name}} {{customer_honorific}}, randevunuz yaklaşırken nazik bir hatırlatma 🤗 İptal/değişiklik için {{late_policy_hours}} saat.
-18. {{customer_name}} {{customer_honorific}}, müsaitlik planlamasının korunması için iptal/değişiklik bildirimleri {{late_policy_hours}} saat öncesi olmalı 🙏
-19. {{customer_name}} {{customer_honorific}}, geç bildirimler operasyonel akışı zorlaştırabilir 🙇 İptal veya değişiklik için lütfen {{late_policy_hours}} saat önce haber verin.
-20. {{customer_name}} {{customer_honorific}}, zamanında bilgilendirmeniz süreç kalitesini artırır — iptal/değişiklik için {{late_policy_hours}} saat öncesi 💛
+# ═══════════════════════════════════════════════════════════════════
+# BALANCED — {{customer_name}} {{customer_honorific}} + emoji
+# ═══════════════════════════════════════════════════════════════════
 
-# --- PROFESSIONAL (10) | Sayın {{customer_name}} {{customer_surname}} + emojisiz ---
-21. Sayın {{customer_name}} {{customer_surname}}, randevu tarihinize 72 saat kalmıştır. İptal ve değişiklik bildirimleri en az {{late_policy_hours}} saat önce yapılmalıdır.
-22. Sayın {{customer_name}} {{customer_surname}}, plan değişikliği ve iptal taleplerinin en az {{late_policy_hours}} saat önceden iletilmesi gerekmektedir.
-23. Sayın {{customer_name}} {{customer_surname}}, no-show politikamız kapsamında {{late_policy_hours}} saatten daha geç yapılan iptal/değişiklikler değerlendirmeye alınmaktadır.
-24. Sayın {{customer_name}} {{customer_surname}}, operasyonel planlamamızın sürdürülebilirliği için {{late_policy_hours}} saat sınırına uyum önem taşımaktadır.
-25. Sayın {{customer_name}} {{customer_surname}}, randevu yönetim prosedürlerimiz doğrultusunda iptal/değişiklik bildirimlerinin {{late_policy_hours}} saat öncesinden iletilmesini rica ederiz.
-26. Sayın {{customer_name}} {{customer_surname}}, hatırlatma: İptal ve değişiklik talepleri için süre {{late_policy_hours}} saat.
-27. Sayın {{customer_name}} {{customer_surname}}, belirtilen sürenin dışındaki iptal/değişiklik talepleri uygunluk durumuna bağlı olarak değerlendirilebilir.
-28. Sayın {{customer_name}} {{customer_surname}}, geç iptal ve değişiklik talepleri mevcut politika kuralları çerçevesinde ele alınmaktadır.
-29. Sayın {{customer_name}} {{customer_surname}}, randevu sürekliliği için plan değişiklikleri ve iptalleri {{late_policy_hours}} saat öncesinden iletmenizi rica ederiz.
-30. Sayın {{customer_name}} {{customer_surname}}, politika kurallarına uyum hizmet kalitesi ve kapasite yönetimi açısından önem taşımaktadır.
+## SEÇİLEN (Production) — 5 adet
+1. Merhaba {{customer_name}} {{customer_honorific}}, randevu tarihinize 3 gün kalmıştır 🙌 İptal veya değişiklik taleplerinizi en az {{late_policy_hours}} saat önce iletmenizi rica ederiz.
+2. {{customer_name}} {{customer_honorific}}, plan değişikliği ve iptal taleplerinin en az {{late_policy_hours}} saat önceden bildirilmesi süreci kolaylaştırır 🌸
+3. Selamlar {{customer_name}} {{customer_honorific}}, randevu planlamamızda gecikme yaşanmaması için {{late_policy_hours}} saat sınırına uyum önemli 🌟
+4. {{customer_name}} {{customer_honorific}}, politika hatırlatması: İptal ve değişiklik talepleri en az {{late_policy_hours}} saat öncesinden ✨
+5. Merhaba {{customer_name}} {{customer_honorific}}, randevunuz yaklaşırken nazik bir hatırlatma 🤗 İptal/değişiklik için {{late_policy_hours}} saat.
+
+## YEDEK (Henüz onaya gitmiyor) — 5 adet
+6. Merhaba {{customer_name}} {{customer_honorific}}, no-show politikamıza ilişkin küçük bir hatırlatma 💡 İptal/değişiklik {{late_policy_hours}} saat öncesi.
+7. {{customer_name}} {{customer_honorific}}, takvim akışımız için iptal/değişiklik taleplerinizi {{late_policy_hours}} saat önceden paylaşmanızı rica ederiz 🙏
+8. {{customer_name}} {{customer_honorific}}, müsaitlik planlamasının korunması için iptal/değişiklik bildirimleri {{late_policy_hours}} saat öncesi olmalı 🙏
+9. {{customer_name}} {{customer_honorific}}, geç bildirimler operasyonel akışı zorlaştırabilir 🙇 İptal veya değişiklik için lütfen {{late_policy_hours}} saat önce haber verin.
+10. {{customer_name}} {{customer_honorific}}, zamanında bilgilendirmeniz süreç kalitesini artırır — iptal/değişiklik için {{late_policy_hours}} saat öncesi 💛
+
+# ═══════════════════════════════════════════════════════════════════
+# PROFESSIONAL — Sayın {{customer_name}} {{customer_surname}} + emojisiz
+# ═══════════════════════════════════════════════════════════════════
+
+## SEÇİLEN (Production) — 5 adet
+1. Sayın {{customer_name}} {{customer_surname}}, randevu tarihinize 72 saat kalmıştır. İptal ve değişiklik bildirimleri en az {{late_policy_hours}} saat önce yapılmalıdır.
+2. Sayın {{customer_name}} {{customer_surname}}, plan değişikliği ve iptal taleplerinin en az {{late_policy_hours}} saat önceden iletilmesi gerekmektedir.
+3. Sayın {{customer_name}} {{customer_surname}}, no-show politikamız kapsamında {{late_policy_hours}} saatten daha geç yapılan iptal/değişiklikler değerlendirmeye alınmaktadır.
+4. Sayın {{customer_name}} {{customer_surname}}, randevu yönetim prosedürlerimiz doğrultusunda iptal/değişiklik bildirimlerinin {{late_policy_hours}} saat öncesinden iletilmesini rica ederiz.
+5. Sayın {{customer_name}} {{customer_surname}}, hatırlatma: İptal ve değişiklik talepleri için süre {{late_policy_hours}} saat.
+
+## YEDEK (Henüz onaya gitmiyor) — 5 adet
+6. Sayın {{customer_name}} {{customer_surname}}, operasyonel planlamamızın sürdürülebilirliği için {{late_policy_hours}} saat sınırına uyum önem taşımaktadır.
+7. Sayın {{customer_name}} {{customer_surname}}, belirtilen sürenin dışındaki iptal/değişiklik talepleri uygunluk durumuna bağlı olarak değerlendirilebilir.
+8. Sayın {{customer_name}} {{customer_surname}}, geç iptal ve değişiklik talepleri mevcut politika kuralları çerçevesinde ele alınmaktadır.
+9. Sayın {{customer_name}} {{customer_surname}}, randevu sürekliliği için plan değişiklikleri ve iptalleri {{late_policy_hours}} saat öncesinden iletmenizi rica ederiz.
+10. Sayın {{customer_name}} {{customer_surname}}, politika kurallarına uyum hizmet kalitesi ve kapasite yönetimi açısından önem taşımaktadır.
