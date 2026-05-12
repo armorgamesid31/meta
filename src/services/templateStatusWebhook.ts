@@ -1,12 +1,15 @@
 // Meta template status webhook handler.
 //
-// Meta sends `message_template_status_update` events to our /webhooks/meta
-// endpoint when a submitted template's review state changes. This module
-// parses those events and drives the SalonMessageTemplate state machine:
-//
-//   APPROVED + category matches expected → ACTIVE_VALID
-//   APPROVED + category bumped           → CATEGORY_BUMPED + promote reserve
-//   REJECTED                             → REJECTED + promote reserve
+// Meta sends three relevant event fields to our /webhooks/meta endpoint:
+//   1. message_template_status_update — review state transitions
+//        APPROVED + category matches expected → ACTIVE_VALID
+//        APPROVED + category bumped           → CATEGORY_BUMPED + promote reserve
+//        REJECTED                             → REJECTED + promote reserve
+//   2. template_category_update — Meta proactively reclassified an
+//      already-submitted template (e.g. UTILITY → MARKETING). Treated as
+//      a category bump: state → CATEGORY_BUMPED + promote reserve.
+//   3. message_template_quality_update — quality rating change. We just
+//      record it on the row for audit; no state machine action.
 //
 // When the pool of reserves is also exhausted (all 10 slots tried, < 3
 // ACTIVE_VALID), remaining non-active rows are marked POOL_EXHAUSTED for
@@ -31,20 +34,25 @@ interface TemplateStatusEvent {
   };
 }
 
+const TEMPLATE_EVENT_FIELDS = new Set([
+  'message_template_status_update',
+  'template_category_update',
+  'message_template_quality_update',
+]);
+
 /**
- * Returns true if the body contains at least one message_template_status_update
- * change. Used by handleInbound to detect template-status payloads.
+ * Returns true if the body contains any template lifecycle event we handle.
  */
 export function isTemplateStatusPayload(body: any): boolean {
   if (!body || !Array.isArray(body.entry)) return false;
   return body.entry.some((entry: any) =>
     Array.isArray(entry?.changes) &&
-    entry.changes.some((c: any) => c?.field === 'message_template_status_update')
+    entry.changes.some((c: any) => c?.field && TEMPLATE_EVENT_FIELDS.has(c.field))
   );
 }
 
 /**
- * Process all template status events in the given Meta webhook payload.
+ * Process all template lifecycle events in the given Meta webhook payload.
  */
 export async function processTemplateStatusPayload(body: any): Promise<{ processed: number }> {
   if (!body?.entry) return { processed: 0 };
@@ -53,26 +61,111 @@ export async function processTemplateStatusPayload(body: any): Promise<{ process
   for (const entry of body.entry as any[]) {
     if (!Array.isArray(entry?.changes)) continue;
     for (const change of entry.changes) {
-      if (change?.field !== 'message_template_status_update') continue;
+      const field = change?.field;
+      if (!field || !TEMPLATE_EVENT_FIELDS.has(field)) continue;
       const val = change.value || {};
       const templateName: string | undefined = val.message_template_name;
-      const event: string | undefined = val.event;
-      const newCategory: string | undefined = val.new_category;
-      const reason: string | undefined = val.reason;
+      if (!templateName) continue;
 
-      if (!templateName || !event) continue;
-
-      await handleSingleStatusEvent({
-        templateName,
-        event: event as any,
-        newCategory,
-        reason,
-      }).catch(err => console.error('[templateStatusWebhook] handler error:', err));
-
-      processed++;
+      try {
+        if (field === 'message_template_status_update') {
+          const event: string | undefined = val.event;
+          if (!event) continue;
+          await handleSingleStatusEvent({
+            templateName,
+            event: event as any,
+            newCategory: val.new_category,
+            reason: val.reason,
+          });
+        } else if (field === 'template_category_update') {
+          // Meta proactively reclassified the template. previous_category and
+          // new_category are present in the payload.
+          await handleCategoryUpdate({
+            templateName,
+            previousCategory: val.previous_category,
+            newCategory: val.new_category,
+          });
+        } else if (field === 'message_template_quality_update') {
+          // Audit-only: record the quality rating on the row.
+          await prisma.salonMessageTemplate.updateMany({
+            where: { templateName },
+            data: { lastSyncAt: new Date() },
+          });
+        }
+        processed++;
+      } catch (err) {
+        console.error('[templateStatusWebhook] handler error:', err);
+      }
     }
   }
   return { processed };
+}
+
+/**
+ * Handle a template_category_update event: Meta moved this template from
+ * one category to another (typically UTILITY → MARKETING because of
+ * promotional language detected in the body). Treated as a category bump:
+ *   - state → CATEGORY_BUMPED (picker excludes from active pool)
+ *   - promote a reserve slot so a fresh body variation gets submitted
+ */
+async function handleCategoryUpdate(opts: {
+  templateName: string;
+  previousCategory?: string;
+  newCategory?: string;
+}): Promise<void> {
+  const { templateName, newCategory, previousCategory } = opts;
+  const rows = await prisma.salonMessageTemplate.findMany({ where: { templateName } });
+  if (rows.length === 0) {
+    console.warn('[templateStatusWebhook] category_update: no rows for', templateName);
+    return;
+  }
+
+  for (const row of rows) {
+    const expectedCategory = row.expectedCategory || 'UTILITY';
+    const actualCategory = newCategory || expectedCategory;
+
+    // Guard: don't touch user_marked_outdated rows.
+    if (
+      row.submissionState === 'REJECTED' &&
+      typeof row.rejectionReason === 'string' &&
+      row.rejectionReason.startsWith('user_marked_outdated')
+    ) {
+      await prisma.salonMessageTemplate.update({
+        where: { id: row.id },
+        data: { actualCategory, metaCategory: actualCategory, lastSyncAt: new Date() },
+      });
+      continue;
+    }
+
+    const categoryMatches = !newCategory || newCategory === expectedCategory;
+    await prisma.salonMessageTemplate.update({
+      where: { id: row.id },
+      data: {
+        submissionState: categoryMatches ? row.submissionState : 'CATEGORY_BUMPED',
+        actualCategory,
+        metaCategory: actualCategory,
+        lastSyncAt: new Date(),
+        rejectionReason: categoryMatches
+          ? row.rejectionReason
+          : `category_bumped_from_${previousCategory || 'unknown'}_to_${actualCategory}`,
+      },
+    });
+
+    if (!categoryMatches && row.templateKey && row.tone) {
+      const promoted = await promoteReserveVariation({
+        salonId: row.salonId,
+        logicalKey: row.templateKey,
+        tone: row.tone,
+      });
+      if (!promoted.created) {
+        await markPoolExhaustedIfNeeded({
+          salonId: row.salonId,
+          logicalKey: row.templateKey,
+          tone: row.tone,
+        });
+      }
+    }
+  }
 }
 
 async function handleSingleStatusEvent(opts: {
