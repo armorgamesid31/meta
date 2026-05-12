@@ -2276,6 +2276,8 @@ enum AppointmentMessageEventType {
   WAITLIST_OFFER
   VERIFICATION_LINK
   NO_SHOW
+  BIRTHDAY
+  WINBACK
 }
 
 enum CustomerGender {

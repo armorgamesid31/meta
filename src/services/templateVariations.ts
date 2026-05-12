@@ -243,6 +243,92 @@ const KEDY_MEMNUNIYET_ANKETI: TieredVariations = {
 };
 
 // ─────────────────────────────────────────────────────────────────
+// kedy_dogum_gunu_kutlamasi — birthday wish (UTILITY-safe; NO offer/voucher)
+// vars: {{customer_name}}, {{customer_surname}}, {{customer_honorific}}
+// ─────────────────────────────────────────────────────────────────
+const KEDY_DOGUM_GUNU_KUTLAMASI: TieredVariations = {
+  FRIENDLY: [
+    "İyi ki doğdun {{customer_name}}! 🎂 Tüm dileklerin gerçek olsun, harika bir yıl olsun ✨",
+    "Doğum günün kutlu olsun {{customer_name}} 🎉 Bu özel günde mutluluklar diliyoruz!",
+    "Selam {{customer_name}}! 🎂 Doğum günün kutlu olsun, kendine iyi bak.",
+    "Hey {{customer_name}}! 🎈 Doğum günün kutlu olsun, nice mutlu yıllara!",
+    "Mutlu yıllar {{customer_name}} 🌸 Tüm sevdiklerinle nice güzel günlere!",
+    "{{customer_name}}, doğum günün kutlu olsun! 🎉 Bugün senin günün ✨",
+    "Merhaba {{customer_name}}! 🎂 Yeni yaşında huzur ve mutluluk dileriz.",
+    "{{customer_name}}, iyi ki varsın 💛 Doğum günün kutlu olsun!",
+    "Selam {{customer_name}} 🥳 Tüm dileklerinin gerçekleşmesini diliyoruz.",
+    "{{customer_name}}, doğum günün kutlu olsun 🎁 Salon ailesi olarak yanındayız.",
+  ],
+  BALANCED: [
+    "Merhaba {{customer_name}} {{customer_honorific}}, doğum gününüzü kutlar, sağlık ve mutluluk dolu bir yıl dileriz 🎉",
+    "{{customer_name}} {{customer_honorific}}, doğum gününüz kutlu olsun ✨ Yeni yaşınızda nice güzelliklere!",
+    "Selamlar {{customer_name}} {{customer_honorific}}, doğum günü mesajımız 🎂 Tüm dileklerinizin gerçekleşmesini dileriz.",
+    "Mutlu yıllar {{customer_name}} {{customer_honorific}} 🌟 Bu özel günde aklımızdaydınız.",
+    "Merhaba {{customer_name}} {{customer_honorific}}, doğum gününüzü kutlar, harika bir yıl dileriz 🌸",
+    "{{customer_name}} {{customer_honorific}}, doğum gününüz kutlu olsun 🎈 Yeni yaşınız hayırlı olsun.",
+    "Selamlar {{customer_name}} {{customer_honorific}}, bu özel günde tüm iyi dileklerimizi iletiriz 💛",
+    "Merhaba {{customer_name}} {{customer_honorific}}, doğum gününüzü kutlar, dileklerinizin gerçek olmasını dileriz 🌟",
+    "{{customer_name}} {{customer_honorific}}, salon ailesi olarak doğum gününüzü kutlarız 🎂",
+    "{{customer_name}} {{customer_honorific}}, nice mutlu yıllara 🌸 Doğum gününüz kutlu olsun.",
+  ],
+  PROFESSIONAL: [
+    "Sayın {{customer_name}} {{customer_surname}}, doğum gününüzü kutlar, mutluluk ve sağlık dolu bir yıl dileriz.",
+    "Sayın {{customer_name}} {{customer_surname}}, doğum günü mesajımızı kabul ediniz; nice mutlu yıllara.",
+    "Sayın {{customer_name}} {{customer_surname}}, bu özel gününüzü kutlar, yeni yaşınızda başarılar dileriz.",
+    "Sayın {{customer_name}} {{customer_surname}}, doğum gününüz kutlu olsun. Salon olarak en güzel dileklerimizi iletiriz.",
+    "Sayın {{customer_name}} {{customer_surname}}, mutlu yıllar dileklerimizle.",
+    "Sayın {{customer_name}} {{customer_surname}}, doğum gününüzü kutlar, sağlık ve esenlik dolu bir yıl dileriz.",
+    "Sayın {{customer_name}} {{customer_surname}}, bu anlamlı gününüzde tüm iyi dileklerimizi iletmek isteriz.",
+    "Sayın {{customer_name}} {{customer_surname}}, doğum gününüz vesilesiyle sağlık ve mutluluk dileklerimizi sunarız.",
+    "Sayın {{customer_name}} {{customer_surname}}, yeni yaşınızın hayırlı olmasını dileriz.",
+    "Sayın {{customer_name}} {{customer_surname}}, doğum günü dileklerimizi en içten duygularla iletiriz.",
+  ],
+};
+
+// ─────────────────────────────────────────────────────────────────
+// kedy_geri_donus — winback (UTILITY-safe; NO discount/voucher language)
+// vars: {{customer_name}}, {{customer_surname}}, {{customer_honorific}}
+// ─────────────────────────────────────────────────────────────────
+const KEDY_GERI_DONUS: TieredVariations = {
+  FRIENDLY: [
+    "{{customer_name}}, uzun süredir görüşmedik 💭 Eski güzel günleri özledik ✨ Tekrar buluşmak ister misin?",
+    "Selam {{customer_name}} 🌸 Bir süredir uğramadın — müsait olduğunda yine bekleriz.",
+    "Hey {{customer_name}}, salon olarak seni özlüyoruz 💛 Tekrar görüşmek için yanındayız.",
+    "Merhaba {{customer_name}}! Uzun zaman oldu 🌟 Tekrar bir araya gelmek istersen kapımız açık.",
+    "{{customer_name}}, takvim seni hatırlattı 😊 Yeni bir randevu için müsait olduğunda yaz.",
+    "{{customer_name}}, bir süredir görüşemedik 💫 Yeniden buluşmak için sabırsızlanıyoruz.",
+    "Selam {{customer_name}}! 🌸 Bir süredir uğramadın, seni özledik. Yeni bir tarih ayarlayalım mı?",
+    "{{customer_name}}, uzun bir aradan sonra seninle görüşmek isteriz 💛",
+    "Merhaba {{customer_name}}! Salon ailesi olarak seni özledik 🌟 Tekrar görüşmek için yanındayız.",
+    "{{customer_name}}, müsait olduğunda eskisi gibi bir araya gelelim ✨",
+  ],
+  BALANCED: [
+    "Merhaba {{customer_name}} {{customer_honorific}}, uzun süredir görüşmedik 🌸 Sizi tekrar ağırlamayı isteriz.",
+    "{{customer_name}} {{customer_honorific}}, bir süredir randevu almadığınızı fark ettik 💭 Yeni bir tarih için yardımcı olabiliriz.",
+    "Selamlar {{customer_name}} {{customer_honorific}}, bir süredir yokluğunuzu hissettik 🌟 Görüşmek için sabırsızlanıyoruz.",
+    "Merhaba {{customer_name}} {{customer_honorific}}, salon olarak sizi özledik ✨ Müsait olduğunuzda tarafımıza ulaşabilirsiniz.",
+    "{{customer_name}} {{customer_honorific}}, müsait olduğunuzda tekrar görüşmek isteriz 💫 Yeni randevu için yanınızdayız.",
+    "Merhaba {{customer_name}} {{customer_honorific}}, uzun süredir görüşemedik 🌸 Bir randevu için bekleriz.",
+    "{{customer_name}} {{customer_honorific}}, eski güzel günlerimizi yeniden yaşamak isterseniz buradayız 💛",
+    "Selamlar {{customer_name}} {{customer_honorific}}, bir süredir gelmediğinizin farkındayız — sizi özledik 🌟",
+    "{{customer_name}} {{customer_honorific}}, salon ailesi olarak sizi tekrar ağırlamayı dileriz ✨",
+    "Merhaba {{customer_name}} {{customer_honorific}}, tekrar bir araya gelmek için kapımız her zaman açık 🌸",
+  ],
+  PROFESSIONAL: [
+    "Sayın {{customer_name}} {{customer_surname}}, uzun bir süredir randevu kaydınız oluşmamıştır. Sizi tekrar ağırlamak isteriz; müsait olduğunuzda tarafımıza ulaşabilirsiniz.",
+    "Sayın {{customer_name}} {{customer_surname}}, salon olarak yokluğunuzu hissetmekteyiz. Yeni planlama için bizimle iletişime geçebilirsiniz.",
+    "Sayın {{customer_name}} {{customer_surname}}, müşterilerimiz arasında değerli yerinizin hala devam etmesini umuyoruz. Yeni randevu için tarafımıza yazabilirsiniz.",
+    "Sayın {{customer_name}} {{customer_surname}}, bir süredir görüşmediğimizin farkındayız. Tekrar bir araya gelmek için kapımız açıktır.",
+    "Sayın {{customer_name}} {{customer_surname}}, hizmetlerimizden yararlanmak istediğinizde tarafımıza ulaşabilirsiniz.",
+    "Sayın {{customer_name}} {{customer_surname}}, son ziyaretinizden bu yana belirli bir süre geçmiştir. Yeniden görüşmek isteriz.",
+    "Sayın {{customer_name}} {{customer_surname}}, müşterimiz olarak yokluğunuzu önemsiyoruz. Yeni randevu için tarafımıza ulaşabilirsiniz.",
+    "Sayın {{customer_name}} {{customer_surname}}, salon olarak siz değerli müşterilerimizi tekrar ağırlamak isteriz.",
+    "Sayın {{customer_name}} {{customer_surname}}, hatırlatma niteliğinde mesajımız: hizmetlerimiz her zaman emrinizdedir.",
+    "Sayın {{customer_name}} {{customer_surname}}, müsait olduğunuz bir tarihte tarafımıza ulaşabilirsiniz.",
+  ],
+};
+
+// ─────────────────────────────────────────────────────────────────
 // Registry
 // ─────────────────────────────────────────────────────────────────
 export const TIERED_TEMPLATE_VARIATIONS: Record<string, TieredVariations> = {
@@ -251,6 +337,8 @@ export const TIERED_TEMPLATE_VARIATIONS: Record<string, TieredVariations> = {
   kedy_no_show_hatirlatma: KEDY_NO_SHOW_HATIRLATMA,
   kedy_waitlist_teklif: KEDY_WAITLIST_TEKLIF,
   kedy_memnuniyet_anketi: KEDY_MEMNUNIYET_ANKETI,
+  kedy_dogum_gunu_kutlamasi: KEDY_DOGUM_GUNU_KUTLAMASI,
+  kedy_geri_donus: KEDY_GERI_DONUS,
 };
 
 // ─────────────────────────────────────────────────────────────────

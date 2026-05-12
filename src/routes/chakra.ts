@@ -56,6 +56,12 @@ const MASTER_TEMPLATE_VARIATIONS: Record<string, string[]> = {
   kedy_no_show_hatirlatma: [
     "Merhaba {{customer_name}} {{customer_honorific}}, bugünkü randevunuza gelemediğinizi fark ettik. İsterseniz yeni bir tarih ayarlayalım. Plan değişikliği için en az {{late_policy_hours}} saat öncesinden bildirim rica ederiz."
   ],
+  kedy_dogum_gunu_kutlamasi: [
+    "Merhaba {{customer_name}} {{customer_honorific}}, doğum gününüzü kutlar, sağlık ve mutluluk dolu bir yıl dileriz 🎉"
+  ],
+  kedy_geri_donus: [
+    "Merhaba {{customer_name}} {{customer_honorific}}, uzun süredir görüşmedik 🌸 Sizi tekrar ağırlamayı isteriz."
+  ],
   kedy_waitlist_teklif: [
     "Güzel haber {{customer_name}}! Bekleme listenizde olduğunuz {{service_name}} için {{appointment_date}} vaktinde bir boşluk oluştu! ✨",
     "Merhaba! {{appointment_date}} saatindeki {{service_name}} hizmeti artık müsait. Sizinle doldurabiliriz! ⏰",
@@ -304,6 +310,40 @@ const KEDY_MASTER_TEMPLATES = [
             payload: 'FEEDBACK_ISSUE'
           }
         ]
+      }
+    ]
+  },
+  {
+    name: 'kedy_dogum_gunu_kutlamasi',
+    category: 'UTILITY',
+    parameter_format: 'NAMED',
+    eventType: 'BIRTHDAY',
+    components: [
+      {
+        type: 'BODY',
+        text: MASTER_TEMPLATE_VARIATIONS.kedy_dogum_gunu_kutlamasi[0],
+        example: {
+          body_text_named_params: [
+            { param_name: 'customer_name', example: 'Müşteri' }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    name: 'kedy_geri_donus',
+    category: 'UTILITY',
+    parameter_format: 'NAMED',
+    eventType: 'WINBACK',
+    components: [
+      {
+        type: 'BODY',
+        text: MASTER_TEMPLATE_VARIATIONS.kedy_geri_donus[0],
+        example: {
+          body_text_named_params: [
+            { param_name: 'customer_name', example: 'Müşteri' }
+          ]
+        }
       }
     ]
   }

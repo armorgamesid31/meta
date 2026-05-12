@@ -1,0 +1,64 @@
+# Geri Dönüş (Winback) Şablon Varyasyonları (30 Adet — 15 Seçilen, 15 Yedek)
+# Tetik: Müşteri son N gün (default 45) içinde randevu almadıysa
+# Davranış: Müşteri başına yılda max 1-2 gönderim
+# Değişkenler: {{customer_name}}, {{customer_surname}}, {{customer_honorific}}
+#
+# ⚠️ META KATEGORİ NOTU:
+# UTILITY-safe tasarım — indirim/kupon/teklif dili YOK. Sadece ilişki bağlamında
+# "uzun süredir görüşmedik, müsait olduğunda tekrar bekleriz" mesajı.
+# Eğer salon teşvik etmek isterse müşteri salona dönünce fiziksel sunar.
+# Body'e "%X indirim" eklemeyin → Meta otomatik MARKETING'e atar.
+
+# ═══════════════════════════════════════════════════════════════════
+# FRIENDLY
+# ═══════════════════════════════════════════════════════════════════
+
+## SEÇİLEN (Production) — 5 adet
+1. {{customer_name}}, uzun süredir görüşmedik 💭 Eski güzel günleri özledik ✨ Tekrar buluşmak ister misin?
+2. Selam {{customer_name}} 🌸 Bir süredir uğramadın — müsait olduğunda yine bekleriz.
+3. Hey {{customer_name}}, salon olarak seni özlüyoruz 💛 Tekrar görüşmek için yanındayız.
+4. Merhaba {{customer_name}}! Uzun zaman oldu 🌟 Tekrar bir araya gelmek istersen kapımız açık.
+5. {{customer_name}}, takvim seni hatırlattı 😊 Yeni bir randevu için müsait olduğunda yaz.
+
+## YEDEK (Henüz onaya gitmiyor) — 5 adet
+6. {{customer_name}}, bir süredir görüşemedik 💫 Yeniden buluşmak için sabırsızlanıyoruz.
+7. Selam {{customer_name}}! 🌸 Bir süredir uğramadın, seni özledik. Yeni bir tarih ayarlayalım mı?
+8. {{customer_name}}, uzun bir aradan sonra seninle görüşmek isteriz 💛
+9. Merhaba {{customer_name}}! Salon ailesi olarak seni özledik 🌟 Tekrar görüşmek için yanındayız.
+10. {{customer_name}}, müsait olduğunda eskisi gibi bir araya gelelim ✨
+
+# ═══════════════════════════════════════════════════════════════════
+# BALANCED — {{customer_name}} {{customer_honorific}} + emoji
+# ═══════════════════════════════════════════════════════════════════
+
+## SEÇİLEN (Production) — 5 adet
+1. Merhaba {{customer_name}} {{customer_honorific}}, uzun süredir görüşmedik 🌸 Sizi tekrar ağırlamayı isteriz.
+2. {{customer_name}} {{customer_honorific}}, bir süredir randevu almadığınızı fark ettik 💭 Yeni bir tarih için yardımcı olabiliriz.
+3. Selamlar {{customer_name}} {{customer_honorific}}, bir süredir yokluğunuzu hissettik 🌟 Görüşmek için sabırsızlanıyoruz.
+4. Merhaba {{customer_name}} {{customer_honorific}}, salon olarak sizi özledik ✨ Müsait olduğunuzda tarafımıza ulaşabilirsiniz.
+5. {{customer_name}} {{customer_honorific}}, müsait olduğunuzda tekrar görüşmek isteriz 💫 Yeni randevu için yanınızdayız.
+
+## YEDEK (Henüz onaya gitmiyor) — 5 adet
+6. Merhaba {{customer_name}} {{customer_honorific}}, uzun süredir görüşemedik 🌸 Bir randevu için bekleriz.
+7. {{customer_name}} {{customer_honorific}}, eski güzel günlerimizi yeniden yaşamak isterseniz buradayız 💛
+8. Selamlar {{customer_name}} {{customer_honorific}}, bir süredir gelmediğinizin farkındayız — sizi özledik 🌟
+9. {{customer_name}} {{customer_honorific}}, salon ailesi olarak sizi tekrar ağırlamayı dileriz ✨
+10. Merhaba {{customer_name}} {{customer_honorific}}, tekrar bir araya gelmek için kapımız her zaman açık 🌸
+
+# ═══════════════════════════════════════════════════════════════════
+# PROFESSIONAL — Sayın {{customer_name}} {{customer_surname}} + emojisiz
+# ═══════════════════════════════════════════════════════════════════
+
+## SEÇİLEN (Production) — 5 adet
+1. Sayın {{customer_name}} {{customer_surname}}, uzun bir süredir randevu kaydınız oluşmamıştır. Sizi tekrar ağırlamak isteriz; müsait olduğunuzda tarafımıza ulaşabilirsiniz.
+2. Sayın {{customer_name}} {{customer_surname}}, salon olarak yokluğunuzu hissetmekteyiz. Yeni planlama için bizimle iletişime geçebilirsiniz.
+3. Sayın {{customer_name}} {{customer_surname}}, müşterilerimiz arasında değerli yerinizin hala devam etmesini umuyoruz. Yeni randevu için tarafımıza yazabilirsiniz.
+4. Sayın {{customer_name}} {{customer_surname}}, bir süredir görüşmediğimizin farkındayız. Tekrar bir araya gelmek için kapımız açıktır.
+5. Sayın {{customer_name}} {{customer_surname}}, hizmetlerimizden yararlanmak istediğinizde tarafımıza ulaşabilirsiniz.
+
+## YEDEK (Henüz onaya gitmiyor) — 5 adet
+6. Sayın {{customer_name}} {{customer_surname}}, son ziyaretinizden bu yana belirli bir süre geçmiştir. Yeniden görüşmek isteriz.
+7. Sayın {{customer_name}} {{customer_surname}}, müşterimiz olarak yokluğunuzu önemsiyoruz. Yeni randevu için tarafımıza ulaşabilirsiniz.
+8. Sayın {{customer_name}} {{customer_surname}}, salon olarak siz değerli müşterilerimizi tekrar ağırlamak isteriz.
+9. Sayın {{customer_name}} {{customer_surname}}, hatırlatma niteliğinde mesajımız: hizmetlerimiz her zaman emrinizdedir.
+10. Sayın {{customer_name}} {{customer_surname}}, müsait olduğunuz bir tarihte tarafımıza ulaşabilirsiniz.
