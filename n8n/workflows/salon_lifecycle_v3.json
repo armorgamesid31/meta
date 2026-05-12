@@ -181,6 +181,10 @@
       "name": "Send: reminder 1-day",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
       "position": [800, 100],
       "credentials": {
         "httpHeaderAuth": {
@@ -205,6 +209,10 @@
       "name": "Send: reminder 3-day",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
       "position": [800, 250],
       "credentials": {
         "httpHeaderAuth": {
@@ -229,6 +237,10 @@
       "name": "Send: reminder 2-hour",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
       "position": [800, 400],
       "credentials": {
         "httpHeaderAuth": {
@@ -253,6 +265,10 @@
       "name": "Send: no-show",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
       "position": [800, 550],
       "credentials": {
         "httpHeaderAuth": {
@@ -277,6 +293,10 @@
       "name": "Send: satisfaction survey",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
       "position": [800, 700],
       "credentials": {
         "httpHeaderAuth": {
@@ -301,6 +321,10 @@
       "name": "Send: Google Maps review",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
       "position": [800, 850],
       "credentials": {
         "httpHeaderAuth": {
@@ -325,6 +349,10 @@
       "name": "Send: birthday",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
       "position": [800, 1000],
       "credentials": {
         "httpHeaderAuth": {
@@ -349,6 +377,10 @@
       "name": "Send: winback",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
       "position": [800, 1150],
       "credentials": {
         "httpHeaderAuth": {
