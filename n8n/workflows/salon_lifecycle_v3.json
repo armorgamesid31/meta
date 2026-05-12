@@ -1,0 +1,412 @@
+{
+  "name": "Salon Lifecycle Notifications v3",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "trigger_hourly",
+      "name": "Hourly Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [200, 400]
+    },
+
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH eligible AS (\n  SELECT a.id AS \"appointmentId\", a.\"customerId\", a.\"salonId\"\n  FROM \"Appointment\" a\n  WHERE a.status = 'BOOKED'\n    AND a.\"customerId\" IS NOT NULL\n    AND a.\"startTime\" > NOW() + INTERVAL '23 hours'\n    AND a.\"startTime\" < NOW() + INTERVAL '25 hours'\n    AND NOT EXISTS (\n      SELECT 1 FROM \"NotificationLog\" nl\n      WHERE nl.\"appointmentId\" = a.id AND nl.type = 'REMINDER_1_DAY'\n    )\n)\nSELECT * FROM eligible LIMIT 500;"
+      },
+      "id": "q_reminder_1d",
+      "name": "Query: 1-day reminders due",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [500, 100],
+      "credentials": {
+        "postgres": {
+          "id": "kedy_postgres",
+          "name": "Kedy Postgres"
+        }
+      }
+    },
+
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH eligible AS (\n  SELECT a.id AS \"appointmentId\", a.\"customerId\", a.\"salonId\"\n  FROM \"Appointment\" a\n  WHERE a.status = 'BOOKED'\n    AND a.\"customerId\" IS NOT NULL\n    AND a.\"startTime\" > NOW() + INTERVAL '71 hours'\n    AND a.\"startTime\" < NOW() + INTERVAL '73 hours'\n    AND NOT EXISTS (\n      SELECT 1 FROM \"NotificationLog\" nl\n      WHERE nl.\"appointmentId\" = a.id AND nl.type = 'REMINDER_3_DAY'\n    )\n)\nSELECT * FROM eligible LIMIT 500;"
+      },
+      "id": "q_reminder_3d",
+      "name": "Query: 3-day reminders due",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [500, 250],
+      "credentials": {
+        "postgres": {
+          "id": "kedy_postgres",
+          "name": "Kedy Postgres"
+        }
+      }
+    },
+
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH eligible AS (\n  SELECT a.id AS \"appointmentId\", a.\"customerId\", a.\"salonId\"\n  FROM \"Appointment\" a\n  WHERE a.status = 'BOOKED'\n    AND a.\"customerId\" IS NOT NULL\n    AND a.\"startTime\" > NOW() + INTERVAL '1 hour 30 minutes'\n    AND a.\"startTime\" < NOW() + INTERVAL '2 hours 30 minutes'\n    AND NOT EXISTS (\n      SELECT 1 FROM \"NotificationLog\" nl\n      WHERE nl.\"appointmentId\" = a.id AND nl.type = 'REMINDER_2_HOUR'\n    )\n)\nSELECT * FROM eligible LIMIT 500;"
+      },
+      "id": "q_reminder_2h",
+      "name": "Query: 2-hour reminders due",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [500, 400],
+      "credentials": {
+        "postgres": {
+          "id": "kedy_postgres",
+          "name": "Kedy Postgres"
+        }
+      }
+    },
+
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH eligible AS (\n  SELECT a.id AS \"appointmentId\", a.\"customerId\", a.\"salonId\"\n  FROM \"Appointment\" a\n  WHERE a.\"customerId\" IS NOT NULL\n    AND a.status = 'NO_SHOW'\n    AND a.\"endTime\" > NOW() - INTERVAL '2 hours'\n    AND a.\"endTime\" < NOW()\n    AND NOT EXISTS (\n      SELECT 1 FROM \"NotificationLog\" nl\n      WHERE nl.\"appointmentId\" = a.id AND nl.type = 'NO_SHOW'\n    )\n)\nSELECT * FROM eligible LIMIT 500;"
+      },
+      "id": "q_no_show",
+      "name": "Query: no-show notifications",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [500, 550],
+      "credentials": {
+        "postgres": {
+          "id": "kedy_postgres",
+          "name": "Kedy Postgres"
+        }
+      }
+    },
+
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH eligible AS (\n  SELECT a.id AS \"appointmentId\", a.\"customerId\", a.\"salonId\"\n  FROM \"Appointment\" a\n  WHERE a.status = 'COMPLETED'\n    AND a.\"customerId\" IS NOT NULL\n    AND a.\"endTime\" > NOW() - INTERVAL '4 hours'\n    AND a.\"endTime\" < NOW() - INTERVAL '2 hours'\n    AND NOT EXISTS (\n      SELECT 1 FROM \"NotificationLog\" nl\n      WHERE nl.\"appointmentId\" = a.id AND nl.type = 'SATISFACTION_SURVEY'\n    )\n)\nSELECT * FROM eligible LIMIT 500;"
+      },
+      "id": "q_survey",
+      "name": "Query: satisfaction surveys due",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [500, 700],
+      "credentials": {
+        "postgres": {
+          "id": "kedy_postgres",
+          "name": "Kedy Postgres"
+        }
+      }
+    },
+
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Google Maps review request: triggered on the customer's 3rd COMPLETED\n-- appointment, sent ONCE per (customer, salon). Hard-guarded by\n-- Customer.googleReviewRequestedAt set by backend on success.\nWITH counts AS (\n  SELECT a.\"customerId\", a.\"salonId\",\n         COUNT(*) FILTER (WHERE a.status = 'COMPLETED') AS completed_count,\n         MAX(a.\"endTime\") FILTER (WHERE a.status = 'COMPLETED') AS last_completed_at\n  FROM \"Appointment\" a\n  GROUP BY a.\"customerId\", a.\"salonId\"\n)\nSELECT c.id AS \"customerId\", c.\"salonId\"\nFROM \"Customer\" c\nJOIN counts cnt ON cnt.\"customerId\" = c.id AND cnt.\"salonId\" = c.\"salonId\"\nJOIN \"Salon\" s ON s.id = c.\"salonId\"\nWHERE c.\"googleReviewRequestedAt\" IS NULL\n  AND cnt.completed_count >= 3\n  AND cnt.last_completed_at > NOW() - INTERVAL '2 hours'\n  AND s.\"googleMapsUrl\" IS NOT NULL\n  AND s.\"googleMapsUrl\" <> ''\nLIMIT 500;"
+      },
+      "id": "q_google_maps",
+      "name": "Query: Google Maps review (3rd appt)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [500, 850],
+      "credentials": {
+        "postgres": {
+          "id": "kedy_postgres",
+          "name": "Kedy Postgres"
+        }
+      }
+    },
+
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Birthday: today is customer's birthday and we haven't sent in the\n-- last 300 days (per-year dedup). Salon must have birthday offer\n-- configured (backend short-circuits if empty).\nSELECT c.id AS \"customerId\", c.\"salonId\"\nFROM \"Customer\" c\nJOIN \"Salon\" s ON s.id = c.\"salonId\"\nWHERE c.\"birthDate\" IS NOT NULL\n  AND c.\"acceptMarketing\" = true\n  AND EXTRACT(MONTH FROM c.\"birthDate\") = EXTRACT(MONTH FROM NOW())\n  AND EXTRACT(DAY FROM c.\"birthDate\") = EXTRACT(DAY FROM NOW())\n  AND s.\"birthdayDiscountText\" IS NOT NULL\n  AND s.\"birthdayDiscountText\" <> ''\n  AND s.\"birthdayValidityText\" IS NOT NULL\n  AND s.\"birthdayValidityText\" <> ''\n  AND NOT EXISTS (\n    SELECT 1 FROM \"NotificationLog\" nl\n    WHERE nl.\"customerId\" = c.id AND nl.type = 'BIRTHDAY'\n      AND nl.\"sentAt\" > NOW() - INTERVAL '300 days'\n  )\nLIMIT 500;"
+      },
+      "id": "q_birthday",
+      "name": "Query: birthdays today",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [500, 1000],
+      "credentials": {
+        "postgres": {
+          "id": "kedy_postgres",
+          "name": "Kedy Postgres"
+        }
+      }
+    },
+
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Winback: customer's last appointment is 45-46 days ago, hasn't been\n-- winback-targeted in last 30 days, opted into marketing, salon has\n-- winback offer set.\nWITH last_visits AS (\n  SELECT a.\"customerId\", a.\"salonId\", MAX(a.\"startTime\") AS last_visit\n  FROM \"Appointment\" a\n  WHERE a.status = 'COMPLETED'\n  GROUP BY a.\"customerId\", a.\"salonId\"\n)\nSELECT c.id AS \"customerId\", c.\"salonId\"\nFROM \"Customer\" c\nJOIN last_visits lv ON lv.\"customerId\" = c.id AND lv.\"salonId\" = c.\"salonId\"\nJOIN \"Salon\" s ON s.id = c.\"salonId\"\nWHERE c.\"acceptMarketing\" = true\n  AND lv.last_visit < NOW() - INTERVAL '45 days'\n  AND lv.last_visit > NOW() - INTERVAL '46 days'\n  AND s.\"winbackDiscountText\" IS NOT NULL\n  AND s.\"winbackDiscountText\" <> ''\n  AND s.\"winbackValidityText\" IS NOT NULL\n  AND s.\"winbackValidityText\" <> ''\n  AND NOT EXISTS (\n    SELECT 1 FROM \"NotificationLog\" nl\n    WHERE nl.\"customerId\" = c.id AND nl.type = 'WINBACK'\n      AND nl.\"sentAt\" > NOW() - INTERVAL '30 days'\n  )\nLIMIT 500;"
+      },
+      "id": "q_winback",
+      "name": "Query: winback candidates",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [500, 1150],
+      "credentials": {
+        "postgres": {
+          "id": "kedy_postgres",
+          "name": "Kedy Postgres"
+        }
+      }
+    },
+
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.KEDY_API_BASE }}/api/internal/lifecycle/reminder-1-day",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"salonId\": {{ $json.salonId }},\n  \"customerId\": {{ $json.customerId }},\n  \"appointmentId\": {{ $json.appointmentId }}\n}",
+        "options": {
+          "timeout": 30000,
+          "redirect": { "redirect": {} }
+        }
+      },
+      "id": "send_reminder_1d",
+      "name": "Send: reminder 1-day",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [800, 100],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "kedy_internal_api_key",
+          "name": "Kedy Internal API Key"
+        }
+      }
+    },
+
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.KEDY_API_BASE }}/api/internal/lifecycle/reminder-3-day",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"salonId\": {{ $json.salonId }},\n  \"customerId\": {{ $json.customerId }},\n  \"appointmentId\": {{ $json.appointmentId }}\n}",
+        "options": { "timeout": 30000 }
+      },
+      "id": "send_reminder_3d",
+      "name": "Send: reminder 3-day",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [800, 250],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "kedy_internal_api_key",
+          "name": "Kedy Internal API Key"
+        }
+      }
+    },
+
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.KEDY_API_BASE }}/api/internal/lifecycle/reminder-2-hour",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"salonId\": {{ $json.salonId }},\n  \"customerId\": {{ $json.customerId }},\n  \"appointmentId\": {{ $json.appointmentId }}\n}",
+        "options": { "timeout": 30000 }
+      },
+      "id": "send_reminder_2h",
+      "name": "Send: reminder 2-hour",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [800, 400],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "kedy_internal_api_key",
+          "name": "Kedy Internal API Key"
+        }
+      }
+    },
+
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.KEDY_API_BASE }}/api/internal/lifecycle/no-show",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"salonId\": {{ $json.salonId }},\n  \"customerId\": {{ $json.customerId }},\n  \"appointmentId\": {{ $json.appointmentId }}\n}",
+        "options": { "timeout": 30000 }
+      },
+      "id": "send_no_show",
+      "name": "Send: no-show",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [800, 550],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "kedy_internal_api_key",
+          "name": "Kedy Internal API Key"
+        }
+      }
+    },
+
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.KEDY_API_BASE }}/api/internal/lifecycle/satisfaction-survey",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"salonId\": {{ $json.salonId }},\n  \"customerId\": {{ $json.customerId }},\n  \"appointmentId\": {{ $json.appointmentId }}\n}",
+        "options": { "timeout": 30000 }
+      },
+      "id": "send_survey",
+      "name": "Send: satisfaction survey",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [800, 700],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "kedy_internal_api_key",
+          "name": "Kedy Internal API Key"
+        }
+      }
+    },
+
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.KEDY_API_BASE }}/api/internal/lifecycle/google-maps-review",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"salonId\": {{ $json.salonId }},\n  \"customerId\": {{ $json.customerId }}\n}",
+        "options": { "timeout": 30000 }
+      },
+      "id": "send_google_maps",
+      "name": "Send: Google Maps review",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [800, 850],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "kedy_internal_api_key",
+          "name": "Kedy Internal API Key"
+        }
+      }
+    },
+
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.KEDY_API_BASE }}/api/internal/lifecycle/birthday",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"salonId\": {{ $json.salonId }},\n  \"customerId\": {{ $json.customerId }}\n}",
+        "options": { "timeout": 30000 }
+      },
+      "id": "send_birthday",
+      "name": "Send: birthday",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [800, 1000],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "kedy_internal_api_key",
+          "name": "Kedy Internal API Key"
+        }
+      }
+    },
+
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.KEDY_API_BASE }}/api/internal/lifecycle/winback",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"salonId\": {{ $json.salonId }},\n  \"customerId\": {{ $json.customerId }}\n}",
+        "options": { "timeout": 30000 }
+      },
+      "id": "send_winback",
+      "name": "Send: winback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [800, 1150],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "kedy_internal_api_key",
+          "name": "Kedy Internal API Key"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Hourly Schedule": {
+      "main": [
+        [
+          { "node": "Query: 1-day reminders due", "type": "main", "index": 0 },
+          { "node": "Query: 3-day reminders due", "type": "main", "index": 0 },
+          { "node": "Query: 2-hour reminders due", "type": "main", "index": 0 },
+          { "node": "Query: no-show notifications", "type": "main", "index": 0 },
+          { "node": "Query: satisfaction surveys due", "type": "main", "index": 0 },
+          { "node": "Query: Google Maps review (3rd appt)", "type": "main", "index": 0 },
+          { "node": "Query: birthdays today", "type": "main", "index": 0 },
+          { "node": "Query: winback candidates", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Query: 1-day reminders due": {
+      "main": [[{ "node": "Send: reminder 1-day", "type": "main", "index": 0 }]]
+    },
+    "Query: 3-day reminders due": {
+      "main": [[{ "node": "Send: reminder 3-day", "type": "main", "index": 0 }]]
+    },
+    "Query: 2-hour reminders due": {
+      "main": [[{ "node": "Send: reminder 2-hour", "type": "main", "index": 0 }]]
+    },
+    "Query: no-show notifications": {
+      "main": [[{ "node": "Send: no-show", "type": "main", "index": 0 }]]
+    },
+    "Query: satisfaction surveys due": {
+      "main": [[{ "node": "Send: satisfaction survey", "type": "main", "index": 0 }]]
+    },
+    "Query: Google Maps review (3rd appt)": {
+      "main": [[{ "node": "Send: Google Maps review", "type": "main", "index": 0 }]]
+    },
+    "Query: birthdays today": {
+      "main": [[{ "node": "Send: birthday", "type": "main", "index": 0 }]]
+    },
+    "Query: winback candidates": {
+      "main": [[{ "node": "Send: winback", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "meta": {
+    "description": "Kedy salon lifecycle notifications. Hourly cron queries 8 notification types (3 reminders, no-show, survey, google maps, birthday, winback) and POSTs each row to the corresponding /api/internal/lifecycle/* endpoint. Backend handles context resolution, send, and NotificationLog dedup — n8n is dumb dispatch only.\n\nRequired n8n credentials:\n- 'Kedy Postgres' (postgres): DATABASE_URL of meta backend\n- 'Kedy Internal API Key' (httpHeaderAuth): Name='x-internal-api-key', Value=$INTERNAL_API_KEY\n\nRequired env vars in n8n container:\n- KEDY_API_BASE — e.g. https://api.kedyapp.com (no trailing slash)",
+    "templateCredsSetupCompleted": false
+  }
+}

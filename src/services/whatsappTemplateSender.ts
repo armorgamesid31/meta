@@ -145,3 +145,134 @@ function truncate(value: string, max: number): string {
 
 export const VERIFICATION_TEMPLATE_NAME = TEMPLATE_NAME;
 export const VERIFICATION_TEMPLATE_LANG = TEMPLATE_LANG;
+
+// ─────────────────────────────────────────────────────────────────
+// Generic template sender — used by lifecycle notifications.
+//
+// Caller passes:
+//   - salonId (resolves Chakra WABA credentials)
+//   - templateName (Meta-registered name)
+//   - recipientPhone (digits-only E.164 minus '+')
+//   - bodyParams: NAMED-param map for {{var}} in body
+//   - headerParams (opt): NAMED-param map for header
+//   - buttonParams (opt): list of button parameter values (positional)
+// ─────────────────────────────────────────────────────────────────
+
+export interface SendTemplateInput {
+  salonId: number;
+  templateName: string;
+  recipientPhone: string;
+  bodyParams?: Record<string, string>;
+  headerParams?: Record<string, string>;
+  buttonParams?: Array<{ type: 'url' | 'quick_reply'; value: string }>;
+  language?: string;
+}
+
+export interface SendTemplateResult {
+  ok: boolean;
+  messageId?: string;
+  error?: string;
+}
+
+export async function sendTemplate(input: SendTemplateInput): Promise<SendTemplateResult> {
+  const salon = await prisma.salon.findUnique({
+    where: { id: input.salonId },
+    select: { chakraPluginId: true, chakraPhoneNumberId: true },
+  });
+  if (!salon?.chakraPluginId) {
+    return { ok: false, error: 'salon_whatsapp_not_connected' };
+  }
+  const phoneNumberId = (salon.chakraPhoneNumberId || '').trim();
+  if (!phoneNumberId) {
+    return { ok: false, error: 'salon_whatsapp_phone_not_connected' };
+  }
+
+  const to = normalizeDigitsOnly(input.recipientPhone);
+  if (!to) {
+    return { ok: false, error: 'recipient_phone_invalid' };
+  }
+
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (CHAKRA_API_TOKEN) {
+    headers.Authorization = `Bearer ${CHAKRA_API_TOKEN}`;
+  }
+
+  const sendUrl = buildSendUrl(salon.chakraPluginId, phoneNumberId);
+
+  const components: any[] = [];
+
+  // Header (NAMED params) — only when provided
+  if (input.headerParams && Object.keys(input.headerParams).length > 0) {
+    components.push({
+      type: 'header',
+      parameters: Object.entries(input.headerParams).map(([name, value]) => ({
+        type: 'text',
+        parameter_name: name,
+        text: truncate(String(value || ''), 60),
+      })),
+    });
+  }
+
+  // Body (NAMED params)
+  if (input.bodyParams && Object.keys(input.bodyParams).length > 0) {
+    components.push({
+      type: 'body',
+      parameters: Object.entries(input.bodyParams).map(([name, value]) => ({
+        type: 'text',
+        parameter_name: name,
+        text: truncate(String(value || ''), 1024),
+      })),
+    });
+  }
+
+  // Buttons (positional) — Meta indexes each button separately
+  if (input.buttonParams && input.buttonParams.length > 0) {
+    input.buttonParams.forEach((btn, index) => {
+      components.push({
+        type: 'button',
+        sub_type: btn.type, // 'url' or 'quick_reply'
+        index,
+        parameters: [
+          btn.type === 'url'
+            ? { type: 'text', text: btn.value }
+            : { type: 'payload', payload: btn.value },
+        ],
+      });
+    });
+  }
+
+  const body = {
+    pluginId: salon.chakraPluginId,
+    phoneNumberId,
+    to,
+    type: 'template',
+    template: {
+      name: input.templateName,
+      language: { code: input.language || TEMPLATE_LANG },
+      components,
+    },
+  };
+
+  try {
+    const response = await axios.post(sendUrl, body, { headers, timeout: 25_000 });
+    const messageId =
+      response?.data?.messages?.[0]?.id ||
+      response?.data?.data?.messages?.[0]?.id ||
+      undefined;
+    return { ok: true, messageId };
+  } catch (error: any) {
+    const reason =
+      error?.response?.data?.error?.message ||
+      error?.response?.data?.message ||
+      error?.message ||
+      'unknown_error';
+    console.error('[sendTemplate] failed', {
+      salonId: input.salonId,
+      template: input.templateName,
+      to,
+      reason,
+      status: error?.response?.status,
+    });
+    return { ok: false, error: String(reason) };
+  }
+}

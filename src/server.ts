@@ -40,6 +40,7 @@ import internalImportsRoutes from './routes/internalImports.js';
 import internalWebsiteRoutes from './routes/internalWebsite.js';
 import channelWebhooksRoutes from './routes/channelWebhooks.js';
 import internalBillingRoutes from './routes/internalBilling.js';
+import internalLifecycleRoutes from './routes/internalLifecycle.js';
 import billingRoutes from './routes/billing.js';
 import publicRoutes from './routes/public.js';
 import { processStripeWebhook } from './services/stripeBilling.js';
@@ -241,6 +242,7 @@ app.use('/api/internal/agent-outbound', internalAgentOutboundRoutes);
 app.use('/api/internal/imports', internalImportsRoutes);
 app.use('/api/internal/website', internalWebsiteRoutes);
 app.use('/api/internal/billing', internalBillingRoutes);
+app.use('/api/internal/lifecycle', internalLifecycleRoutes);
 app.use('/api/webhooks', channelWebhooksRoutes);
 
 // Apply tenant middleware to ALL other API routes

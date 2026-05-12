@@ -130,6 +130,79 @@ router.get('/communication-tone', authenticateToken, async (req: any, res: any) 
   return res.json({ tone: salon.communicationTone });
 });
 
+// GET /api/salon/offer-config — read birthday + winback offer config.
+router.get('/offer-config', authenticateToken, async (req: any, res: any) => {
+  if (!req.user) throw new BusinessError('UNAUTHORIZED', 'Unauthorized', 401);
+  const salon = await prisma.salon.findUnique({
+    where: { id: req.user.salonId },
+    select: {
+      birthdayDiscountText: true,
+      birthdayValidityText: true,
+      winbackDiscountText: true,
+      winbackValidityText: true,
+    },
+  });
+  if (!salon) throw new BusinessError('NOT_FOUND', 'Salon bulunamadı.', 404);
+  return res.json({
+    birthday: {
+      discountText: salon.birthdayDiscountText || '',
+      validityText: salon.birthdayValidityText || '',
+      enabled: Boolean(salon.birthdayDiscountText && salon.birthdayValidityText),
+    },
+    winback: {
+      discountText: salon.winbackDiscountText || '',
+      validityText: salon.winbackValidityText || '',
+      enabled: Boolean(salon.winbackDiscountText && salon.winbackValidityText),
+    },
+  });
+});
+
+// PATCH /api/salon/offer-config — update birthday + winback offer config.
+// Empty string → disable that offer (template won't send).
+router.patch('/offer-config', authenticateToken, async (req: any, res: any) => {
+  if (!req.user) throw new BusinessError('UNAUTHORIZED', 'Unauthorized', 401);
+  const body = req.body || {};
+  const data: any = {};
+  if (body.birthday) {
+    if (typeof body.birthday.discountText === 'string') {
+      data.birthdayDiscountText = body.birthday.discountText.trim() || null;
+    }
+    if (typeof body.birthday.validityText === 'string') {
+      data.birthdayValidityText = body.birthday.validityText.trim() || null;
+    }
+  }
+  if (body.winback) {
+    if (typeof body.winback.discountText === 'string') {
+      data.winbackDiscountText = body.winback.discountText.trim() || null;
+    }
+    if (typeof body.winback.validityText === 'string') {
+      data.winbackValidityText = body.winback.validityText.trim() || null;
+    }
+  }
+  const updated = await prisma.salon.update({
+    where: { id: req.user.salonId },
+    data,
+    select: {
+      birthdayDiscountText: true,
+      birthdayValidityText: true,
+      winbackDiscountText: true,
+      winbackValidityText: true,
+    },
+  });
+  return res.json({
+    birthday: {
+      discountText: updated.birthdayDiscountText || '',
+      validityText: updated.birthdayValidityText || '',
+      enabled: Boolean(updated.birthdayDiscountText && updated.birthdayValidityText),
+    },
+    winback: {
+      discountText: updated.winbackDiscountText || '',
+      validityText: updated.winbackValidityText || '',
+      enabled: Boolean(updated.winbackDiscountText && updated.winbackValidityText),
+    },
+  });
+});
+
 // PATCH /api/salon/communication-tone — update salon's tone preference.
 router.patch('/communication-tone', authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
