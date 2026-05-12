@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
+import { syncCustomerToGlobalIdentity } from '../services/globalCustomerIdentity.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { AvailabilityEngine } from '../modules/availability/engine.js';
 import { SlotsEngine } from '../modules/availability/slots-engine.js';
@@ -2250,6 +2251,9 @@ router.post('/appointments-by-token', async (req: any, res: any) => {
           instagram: fallbackInstagram,
         },
       });
+      await syncCustomerToGlobalIdentity(customer.id).catch(err =>
+        console.error('GlobalCustomerIdentity sync failed:', err)
+      );
     } else if (
       customer.name !== primaryName.fullName ||
       (customer.firstName || '') !== primaryName.firstName ||

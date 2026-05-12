@@ -21,6 +21,7 @@ import { Prisma, SalonCommunicationTone, TemplateSubmissionState } from '@prisma
 import * as Sentry from '@sentry/node';
 import axios from 'axios';
 import { prisma } from '../prisma.js';
+import { createNotification } from './notifications.js';
 import {
   ALL_TONES,
   TEMPLATE_EXPECTED_CATEGORY,
@@ -30,6 +31,7 @@ import {
   listTemplateKeys,
   toneToTier,
 } from './templateVariations.js';
+import { OPERATIONAL_TEMPLATES } from './templateOperationalNames.js';
 
 const CHAKRA_API_BASE = (process.env.CHAKRA_WHATSAPP_SEND_URL || '').replace(/\/$/, '') || 'https://chakra.berkai.shop';
 const CHAKRA_API_TOKEN = process.env.CHAKRA_API_TOKEN || '';
@@ -381,13 +383,20 @@ export async function runSubmissionTick(opts?: { batchSize?: number }): Promise<
       });
       submitted++;
     } else {
+      // Exponential backoff: 5min × 2^attempts, capped at 1 hour.
+      // Gives Meta API time to recover on rate-limit / transient failures
+      // without abandoning the row.
+      const attemptCount = row.submissionAttempts + 1;
+      const backoffMs = Math.min(
+        5 * 60 * 1000 * Math.pow(2, Math.min(attemptCount - 1, 4)),
+        60 * 60 * 1000,
+      );
       await prisma.salonMessageTemplate.update({
         where: { id: row.id },
         data: {
           submissionAttempts: { increment: 1 },
           rejectionReason: (result.error || '').slice(0, 500),
-          // Retry in 5 min on transient failure.
-          scheduledSubmitAt: new Date(Date.now() + 5 * 60 * 1000),
+          scheduledSubmitAt: new Date(Date.now() + backoffMs),
         },
       });
       failed++;
@@ -395,6 +404,8 @@ export async function runSubmissionTick(opts?: { batchSize?: number }): Promise<
         rowId: row.id,
         templateName: row.templateName,
         error: result.error,
+        nextRetryInSec: Math.round(backoffMs / 1000),
+        attempts: attemptCount,
       });
     }
   }
@@ -488,11 +499,27 @@ export async function markPoolExhaustedIfNeeded(opts: {
       data: { submissionState: 'POOL_EXHAUSTED' },
     });
 
-    // Admin notification: 10 variations exhausted, < 3 approved. Manual
-    // template editing required. Sentry alert + console error for now;
-    // ops dashboard can listen on Sentry tag template_pool_exhausted.
+    // Admin notification — two channels:
+    // 1. AppNotification → salon admin sees an in-app push and badge on
+    //    WhatsAppTemplateStatusPage.
+    // 2. Sentry capture → Kedy ops dashboard.
     const message = `Template pool exhausted: salon=${salonId}, template=${logicalKey}, tone=${tone}, validCount=${validCount}`;
     console.error('[salonTemplateSubmitter] POOL_EXHAUSTED', { salonId, logicalKey, tone, validCount });
+
+    const friendly = OPERATIONAL_TEMPLATES.find(t => t.logicalKey === logicalKey);
+    const friendlyName = friendly?.displayName || logicalKey;
+    try {
+      await createNotification({
+        salonId,
+        eventType: 'TEMPLATE_POOL_EXHAUSTED' as any,
+        title: 'WhatsApp Şablonu Onaylanamadı',
+        body: `"${friendlyName}" şablonu için tüm metin varyasyonları denendi, Meta hiçbirini onaylamadı. Destek ekibimiz inceliyor.`,
+        payload: { logicalKey, tone, validCount },
+      });
+    } catch (err) {
+      console.error('[salonTemplateSubmitter] createNotification failed:', err);
+    }
+
     try {
       Sentry.captureMessage(message, {
         level: 'error',

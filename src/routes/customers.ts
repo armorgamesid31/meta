@@ -27,6 +27,10 @@ import {
   VERIFICATION_RESEND_COOLDOWN_SECONDS,
 } from '../services/verificationLinkService.js';
 import {
+  syncCustomerToGlobalIdentity,
+  markGlobalIdentityVerified,
+} from '../services/globalCustomerIdentity.js';
+import {
   sendVerificationLinkTemplate,
 } from '../services/whatsappTemplateSender.js';
 import {
@@ -262,6 +266,11 @@ async function upsertRegisteredCustomer(input: {
       },
     });
   }
+
+  // Mirror PII to the platform-wide GlobalCustomerIdentity (phone-keyed).
+  await syncCustomerToGlobalIdentity(customer.id).catch(err =>
+    console.error('GlobalCustomerIdentity sync failed:', err)
+  );
 
   if (input.identity) {
     const context = asObject(input.magicLink?.context);
@@ -830,6 +839,13 @@ router.post('/verify-link/confirm', async (req: any, res: any) => {
     consentSource: source,
     optInChannels: { whatsapp: true },
   });
+
+  // Sync to platform-wide GlobalCustomerIdentity (so a future salon sees
+  // this person as already-verified and can offer one-tap registration).
+  await syncCustomerToGlobalIdentity(customer.id).catch(err =>
+    console.error('GlobalCustomerIdentity sync failed:', err)
+  );
+  await markGlobalIdentityVerified(phone).catch(() => undefined);
 
   return res.status(200).json({
     state: 'verified',

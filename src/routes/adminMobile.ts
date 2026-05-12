@@ -6,6 +6,7 @@ import { prisma } from '../prisma.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { BusinessError } from '../lib/errors.js';
+import { syncCustomerToGlobalIdentity } from '../services/globalCustomerIdentity.js';
 import {
   CreateAdminCustomerInputSchema,
   type CreateAdminCustomerInput,
@@ -2774,6 +2775,10 @@ router.post('/customers', authenticateToken, validate({ body: CreateAdminCustome
         updatedAt: true,
       },
     });
+
+    await syncCustomerToGlobalIdentity(customer.id).catch(err =>
+      console.error('GlobalCustomerIdentity sync failed:', err)
+    );
 
     return res.status(201).json({ customer });
   } catch (error: any) {

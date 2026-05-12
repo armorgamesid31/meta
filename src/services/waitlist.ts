@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { randomBytes } from 'crypto';
 import { prisma } from '../prisma.js';
+import { syncCustomerToGlobalIdentity } from './globalCustomerIdentity.js';
 import type { DisplaySlot, PersonGroup } from '../modules/availability/types.js';
 import { generateAvailability } from './availabilityService.js';
 import { createNotification } from './notifications.js';
@@ -275,6 +276,10 @@ async function resolveCustomer(input: { salonId: number; customer: WaitlistCusto
       riskLevel: null,
     },
   }).catch(() => undefined);
+
+  await syncCustomerToGlobalIdentity(created.id).catch(err =>
+    console.error('GlobalCustomerIdentity sync failed:', err)
+  );
 
   return created;
 }
