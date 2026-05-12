@@ -1793,13 +1793,24 @@ router.post('/templates/sync', authenticateToken, async (req: any, res: any) => 
     }
 
     await syncAndEnsureMasterTemplates(salon.id, salon.chakraPluginId, logs);
-    
+
+    // Also seed the tone-varied wave-based queue if it hasn't been queued yet
+    // for this salon (idempotent — skipDuplicates).
+    try {
+      const tone = (salon as any).communicationTone || 'BALANCED';
+      const result = await enqueueSalonTemplates({ salonId: salon.id, tone });
+      logs.push(`Dalga kuyruğu açıldı: ${result.enqueued} şablon eklendi.`);
+    } catch (err: any) {
+      logs.push(`Dalga kuyruğu hatası: ${err?.message || err}`);
+      console.error('Manual sync enqueue failed:', err);
+    }
+
     const templates = await prisma.salonMessageTemplate.findMany({
       where: { salonId: salon.id }
     });
 
-    return res.status(200).json({ 
-      templates, 
+    return res.status(200).json({
+      templates,
       logs,
       stats: {
         total: templates.length,
