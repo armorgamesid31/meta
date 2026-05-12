@@ -1,0 +1,65 @@
+# No-Show (Randevuya Gelmeme) Hatırlatma Şablon Varyasyonları (30 Adet — 15 Seçilen, 15 Yedek)
+# Tetik: Tamamlanmış randevu saati geçtikten sonra status NO_SHOW olarak işlenince
+# Değişkenler: {{customer_name}}, {{customer_surname}}, {{customer_honorific}}, {{appointment_date}}, {{appointment_time}}, {{service_name}}, {{late_policy_hours}}
+#
+# {{late_policy_hours}} = Salon'un "Geç bildirim eşiği" ayarı (Customer Risk Policy →
+# Attendance config → unified lateChangeHours). Bu ayar iptal VE değişiklik için ortak.
+#
+# Ton hiyerarşisi:
+#   FRIENDLY     — emoji + {{customer_name}}
+#   BALANCED     — emoji + {{customer_name}} {{customer_honorific}}
+#   PROFESSIONAL — emojisiz + Sayın {{customer_name}} {{customer_surname}}
+
+# ═══════════════════════════════════════════════════════════════════
+# FRIENDLY
+# ═══════════════════════════════════════════════════════════════════
+
+## SEÇİLEN (Production) — 5 adet
+1. Selam {{customer_name}}, bugünkü randevuna gelemedin 💭 Plan değiştiyse en az {{late_policy_hours}} saat önce haber verirsen yeni saat ayarlayabiliriz.
+2. {{customer_name}}, bugün buluşamadık 🙏 İstersen yeni bir tarih bulalım.
+3. Merhaba {{customer_name}}! Bugünkü randevunu kaçırdın 🌸 Yeni bir tarih için yanındayız.
+4. Hey {{customer_name}}, randevuya bekledik ama gelemedin 💭 Plan değişirse en az {{late_policy_hours}} saat önce yazarsan ihlal sayılmaz.
+5. {{customer_name}}, bugün eksik kaldık 😊 Sana uygun bir saat bulalım mı?
+
+## YEDEK (Henüz onaya gitmiyor) — 5 adet
+6. {{customer_name}}, üzgünüz bugün buluşamadık 🙏 Yeni randevu için tarafımıza yazabilirsin.
+7. Merhaba {{customer_name}}! Bugünkü randevuna gelme şansın olmadı 💫 Sana yeni saat öneriyoruz.
+8. {{customer_name}}, takvimde küçük bir eksiklik 😊 Randevuyu kaçırdın ama yeni bir tarih için buradayız.
+9. Hey {{customer_name}}, plan değişirse en az {{late_policy_hours}} saat önce haber ver — gelecekte bunu kaçırmayalım 🌸
+10. {{customer_name}}, randevunda eksiklik oldu 💭 Yeniden bir tarih için yanındayız.
+
+# ═══════════════════════════════════════════════════════════════════
+# BALANCED — {{customer_name}} {{customer_honorific}} + emoji
+# ═══════════════════════════════════════════════════════════════════
+
+## SEÇİLEN (Production) — 5 adet
+1. Merhaba {{customer_name}} {{customer_honorific}}, bugünkü randevunuza gelemediğinizi fark ettik 🌸 İsterseniz yeni bir tarih ayarlayalım.
+2. {{customer_name}} {{customer_honorific}}, bugünkü {{service_name}} randevunuza katılım olmadı 💭 Plan değişikliği için en az {{late_policy_hours}} saat önceden bildirim rica ederiz.
+3. Selamlar {{customer_name}} {{customer_honorific}}, bugün buluşamadık 🙏 Yeni bir randevu için yardımcı olabiliriz.
+4. Merhaba {{customer_name}} {{customer_honorific}}, randevunuzdan haberinizin olmaması bizi üzdü 🌟 İlerisi için {{late_policy_hours}} saat öncesinden bilgi vermenizi rica ederiz.
+5. {{customer_name}} {{customer_honorific}}, bugünkü randevunuz kaçırılmış görünüyor ✨ Yeni bir tarih için bizimle iletişime geçebilirsiniz.
+
+## YEDEK (Henüz onaya gitmiyor) — 5 adet
+6. Merhaba {{customer_name}} {{customer_honorific}}, takvimimize göre bugünkü randevunuza gelmediniz 🙇 Yeni planlama için iletişime geçebilirsiniz.
+7. {{customer_name}} {{customer_honorific}}, bugünkü randevunuz tamamlanmadı 💭 Plan değişikliği için {{late_policy_hours}} saat öncesinden bilgi vermenizi öneririz.
+8. Selamlar {{customer_name}} {{customer_honorific}}, bugün eksik kaldık 🙏 Sizin için yeni bir tarih ayarlayabiliriz.
+9. {{customer_name}} {{customer_honorific}}, randevunuza katılım olmaması bizi üzdü 🌸 Bir sonraki seans için kapımız açık.
+10. Merhaba {{customer_name}} {{customer_honorific}}, randevu durumunuz güncellendi 📋 Yeni randevu planlaması için bekliyoruz.
+
+# ═══════════════════════════════════════════════════════════════════
+# PROFESSIONAL — Sayın {{customer_name}} {{customer_surname}} + emojisiz
+# ═══════════════════════════════════════════════════════════════════
+
+## SEÇİLEN (Production) — 5 adet
+1. Sayın {{customer_name}} {{customer_surname}}, {{appointment_date}} {{appointment_time}} randevunuza katılım gerçekleşmemiştir. Sonraki randevularınız için iptal ve değişiklik taleplerinin en az {{late_policy_hours}} saat öncesinden iletilmesini rica ederiz.
+2. Sayın {{customer_name}} {{customer_surname}}, bugünkü {{service_name}} randevunuza ilişkin katılım kaydı bulunmamaktadır. Yeni randevu için tarafımıza ulaşabilirsiniz.
+3. Sayın {{customer_name}} {{customer_surname}}, randevu kaydınız "gelinmedi" olarak işlenmiştir. Politikamız gereği iptal ve değişiklikler en az {{late_policy_hours}} saat öncesinden bildirilmelidir.
+4. Sayın {{customer_name}} {{customer_surname}}, randevunuza katılım sağlanmaması nedeniyle kaydınız güncellenmiştir. Yeni planlama için bizimle iletişime geçebilirsiniz.
+5. Sayın {{customer_name}} {{customer_surname}}, {{appointment_date}} tarihli randevunuza katılım gerçekleşmemiştir. Hatırlatma: İptal ve değişiklik talepleri için süre {{late_policy_hours}} saattir.
+
+## YEDEK (Henüz onaya gitmiyor) — 5 adet
+6. Sayın {{customer_name}} {{customer_surname}}, bugünkü randevunuzla ilgili katılım kaydı oluşmamıştır. Detaylar için iletişim sağlayabilirsiniz.
+7. Sayın {{customer_name}} {{customer_surname}}, randevu sürecinizde gelinmedi statüsü oluşmuştur. Yeni planlama için bizimle iletişime geçebilirsiniz.
+8. Sayın {{customer_name}} {{customer_surname}}, randevunuz no-show kaydı ile sonuçlanmıştır. {{late_policy_hours}} saat öncesinden bildirim politikamızı hatırlatmak isteriz.
+9. Sayın {{customer_name}} {{customer_surname}}, bugünkü randevunuza katılım olmamıştır. Sonraki randevularınızda iptal/değişiklik için süre {{late_policy_hours}} saattir.
+10. Sayın {{customer_name}} {{customer_surname}}, randevu süreciniz katılım olmadığı için güncellenmiştir. Yeni planlama yapmak isterseniz tarafımıza ulaşabilirsiniz.

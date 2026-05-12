@@ -112,44 +112,49 @@ const KEDY_RANDEVU_HATIRLATMA: TieredVariations = {
 };
 
 // ─────────────────────────────────────────────────────────────────
-// kedy_randevu_iptal
+// kedy_no_show_hatirlatma — sent when an appointment is marked NO_SHOW.
+// The {{late_policy_hours}} variable is sourced from the salon's unified
+// lateChangeHours setting (Customer Risk Policy → Geç bildirim eşiği).
+// vars: {{customer_name}}, {{customer_surname}}, {{customer_honorific}},
+//       {{appointment_date}}, {{appointment_time}}, {{service_name}},
+//       {{late_policy_hours}}
 // ─────────────────────────────────────────────────────────────────
-const KEDY_RANDEVU_IPTAL: TieredVariations = {
+const KEDY_NO_SHOW_HATIRLATMA: TieredVariations = {
   FRIENDLY: [
-    "{{customer_name}}, küçük bir not 🙏 {{appointment_date}} {{appointment_time}} randevun iptal edildi. Dilersen yeni saat bulalım.",
-    "Merhaba {{customer_name}}, {{service_name}} randevun iptal görünüyor 💭 İstersen yeniden planlayalım.",
-    "{{customer_name}}, planlar değişti 🤝 Randevun kaldırıldı; uygun olduğunda yeni tarih ayarlarız.",
-    "Üzgünüz {{customer_name}} 🙏 {{appointment_date}} randevun iptal edildi.",
-    "Selam {{customer_name}}! {{appointment_time}} randevun artık aktif değil — yenisini hemen bulabiliriz ✨",
-    "{{customer_name}}, randevu kaydın iptal oldu 💫 Sana uygun bir saat bulmak için buradayız.",
-    "Hey {{customer_name}}, {{service_name}} randevunu iptal etmek zorunda kaldık 🙌 Aynı haftaya bakalım mı?",
-    "{{customer_name}}, sistemdeki randevu kaydın kaldırıldı 📋 Destek istersen yazabilirsin.",
-    "Merhaba {{customer_name}}! {{appointment_date}} randevun iptal durumunda ✏️ Yeni planlama için yanındayız.",
-    "{{customer_name}}, takvimi birlikte yenileyelim mi? 📅 Sana uygun saatleri paylaşabiliriz.",
+    "Selam {{customer_name}}, bugünkü randevuna gelemedin 💭 Plan değiştiyse en az {{late_policy_hours}} saat önce haber verirsen yeni saat ayarlayabiliriz.",
+    "{{customer_name}}, bugün buluşamadık 🙏 İstersen yeni bir tarih bulalım.",
+    "Merhaba {{customer_name}}! Bugünkü randevunu kaçırdın 🌸 Yeni bir tarih için yanındayız.",
+    "Hey {{customer_name}}, randevuya bekledik ama gelemedin 💭 Plan değişirse en az {{late_policy_hours}} saat önce yazarsan ihlal sayılmaz.",
+    "{{customer_name}}, bugün eksik kaldık 😊 Sana uygun bir saat bulalım mı?",
+    "{{customer_name}}, üzgünüz bugün buluşamadık 🙏 Yeni randevu için tarafımıza yazabilirsin.",
+    "Merhaba {{customer_name}}! Bugünkü randevuna gelme şansın olmadı 💫 Sana yeni saat öneriyoruz.",
+    "{{customer_name}}, takvimde küçük bir eksiklik 😊 Randevuyu kaçırdın ama yeni bir tarih için buradayız.",
+    "Hey {{customer_name}}, plan değişirse en az {{late_policy_hours}} saat önce haber ver — gelecekte bunu kaçırmayalım 🌸",
+    "{{customer_name}}, randevunda eksiklik oldu 💭 Yeniden bir tarih için yanındayız.",
   ],
   BALANCED: [
-    "Merhaba {{customer_name}} {{customer_honorific}}, {{appointment_date}} {{appointment_time}} randevunuz iptal edildi 🙏 Yeni tarih için yardımcı olabiliriz.",
-    "{{customer_name}} {{customer_honorific}}, {{service_name}} randevunuzun iptal bilgisini iletiyoruz 💭",
-    "Selamlar {{customer_name}} {{customer_honorific}}, randevu kaydınız pasif duruma alındı 📋",
-    "{{customer_name}} {{customer_honorific}}, {{appointment_date}} tarihli rezervasyonunuz iptal edildi 🌸",
-    "Merhaba {{customer_name}} {{customer_honorific}}, dilerseniz yeni bir randevu planlamasında yardımcı olabiliriz 💫",
-    "{{customer_name}} {{customer_honorific}}, {{appointment_time}} randevunuz artık geçerli değil ✏️",
-    "Selamlar {{customer_name}} {{customer_honorific}}, randevu iptal bilgisi: {{service_name}} 🙏",
-    "{{customer_name}} {{customer_honorific}}, yeni planlama için bizimle iletişime geçebilirsiniz 🤝",
-    "Merhaba {{customer_name}} {{customer_honorific}}, iptal işleminiz başarıyla tamamlandı 🌟",
-    "{{customer_name}} {{customer_honorific}}, randevu durumunuz güncellendi: İPTAL 📋",
+    "Merhaba {{customer_name}} {{customer_honorific}}, bugünkü randevunuza gelemediğinizi fark ettik 🌸 İsterseniz yeni bir tarih ayarlayalım.",
+    "{{customer_name}} {{customer_honorific}}, bugünkü {{service_name}} randevunuza katılım olmadı 💭 Plan değişikliği için en az {{late_policy_hours}} saat önceden bildirim rica ederiz.",
+    "Selamlar {{customer_name}} {{customer_honorific}}, bugün buluşamadık 🙏 Yeni bir randevu için yardımcı olabiliriz.",
+    "Merhaba {{customer_name}} {{customer_honorific}}, randevunuzdan haberinizin olmaması bizi üzdü 🌟 İlerisi için {{late_policy_hours}} saat öncesinden bilgi vermenizi rica ederiz.",
+    "{{customer_name}} {{customer_honorific}}, bugünkü randevunuz kaçırılmış görünüyor ✨ Yeni bir tarih için bizimle iletişime geçebilirsiniz.",
+    "Merhaba {{customer_name}} {{customer_honorific}}, takvimimize göre bugünkü randevunuza gelmediniz 🙇 Yeni planlama için iletişime geçebilirsiniz.",
+    "{{customer_name}} {{customer_honorific}}, bugünkü randevunuz tamamlanmadı 💭 Plan değişikliği için {{late_policy_hours}} saat öncesinden bilgi vermenizi öneririz.",
+    "Selamlar {{customer_name}} {{customer_honorific}}, bugün eksik kaldık 🙏 Sizin için yeni bir tarih ayarlayabiliriz.",
+    "{{customer_name}} {{customer_honorific}}, randevunuza katılım olmaması bizi üzdü 🌸 Bir sonraki seans için kapımız açık.",
+    "Merhaba {{customer_name}} {{customer_honorific}}, randevu durumunuz güncellendi 📋 Yeni randevu planlaması için bekliyoruz.",
   ],
   PROFESSIONAL: [
-    "Sayın {{customer_name}} {{customer_surname}}, {{appointment_date}} {{appointment_time}} tarihli randevunuz iptal edilmiştir.",
-    "Sayın {{customer_name}} {{customer_surname}}, rezervasyon kaydınız sistemden kaldırılmıştır.",
-    "Sayın {{customer_name}} {{customer_surname}}, {{service_name}} randevu planlamanız iptal durumuna alınmıştır.",
-    "Sayın {{customer_name}} {{customer_surname}}, randevu kaydınız geçersiz statüsündedir.",
-    "Sayın {{customer_name}} {{customer_surname}}, uygunluk durumunuza göre yeni rezervasyon oluşturulabilir.",
-    "Sayın {{customer_name}} {{customer_surname}}, iptal işleminiz sistem kayıtlarına işlenmiştir.",
-    "Sayın {{customer_name}} {{customer_surname}}, yeni randevu oluşturmak için destek ekibimizle iletişime geçebilirsiniz.",
-    "Sayın {{customer_name}} {{customer_surname}}, {{appointment_date}} tarihli rezervasyonunuz sonlandırılmıştır.",
-    "Sayın {{customer_name}} {{customer_surname}}, randevu statünüz \"İptal\" olarak güncellenmiştir.",
-    "Sayın {{customer_name}} {{customer_surname}}, anlayışınız için teşekkür ederiz.",
+    "Sayın {{customer_name}} {{customer_surname}}, {{appointment_date}} {{appointment_time}} randevunuza katılım gerçekleşmemiştir. Sonraki randevularınız için iptal/değişiklik taleplerinin en az {{late_policy_hours}} saat öncesinden iletilmesini rica ederiz.",
+    "Sayın {{customer_name}} {{customer_surname}}, bugünkü {{service_name}} randevunuza ilişkin katılım kaydı bulunmamaktadır. Yeni randevu için tarafımıza ulaşabilirsiniz.",
+    "Sayın {{customer_name}} {{customer_surname}}, randevu kaydınız \"gelinmedi\" olarak işlenmiştir. Politikamız gereği iptal ve değişiklikler en az {{late_policy_hours}} saat öncesinden bildirilmelidir.",
+    "Sayın {{customer_name}} {{customer_surname}}, randevunuza katılım sağlanmaması nedeniyle kaydınız güncellenmiştir. Yeni planlama için bizimle iletişime geçebilirsiniz.",
+    "Sayın {{customer_name}} {{customer_surname}}, {{appointment_date}} tarihli randevunuza katılım gerçekleşmemiştir. Hatırlatma: İptal ve değişiklik talepleri için süre {{late_policy_hours}} saattir.",
+    "Sayın {{customer_name}} {{customer_surname}}, bugünkü randevunuzla ilgili katılım kaydı oluşmamıştır. Detaylar için iletişim sağlayabilirsiniz.",
+    "Sayın {{customer_name}} {{customer_surname}}, randevu sürecinizde gelinmedi statüsü oluşmuştur. Yeni planlama için bizimle iletişime geçebilirsiniz.",
+    "Sayın {{customer_name}} {{customer_surname}}, randevunuz no-show kaydı ile sonuçlanmıştır. {{late_policy_hours}} saat öncesinden bildirim politikamızı hatırlatmak isteriz.",
+    "Sayın {{customer_name}} {{customer_surname}}, bugünkü randevunuza katılım olmamıştır. Sonraki randevularınızda iptal/değişiklik için süre {{late_policy_hours}} saattir.",
+    "Sayın {{customer_name}} {{customer_surname}}, randevu süreciniz katılım olmadığı için güncellenmiştir. Yeni planlama yapmak isterseniz tarafımıza ulaşabilirsiniz.",
   ],
 };
 
@@ -243,7 +248,7 @@ const KEDY_MEMNUNIYET_ANKETI: TieredVariations = {
 export const TIERED_TEMPLATE_VARIATIONS: Record<string, TieredVariations> = {
   kedy_randevu_onay: KEDY_RANDEVU_ONAY,
   kedy_randevu_hatirlatma: KEDY_RANDEVU_HATIRLATMA,
-  kedy_randevu_iptal: KEDY_RANDEVU_IPTAL,
+  kedy_no_show_hatirlatma: KEDY_NO_SHOW_HATIRLATMA,
   kedy_waitlist_teklif: KEDY_WAITLIST_TEKLIF,
   kedy_memnuniyet_anketi: KEDY_MEMNUNIYET_ANKETI,
 };

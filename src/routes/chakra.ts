@@ -51,17 +51,10 @@ const MASTER_TEMPLATE_VARIATIONS: Record<string, string[]> = {
     "Randevunuz yarın! {{appointment_time}} | {{service_name}}. Sizi görmek için sabırsızlanıyoruz {{customer_name}}! 😊 {{location_url}}",
     "Selamlar, yarın {{appointment_time}} tarihli {{service_name}} randevunuzun yaklaştığını hatırlatmak istedik. 🌺 {{location_url}}"
   ],
-  kedy_randevu_iptal: [
-    "Üzgünüz {{customer_name}}! Randevunuz {{appointment_date}} tarihinde iptal edilmiştir. Yeni bir randevu için bizi arayın. 😔",
-    "Bilgilendirme: {{appointment_date}} tarihindeki {{service_name}} randevunuz iptal edildi {{customer_name}}. ❌",
-    "Merhaba {{customer_name}}, {{appointment_date}} tarihli {{service_name}} randevunuz ne yazık ki iptal edilmiştir. 🙏",
-    "Randevu İptali: {{appointment_date}} vaktindeki randevunuzun iptal edildiğini bildirmek isteriz {{customer_name}}. 📄",
-    "Selam! {{appointment_date}} tarihindeki randevunuzun iptal işlemi tamamlandı. 🌸",
-    "Randevu Durumu: {{appointment_date}} tarihindeki {{service_name}} randevunuz iptal görünüyor {{customer_name}}. 🗒️",
-    "Üzgün kalarak bildiriyoruz; {{appointment_date}} tarihli randevunuz şu an için iptal edildi. 🌟",
-    "Bilgi: {{appointment_date}} tarihinde gerçekleşecek {{service_name}} randevunuzun iptal edildiğini teyit ederiz. ✔️",
-    "Merhaba {{customer_name}}, beklenmeyen bir durum sebebiyle {{appointment_date}} randevunuz iptal edildi. 🌺",
-    "Selamlar {{customer_name}}, {{appointment_date}} tarihli {{service_name}} randevunuz sistemden kaldırılmıştır. 👋"
+  // Tier-aware: variations live in templateVariations.ts.
+  // Flat fallback for legacy callers.
+  kedy_no_show_hatirlatma: [
+    "Merhaba {{customer_name}} {{customer_honorific}}, bugünkü randevunuza gelemediğinizi fark ettik. İsterseniz yeni bir tarih ayarlayalım. Plan değişikliği için en az {{late_policy_hours}} saat öncesinden bildirim rica ederiz."
   ],
   kedy_waitlist_teklif: [
     "Güzel haber {{customer_name}}! Bekleme listenizde olduğunuz {{service_name}} için {{appointment_date}} vaktinde bir boşluk oluştu! ✨",
@@ -186,19 +179,20 @@ const KEDY_MASTER_TEMPLATES = [
     ]
   },
   {
-    name: 'kedy_randevu_iptal',
+    name: 'kedy_no_show_hatirlatma',
     category: 'UTILITY',
     parameter_format: 'NAMED',
-    eventType: 'CANCELLATION',
+    eventType: 'NO_SHOW',
     components: [
       {
         type: 'BODY',
-        text: MASTER_TEMPLATE_VARIATIONS.kedy_randevu_iptal[0],
+        text: MASTER_TEMPLATE_VARIATIONS.kedy_no_show_hatirlatma[0],
         example: {
           body_text_named_params: [
             { param_name: 'customer_name', example: 'Müşteri' },
             { param_name: 'appointment_date', example: '14 Nisan 15:30' },
-            { param_name: 'service_name', example: 'Saç Kesimi' }
+            { param_name: 'service_name', example: 'Saç Kesimi' },
+            { param_name: 'late_policy_hours', example: '24' }
           ]
         }
       }
