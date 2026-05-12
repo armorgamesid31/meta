@@ -124,9 +124,9 @@ async function handleCategoryUpdate(opts: {
     const expectedCategory = row.expectedCategory || 'UTILITY';
     const actualCategory = newCategory || expectedCategory;
 
-    // Guard: don't touch user_marked_outdated rows.
+    // Guard: don't touch user_marked_outdated rows (REJECTED or POOL_EXHAUSTED).
     if (
-      row.submissionState === 'REJECTED' &&
+      (row.submissionState === 'REJECTED' || row.submissionState === 'POOL_EXHAUSTED') &&
       typeof row.rejectionReason === 'string' &&
       row.rejectionReason.startsWith('user_marked_outdated')
     ) {
@@ -199,9 +199,11 @@ async function handleSingleStatusEvent(opts: {
     // promoted back to ACTIVE_VALID just because Meta later approved them.
     // The body they were submitted with is known-stale; picking them at
     // send time would deliver the wrong content. Record the Meta status
-    // for audit but keep submissionState=REJECTED.
+    // for audit but don't change submissionState. Covers REJECTED and
+    // POOL_EXHAUSTED (the latter can happen when a stale row also gets
+    // swept up in a later pool-exhaustion cascade).
     const isUserMarkedOutdated =
-      row.submissionState === 'REJECTED' &&
+      (row.submissionState === 'REJECTED' || row.submissionState === 'POOL_EXHAUSTED') &&
       typeof row.rejectionReason === 'string' &&
       row.rejectionReason.startsWith('user_marked_outdated');
 

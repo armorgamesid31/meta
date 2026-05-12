@@ -562,13 +562,19 @@ export async function markPoolExhaustedIfNeeded(opts: {
   const allSlotsUsed = rows.length >= 10;
   const validCount = rows.filter(r => r.submissionState === 'ACTIVE_VALID').length;
 
-  if (allSlotsUsed && validCount < 3) {
+  // Don't fire POOL_EXHAUSTED while rows are still SUBMITTED — Meta is
+  // actively reviewing them and may approve some of those names. Treat
+  // SUBMITTED as "in flight, still has a chance to recover".
+  const inFlightCount = rows.filter(r => r.submissionState === 'SUBMITTED').length;
+  if (allSlotsUsed && validCount < 3 && inFlightCount === 0) {
     await prisma.salonMessageTemplate.updateMany({
       where: {
         salonId,
         templateKey: logicalKey,
         tone,
-        submissionState: { in: ['NOT_QUEUED', 'SUBMITTED', 'REJECTED', 'CATEGORY_BUMPED'] },
+        // Crucially EXCLUDE 'SUBMITTED' here — if Meta later approves one
+        // of those, the picker should still be able to use it.
+        submissionState: { in: ['NOT_QUEUED', 'REJECTED', 'CATEGORY_BUMPED'] },
       },
       data: { submissionState: 'POOL_EXHAUSTED' },
     });
