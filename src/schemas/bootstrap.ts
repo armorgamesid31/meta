@@ -3,6 +3,22 @@ import { z } from 'zod';
 export const MobileRoleSchema = z.enum(['OWNER', 'MANAGER', 'STAFF', 'RECEPTION', 'FINANCE']);
 export type MobileRole = z.infer<typeof MobileRoleSchema>;
 
+export const OnboardingStepSchema = z.enum([
+  'NOT_STARTED',
+  'WELCOME',
+  'SALON_NAME',
+  'SLUG',
+  'ADDRESS',
+  'PHONE',
+  'WORKING_HOURS',
+  'LOGO',
+  'GALLERY',
+  'SERVICES',
+  'TONE',
+  'COMPLETED',
+]);
+export type OnboardingStep = z.infer<typeof OnboardingStepSchema>;
+
 export const BootstrapResponseSchema = z.object({
   user: z.object({
     id: z.number().int(),
@@ -15,6 +31,14 @@ export const BootstrapResponseSchema = z.object({
     slug: z.string().nullable(),
     city: z.string().nullable(),
     country: z.string().nullable(),
+    onboardingStep: OnboardingStepSchema.optional(),
+    onboardingSkipped: z.array(z.string()).optional(),
+    category: z.string().nullable().optional(),
+    logoUrl: z.string().nullable().optional(),
+    kurulumScore: z.number().int().optional(),
+    kurulumStage: z.string().nullable().optional(),
+    // ISO-8601 string. Drives F5 WhatsAppNudgeBanner age threshold (>3 days).
+    createdAt: z.string().nullable().optional(),
   }),
   capabilities: z.record(z.string(), z.union([z.boolean(), z.string()])),
   featureFlags: z.record(z.string(), z.boolean()),
@@ -24,6 +48,7 @@ export const BootstrapResponseSchema = z.object({
     plan: z.string(),
     status: z.string(),
   }),
+  features: z.array(z.string()).optional(),
   setupChecklist: z
     .object({
       workingHours: z.boolean(),

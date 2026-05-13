@@ -10,6 +10,7 @@ import {
   pickNextInTier,
 } from '../services/templateVariations.js';
 import { enqueueSalonTemplates, cancelPendingSubmissions } from '../services/salonTemplateSubmitter.js';
+import { markTaskComplete } from '../services/journeyService.js';
 
 const router = Router();
 
@@ -1515,6 +1516,18 @@ router.post('/connect-event', authenticateToken, async (req: any, res: any) => {
           changedAt: new Date().toISOString(),
         },
       });
+    }
+
+    // Kurulum yolculuğu: WhatsApp bağlantısı başarıyla kuruldu → whatsapp_connected.
+    if (connected) {
+      try {
+        await markTaskComplete(salon.id, 'whatsapp_connected', {
+          pluginId,
+          whatsappPhoneNumberId,
+        });
+      } catch (err) {
+        console.error('[journey] whatsapp_connected mark failed', { salonId: salon.id, err });
+      }
     }
 
     console.log('Chakra connect event', {

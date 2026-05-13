@@ -3,7 +3,7 @@ import bcrypt from 'bcrypt';
 import { InviteStatus, UserRole } from '@prisma/client';
 import { prisma } from '../prisma.js';
 
-const INVITE_TTL_DAYS = 3;
+const INVITE_TTL_DAYS = 7;
 
 function normalizePhone(input: string): string {
   return String(input || '').replace(/\D/g, '');

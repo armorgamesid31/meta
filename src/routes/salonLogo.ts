@@ -31,6 +31,7 @@ import {
   isBackgroundRemovalConfigured,
   removeBackground,
 } from '../services/backgroundRemoval.js';
+import { markTaskComplete } from '../services/journeyService.js';
 
 const router = Router();
 
@@ -226,6 +227,13 @@ router.post(
       data: { logoUrl: publicUrl },
     });
 
+    // Kurulum yolculuğu: logo onaylandı → logo_uploaded.
+    try {
+      await markTaskComplete(salonId, 'logo_uploaded');
+    } catch (err) {
+      console.error('[journey] logo_uploaded mark failed (approve)', { salonId, err });
+    }
+
     // Clean up the staging files from /process now that we have the final.
     await deleteR2Object(processedKey);
     if (originalKey && originalToken && verifyToken({ salonId, key: originalKey, expiresAt, token: originalToken })) {
@@ -284,6 +292,13 @@ router.post(
       where: { id: salonId },
       data: { logoUrl: publicUrl },
     });
+
+    // Kurulum yolculuğu: logo güncellendi → logo_uploaded (idempotent).
+    try {
+      await markTaskComplete(salonId, 'logo_uploaded');
+    } catch (err) {
+      console.error('[journey] logo_uploaded mark failed (update)', { salonId, err });
+    }
 
     if (existing?.logoUrl) {
       try {

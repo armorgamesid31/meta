@@ -21,6 +21,7 @@ import {
   markPoolExhaustedIfNeeded,
   shouldPromoteReserve,
 } from './salonTemplateSubmitter.js';
+import { markTaskComplete } from './journeyService.js';
 
 interface TemplateStatusEvent {
   field: 'message_template_status_update';
@@ -230,6 +231,17 @@ async function handleSingleStatusEvent(opts: {
           metaCategory: actualCategory,
         },
       });
+
+      // Kurulum yolculuğu: bu salon için ilk APPROVED template → first_template_approved.
+      // markTaskComplete idempotent, sonraki onaylarda no-op.
+      try {
+        await markTaskComplete(row.salonId, 'first_template_approved', {
+          templateName: row.templateName,
+          templateKey: row.templateKey,
+        });
+      } catch (err) {
+        console.error('[journey] first_template_approved mark failed', { salonId: row.salonId, err });
+      }
 
       if (!categoryMatches && row.templateKey && row.tone) {
         // Only promote a reserve if we don't already have 3 valid + in-flight.

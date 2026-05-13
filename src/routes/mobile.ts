@@ -11,6 +11,7 @@ import { BusinessError } from '../lib/errors.js';
 import { createNotification, getDefaultNotificationPolicy } from '../services/notifications.js';
 import { getPushProviderStatus } from '../services/pushProvider.js';
 import { ACCESS_VERSION, ensureSalonAccessSeed, getEffectivePermissionSet } from '../services/accessControl.js';
+import { getFeaturesForPlan } from '../services/planFeatures.js';
 
 const router = Router();
 
@@ -39,6 +40,13 @@ router.get('/bootstrap', authenticateToken, async (req: any, res: any) => {
             bookingMode: true,
             whatsappPhone: true,
             address: true,
+            onboardingStep: true,
+            onboardingSkipped: true,
+            category: true,
+            logoUrl: true,
+            kurulumScore: true,
+            kurulumStage: true,
+            createdAt: true,
           },
         },
       },
@@ -74,7 +82,7 @@ router.get('/bootstrap', authenticateToken, async (req: any, res: any) => {
           })
         : null;
 
-    const [settings, serviceCount, staffCount] = await prisma.$transaction([
+    const [settings, serviceCount, staffCount, latestSubscription] = await prisma.$transaction([
       prisma.salonSettings.findUnique({
         where: { salonId: user.salon.id },
         select: {
@@ -86,7 +94,14 @@ router.get('/bootstrap', authenticateToken, async (req: any, res: any) => {
       }),
       prisma.service.count({ where: { salonId: user.salon.id } }),
       prisma.staff.count({ where: { salonId: user.salon.id } }),
+      prisma.salonSubscription.findFirst({
+        where: { salonId: user.salon.id },
+        orderBy: { id: 'desc' },
+        select: { planKey: true, status: true },
+      }),
     ]);
+
+    const features = getFeaturesForPlan(latestSubscription?.planKey ?? null);
 
     const setupChecklist = {
       workingHours:
@@ -105,12 +120,20 @@ router.get('/bootstrap', authenticateToken, async (req: any, res: any) => {
         slug: user.salon.slug,
         city: user.salon.city,
         country: user.salon.countryCode,
+        onboardingStep: user.salon.onboardingStep,
+        onboardingSkipped: user.salon.onboardingSkipped ?? [],
+        category: user.salon.category ?? null,
+        logoUrl: user.salon.logoUrl ?? null,
+        kurulumScore: user.salon.kurulumScore ?? 0,
+        kurulumStage: user.salon.kurulumStage ?? null,
+        createdAt: user.salon.createdAt?.toISOString() ?? null,
       },
       capabilities: buildCapabilities(user.role),
       featureFlags: buildFeatureFlags(user.role, user.salon.bookingMode, Boolean(normalizedWhatsapp), permissions),
       permissions,
       accessVersion: ACCESS_VERSION,
       subscription: buildSubscription(),
+      features,
       setupChecklist: {
         ...setupChecklist,
         completed: Object.values(setupChecklist).every(Boolean),

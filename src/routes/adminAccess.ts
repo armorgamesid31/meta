@@ -15,6 +15,7 @@ import {
   writeAccessAudit,
 } from '../services/accessControl.js';
 import { hashPlainToken } from '../services/inviteService.js';
+import { markTaskComplete } from '../services/journeyService.js';
 
 const router = Router();
 
@@ -342,6 +343,17 @@ router.post('/users', authenticateToken, requirePermissionKey('access.users.mana
       targetId: String(created.id),
       metadata: { role, secondaryRoles, staffId },
     });
+
+    // Kurulum yolculuğu: ilk ekip daveti oluşturulduğunda first_team_invited
+    // görevini işaretle. markTaskComplete idempotent — sonraki davetlerde no-op.
+    try {
+      await markTaskComplete(auth.salonId, 'first_team_invited', {
+        membershipId: created.id,
+        role,
+      });
+    } catch (err) {
+      console.error('[journey] first_team_invited mark failed', { salonId: auth.salonId, err });
+    }
 
     return res.status(201).json({
       item: created,

@@ -29,11 +29,13 @@ const metaTemplates = r.data?.data || [];
 const metaByName = new Map(metaTemplates.map(t => [t.name, t]));
 console.log(`Meta has ${metaTemplates.length} templates`);
 
+// Look at ALL non-SUBMITTED, non-ACTIVE_VALID rows. If Meta has them
+// PENDING/APPROVED, our local state is wrong — repair it.
 const wrongRejected = await prisma.salonMessageTemplate.findMany({
   where: {
     salonId: SALON_ID,
-    submissionState: 'REJECTED',
-    rejectionReason: 'user_marked_outdated_template_content',
+    submissionState: { in: ['REJECTED', 'POOL_EXHAUSTED', 'NOT_QUEUED'] },
+    templateName: { not: null },
   },
   select: { id: true, templateName: true, templateKey: true, tone: true },
 });

@@ -491,6 +491,135 @@ router.post('/logout', async (req: any, res: any) => {
   }
 });
 
+router.post('/switch-salon', authenticateToken, async (req: any, res: any) => {
+  if (!req.user) {
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
+  }
+
+  const identityId = Number(req.user.identityId || 0);
+  if (!identityId) {
+    throw new BusinessError('UNAUTHORIZED', 'Oturum bilgisi eksik.', 401);
+  }
+
+  const requestedSalonId = Number(req.body?.salonId || 0);
+  if (!Number.isInteger(requestedSalonId) || requestedSalonId <= 0) {
+    throw new BusinessError('VALIDATION_FAILED', 'salonId pozitif tam sayi olmali.', 400);
+  }
+
+  try {
+    const membership = await prisma.salonMembership.findUnique({
+      where: { salonId_identityId: { salonId: requestedSalonId, identityId } },
+      include: {
+        salon: { select: { id: true, name: true, slug: true, logoUrl: true } },
+        identity: { select: { id: true, email: true, phone: true, isActive: true, passwordHash: true } },
+      },
+    });
+
+    if (!membership || !membership.isActive || !membership.identity?.isActive) {
+      throw new BusinessError('FORBIDDEN', 'Bu salonda aktif uyeliginiz yok.', 403);
+    }
+
+    // Mirror the legacy SalonUser provisioning used in /login so we always
+    // have a legacySalonUserId for the JWT payload and downstream queries.
+    let legacyUserId = membership.legacySalonUserId || 0;
+    if (!legacyUserId) {
+      const legacy = await prisma.salonUser.create({
+        data: {
+          salonId: membership.salonId,
+          email: membership.identity.email || `legacy-${membership.identity.id}@kedy.local`,
+          phone: membership.identity.phone || null,
+          passwordHash: membership.identity.passwordHash,
+          role: membership.role,
+          secondaryRoles: membership.secondaryRoles || null,
+          isActive: membership.isActive,
+          passwordResetRequired: membership.passwordResetRequired,
+        },
+      });
+      legacyUserId = legacy.id;
+      await prisma.salonMembership.update({
+        where: { id: membership.id },
+        data: { legacySalonUserId: legacy.id },
+      });
+    }
+
+    // Revoke the caller's existing refresh sessions for the PREVIOUS salon
+    // scope. MobileAuthSession rows are per-(membership, salon), so a switch
+    // means the old session is no longer valid for this device's context.
+    const previousMembershipId = Number(req.user.membershipId || 0);
+    if (previousMembershipId && previousMembershipId !== membership.id) {
+      await prisma.mobileAuthSession.updateMany({
+        where: {
+          membershipId: previousMembershipId,
+          revokedAt: null,
+        },
+        data: { revokedAt: new Date() },
+      });
+    }
+
+    const { accessToken, refreshToken } = await createAuthTokens({
+      legacyUserId,
+      identityId,
+      membershipId: membership.id,
+      salonId: membership.salonId,
+      role: membership.role as string,
+    } as any);
+    await ensureSalonAccessSeed(membership.salonId);
+
+    return res.status(200).json({
+      accessToken,
+      refreshToken,
+      salon: {
+        id: membership.salon.id,
+        name: membership.salon.name,
+        slug: membership.salon.slug,
+        logoUrl: membership.salon.logoUrl,
+      },
+    });
+  } catch (error) {
+    if (error instanceof BusinessError) throw error;
+    console.error('Switch salon error:', error);
+    throw new BusinessError('INTERNAL_ERROR', 'Sunucu hatasi.', 500);
+  }
+});
+
+/**
+ * GET /memberships  (mounted at /auth and /api/auth)
+ *
+ * Returns every active SalonMembership for the calling identity so the
+ * frontend salon switcher can render them. The user's currently-active
+ * salon is included; the client picks it out via the access-token's salonId.
+ *
+ * Response shape: { memberships: [{ salonId, name, slug, logoUrl, role }] }
+ */
+router.get('/memberships', authenticateToken, async (req: any, res: any) => {
+  if (!req.user) {
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
+  }
+
+  const identityId = Number(req.user.identityId || 0);
+  if (!identityId) {
+    throw new BusinessError('UNAUTHORIZED', 'Oturum bilgisi eksik.', 401);
+  }
+
+  const memberships = await prisma.salonMembership.findMany({
+    where: { identityId, isActive: true },
+    include: {
+      salon: { select: { id: true, name: true, slug: true, logoUrl: true } },
+    },
+    orderBy: { id: 'asc' },
+  });
+
+  return res.status(200).json({
+    memberships: memberships.map((m) => ({
+      salonId: m.salon.id,
+      name: m.salon.name,
+      slug: m.salon.slug,
+      logoUrl: m.salon.logoUrl,
+      role: m.role,
+    })),
+  });
+});
+
 router.get('/me', authenticateToken, async (req: any, res: any) => {
   if (!req.user) {
     throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);

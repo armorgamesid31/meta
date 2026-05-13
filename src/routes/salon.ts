@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import QRCode from 'qrcode';
 import { prisma } from '../prisma.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { logCustomerBehavior, calculateCancellationSeverity, BehaviorType } from '../utils/behaviorTracking.js';
@@ -6,6 +7,26 @@ import { CATEGORIES, CATEGORY_ORDER } from '../constants/categories.js';
 import { normalizeLocale } from '../constants/locales.js';
 import { resolveServiceTranslations } from '../services/serviceTranslations.js';
 import { BusinessError } from '../lib/errors.js';
+import { slugify, withSlugCollision } from '../utils/slug.js';
+import { OnboardingStatus, OnboardingStep, Prisma } from '@prisma/client';
+import { markTaskComplete } from '../services/journeyService.js';
+
+const ONBOARDING_STEP_VALUES = new Set<string>([
+  'NOT_STARTED',
+  'WELCOME',
+  'SALON_NAME',
+  'SLUG',
+  'ADDRESS',
+  'PHONE',
+  'WORKING_HOURS',
+  'LOGO',
+  'GALLERY',
+  'SERVICES',
+  'TONE',
+  'COMPLETED',
+]);
+
+const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 const router = Router();
 
@@ -111,6 +132,67 @@ router.get('/me', authenticateToken, async (req: any, res: any) => {
     console.error('Error fetching salon:', error);
     throw new BusinessError('INTERNAL_ERROR', 'Internal server error', 500);
   }
+});
+
+// GET /api/salon/booking-qr — salon owner için public booking sayfasının PNG QR kodu.
+// Query: ?size=512 (default 512, clamp 128-1024).
+// Davranış:
+//   1. Auth'lu salonun slug'ını oku (yoksa 404).
+//   2. Public booking URL'sini üret. `buildBookingUrl` helper'ı per-customer
+//      magic-link token gerektirdiği için (`/m/{token}`) burada owner'ın
+//      paylaşabileceği token'sız landing URL'sini codebase'in geri kalanıyla
+//      (salons.ts, seo.ts, slugService.ts) tutarlı şekilde slug subdomain
+//      konvansiyonundan inşa ediyoruz: `https://{slug}.kedyapp.com/randevu`.
+//      BOOKING_PUBLIC_URL_TEMPLATE veya FRONTEND_URL ile override edilebilir.
+//   3. QR PNG buffer'ı response'a yaz (Content-Type: image/png).
+router.get('/booking-qr', authenticateToken, async (req: any, res: any) => {
+  if (!req.user) {
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized', 401);
+  }
+
+  const salon = await prisma.salon.findUnique({
+    where: { id: req.user.salonId },
+    select: { slug: true },
+  });
+
+  if (!salon || !salon.slug) {
+    throw new BusinessError('NOT_FOUND', 'Salon slug bulunamadı', 404);
+  }
+
+  // Size: parse + clamp [128, 1024], default 512.
+  const rawSize = parseInt(String(req.query?.size ?? ''), 10);
+  const size =
+    Number.isFinite(rawSize) && rawSize > 0
+      ? Math.max(128, Math.min(1024, rawSize))
+      : 512;
+
+  // Public booking URL — slug subdomain konvansiyonu.
+  const template =
+    (process.env.BOOKING_PUBLIC_URL_TEMPLATE || '').trim() ||
+    'https://{slug}.kedyapp.com/randevu';
+  const bookingUrl = template.includes('{slug}')
+    ? template.replace(/\{slug\}/g, salon.slug)
+    : `${template.replace(/\/+$/, '')}/randevu`;
+
+  let buffer: Buffer;
+  try {
+    buffer = await QRCode.toBuffer(bookingUrl, {
+      type: 'png',
+      width: size,
+      errorCorrectionLevel: 'M',
+      margin: 2,
+    });
+  } catch (err) {
+    console.error('Error generating booking QR:', err);
+    throw new BusinessError('INTERNAL_ERROR', 'QR kodu üretilemedi', 500);
+  }
+
+  res.set({
+    'Content-Type': 'image/png',
+    'Content-Disposition': `inline; filename="${salon.slug}-booking-qr.png"`,
+    'Cache-Control': 'private, max-age=3600',
+  });
+  return res.send(buffer);
 });
 
 // PUT /api/salon/settings - Update salon settings
@@ -229,16 +311,68 @@ router.put('/settings', authenticateToken, async (req: any, res: any) => {
     throw new BusinessError('UNAUTHORIZED', 'Unauthorized', 401);
   }
 
-  const { name, phone, address, googleMapsUrl, workStartHour, workEndHour, slotInterval, categoryOrder, workingDays } = req.body;
+  const {
+    name,
+    slug,
+    address,
+    city,
+    district,
+    googleMapsUrl,
+    whatsappPhone,
+    contactPhone, // alias for whatsappPhone — frontend may send either
+    phone, // legacy alias
+    category,
+    workStartHour,
+    workEndHour,
+    slotInterval,
+    categoryOrder,
+    workingDays,
+  } = req.body;
+
+  const effectivePhone =
+    typeof whatsappPhone === 'string'
+      ? whatsappPhone
+      : typeof contactPhone === 'string'
+        ? contactPhone
+        : typeof phone === 'string'
+          ? phone
+          : undefined;
+
+  // Slug uniqueness pre-check (case-insensitive collision against other salons)
+  if (typeof slug === 'string' && slug.trim().length > 0) {
+    const conflict = await prisma.salon.findFirst({
+      where: { slug: slug.trim(), NOT: { id: req.user.salonId } },
+      select: { id: true },
+    });
+    if (conflict) {
+      throw new BusinessError('SLUG_TAKEN', 'Bu slug başka bir salon tarafından kullanılıyor.', 409);
+    }
+  }
 
   try {
-    if (name || phone || address || googleMapsUrl) {
+    const salonFieldsTouched =
+      name !== undefined ||
+      typeof slug === 'string' ||
+      typeof address === 'string' ||
+      typeof city === 'string' ||
+      typeof district === 'string' ||
+      typeof googleMapsUrl === 'string' ||
+      effectivePhone !== undefined ||
+      typeof category === 'string';
+
+    if (salonFieldsTouched) {
       await prisma.salon.update({
         where: { id: req.user.salonId },
         data: {
-          ...(name && { name }),
+          ...(name !== undefined && { name }),
+          ...(typeof slug === 'string' && { slug: slug.trim() }),
+          ...(typeof address === 'string' && { address }),
+          ...(typeof city === 'string' && { city }),
+          ...(typeof district === 'string' && { district }),
           ...(typeof googleMapsUrl === 'string' && { googleMapsUrl }),
-        }
+          ...(effectivePhone !== undefined && { whatsappPhone: effectivePhone }),
+          ...(typeof category === 'string' && { category: category as any }),
+        },
       });
     }
 
@@ -559,6 +693,18 @@ router.post('/services', authenticateToken, async (req: any, res: any) => {
       },
     });
 
+    // Kurulum yolculuğu: salon en az 5 hizmete ulaştıysa services_added_min_5
+    // görevini işaretle. POST /services per-create çağrılır, bu yüzden 5.
+    // hizmette bir kez tetiklenir (markTaskComplete idempotent).
+    try {
+      const count = await prisma.service.count({ where: { salonId: req.user.salonId } });
+      if (count >= 5) {
+        await markTaskComplete(req.user.salonId, 'services_added_min_5');
+      }
+    } catch (err) {
+      console.error('[journey] services_added_min_5 mark failed', { salonId: req.user.salonId, err });
+    }
+
     res.status(201).json({ service });
   } catch (error) {
     console.error('Error creating service:', error);
@@ -846,6 +992,125 @@ router.post('/appointments/:id/cancel', authenticateToken, async (req: any, res:
     console.error('Error cancelling appointment:', error);
     throw new BusinessError('INTERNAL_ERROR', 'Internal server error', 500);
   }
+});
+
+// GET /api/salon/slug-available?slug=xxx
+// PUBLIC — onboarding sırasında auth olmadan da çağrılabilir.
+// Slug uygunsa { available: true } döner; alınmışsa 3 alternatif önerir.
+// Auth header gönderilmişse ve kullanıcının kendi salonu bu slug'a sahipse
+// "available: true" döner (kendi slug'ına çakışma yaratmaz).
+router.get('/slug-available', async (req: any, res: any) => {
+  const rawSlug = String(req.query?.slug || '').trim().toLowerCase();
+  if (!rawSlug || rawSlug.length < 3 || rawSlug.length > 40 || !SLUG_PATTERN.test(rawSlug)) {
+    throw new BusinessError(
+      'VALIDATION_FAILED',
+      'slug 3-40 karakter, sadece küçük harf, rakam ve tire içerebilir.',
+      400,
+    );
+  }
+
+  const normalized = slugify(rawSlug);
+
+  const existing = await prisma.salon.findUnique({
+    where: { slug: normalized },
+    select: { id: true },
+  });
+
+  if (!existing) {
+    return res.status(200).json({ available: true });
+  }
+
+  // Alternatif öner: salonadi-1, salonadi-2, salonadi-istanbul ... DB'de boş olanları al.
+  const suggestions: string[] = [];
+  for (let attempt = 1; attempt <= 20 && suggestions.length < 3; attempt += 1) {
+    const candidate = withSlugCollision(normalized, attempt + 1);
+    if (candidate === normalized) continue;
+    const taken = await prisma.salon.findUnique({
+      where: { slug: candidate },
+      select: { id: true },
+    });
+    if (!taken) suggestions.push(candidate);
+  }
+
+  return res.status(200).json({
+    available: false,
+    suggestions,
+  });
+});
+
+// PATCH /api/salon/onboarding-step
+// Onboarding wizard ilerleme adımını günceller. Body:
+//   { step: OnboardingStep, skipped?: boolean }
+// `skipped === true` ise current step `onboardingSkipped` array'ine (dedupe ile) eklenir.
+// `step === 'COMPLETED'` ise onboardingStatus=COMPLETED ve onboardingCompletedAt set edilir.
+router.patch('/onboarding-step', authenticateToken, async (req: any, res: any) => {
+  if (!req.user) {
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized', 401);
+  }
+  const body = req.body || {};
+
+  const rawStep = body.step;
+  if (rawStep === undefined || rawStep === null) {
+    throw new BusinessError('VALIDATION_FAILED', 'step alanı zorunludur.', 400);
+  }
+  const step = String(rawStep).toUpperCase();
+  if (!ONBOARDING_STEP_VALUES.has(step)) {
+    throw new BusinessError(
+      'VALIDATION_FAILED',
+      'step geçersiz bir OnboardingStep değeri.',
+      400,
+    );
+  }
+
+  const skipped = body.skipped === true;
+
+  const data: Prisma.SalonUpdateInput = {
+    onboardingStep: step as OnboardingStep,
+  };
+
+  if (step === 'COMPLETED') {
+    data.onboardingStatus = 'COMPLETED' as OnboardingStatus;
+    data.onboardingCompletedAt = new Date();
+  } else if (step !== 'NOT_STARTED') {
+    data.onboardingStatus = 'IN_PROGRESS' as OnboardingStatus;
+  }
+
+  if (skipped) {
+    const current = await prisma.salon.findUnique({
+      where: { id: req.user.salonId },
+      select: { onboardingSkipped: true },
+    });
+    const existing = current?.onboardingSkipped ?? [];
+    const next = Array.from(new Set([...existing, step]));
+    data.onboardingSkipped = { set: next };
+  }
+
+  const updated = await prisma.salon.update({
+    where: { id: req.user.salonId },
+    data,
+    select: {
+      id: true,
+      onboardingStep: true,
+      onboardingSkipped: true,
+    },
+  });
+
+  // Kurulum yolculuğu trigger: wizard 'COMPLETED' adımına ulaştığında salonun
+  // journey'inde wizard_completed görevini işaretle. Bu journey servisinin
+  // başarısız olması ana akışı bozmamalı.
+  if (step === 'COMPLETED') {
+    try {
+      await markTaskComplete(req.user.salonId, 'wizard_completed');
+    } catch (err) {
+      console.error('[journey] wizard_completed mark failed', { salonId: req.user.salonId, err });
+    }
+  }
+
+  return res.status(200).json({
+    id: updated.id,
+    onboardingStep: updated.onboardingStep,
+    onboardingSkipped: updated.onboardingSkipped,
+  });
 });
 
 export default router;

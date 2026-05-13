@@ -26,6 +26,7 @@ async function upsertCheckoutAttempt(
     completedAt?: Date | null;
     failedAt?: Date | null;
     abandonedAt?: Date | null;
+    activationCode?: string | null;
   } = {},
 ) {
   const md = session.metadata || {};
@@ -62,6 +63,7 @@ async function upsertCheckoutAttempt(
       failedAt: patch.failedAt || null,
       abandonedAt: patch.abandonedAt || null,
       failureReason: patch.failureReason || null,
+      activationCode: patch.activationCode || null,
     },
     update: {
       stripeCustomerId: typeof session.customer === 'string' ? session.customer : null,
@@ -74,6 +76,7 @@ async function upsertCheckoutAttempt(
       failedAt: patch.failedAt,
       abandonedAt: patch.abandonedAt,
       failureReason: patch.failureReason === undefined ? undefined : patch.failureReason,
+      ...(patch.activationCode === undefined ? {} : { activationCode: patch.activationCode }),
     },
   });
 }
@@ -99,12 +102,19 @@ export async function createSubscriptionCheckoutSession(input: {
     plan.planKey === 'profesyonel_plus' && proIntroCouponId
       ? [{ coupon: proIntroCouponId }]
       : undefined;
+  // Append Stripe's {CHECKOUT_SESSION_ID} template placeholder so the success
+  // page can look up the activation code via GET /api/checkout/activation.
+  // Stripe substitutes the literal {CHECKOUT_SESSION_ID} string server-side
+  // before redirecting the customer (documented feature).
+  const successUrlWithSession = input.successUrl.includes('?')
+    ? `${input.successUrl}&session_id={CHECKOUT_SESSION_ID}`
+    : `${input.successUrl}?session_id={CHECKOUT_SESSION_ID}`;
   const session = await stripe.checkout.sessions.create({
     mode: 'subscription',
     line_items: [{ price: plan.stripePriceId, quantity: 1 }],
     ...(discounts ? { discounts } : {}),
     ...(discounts ? {} : { allow_promotion_codes: true }),
-    success_url: input.successUrl,
+    success_url: successUrlWithSession,
     cancel_url: input.cancelUrl,
     customer_email: input.ownerEmail,
     locale: (input.locale || 'tr') as any,
@@ -187,6 +197,16 @@ export async function processStripeWebhook(rawBody: Buffer, signature: string) {
       ownerName,
       ownerEmail,
       ownerPhone,
+    });
+
+    // Persist the plaintext activation code on the checkout attempt row so the
+    // marketing success page can fetch it once via session_id lookup. This is
+    // the only place the plaintext code survives — DB Invite row stores only
+    // the hash. See GET /api/checkout/activation in routes/checkout.ts.
+    await upsertCheckoutAttempt(session, {
+      status: 'COMPLETED',
+      completedAt: new Date(),
+      activationCode: provisioned.inviteCode,
     });
 
     await prisma.salonSubscription.create({

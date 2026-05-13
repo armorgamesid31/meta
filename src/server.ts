@@ -24,7 +24,9 @@ import adminMobileRoutes from './routes/adminMobile.js';
 import adminAccessRoutes from './routes/adminAccess.js';
 import adminImportsRoutes from './routes/adminImports.js';
 import adminContentRoutes from './routes/adminContent.js';
+import onboardingRoutes from './routes/onboarding.js';
 import salonLogoRoutes, { logoErrorHandler } from './routes/salonLogo.js';
+import galleryRoutes, { galleryErrorHandler } from './routes/gallery.js';
 import mobileRoutes from './routes/mobile.js';
 import customerRoutes from './routes/customers.js';
 import bookingContextRoutes from './routes/bookingContext.js';
@@ -44,6 +46,7 @@ import channelWebhooksRoutes from './routes/channelWebhooks.js';
 import internalBillingRoutes from './routes/internalBilling.js';
 import internalLifecycleRoutes from './routes/internalLifecycle.js';
 import billingRoutes from './routes/billing.js';
+import checkoutRoutes from './routes/checkout.js';
 import publicRoutes from './routes/public.js';
 import { processStripeWebhook } from './services/stripeBilling.js';
 import { multiTenantMiddleware } from './middleware/multiTenant.js';
@@ -255,6 +258,7 @@ app.use(multiTenantMiddleware);
 // refresh, register, code verification). Mounted before the routers
 // so the limiter runs first.
 app.use('/auth', authRateLimiter);
+app.use('/api/auth', authRateLimiter);
 app.use('/api/customers/register', authRateLimiter);
 app.use('/api/customers/verify', authRateLimiter);
 app.use('/api/customers/resend-code', authRateLimiter);
@@ -264,12 +268,18 @@ app.use('/api', apiRateLimiter);
 
 app.use('/auth', authRoutes);
 app.use('/auth', verificationRoutes);
+// Frontend (F7 switcher and other newer clients) calls /api/auth/* — mount the
+// same routers at the namespaced prefix as well. /auth/* stays for legacy.
+app.use('/api/auth', authRoutes);
+app.use('/api/auth', verificationRoutes);
 app.use('/api/mobile', mobileRoutes);
 app.use('/api/admin/content', adminContentRoutes);
 app.use('/api/admin/access', adminAccessRoutes);
 app.use('/api/admin/imports', authenticateToken, requirePermissionKey('imports.manage'), adminImportsRoutes);
 app.use('/api/admin/salon-logo', salonLogoRoutes, logoErrorHandler);
+app.use('/api/admin/gallery', galleryRoutes, galleryErrorHandler);
 app.use('/api/admin', authenticateToken, requireAdminRoutePermission, adminMobileRoutes);
+app.use('/api/onboarding', onboardingRoutes);
 app.use('/api/content', contentRoutes);
 app.use('/api/internal/service-translations', internalServiceTranslationsRoutes);
 app.use('/api/salon', salonRoutes);
@@ -286,6 +296,7 @@ app.use('/api/booking', bookingContextRoutes);
 app.use('/api/waitlist', waitlistRoutes);
 app.use('/api/public', publicRoutes);
 app.use('/api/billing', billingRoutes);
+app.use('/api/checkout', checkoutRoutes);
 app.use('/api/app/chakra', chakraRoutes);
 app.use('/api/app/meta-direct', metaDirectRoutes);
 app.use('/availability', availabilityRoutes);

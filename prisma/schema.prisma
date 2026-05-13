@@ -38,6 +38,20 @@ model Salon {
   // Winback voucher (MARKETING template kedy_geri_donus)
   winbackDiscountText         String?
   winbackValidityText         String?
+  // Business category (set during marketing checkout or onboarding; null for legacy salons)
+  category                    SalonCategory?
+  // Onboarding progress (wizard)
+  onboardingStatus            OnboardingStatus                 @default(NOT_STARTED)
+  onboardingStep              OnboardingStep                   @default(NOT_STARTED)
+  onboardingSkipped           String[]                         @default([])
+  onboardingCompletedAt       DateTime?
+  // Post-onboarding gamification ("Kedy Kurulum Yolculuğu")
+  // kurulumScore = sum of points across all completed SalonJourneyTask rows.
+  // kurulumStage = derived from score by getStageForScore():
+  //   ACILIS (0-30), MUSTERI_HAZIR (30-55), ILETISIM_ACIK (55-80), PROFESYONEL (80-100).
+  // null until the salon has any completed journey tasks.
+  kurulumScore                Int                              @default(0)
+  kurulumStage                String?
   analyticsPresets            AnalyticsPreset[]
   appointments                Appointment[]
   campaignApplications        AppointmentCampaignApplication[]
@@ -101,8 +115,25 @@ model Salon {
   staffTimeOffs               StaffTimeOff[]
   waitlistEntries             WaitlistEntry[]
   waitlistOffers              WaitlistOffer[]
+  journeyTasks                SalonJourneyTask[]
 
   @@index([citySlug, districtSlug], map: "idx_salon_city_district_slug")
+}
+
+model SalonJourneyTask {
+  id          Int       @id @default(autoincrement())
+  salonId     Int
+  salon       Salon     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  taskKey     String // "wizard_completed", "logo_uploaded", vb.
+  completedAt DateTime?
+  points      Int // points awarded when completed (audit-friendly snapshot)
+  metadata    Json?
+  createdAt   DateTime? @default(now()) @db.Timestamp(6)
+  updatedAt   DateTime? @default(now()) @updatedAt @db.Timestamp(6)
+
+  @@unique([salonId, taskKey], name: "salon_task_unique")
+  @@index([salonId, completedAt])
+  @@map("salon_journey_tasks")
 }
 
 model SalonSettings {
@@ -299,6 +330,12 @@ model StripeCheckoutAttempt {
   failedAt                DateTime? @db.Timestamp(6)
   abandonedAt             DateTime? @db.Timestamp(6)
   failureReason           String?
+  // Plaintext owner-invite code, written ONLY by the Stripe webhook after
+  // checkout.session.completed provisioning succeeds. Read-once by the
+  // marketing success page via session_id lookup, then surfaced to the owner.
+  // TODO(cleanup-job): purge values older than 24h after completedAt to
+  // shorten the plaintext exposure window. Out of scope for now.
+  activationCode          String?
   createdAt               DateTime  @default(now()) @db.Timestamp(6)
   updatedAt               DateTime  @updatedAt @db.Timestamp(6)
 
@@ -638,41 +675,41 @@ model IdentityBinding {
 }
 
 model Customer {
-  id                   Int                              @id @default(autoincrement())
-  name                 String?
-  firstName            String?
-  lastName             String?
-  phone                String
-  createdAt            DateTime?                        @default(now()) @db.Timestamp(6)
-  updatedAt            DateTime?                        @default(now()) @updatedAt @db.Timestamp(6)
-  salonId              Int
-  gender               CustomerGender?
-  birthDate            DateTime?                        @db.Date
-  acceptMarketing      Boolean?                         @default(false)
-  instagram            String?
-  registrationStatus   CustomerRegistrationStatus       @default(VERIFIED)
-  googleReviewRequestedAt DateTime?                     @db.Timestamp(6)
-  globalIdentityId     String?
-  firstAppointmentAt   DateTime?                        @db.Timestamp(6)
-  globalIdentity       GlobalCustomerIdentity?          @relation(fields: [globalIdentityId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  appointments         Appointment[]
-  campaignApplications AppointmentCampaignApplication[]
-  appointmentLines     AppointmentLine[]
-  packageConsumptions  AppointmentPackageConsumption[]
-  referredAttributions CampaignAttribution[]            @relation("CampaignAttributionReferredCustomer")
-  referrerAttributions CampaignAttribution[]            @relation("CampaignAttributionReferrerCustomer")
-  campaignShareLinks   CampaignShareLink[]
-  salon                Salon                            @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  campaignEnrollments  CustomerCampaignEnrollment[]
-  campaignWallets      CustomerCampaignWallet[]
-  packages             CustomerPackage[]
-  phoneVerifications   CustomerPhoneVerification[]
-  identityBindings     IdentityBinding[]
-  identitySessions     IdentitySession[]
-  usedMagicLinks       MagicLink[]                      @relation("MagicLinkUsedByCustomer")
-  notificationLogs     NotificationLog[]
-  packageLedgers       PackageLedger[]
-  waitlistEntries      WaitlistEntry[]
+  id                      Int                              @id @default(autoincrement())
+  name                    String?
+  firstName               String?
+  lastName                String?
+  phone                   String
+  createdAt               DateTime?                        @default(now()) @db.Timestamp(6)
+  updatedAt               DateTime?                        @default(now()) @updatedAt @db.Timestamp(6)
+  salonId                 Int
+  gender                  CustomerGender?
+  birthDate               DateTime?                        @db.Date
+  acceptMarketing         Boolean?                         @default(false)
+  instagram               String?
+  registrationStatus      CustomerRegistrationStatus       @default(VERIFIED)
+  googleReviewRequestedAt DateTime?                        @db.Timestamp(6)
+  globalIdentityId        String?
+  firstAppointmentAt      DateTime?                        @db.Timestamp(6)
+  globalIdentity          GlobalCustomerIdentity?          @relation(fields: [globalIdentityId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  appointments            Appointment[]
+  campaignApplications    AppointmentCampaignApplication[]
+  appointmentLines        AppointmentLine[]
+  packageConsumptions     AppointmentPackageConsumption[]
+  referredAttributions    CampaignAttribution[]            @relation("CampaignAttributionReferredCustomer")
+  referrerAttributions    CampaignAttribution[]            @relation("CampaignAttributionReferrerCustomer")
+  campaignShareLinks      CampaignShareLink[]
+  salon                   Salon                            @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  campaignEnrollments     CustomerCampaignEnrollment[]
+  campaignWallets         CustomerCampaignWallet[]
+  packages                CustomerPackage[]
+  phoneVerifications      CustomerPhoneVerification[]
+  identityBindings        IdentityBinding[]
+  identitySessions        IdentitySession[]
+  usedMagicLinks          MagicLink[]                      @relation("MagicLinkUsedByCustomer")
+  notificationLogs        NotificationLog[]
+  packageLedgers          PackageLedger[]
+  waitlistEntries         WaitlistEntry[]
 
   @@unique([phone, salonId])
   @@index([salonId, createdAt], map: "idx_customer_salon_created")
@@ -818,9 +855,28 @@ model ServiceCategory {
   categoryRef          Category?           @relation(fields: [categoryId], references: [id], onUpdate: NoAction)
   Salon                Salon               @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   ServiceRegion        ServiceRegion[]
+  serviceTemplates     ServiceTemplate[]
 
   @@index([salonId, displayOrder], map: "idx_servicecategory_salon_display_order")
   @@index([salonId, categoryId, displayOrder], map: "idx_servicecategory_salon_category_display")
+}
+
+model ServiceTemplate {
+  id                 Int              @id @default(autoincrement())
+  category           SalonCategory
+  name               String
+  defaultDurationMin Int              @default(30)
+  defaultPriceTRY    Int?
+  serviceCategoryId  Int?
+  serviceCategory    ServiceCategory? @relation(fields: [serviceCategoryId], references: [id], onUpdate: NoAction)
+  displayOrder       Int              @default(0)
+  isActive           Boolean          @default(true)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  @@unique([category, name])
+  @@index([category, isActive, displayOrder])
+  @@map("service_templates")
 }
 
 model ServiceRegion {
@@ -1105,38 +1161,38 @@ model AppointmentMessageDispatch {
 }
 
 model SalonMessageTemplate {
-  id                 Int                         @id @default(autoincrement())
-  salonId            Int
-  eventType          AppointmentMessageEventType
-  locale             LocaleCode                  @default(tr)
-  sessionText        String?
-  templateName       String?
-  templateContent    String?
-  isActive           Boolean                     @default(true)
-  createdAt          DateTime?                   @default(now()) @db.Timestamp(6)
-  updatedAt          DateTime?                   @default(now()) @updatedAt @db.Timestamp(6)
-  externalId         String?
-  metaCategory       String?
-  metaStatus         String?
-  lastSyncAt         DateTime?                   @db.Timestamp(6)
+  id              Int                         @id @default(autoincrement())
+  salonId         Int
+  eventType       AppointmentMessageEventType
+  locale          LocaleCode                  @default(tr)
+  sessionText     String?
+  templateName    String?
+  templateContent String?
+  isActive        Boolean                     @default(true)
+  createdAt       DateTime?                   @default(now()) @db.Timestamp(6)
+  updatedAt       DateTime?                   @default(now()) @updatedAt @db.Timestamp(6)
+  externalId      String?
+  metaCategory    String?
+  metaStatus      String?
+  lastSyncAt      DateTime?                   @db.Timestamp(6)
 
   // Tone/variant model — 3 primary + 7 reserve per (key × tone)
-  templateKey        String?
-  tone               SalonCommunicationTone?
-  variantSlot        Int?
+  templateKey String?
+  tone        SalonCommunicationTone?
+  variantSlot Int?
 
   // Submission lifecycle
-  submissionState    TemplateSubmissionState     @default(NOT_QUEUED)
+  submissionState    TemplateSubmissionState @default(NOT_QUEUED)
   expectedCategory   String?
   actualCategory     String?
-  submissionAttempts Int                         @default(0)
-  scheduledSubmitAt  DateTime?                   @db.Timestamp(6)
-  lastSubmittedAt    DateTime?                   @db.Timestamp(6)
-  approvedAt         DateTime?                   @db.Timestamp(6)
-  rejectedAt         DateTime?                   @db.Timestamp(6)
+  submissionAttempts Int                     @default(0)
+  scheduledSubmitAt  DateTime?               @db.Timestamp(6)
+  lastSubmittedAt    DateTime?               @db.Timestamp(6)
+  approvedAt         DateTime?               @db.Timestamp(6)
+  rejectedAt         DateTime?               @db.Timestamp(6)
   rejectionReason    String?
 
-  salon              Salon                       @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  salon Salon @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([salonId, templateName], map: "uq_salon_message_template_name")
   @@index([salonId, isActive], map: "idx_salon_message_template_salon_active")
@@ -2572,4 +2628,37 @@ enum SalonCommunicationTone {
   FRIENDLY
   BALANCED
   PROFESSIONAL
+}
+
+enum SalonCategory {
+  KUAFOR_KADIN
+  KUAFOR_ERKEK
+  KUAFOR_UNISEX
+  GUZELLIK_MERKEZI
+  TIRNAK_STUDYOSU
+  ESTETIK_KLINIK
+  SPA_WELLNESS
+  BARBER
+  DIGER
+}
+
+enum OnboardingStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum OnboardingStep {
+  NOT_STARTED
+  WELCOME
+  SALON_NAME
+  SLUG
+  ADDRESS
+  PHONE
+  WORKING_HOURS
+  LOGO
+  GALLERY
+  SERVICES
+  TONE
+  COMPLETED
 }
