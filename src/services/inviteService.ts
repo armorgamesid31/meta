@@ -3,7 +3,7 @@ import bcrypt from 'bcrypt';
 import { InviteStatus, UserRole } from '@prisma/client';
 import { prisma } from '../prisma.js';
 
-const INVITE_TTL_DAYS = 7;
+export const INVITE_TTL_DAYS = 7;
 
 function normalizePhone(input: string): string {
   return String(input || '').replace(/\D/g, '');
@@ -34,7 +34,10 @@ export async function createOwnerPendingProvisioning(input: {
   const ownerName = String(input.ownerName || '').trim();
   const salonName = String(input.salonName || '').trim();
 
-  const inviteCode = randomBytes(4).toString('hex').toUpperCase();
+  // 6 bytes → 12 hex chars (48 bits ≈ 2.8e14 keyspace). Previously 4 bytes
+  // (32 bits ≈ 4.3e9) which is brute-forceable. Frontend regex must accept
+  // ^[A-F0-9]{12}$ — see Salonmanagementsaasapp SalonSwitcher.tsx.
+  const inviteCode = randomBytes(6).toString('hex').toUpperCase();
   const inviteToken = randomBytes(24).toString('hex');
   const passwordHash = await bcrypt.hash(randomBytes(16).toString('hex'), 10);
   const expiresAt = new Date(Date.now() + INVITE_TTL_DAYS * 24 * 60 * 60 * 1000);

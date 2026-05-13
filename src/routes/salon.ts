@@ -361,19 +361,28 @@ router.put('/settings', authenticateToken, async (req: any, res: any) => {
       typeof category === 'string';
 
     if (salonFieldsTouched) {
-      await prisma.salon.update({
-        where: { id: req.user.salonId },
-        data: {
-          ...(name !== undefined && { name }),
-          ...(typeof slug === 'string' && { slug: slug.trim() }),
-          ...(typeof address === 'string' && { address }),
-          ...(typeof city === 'string' && { city }),
-          ...(typeof district === 'string' && { district }),
-          ...(typeof googleMapsUrl === 'string' && { googleMapsUrl }),
-          ...(effectivePhone !== undefined && { whatsappPhone: effectivePhone }),
-          ...(typeof category === 'string' && { category: category as any }),
-        },
-      });
+      try {
+        await prisma.salon.update({
+          where: { id: req.user.salonId },
+          data: {
+            ...(name !== undefined && { name }),
+            ...(typeof slug === 'string' && { slug: slug.trim() }),
+            ...(typeof address === 'string' && { address }),
+            ...(typeof city === 'string' && { city }),
+            ...(typeof district === 'string' && { district }),
+            ...(typeof googleMapsUrl === 'string' && { googleMapsUrl }),
+            ...(effectivePhone !== undefined && { whatsappPhone: effectivePhone }),
+            ...(typeof category === 'string' && { category: category as any }),
+          },
+        });
+      } catch (updateError: any) {
+        // TOCTOU race: pre-check passed but another salon claimed the slug
+        // before our update landed. Surface as a 409 instead of a 500.
+        if (updateError?.code === 'P2002') {
+          throw new BusinessError('SLUG_TAKEN', 'Bu slug başka bir salon tarafından kullanılıyor.', 409);
+        }
+        throw updateError;
+      }
     }
 
     if (workStartHour !== undefined || workEndHour !== undefined || slotInterval !== undefined || categoryOrder !== undefined || workingDays !== undefined) {
@@ -401,6 +410,7 @@ router.put('/settings', authenticateToken, async (req: any, res: any) => {
       res.json({ message: 'Settings updated successfully' });
     }
   } catch (error) {
+    if (error instanceof BusinessError) throw error;
     console.error('Error updating salon settings:', error);
     throw new BusinessError('INTERNAL_ERROR', 'Internal server error', 500);
   }

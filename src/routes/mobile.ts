@@ -7,7 +7,6 @@ import {
   buildBootstrapUser,
   buildCapabilities,
   buildFeatureFlags,
-  buildSubscription,
 } from '../services/mobileBootstrap.js';
 import { BusinessError } from '../lib/errors.js';
 import { createNotification, getDefaultNotificationPolicy } from '../services/notifications.js';
@@ -137,6 +136,7 @@ router.get('/bootstrap', authenticateToken, async (req: any, res: any) => {
         slug: user.salon.slug,
         city: user.salon.city,
         country: user.salon.countryCode,
+        whatsappPhone: user.salon.whatsappPhone ?? null,
         onboardingStep: user.salon.onboardingStep,
         onboardingSkipped: user.salon.onboardingSkipped ?? [],
         category: user.salon.category ?? null,
@@ -149,7 +149,10 @@ router.get('/bootstrap', authenticateToken, async (req: any, res: any) => {
       featureFlags: buildFeatureFlags(user.role, user.salon.bookingMode, Boolean(normalizedWhatsapp), permissions),
       permissions,
       accessVersion: ACCESS_VERSION,
-      subscription: buildSubscription(),
+      subscription: {
+        plan: latestSubscription?.planKey ?? 'starter',
+        status: latestSubscription?.status ?? 'trial',
+      },
       features,
       setupChecklist: {
         ...setupChecklist,

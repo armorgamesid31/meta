@@ -431,10 +431,9 @@ function asPositiveInt(value: unknown, fallback: number, min = 1, max = 500): nu
   return Math.min(Math.max(numeric, min), max);
 }
 
-function getSalonId(req: any, res: any): number | null {
+function getSalonId(req: any, _res: any): number {
   if (!req.user?.salonId) {
     throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
-    return null;
   }
   return req.user.salonId;
 }

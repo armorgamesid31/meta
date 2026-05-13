@@ -14,7 +14,7 @@ import {
   normalizeRoles,
   writeAccessAudit,
 } from '../services/accessControl.js';
-import { hashPlainToken } from '../services/inviteService.js';
+import { hashPlainToken, INVITE_TTL_DAYS } from '../services/inviteService.js';
 import { markTaskComplete } from '../services/journeyService.js';
 
 const router = Router();
@@ -214,7 +214,7 @@ router.get('/users', authenticateToken, requirePermissionKey('access.users.manag
       items: users.map((membership) => ({
         id: membership.id,
         identityId: membership.identity.id,
-        email: membership.identity.email || '',
+        email: membership.identity.email ?? null,
         displayName: membership.identity.displayName,
         role: normalizeRole(membership.role),
         roles: Array.from(new Set([normalizeRole(membership.role), ...normalizeRoles(membership.secondaryRoles)])).sort(),
@@ -247,9 +247,11 @@ router.post('/users', authenticateToken, requirePermissionKey('access.users.mana
   try {
     const email = emailInput || null;
     const passwordHash = await bcrypt.hash(rawPassword, 10);
-    const inviteCode = randomBytes(4).toString('hex').toUpperCase();
+    // 6 bytes → 12 hex chars (48 bits). Stay aligned with services/inviteService.ts.
+    // Frontend regex: ^[A-F0-9]{12}$.
+    const inviteCode = randomBytes(6).toString('hex').toUpperCase();
     const inviteToken = randomBytes(24).toString('hex');
-    const expiresAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+    const expiresAt = new Date(Date.now() + INVITE_TTL_DAYS * 24 * 60 * 60 * 1000);
     const hintPhone = typeof req.body?.phone === 'string' ? req.body.phone.replace(/\D/g, '') : '';
 
     const created = await prisma.$transaction(async (tx) => {
@@ -453,7 +455,7 @@ router.put('/users/:id', authenticateToken, requirePermissionKey('access.users.m
       return nextMembership
         ? {
             id: nextMembership.id,
-            email: nextMembership.identity.email || '',
+            email: nextMembership.identity.email ?? null,
             displayName: nextMembership.identity.displayName,
             role: nextMembership.role,
             secondaryRoles: nextMembership.secondaryRoles,
@@ -659,9 +661,11 @@ router.post('/users/:id/invite', authenticateToken, requirePermissionKey('access
       });
     }
 
-    const inviteCode = randomBytes(4).toString('hex').toUpperCase();
+    // 6 bytes → 12 hex chars (48 bits). Stay aligned with services/inviteService.ts.
+    // Frontend regex: ^[A-F0-9]{12}$.
+    const inviteCode = randomBytes(6).toString('hex').toUpperCase();
     const inviteToken = randomBytes(24).toString('hex');
-    const expiresAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+    const expiresAt = new Date(Date.now() + INVITE_TTL_DAYS * 24 * 60 * 60 * 1000);
 
     await prisma.invite.create({
       data: {

@@ -8,7 +8,7 @@ import {
   InboundMessageStatus,
 } from '@prisma/client';
 import axios from 'axios';
-import { createHash } from 'crypto';
+import { createHash, createHmac, timingSafeEqual } from 'crypto';
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import {
@@ -30,6 +30,74 @@ const router = Router();
 const META_WEBHOOK_VERIFY_TOKEN = (process.env.META_WEBHOOK_VERIFY_TOKEN || '').trim();
 const META_INSTAGRAM_WEBHOOK_VERIFY_TOKEN = (process.env.META_INSTAGRAM_WEBHOOK_VERIFY_TOKEN || '').trim();
 const META_WHATSAPP_WEBHOOK_VERIFY_TOKEN = (process.env.META_WHATSAPP_WEBHOOK_VERIFY_TOKEN || '').trim();
+
+const META_APP_SECRET = (process.env.META_APP_SECRET || '').trim();
+
+/**
+ * HMAC-SHA256 verification of Meta webhook payloads using X-Hub-Signature-256.
+ * Runs BEFORE JSON body parsing — relies on req.body being a raw Buffer that
+ * server.ts mounts via express.raw({ type: 'application/json' }) for the
+ * /api/webhooks/* path. After verification, the raw buffer is parsed in-place
+ * so downstream handlers see the same shape they did when express.json() was
+ * the only parser.
+ *
+ * Failure modes:
+ *  - Production AND no META_APP_SECRET configured → 503 (fail closed).
+ *  - Dev AND no META_APP_SECRET configured → warn + bypass (raw → parsed JSON).
+ *  - Signature header missing or mismatched → 403 with no body logging (do not
+ *    leak shape to an attacker probing for verification gaps).
+ */
+function verifyMetaSignature(req: any, res: any, next: any) {
+  const rawBody: Buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+  const tryParseRaw = () => {
+    if (rawBody.length === 0) {
+      req.body = {};
+      return true;
+    }
+    try {
+      req.body = JSON.parse(rawBody.toString('utf8'));
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  if (!META_APP_SECRET) {
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[META_WEBHOOK] META_APP_SECRET not configured in production — refusing webhook.');
+      return res.status(503).json({ ok: false });
+    }
+    console.warn('[META_WEBHOOK] META_APP_SECRET not configured — signature verification BYPASSED (dev only).');
+    if (!tryParseRaw()) return res.status(400).end();
+    return next();
+  }
+
+  const headerValue = String(req.headers['x-hub-signature-256'] || '').trim();
+  if (!headerValue.startsWith('sha256=')) {
+    return res.status(403).end();
+  }
+  const provided = headerValue.slice('sha256='.length);
+
+  const expected = createHmac('sha256', META_APP_SECRET).update(rawBody).digest('hex');
+
+  let ok = false;
+  try {
+    const providedBuf = Buffer.from(provided, 'hex');
+    const expectedBuf = Buffer.from(expected, 'hex');
+    if (providedBuf.length === expectedBuf.length) {
+      ok = timingSafeEqual(providedBuf, expectedBuf);
+    }
+  } catch {
+    ok = false;
+  }
+
+  if (!ok) {
+    return res.status(403).end();
+  }
+
+  if (!tryParseRaw()) return res.status(400).end();
+  return next();
+}
 
 const N8N_NORMALIZED_WEBHOOK_URL = (process.env.N8N_NORMALIZED_WEBHOOK_URL || '').trim();
 const N8N_NORMALIZED_INSTAGRAM_WEBHOOK_URL = (process.env.N8N_NORMALIZED_INSTAGRAM_WEBHOOK_URL || '').trim();
@@ -1450,8 +1518,8 @@ router.get('/meta', (req, res) => {
   return handleVerification(req, res);
 });
 
-router.post('/instagram', async (req, res) => handleInbound(req, res, 'INSTAGRAM'));
-router.post('/whatsapp', async (req, res) => handleInbound(req, res, 'WHATSAPP'));
-router.post('/meta', async (req, res) => handleInbound(req, res));
+router.post('/instagram', verifyMetaSignature, async (req, res) => handleInbound(req, res, 'INSTAGRAM'));
+router.post('/whatsapp', verifyMetaSignature, async (req, res) => handleInbound(req, res, 'WHATSAPP'));
+router.post('/meta', verifyMetaSignature, async (req, res) => handleInbound(req, res));
 
 export default router;

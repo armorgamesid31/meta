@@ -14,12 +14,17 @@ interface AccessRequest {
 }
 
 const RBAC_ENFORCEMENT_MODE = (process.env.RBAC_ENFORCEMENT_MODE || 'enforce').trim().toLowerCase();
+// Allow-list of explicit bypass values. ANY other value (including typos like
+// "enforced", missing env, empty string) falls through to enforce. Previously
+// the inverse check made "anything not equal to enforce" report-only-ish on
+// accident if someone misconfigured the env.
+const RBAC_REPORT_ONLY = RBAC_ENFORCEMENT_MODE === 'report';
 
 function denyOrReport(
   res: Response,
   detail: { permissionKey: string; path: string; method: string; userId: number; salonId: number },
 ) {
-  if (RBAC_ENFORCEMENT_MODE === 'report') {
+  if (RBAC_REPORT_ONLY) {
     console.warn('[RBAC report-only] denied candidate', detail);
     return false;
   }

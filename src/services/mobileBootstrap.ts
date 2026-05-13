@@ -124,13 +124,6 @@ export function buildFeatureFlags(role: string, bookingMode?: string | null, has
   };
 }
 
-export function buildSubscription() {
-  return {
-    plan: process.env.DEFAULT_SUBSCRIPTION_PLAN || 'starter',
-    status: process.env.DEFAULT_SUBSCRIPTION_STATUS || 'trial',
-  };
-}
-
 export function buildBootstrapUser(user: Pick<SalonUser, 'id' | 'email' | 'role'>) {
   const normalizedRole = normalizeRole(user.role);
   return {

@@ -12,6 +12,13 @@ export function requireInternalApiKey(req: Request, res: Response, next: NextFun
   ].filter(Boolean);
 
   if (acceptedKeys.length === 0) {
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[SECURITY] INTERNAL_API_KEY/N8N_INTERNAL_API_KEY missing in production — refusing internal request.');
+      return res.status(503).json({
+        ok: false,
+        message: 'Internal API not configured.',
+      });
+    }
     console.warn('[SECURITY WARNING] INTERNAL_API_KEY/N8N_INTERNAL_API_KEY is not set. Internal routes are currently unprotected!');
     return next();
   }

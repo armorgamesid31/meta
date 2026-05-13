@@ -31,6 +31,7 @@ export const BootstrapResponseSchema = z.object({
     slug: z.string().nullable(),
     city: z.string().nullable(),
     country: z.string().nullable(),
+    whatsappPhone: z.string().nullable().optional(),
     onboardingStep: OnboardingStepSchema.optional(),
     onboardingSkipped: z.array(z.string()).optional(),
     category: z.string().nullable().optional(),

@@ -322,6 +322,16 @@ router.post('/register', async (req: any, res: any) => {
     fullName: body.fullName,
   });
 
+  // Normalize gender: frontend may submit an empty string when the user
+  // skips the field. Pass it through Prisma's enum cast and we get a 500;
+  // coerce anything outside the allowed set to `undefined` so downstream
+  // helpers can treat it as "unset".
+  const normalizedGender =
+    body.gender && ['male', 'female', 'other'].includes(body.gender)
+      ? (body.gender as 'male' | 'female' | 'other')
+      : undefined;
+  body.gender = normalizedGender;
+
   if (
     !normalizedName.firstName ||
     !normalizedName.lastName ||
@@ -411,9 +421,13 @@ router.post('/register', async (req: any, res: any) => {
             where: { id: existingBinding.customerId, salonId: salonIdNum },
           });
           if (existingCustomer && existingCustomer.phone === validatedPhone.digits) {
+            // Do NOT echo customerId here. The Instagram registration path is
+            // pre-auth and a numeric customerId in the response was a salon-
+            // wide enumeration vector. The frontend fetches the authenticated
+            // customer's id via a separate authenticated endpoint
+            // (e.g. /api/customers/me) once the session is established.
             return res.status(200).json({
               status: 'registered',
-              customerId: existingCustomer.id,
               isNew: false,
               registrationStatus: existingCustomer.registrationStatus,
             });

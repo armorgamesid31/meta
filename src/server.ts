@@ -185,6 +185,17 @@ app.use((req, res, next) => {
   }
   next();
 });
+
+// Meta/IG/WhatsApp webhooks need the raw body for X-Hub-Signature-256 HMAC
+// verification. Mount raw parser BEFORE express.json() so the JSON parser
+// does not consume the buffer. The webhook route's verifyMetaSignature
+// middleware parses JSON after verifying the signature. Only POST is raw —
+// GET (verification challenge) does not have a body.
+app.use('/api/webhooks', (req, res, next) => {
+  if (req.method !== 'POST') return next();
+  return express.raw({ type: 'application/json', limit: '10mb' })(req, res, next);
+});
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -263,6 +274,9 @@ app.use('/api/auth', authRateLimiter);
 app.use('/api/customers/register', authRateLimiter);
 app.use('/api/customers/verify', authRateLimiter);
 app.use('/api/customers/resend-code', authRateLimiter);
+// Slug-existence probe is cheap to fan out but enables salon-enumeration if
+// hit unthrottled. Same 10/min budget as auth endpoints.
+app.use('/api/salon/slug-available', authRateLimiter);
 
 // Loose limiter for the rest of /api traffic.
 app.use('/api', apiRateLimiter);
@@ -274,8 +288,14 @@ app.use('/auth', verificationRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/auth', verificationRoutes);
 app.use('/api/mobile', mobileRoutes);
-app.use('/api/admin/content', adminContentRoutes);
-app.use('/api/admin/access', adminAccessRoutes);
+// Mount-level auth + permission gate. Routes inside also apply per-endpoint
+// requirePermissionKey for granular checks (which stays idempotent), but the
+// outer guarantee here prevents any new endpoint added inside the router from
+// accidentally shipping public. requireAdminRoutePermission is no-op if the
+// path doesn't map to a permission key, so routes without a mapping still
+// work — they just require an authenticated session.
+app.use('/api/admin/content', authenticateToken, requireAdminRoutePermission, adminContentRoutes);
+app.use('/api/admin/access', authenticateToken, requireAdminRoutePermission, adminAccessRoutes);
 app.use('/api/admin/imports', authenticateToken, requirePermissionKey('imports.manage'), adminImportsRoutes);
 app.use('/api/admin/salon-logo', salonLogoRoutes, logoErrorHandler);
 app.use('/api/admin/gallery', galleryRoutes, galleryErrorHandler);

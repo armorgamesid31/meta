@@ -150,9 +150,30 @@ export async function processStripeWebhook(rawBody: Buffer, signature: string) {
   }
   const event = stripe.webhooks.constructEvent(rawBody, signature, webhookSecret);
 
-  const exists = await prisma.stripeWebhookEvent.findUnique({ where: { eventId: event.id } });
-  if (exists) {
-    return { duplicate: true, eventType: event.type };
+  // Idempotency guard. Insert the event row FIRST so any concurrent retry
+  // hitting the unique constraint on eventId returns early before doing any
+  // side-effectful work (createOwnerPendingProvisioning, subscription create,
+  // referral attach, email/whatsapp). Previously this insert ran at the end,
+  // so a crash mid-provisioning let Stripe retry re-run the whole pipeline
+  // and create a second salon + a second invite.
+  //
+  // createOwnerPendingProvisioning runs its own prisma.$transaction, so we
+  // cannot nest the entire flow inside a single outer $transaction; instead
+  // we rely on the StripeWebhookEvent unique index as the gate. On any
+  // failure below, the event row stays inserted — Stripe retries will see it
+  // as duplicate. This is the correct trade-off: it is far worse to double-
+  // provision than to drop a single rare failed delivery (which is alerted
+  // separately via the existing logs).
+  try {
+    await prisma.stripeWebhookEvent.create({
+      data: { eventId: event.id, eventType: event.type },
+    });
+  } catch (err: any) {
+    // P2002 = unique constraint violation → duplicate retry
+    if (err?.code === 'P2002') {
+      return { duplicate: true, eventType: event.type };
+    }
+    throw err;
   }
 
   if (event.type === 'checkout.session.completed') {
@@ -184,12 +205,8 @@ export async function processStripeWebhook(rawBody: Buffer, signature: string) {
         select: { id: true },
       });
       if (existingSubscription) {
-        await prisma.stripeWebhookEvent.create({
-          data: {
-            eventId: event.id,
-            eventType: event.type,
-          },
-        });
+        // Event row was already inserted at the top of this function — nothing
+        // more to do for this duplicate-subscription path.
         return { duplicate: false, eventType: event.type };
       }
     }
@@ -308,12 +325,7 @@ export async function processStripeWebhook(rawBody: Buffer, signature: string) {
     }
   }
 
-  await prisma.stripeWebhookEvent.create({
-    data: {
-      eventId: event.id,
-      eventType: event.type,
-    },
-  });
-
+  // Event row was inserted at the top of this function as the idempotency
+  // gate, so no trailing insert here.
   return { duplicate: false, eventType: event.type };
 }

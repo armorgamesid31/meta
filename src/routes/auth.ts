@@ -151,6 +151,7 @@ router.post('/register-salon', async (req: any, res: any) => {
       user: { id: identity.id, email: identity.email, role: membership.role, salonId: salon.id, membershipId: membership.id },
     });
   } catch (error) {
+    if (error instanceof BusinessError) throw error;
     console.error('Salon registration error:', error);
     throw new BusinessError('INTERNAL_ERROR', 'Sunucu hatasi.', 500);
   }
@@ -269,6 +270,7 @@ router.post('/login', async (req: any, res: any) => {
       })),
     });
   } catch (error) {
+    if (error instanceof BusinessError) throw error;
     console.error('Login error:', error);
     throw new BusinessError('INTERNAL_ERROR', 'Sunucu hatasi.', 500);
   }
