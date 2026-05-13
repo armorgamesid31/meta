@@ -375,6 +375,115 @@ router.post('/invites/activate', async (req: any, res: any) => {
 });
 
 /**
+ * GET /memberships/preview?code=XXXXXXXX  (mounted at /auth and /api/auth)
+ *
+ * Read-only invite lookup for the salon-switcher confirmation step. Returns
+ * the salon details (name, logo, slug, brief team stats) and the role the
+ * caller would receive, so the UI can show a preview before they commit.
+ *
+ * Same auth + validation as /memberships/accept, but does NOT mutate
+ * anything. Resolves the same FORBIDDEN/NOT_FOUND/GONE cases up front so
+ * the user gets honest feedback before staring at a preview.
+ */
+router.get('/memberships/preview', authenticateToken, async (req: any, res: any) => {
+  if (!req.user) {
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
+  }
+  const identityId = Number(req.user.identityId || 0);
+  if (!identityId) {
+    throw new BusinessError('UNAUTHORIZED', 'Oturum bilgisi eksik.', 401);
+  }
+
+  const code = String(req.query?.code || '').trim().toUpperCase();
+  if (!code || code.length < 4) {
+    throw new BusinessError('VALIDATION_FAILED', 'Geçerli bir davet kodu gerekli.', 400);
+  }
+
+  const invite = await prisma.invite.findFirst({
+    where: { inviteCodeHash: hashPlainToken(code) },
+    include: {
+      salon: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          logoUrl: true,
+          city: true,
+          district: true,
+          category: true,
+        },
+      },
+      invitedMembership: {
+        include: { identity: { select: { id: true, email: true, phone: true, displayName: true } } },
+      },
+      createdByUser: { select: { displayName: true, firstName: true, lastName: true, email: true } },
+    },
+  });
+
+  if (!invite) {
+    throw new BusinessError('NOT_FOUND', 'Davet bulunamadı.', 404);
+  }
+  if (invite.status !== InviteStatus.PENDING) {
+    throw new BusinessError('NOT_FOUND', 'Davet artık geçerli değil.', 404);
+  }
+  if (invite.expiresAt && invite.expiresAt.getTime() < Date.now()) {
+    throw new BusinessError('GONE', 'Davet süresi doldu.', 410);
+  }
+
+  const targetIdentityId = invite.invitedMembership?.identityId ?? null;
+  const inviteIsPlaceholderBound = Boolean(
+    invite.invitedMembership &&
+      targetIdentityId !== identityId &&
+      !invite.invitedMembership.identity?.email &&
+      !invite.invitedMembership.identity?.phone,
+  );
+  if (targetIdentityId && targetIdentityId !== identityId && !inviteIsPlaceholderBound) {
+    throw new BusinessError(
+      'FORBIDDEN',
+      'Bu davet sana ait değil.',
+      403,
+    );
+  }
+
+  // Already a member? Don't preview, just tell the UI.
+  const existing = await prisma.salonMembership.findFirst({
+    where: { salonId: invite.salonId, identityId, isActive: true },
+    select: { id: true },
+  });
+
+  // Lightweight team stats (cheap counts; no PII).
+  const [staffCount, memberCount] = await prisma.$transaction([
+    prisma.staff.count({ where: { salonId: invite.salonId } }),
+    prisma.salonMembership.count({ where: { salonId: invite.salonId, isActive: true } }),
+  ]);
+
+  const role = invite.invitedMembership?.role ?? UserRole.STAFF;
+  const invitedBy =
+    invite.createdByUser?.displayName ||
+    [invite.createdByUser?.firstName, invite.createdByUser?.lastName].filter(Boolean).join(' ').trim() ||
+    invite.createdByUser?.email ||
+    null;
+
+  return res.status(200).json({
+    salon: {
+      id: invite.salon.id,
+      name: invite.salon.name,
+      slug: invite.salon.slug,
+      logoUrl: invite.salon.logoUrl,
+      city: invite.salon.city,
+      district: invite.salon.district,
+      category: invite.salon.category,
+    },
+    role,
+    invitedBy,
+    expiresAt: invite.expiresAt?.toISOString() ?? null,
+    teamSize: memberCount,
+    staffCount,
+    alreadyMember: Boolean(existing),
+  });
+});
+
+/**
  * POST /memberships/accept  (mounted at /auth and /api/auth)
  *
  * Authenticated counterpart to /invites/activate. Used by the multi-salon
@@ -433,7 +542,20 @@ router.post('/memberships/accept', authenticateToken, async (req: any, res: any)
   }
 
   const targetIdentityId = invite.invitedMembership?.identityId ?? null;
-  if (targetIdentityId && targetIdentityId !== identityId) {
+  const inviteIsPlaceholderBound = Boolean(
+    invite.invitedMembership &&
+      targetIdentityId !== identityId &&
+      // A "real" pre-allocation has a verified contact (email or phone) on the
+      // identity that the inviter targeted. The team-access "Davet Kodu Üret"
+      // flow creates a *placeholder* identity with both email and phone null —
+      // those are open-by-design and any authenticated caller may claim them.
+      // We still gate on this contact check so a misdirected real account
+      // (different person's invite) can't be hijacked.
+      !invite.invitedMembership.identity?.email &&
+      !invite.invitedMembership.identity?.phone,
+  );
+
+  if (targetIdentityId && targetIdentityId !== identityId && !inviteIsPlaceholderBound) {
     throw new BusinessError(
       'FORBIDDEN',
       'Bu davet sana ait değil. Hesabını e-posta/telefonla ayrıştırman gerek.',
@@ -454,7 +576,64 @@ router.post('/memberships/accept', authenticateToken, async (req: any, res: any)
     let membershipId: number;
     let role: string;
 
-    if (invite.invitedMembership) {
+    if (invite.invitedMembership && inviteIsPlaceholderBound) {
+      // CASE 1b: invite was pre-allocated to a placeholder identity (no
+      // email/phone). The caller is a different real user re-claiming the
+      // seat. Deactivate the placeholder membership + identity, then create
+      // a fresh membership for the caller in the same salon/role.
+      const placeholderMembershipId = invite.invitedMembership.id;
+      const placeholderIdentityId = invite.invitedMembership.identityId;
+      const targetRole = invite.invitedMembership.role;
+
+      await tx.salonMembership.update({
+        where: { id: placeholderMembershipId },
+        data: { isActive: false },
+      });
+      // Best-effort: also flip the placeholder identity inactive so it
+      // doesn't show up in account listings.
+      if (placeholderIdentityId) {
+        await tx.userIdentity.update({
+          where: { id: placeholderIdentityId },
+          data: { isActive: false },
+        }).catch(() => undefined);
+      }
+
+      // Reuse the caller's identity for a new active membership.
+      const newMembership = await tx.salonMembership.create({
+        data: {
+          salonId: invite.salonId,
+          identityId,
+          role: targetRole,
+          secondaryRoles: invite.invitedMembership.secondaryRoles || [],
+          isActive: true,
+          passwordResetRequired: false,
+        },
+      });
+
+      const legacy = await tx.salonUser.create({
+        data: {
+          salonId: invite.salonId,
+          email: identity.email || `legacy-${identity.id}@kedy.local`,
+          phone: identity.phone || null,
+          passwordHash: identity.passwordHash,
+          firstName: identity.firstName || null,
+          lastName: identity.lastName || null,
+          displayName: identity.displayName || null,
+          role: targetRole,
+          secondaryRoles: invite.invitedMembership.secondaryRoles || [],
+          isActive: true,
+          passwordResetRequired: false,
+          activationCompletedAt: new Date(),
+        },
+      });
+      await tx.salonMembership.update({
+        where: { id: newMembership.id },
+        data: { legacySalonUserId: legacy.id },
+      });
+
+      membershipId = newMembership.id;
+      role = String(newMembership.role);
+    } else if (invite.invitedMembership) {
       // CASE 1: invite is locked to this caller's identity.
       // Activate the pre-existing membership in-place. We don't touch the
       // identity itself (caller is already authenticated, password etc.
