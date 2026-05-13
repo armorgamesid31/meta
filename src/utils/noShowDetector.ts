@@ -2,69 +2,116 @@ import { prisma } from '../prisma.js';
 import { logCustomerBehavior, BehaviorType } from './behaviorTracking.js';
 
 /**
- * Detects and marks no-show appointments
- * Should be run periodically (e.g., every 15 minutes)
+ * Detects and marks no-show appointments.
+ *
+ * Should be run periodically (e.g., every 15 minutes).
+ *
+ * Tenant-scoped: instead of one giant findMany across every salon (which
+ * triggers DB lock contention and can drain the Prisma connection pool
+ * on large datasets), we first list active salon IDs, then process each
+ * salon's overdue appointments in a small concurrent batch. This bounds
+ * per-query result size and keeps p99 latency predictable as the platform
+ * grows.
  */
-export async function detectNoShows() {
+const CONCURRENCY = 4;
+
+async function processSalonNoShows(salonId: number, now: Date): Promise<number> {
+  // Per-salon scan. Index used: idx_appointment_salon_status_start
+  const pastAppointments = await prisma.appointment.findMany({
+    where: {
+      salonId,
+      status: 'BOOKED',
+      startTime: { lt: now },
+      customerId: { not: null }, // Only track customers we know
+    },
+    include: {
+      customer: true,
+      service: true,
+      staff: true,
+    },
+  });
+
+  if (pastAppointments.length === 0) return 0;
+
+  // Behavior logging is per-appointment (preserves existing semantics); the
+  // status flip is batched into a single updateMany at the end to reduce
+  // round-trips.
+  for (const appointment of pastAppointments) {
+    try {
+      await logCustomerBehavior({
+        customerId: appointment.customerId!,
+        salonId: appointment.salonId,
+        appointmentId: appointment.id,
+        behaviorType: BehaviorType.NO_SHOW,
+        severityScore: 8, // High severity for no-shows
+        metadata: {
+          appointmentDateTime: appointment.startTime,
+          serviceName: appointment.service?.name,
+          staffName: appointment.staff?.name,
+          expectedDuration: appointment.service?.duration,
+        },
+      });
+    } catch (error) {
+      console.error(
+        `[noShowDetector] behavior log failed for appointment ${appointment.id}:`,
+        error,
+      );
+    }
+  }
+
+  const idsToFlip = pastAppointments.map((a) => a.id);
+  try {
+    await prisma.appointment.updateMany({
+      where: { id: { in: idsToFlip } },
+      data: {
+        status: 'NO_SHOW',
+        updatedAt: new Date(),
+      },
+    });
+  } catch (error) {
+    console.error(
+      `[noShowDetector] batch updateMany failed for salon ${salonId}:`,
+      error,
+    );
+  }
+
+  return pastAppointments.length;
+}
+
+export async function detectNoShows(): Promise<number> {
+  const startedAt = Date.now();
   try {
     const now = new Date();
 
-    // Find appointments that:
-    // 1. Are still marked as BOOKED
-    // 2. Start time has passed
-    // 3. Have a customerId (for behavior tracking)
-    const pastAppointments = await prisma.appointment.findMany({
-      where: {
-        status: 'BOOKED',
-        startTime: { lt: now },
-        customerId: { not: null } // Only track customers we know
-      },
-      include: {
-        customer: true,
-        service: true,
-        staff: true
-      }
+    const activeSalons = await prisma.salon.findMany({
+      where: { status: 'ACTIVE' },
+      select: { id: true },
     });
+    const salonIds = activeSalons.map((s) => s.id);
 
-    console.log(`Found ${pastAppointments.length} potential no-show appointments`);
+    let totalProcessed = 0;
 
-    for (const appointment of pastAppointments) {
-      try {
-        // Log no-show behavior
-        await logCustomerBehavior({
-          customerId: appointment.customerId!,
-          salonId: appointment.salonId,
-          appointmentId: appointment.id,
-          behaviorType: BehaviorType.NO_SHOW,
-          severityScore: 8, // High severity for no-shows
-          metadata: {
-            appointmentDateTime: appointment.startTime,
-            serviceName: appointment.service?.name,
-            staffName: appointment.staff?.name,
-            expectedDuration: appointment.service?.duration
-          }
-        });
-
-        // Mark appointment as NO_SHOW
-        await prisma.appointment.update({
-          where: { id: appointment.id },
-          data: {
-            status: 'NO_SHOW',
-            updatedAt: new Date()
-          }
-        });
-
-        console.log(`Marked appointment ${appointment.id} as NO_SHOW for customer ${appointment.customerId}`);
-
-      } catch (error) {
-        console.error(`Error processing no-show for appointment ${appointment.id}:`, error);
+    for (let i = 0; i < salonIds.length; i += CONCURRENCY) {
+      const batch = salonIds.slice(i, i + CONCURRENCY);
+      const results = await Promise.allSettled(
+        batch.map((salonId) => processSalonNoShows(salonId, now)),
+      );
+      for (const r of results) {
+        if (r.status === 'fulfilled') {
+          totalProcessed += r.value;
+        } else {
+          console.error('[noShowDetector] salon batch failed:', r.reason);
+        }
       }
     }
 
-    return pastAppointments.length;
-
+    const durationMs = Date.now() - startedAt;
+    console.log(
+      `[noShowDetector] complete salons=${salonIds.length} flipped=${totalProcessed} durationMs=${durationMs}`,
+    );
+    return totalProcessed;
   } catch (error) {
-    console.error('Error in no-show detection:', error);
+    console.error('[noShowDetector] fatal error:', error);
     return 0;
   }
 }
@@ -72,9 +119,9 @@ export async function detectNoShows() {
 /**
  * Manual trigger for no-show detection (for testing/admin purposes)
  */
-export async function runNoShowDetection() {
-  console.log('Running manual no-show detection...');
+export async function runNoShowDetection(): Promise<number> {
+  console.log('[noShowDetector] manual trigger');
   const count = await detectNoShows();
-  console.log(`Processed ${count} no-show appointments`);
+  console.log(`[noShowDetector] manual run processed ${count} appointments`);
   return count;
 }

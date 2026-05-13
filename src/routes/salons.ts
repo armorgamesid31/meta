@@ -126,6 +126,7 @@ router.get('/:slug/homepage', async (req: any, res: any) => {
         },
         staff: {
           orderBy: { id: 'asc' },
+          take: 30,
           select: {
             id: true,
             name: true,
@@ -134,7 +135,11 @@ router.get('/:slug/homepage', async (req: any, res: any) => {
             title: true,
             bio: true,
             profileImageUrl: true,
+            // NOTE: StaffService is used here for testimonial-category matching only;
+            // 10 is enough to find a category match. For the full staff-service mapping
+            // a dedicated endpoint should be used (TODO: GET /api/salons/:slug/staff/:id/services).
             StaffService: {
+              take: 10,
               select: {
                 serviceId: true,
                 Service: {
@@ -148,6 +153,7 @@ router.get('/:slug/homepage', async (req: any, res: any) => {
         },
         galleryImages: {
           orderBy: [{ displayOrder: 'asc' }, { id: 'asc' }],
+          take: 24,
           select: {
             id: true,
             imageUrl: true,
@@ -158,6 +164,7 @@ router.get('/:slug/homepage', async (req: any, res: any) => {
         },
         testimonials: {
           orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          take: 12,
           select: {
             id: true,
             templateType: true,

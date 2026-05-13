@@ -714,6 +714,7 @@ model Customer {
   @@unique([phone, salonId])
   @@index([salonId, createdAt], map: "idx_customer_salon_created")
   @@index([salonId, id], map: "idx_customer_salon_id")
+  @@index([salonId, registrationStatus], map: "idx_customer_salon_registration_status")
   @@index([globalIdentityId], map: "idx_customer_global_identity")
 }
 

@@ -3,8 +3,7 @@ import { prisma } from '../prisma.js';
 import { createOwnerPendingProvisioning } from './inviteService.js';
 import { getPlanByKey } from './billingCatalog.js';
 import { attachReferredSalon } from './referralService.js';
-import { sendActivationEmail } from './activationDelivery.js';
-import { sendActivationWhatsapp } from './activationWhatsappDelivery.js';
+import { enqueueActivationDelivery } from './activationDeliveryQueue.js';
 
 let stripeClient: Stripe | null = null;
 
@@ -143,12 +142,24 @@ export async function createPortalSession(input: { stripeCustomerId: string; ret
 }
 
 export async function processStripeWebhook(rawBody: Buffer, signature: string) {
+  const startedAt = Date.now();
   const stripe = getStripe();
   const webhookSecret = String(process.env.STRIPE_WEBHOOK_SECRET || '').trim();
   if (!webhookSecret) {
     throw new Error('STRIPE_WEBHOOK_SECRET_MISSING');
   }
   const event = stripe.webhooks.constructEvent(rawBody, signature, webhookSecret);
+  // Profiling: structured log so we can spot webhooks approaching Stripe's
+  // 10s budget. Wire to dashboards/alerts (>5000ms = investigate).
+  const logCompletion = (extra: Record<string, unknown> = {}) => {
+    const durationMs = Date.now() - startedAt;
+    console.log('[stripe-webhook]', {
+      eventId: event.id,
+      eventType: event.type,
+      durationMs,
+      ...extra,
+    });
+  };
 
   // Idempotency guard. Insert the event row FIRST so any concurrent retry
   // hitting the unique constraint on eventId returns early before doing any
@@ -171,6 +182,7 @@ export async function processStripeWebhook(rawBody: Buffer, signature: string) {
   } catch (err: any) {
     // P2002 = unique constraint violation → duplicate retry
     if (err?.code === 'P2002') {
+      logCompletion({ duplicate: true });
       return { duplicate: true, eventType: event.type };
     }
     throw err;
@@ -207,6 +219,7 @@ export async function processStripeWebhook(rawBody: Buffer, signature: string) {
       if (existingSubscription) {
         // Event row was already inserted at the top of this function — nothing
         // more to do for this duplicate-subscription path.
+        logCompletion({ duplicateSubscription: true });
         return { duplicate: false, eventType: event.type };
       }
     }
@@ -248,30 +261,26 @@ export async function processStripeWebhook(rawBody: Buffer, signature: string) {
 
     // Best-effort activation-code delivery. The marketing checkout success
     // page also surfaces the code via GET /api/checkout/activation, so a
-    // failure here does NOT break the funnel — log and continue.
+    // failure here does NOT break the funnel. We push delivery onto an
+    // in-process queue so a slow/failing email or WA provider can't push
+    // this webhook past Stripe's 10s timeout (which triggers a retry storm).
     const salonNameForDelivery = salonNameDraft || `${ownerName} Salonu`;
-    try {
-      await sendActivationEmail({
+    enqueueActivationDelivery({
+      email: {
         to: ownerEmail,
         ownerName,
         salonName: salonNameForDelivery,
         code: provisioned.inviteCode,
         expiresAt: provisioned.expiresAt,
-      });
-    } catch (e) {
-      console.error('[activation-email] failed', e);
-    }
-    try {
-      await sendActivationWhatsapp({
+      },
+      wa: {
         toPhone: ownerPhone,
         ownerName,
         salonName: salonNameForDelivery,
         code: provisioned.inviteCode,
         expiresAt: provisioned.expiresAt,
-      });
-    } catch (e) {
-      console.error('[activation-wa] failed', e);
-    }
+      },
+    });
   }
 
   if (event.type === 'checkout.session.expired') {
@@ -327,5 +336,6 @@ export async function processStripeWebhook(rawBody: Buffer, signature: string) {
 
   // Event row was inserted at the top of this function as the idempotency
   // gate, so no trailing insert here.
+  logCompletion();
   return { duplicate: false, eventType: event.type };
 }
