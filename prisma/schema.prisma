@@ -472,6 +472,7 @@ model Service {
   serviceGroupId       Int?
   isActive             Boolean?                         @default(true)
   regionId             Int?
+  displayOrder         Int                              @default(0)
   appointments         Appointment[]
   campaignApplications AppointmentCampaignApplication[]
   appointmentLines     AppointmentLine[]
@@ -489,6 +490,7 @@ model Service {
   StaffService         StaffService[]
 
   @@unique([name, salonId])
+  @@index([salonId, categoryId, displayOrder], map: "idx_service_salon_category_display")
 }
 
 model ServiceGroup {

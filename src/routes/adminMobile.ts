@@ -6219,6 +6219,7 @@ router.get('/services', authenticateToken, async (req: any, res: any) => {
         requiresSpecialist: true,
         categoryId: true,
         regionId: true,
+        displayOrder: true,
         capacityOverride: true,
         sequentialOverride: true,
         bufferOverride: true,
@@ -6256,7 +6257,10 @@ router.get('/services', authenticateToken, async (req: any, res: any) => {
           },
         },
       },
-      orderBy: [{ category: 'asc' }, { name: 'asc' }],
+      // Per-category ordering: services within a category honor
+      // displayOrder, then fall back to name for stability when
+      // displayOrder ties (e.g. all defaults at 0).
+      orderBy: [{ categoryId: 'asc' }, { displayOrder: 'asc' }, { name: 'asc' }],
     });
 
     return res.status(200).json({
@@ -6264,6 +6268,75 @@ router.get('/services', authenticateToken, async (req: any, res: any) => {
     });
   } catch (error) {
     console.error('Admin services list error:', error);
+    throw error;
+  }
+});
+
+// Batch reorder helper for drag-drop UIs.
+//
+// Body: { items: [{ id, displayOrder }, ...] }
+//
+// All ids must belong to this salon. Each row's displayOrder is
+// written exactly as supplied — the client is responsible for the
+// sequence (typically 0..N-1 within a category). Done in one
+// transaction so partial failures don't leave the list scrambled.
+router.post('/services/reorder', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  const rawItems = Array.isArray(req.body?.items) ? req.body.items : null;
+  if (!rawItems || rawItems.length === 0) {
+    throw new BusinessError('VALIDATION_FAILED', 'items must be a non-empty array.', 400);
+  }
+
+  const normalized: { id: number; displayOrder: number }[] = [];
+  const seen = new Set<number>();
+  for (const entry of rawItems) {
+    const id = Number(entry?.id);
+    const displayOrder = Number(entry?.displayOrder);
+    if (!Number.isInteger(id) || id <= 0) {
+      throw new BusinessError('VALIDATION_FAILED', 'items[].id must be a positive integer.', 400);
+    }
+    if (!Number.isInteger(displayOrder) || displayOrder < 0) {
+      throw new BusinessError(
+        'VALIDATION_FAILED',
+        'items[].displayOrder must be a non-negative integer.',
+        400,
+      );
+    }
+    if (seen.has(id)) {
+      throw new BusinessError('VALIDATION_FAILED', 'items must not contain duplicate ids.', 400);
+    }
+    seen.add(id);
+    normalized.push({ id, displayOrder });
+  }
+
+  try {
+    // Ownership check in one query: any id missing from this set
+    // either doesn't exist or belongs to another salon.
+    const owned = await prisma.service.findMany({
+      where: { salonId, id: { in: normalized.map((row) => row.id) } },
+      select: { id: true },
+    });
+    if (owned.length !== normalized.length) {
+      throw new BusinessError(
+        'NOT_FOUND',
+        'One or more service ids do not belong to this salon.',
+        404,
+      );
+    }
+
+    await prisma.$transaction(
+      normalized.map((row) =>
+        prisma.service.update({
+          where: { id: row.id },
+          data: { displayOrder: row.displayOrder },
+          select: { id: true },
+        }),
+      ),
+    );
+
+    return res.status(200).json({ success: true, updated: normalized.length });
+  } catch (error) {
+    console.error('Admin service reorder error:', error);
     throw error;
   }
 });
@@ -6349,9 +6422,16 @@ router.post('/services', authenticateToken, async (req: any, res: any) => {
     req.body?.bufferOverride === null || req.body?.bufferOverride === undefined || req.body?.bufferOverride === ''
       ? null
       : Number(req.body.bufferOverride);
+  const displayOrder =
+    req.body?.displayOrder === null || req.body?.displayOrder === undefined || req.body?.displayOrder === ''
+      ? null
+      : Number(req.body.displayOrder);
 
   if (!name || !Number.isFinite(duration) || duration <= 0 || !Number.isFinite(price) || price < 0) {
     throw new BusinessError('VALIDATION_FAILED', 'name, duration and price are required.', 400);
+  }
+  if (displayOrder !== null && (!Number.isInteger(displayOrder) || displayOrder < 0)) {
+    throw new BusinessError('VALIDATION_FAILED', 'displayOrder must be a non-negative integer.', 400);
   }
   if (categoryId === null || !Number.isInteger(categoryId) || categoryId <= 0) {
     throw new BusinessError('VALIDATION_FAILED', 'categoryId is required and must be a positive integer.', 400);
@@ -6421,6 +6501,7 @@ router.post('/services', authenticateToken, async (req: any, res: any) => {
           capacityOverride,
           sequentialOverride,
           bufferOverride,
+          ...(displayOrder !== null ? { displayOrder } : {}),
         },
         select: { id: true },
       });
@@ -6448,6 +6529,7 @@ router.post('/services', authenticateToken, async (req: any, res: any) => {
         categoryId: true,
         regionId: true,
         serviceGroupId: true,
+        displayOrder: true,
         capacityOverride: true,
         sequentialOverride: true,
         bufferOverride: true,
@@ -6593,6 +6675,13 @@ router.put('/services/:id', authenticateToken, async (req: any, res: any) => {
       updates.bufferOverride = Math.round(buffer);
     }
   }
+  if (req.body?.displayOrder !== undefined) {
+    const value = Number(req.body.displayOrder);
+    if (!Number.isInteger(value) || value < 0) {
+      throw new BusinessError('VALIDATION_FAILED', 'displayOrder must be a non-negative integer.', 400);
+    }
+    updates.displayOrder = value;
+  }
 
   const hasGenderUpdate = req.body?.genders !== undefined;
   const genders = hasGenderUpdate ? parseServiceGenders(req.body?.genders) : [];
@@ -6679,6 +6768,7 @@ router.put('/services/:id', authenticateToken, async (req: any, res: any) => {
         categoryId: true,
         regionId: true,
         serviceGroupId: true,
+        displayOrder: true,
         capacityOverride: true,
         sequentialOverride: true,
         bufferOverride: true,
@@ -10179,7 +10269,41 @@ router.get('/blacklist', authenticateToken, async (req: any, res: any) => {
       orderBy: [{ isActive: 'desc' }, { createdAt: 'desc' }],
     });
 
-    return res.status(200).json({ items });
+    // Frontend Blacklist UI shows a "no-show count" badge next to each
+    // entry. Source of truth is CustomerRiskProfile.noShowCount, keyed
+    // by (customerId, salonId). There's no Prisma relation between
+    // BlacklistEntry and CustomerRiskProfile (only a composite unique
+    // on the risk profile side), so we do one bulk lookup keyed by the
+    // customerIds present in this page of blacklist results and merge
+    // client-side. That keeps it O(1) queries instead of N+1.
+    const customerIds = Array.from(
+      new Set(
+        items
+          .map((row) => row.customerId)
+          .filter((value): value is number => typeof value === 'number' && value > 0),
+      ),
+    );
+
+    const noShowByCustomerId = new Map<number, number>();
+    if (customerIds.length > 0) {
+      const profiles = await prisma.customerRiskProfile.findMany({
+        where: { salonId, customerId: { in: customerIds } },
+        select: { customerId: true, noShowCount: true },
+      });
+      for (const profile of profiles) {
+        noShowByCustomerId.set(profile.customerId, profile.noShowCount ?? 0);
+      }
+    }
+
+    const enriched = items.map((row) => ({
+      ...row,
+      noShowCount:
+        row.customerId && noShowByCustomerId.has(row.customerId)
+          ? noShowByCustomerId.get(row.customerId)!
+          : 0,
+    }));
+
+    return res.status(200).json({ items: enriched });
   } catch (error) {
     console.error('Admin blacklist list error:', error);
     throw error;
