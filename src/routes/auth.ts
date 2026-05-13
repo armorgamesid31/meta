@@ -2,11 +2,11 @@ import { Router } from 'express';
 import bcrypt from 'bcrypt';
 import { prisma } from '../prisma.js';
 import { authenticateToken } from '../middleware/auth.js';
-import { UserRole } from '@prisma/client';
+import { InviteStatus, UserRole } from '@prisma/client';
 import { createAuthTokens, revokeRefreshToken, rotateRefreshToken } from '../services/mobileAuth.js';
 import { ensureSalonServiceCategories } from '../services/salonCategorySetup.js';
 import { ensureSalonAccessSeed } from '../services/accessControl.js';
-import { activateInvite, validateInvite } from '../services/inviteService.js';
+import { activateInvite, hashPlainToken, validateInvite } from '../services/inviteService.js';
 import { createPhoneVerification, verifyPhoneCode } from '../services/phoneVerification.js';
 import { normalizeDigitsOnly } from '../services/phoneValidation.js';
 import { BusinessError } from '../lib/errors.js';
@@ -372,6 +372,201 @@ router.post('/invites/activate', async (req: any, res: any) => {
   } catch (error: any) {
     return res.status(400).json({ message: error?.message || 'Invite activation failed.' });
   }
+});
+
+/**
+ * POST /memberships/accept  (mounted at /auth and /api/auth)
+ *
+ * Authenticated counterpart to /invites/activate. Used by the multi-salon
+ * switcher's "Mevcut Salona Katıl" flow when an already-logged-in user
+ * pastes an 8-character invite code for another salon.
+ *
+ * Body: { code: string }
+ *
+ * Behavior:
+ *  1) Look up the active Invite by hashed code.
+ *  2) If invite.invitedMembership.identityId === current user identity →
+ *     activate that membership (skip OTP, identity already verified).
+ *  3) If invite.invitedMembership.identityId !== current user → 403 with
+ *     a Turkish message that explains the user needs the right account.
+ *  4) If invite has no pre-allocated identity (invitedMembershipId NULL),
+ *     attach the caller's identity to a freshly-created SalonMembership
+ *     in that salon, then activate.
+ *  5) Mark the invite ACCEPTED.
+ *
+ * Response: { salon: { id, name, slug }, role, membershipId }
+ */
+router.post('/memberships/accept', authenticateToken, async (req: any, res: any) => {
+  if (!req.user) {
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
+  }
+  const identityId = Number(req.user.identityId || 0);
+  if (!identityId) {
+    throw new BusinessError('UNAUTHORIZED', 'Oturum bilgisi eksik.', 401);
+  }
+
+  const code = String(req.body?.code || '').trim().toUpperCase();
+  if (!code || code.length < 4) {
+    throw new BusinessError('VALIDATION_FAILED', 'Geçerli bir davet kodu gerekli.', 400);
+  }
+
+  const codeHash = hashPlainToken(code);
+  const invite = await prisma.invite.findFirst({
+    where: { inviteCodeHash: codeHash },
+    include: {
+      salon: { select: { id: true, name: true, slug: true } },
+      invitedMembership: {
+        include: { identity: { select: { id: true, email: true, phone: true } } },
+      },
+    },
+  });
+
+  if (!invite) {
+    throw new BusinessError('NOT_FOUND', 'Davet bulunamadı.', 404);
+  }
+  if (invite.status !== InviteStatus.PENDING) {
+    // Treat already-accepted / revoked as not-found for safety.
+    throw new BusinessError('NOT_FOUND', 'Davet artık geçerli değil.', 404);
+  }
+  if (invite.expiresAt && invite.expiresAt.getTime() < Date.now()) {
+    throw new BusinessError('GONE', 'Davet süresi doldu.', 410);
+  }
+
+  const targetIdentityId = invite.invitedMembership?.identityId ?? null;
+  if (targetIdentityId && targetIdentityId !== identityId) {
+    throw new BusinessError(
+      'FORBIDDEN',
+      'Bu davet sana ait değil. Hesabını e-posta/telefonla ayrıştırman gerek.',
+      403,
+    );
+  }
+
+  // Resolve the salon-scoped identity helpers we'll need.
+  const identity = await prisma.userIdentity.findUnique({
+    where: { id: identityId },
+    select: { id: true, email: true, phone: true, firstName: true, lastName: true, displayName: true, passwordHash: true, isActive: true },
+  });
+  if (!identity || !identity.isActive) {
+    throw new BusinessError('FORBIDDEN', 'Kullanıcı oturumu geçersiz.', 403);
+  }
+
+  const result = await prisma.$transaction(async (tx) => {
+    let membershipId: number;
+    let role: string;
+
+    if (invite.invitedMembership) {
+      // CASE 1: invite is locked to this caller's identity.
+      // Activate the pre-existing membership in-place. We don't touch the
+      // identity itself (caller is already authenticated, password etc.
+      // are already set on the identity from a previous registration).
+      const updated = await tx.salonMembership.update({
+        where: { id: invite.invitedMembership.id },
+        data: {
+          isActive: true,
+          passwordResetRequired: false,
+        },
+      });
+
+      // Ensure a legacy SalonUser exists, matching the pattern used in
+      // /switch-salon and /invites/activate so downstream queries keep
+      // working.
+      let legacyUserId = updated.legacySalonUserId || 0;
+      if (!legacyUserId) {
+        const legacy = await tx.salonUser.create({
+          data: {
+            salonId: updated.salonId,
+            email: identity.email || `legacy-${identity.id}@kedy.local`,
+            phone: identity.phone || null,
+            passwordHash: identity.passwordHash,
+            firstName: identity.firstName || null,
+            lastName: identity.lastName || null,
+            displayName: identity.displayName || null,
+            role: updated.role,
+            secondaryRoles: updated.secondaryRoles || null,
+            isActive: true,
+            passwordResetRequired: false,
+            activationCompletedAt: new Date(),
+          },
+        });
+        legacyUserId = legacy.id;
+        await tx.salonMembership.update({
+          where: { id: updated.id },
+          data: { legacySalonUserId: legacyUserId },
+        });
+      } else {
+        await tx.salonUser.update({
+          where: { id: legacyUserId },
+          data: {
+            isActive: true,
+            passwordResetRequired: false,
+            activationCompletedAt: new Date(),
+          },
+        });
+      }
+
+      membershipId = updated.id;
+      role = String(updated.role);
+    } else {
+      // CASE 2: open invite (no pre-allocated identity). Bind the caller's
+      // identity to a new membership in the invite's salon. Default role
+      // STAFF — owner-style memberships always come pre-allocated via
+      // inviteService.createOwnerPendingProvisioning so we wouldn't hit
+      // this branch for those.
+      const newMembership = await tx.salonMembership.create({
+        data: {
+          salonId: invite.salonId,
+          identityId,
+          role: UserRole.STAFF,
+          isActive: true,
+          passwordResetRequired: false,
+        },
+      });
+
+      const legacy = await tx.salonUser.create({
+        data: {
+          salonId: invite.salonId,
+          email: identity.email || `legacy-${identity.id}@kedy.local`,
+          phone: identity.phone || null,
+          passwordHash: identity.passwordHash,
+          firstName: identity.firstName || null,
+          lastName: identity.lastName || null,
+          displayName: identity.displayName || null,
+          role: UserRole.STAFF,
+          isActive: true,
+          passwordResetRequired: false,
+          activationCompletedAt: new Date(),
+        },
+      });
+
+      await tx.salonMembership.update({
+        where: { id: newMembership.id },
+        data: { legacySalonUserId: legacy.id },
+      });
+
+      membershipId = newMembership.id;
+      role = String(newMembership.role);
+    }
+
+    await tx.invite.update({
+      where: { id: invite.id },
+      data: {
+        status: InviteStatus.ACCEPTED,
+        acceptedAt: new Date(),
+      },
+    });
+
+    return { membershipId, role };
+  });
+
+  return res.status(200).json({
+    salon: {
+      id: invite.salon.id,
+      name: invite.salon.name,
+      slug: invite.salon.slug,
+    },
+    role: result.role,
+    membershipId: result.membershipId,
+  });
 });
 
 router.post('/password/forgot/start', async (req: any, res: any) => {

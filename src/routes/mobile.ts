@@ -1,4 +1,6 @@
-import { Router } from 'express';
+import { Router, type Request, type Response } from 'express';
+import multer from 'multer';
+import { randomBytes } from 'crypto';
 import { prisma } from '../prisma.js';
 import { authenticateToken } from '../middleware/auth.js';
 import {
@@ -12,8 +14,23 @@ import { createNotification, getDefaultNotificationPolicy } from '../services/no
 import { getPushProviderStatus } from '../services/pushProvider.js';
 import { ACCESS_VERSION, ensureSalonAccessSeed, getEffectivePermissionSet } from '../services/accessControl.js';
 import { getFeaturesForPlan } from '../services/planFeatures.js';
+import { deleteR2Object, isR2Configured, uploadBufferToR2 } from '../lib/r2.js';
 
 const router = Router();
+
+const STAFF_PHOTO_MAX_BYTES = 2 * 1024 * 1024;
+const STAFF_PHOTO_ALLOWED_TYPES = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp']);
+
+const staffPhotoUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: STAFF_PHOTO_MAX_BYTES, files: 1 },
+});
+
+function inferStaffPhotoExtension(contentType: string): string {
+  if (contentType === 'image/png') return 'png';
+  if (contentType === 'image/webp') return 'webp';
+  return 'jpg';
+}
 
 function maskPushToken(token: string): string {
   const normalized = String(token || '').trim();
@@ -242,6 +259,117 @@ router.put('/staff-profile', authenticateToken, async (req: any, res: any) => {
 
   return res.status(200).json({ item: updated });
 });
+
+/**
+ * POST /staff-profile/photo  (mounted at /api/mobile)
+ *
+ * Authenticated staff/owner uploads a new profile photo for the Staff row
+ * linked to their SalonMembership. Mirrors the R2 upload pattern from
+ * routes/salonLogo.ts (multer memory storage + lib/r2 helper).
+ *
+ * Multipart field name: `image`. Max 2 MB. JPEG / PNG / WebP only.
+ *
+ * Response: { staff: { id, profileImageUrl } }
+ */
+router.post(
+  '/staff-profile/photo',
+  authenticateToken,
+  staffPhotoUpload.single('image'),
+  async (req: any, res: Response) => {
+    if (!req.user) throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
+    const salonId = Number(req.user.salonId || 0);
+    const membershipId = Number(req.user.membershipId || 0);
+    if (!salonId || !membershipId) {
+      throw new BusinessError('FORBIDDEN', 'Membership required.', 403);
+    }
+
+    if (!isR2Configured()) {
+      throw new BusinessError('STORAGE_NOT_CONFIGURED', 'Photo storage is not available right now.', 503);
+    }
+
+    const file = (req as Request).file as Express.Multer.File | undefined;
+    if (!file || !file.buffer?.length) {
+      throw new BusinessError('VALIDATION_FAILED', 'image is required.', 400);
+    }
+
+    const contentTypeRaw = (file.mimetype || '').toLowerCase();
+    const normalizedType = contentTypeRaw === 'image/jpg' ? 'image/jpeg' : contentTypeRaw;
+    if (!STAFF_PHOTO_ALLOWED_TYPES.has(normalizedType)) {
+      throw new BusinessError(
+        'VALIDATION_FAILED',
+        'Sadece JPEG, PNG veya WebP yükleyebilirsin.',
+        400,
+      );
+    }
+
+    const staff = await prisma.staff.findFirst({
+      where: { salonId, membershipId },
+      select: { id: true, profileImageUrl: true },
+    });
+    if (!staff) {
+      throw new BusinessError('NOT_FOUND', 'Linked staff profile not found.', 404);
+    }
+
+    const ext = inferStaffPhotoExtension(normalizedType);
+    const objectKey = `salons/${salonId}/staff/${staff.id}-${Date.now()}-${randomBytes(4).toString('hex')}.${ext}`;
+
+    let publicUrl: string;
+    try {
+      publicUrl = await uploadBufferToR2({
+        objectKey,
+        body: file.buffer,
+        contentType: normalizedType,
+      });
+    } catch (err: any) {
+      console.error('[staff-photo] R2 upload failed', {
+        salonId,
+        staffId: staff.id,
+        message: err?.message || String(err),
+      });
+      throw new BusinessError('UPLOAD_FAILED', 'Fotoğraf yüklenemedi.', 500);
+    }
+
+    const updated = await prisma.staff.update({
+      where: { id: staff.id },
+      data: { profileImageUrl: publicUrl },
+      select: { id: true, profileImageUrl: true },
+    });
+
+    // Best-effort cleanup of the previous photo. We only delete if the prior
+    // URL is under our staff prefix so we don't accidentally drop avatars
+    // hosted elsewhere (e.g. legacy seeded URLs).
+    if (staff.profileImageUrl) {
+      try {
+        const parsed = new URL(staff.profileImageUrl);
+        const prevKey = parsed.pathname.replace(/^\/+/, '').replace(/^[^/]+\//, '');
+        if (prevKey.startsWith(`salons/${salonId}/staff/`) && prevKey !== objectKey) {
+          await deleteR2Object(prevKey);
+        }
+      } catch {
+        // ignore — old URL may not parse / not under our bucket
+      }
+    }
+
+    return res.status(200).json({ staff: updated });
+  },
+);
+
+// Multer-specific error normalization for the /staff-profile/photo route.
+// Express 5 forwards errors thrown by middleware to the global errorMiddleware
+// which won't know about LIMIT_FILE_SIZE specifically — we map it to 413 so
+// the mobile app can show a friendly message.
+router.use(
+  '/staff-profile/photo',
+  (err: any, _req: Request, res: Response, next: any) => {
+    if (err && err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({
+        code: 'FILE_TOO_LARGE',
+        message: `Fotoğraf çok büyük (en fazla ${Math.floor(STAFF_PHOTO_MAX_BYTES / (1024 * 1024))}MB).`,
+      });
+    }
+    return next(err);
+  },
+);
 
 router.post('/push/register', authenticateToken, async (req: any, res: any) => {
   if (!req.user) throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);

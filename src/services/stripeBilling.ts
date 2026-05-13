@@ -3,6 +3,8 @@ import { prisma } from '../prisma.js';
 import { createOwnerPendingProvisioning } from './inviteService.js';
 import { getPlanByKey } from './billingCatalog.js';
 import { attachReferredSalon } from './referralService.js';
+import { sendActivationEmail } from './activationDelivery.js';
+import { sendActivationWhatsapp } from './activationWhatsappDelivery.js';
 
 let stripeClient: Stripe | null = null;
 
@@ -225,6 +227,33 @@ export async function processStripeWebhook(rawBody: Buffer, signature: string) {
         referralCode,
         referredSalonId: provisioned.salonId,
       });
+    }
+
+    // Best-effort activation-code delivery. The marketing checkout success
+    // page also surfaces the code via GET /api/checkout/activation, so a
+    // failure here does NOT break the funnel — log and continue.
+    const salonNameForDelivery = salonNameDraft || `${ownerName} Salonu`;
+    try {
+      await sendActivationEmail({
+        to: ownerEmail,
+        ownerName,
+        salonName: salonNameForDelivery,
+        code: provisioned.inviteCode,
+        expiresAt: provisioned.expiresAt,
+      });
+    } catch (e) {
+      console.error('[activation-email] failed', e);
+    }
+    try {
+      await sendActivationWhatsapp({
+        toPhone: ownerPhone,
+        ownerName,
+        salonName: salonNameForDelivery,
+        code: provisioned.inviteCode,
+        expiresAt: provisioned.expiresAt,
+      });
+    } catch (e) {
+      console.error('[activation-wa] failed', e);
     }
   }
 

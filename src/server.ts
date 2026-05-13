@@ -58,6 +58,7 @@ import { ensurePermissionCatalog } from './services/accessControl.js';
 import { startNotificationJobs } from './services/notifications.js';
 import { startImportRetentionJob } from './services/importWizard.js';
 import { startSubmissionWorker } from './services/salonTemplateSubmitter.js';
+import { startBackgroundJobs } from './jobs/index.js';
 import { createServer } from 'http';
 import { initConversationEventsBus } from './services/conversationEventsBus.js';
 import { initConversationRealtimeWebSocketServer } from './services/conversationRealtimeWs.js';
@@ -413,5 +414,6 @@ server.listen(PORT, HOST, () => {
   startNotificationJobs();
   startImportRetentionJob();
   startSubmissionWorker();
+  startBackgroundJobs();
 });
 export default app;
