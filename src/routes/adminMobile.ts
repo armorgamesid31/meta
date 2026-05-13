@@ -2153,6 +2153,7 @@ function mapStaffForMobile(staff: any) {
     phone: staff.phone,
     profileImageUrl: staff.profileImageUrl,
     themeColor: normalizeThemeColor(staff.themeColor) || paletteColorBySeed(staff.id),
+    monthlyGoal: staff.monthlyGoal ?? 0,
     services,
     serviceCount: services.length,
   };
@@ -6861,6 +6862,7 @@ router.get('/staff', authenticateToken, async (req: any, res: any) => {
         phone: true,
         themeColor: true,
         profileImageUrl: true,
+        monthlyGoal: true,
         StaffService: {
           where: {
             Service: { salonId },
@@ -6925,6 +6927,13 @@ router.post('/staff', authenticateToken, async (req: any, res: any) => {
 
   try {
     const createdStaffId = await prisma.$transaction(async (tx) => {
+      const monthlyGoalRaw = req.body?.monthlyGoal;
+      const monthlyGoalParsed =
+        monthlyGoalRaw === undefined || monthlyGoalRaw === null || monthlyGoalRaw === ''
+          ? 0
+          : Number(monthlyGoalRaw);
+      const monthlyGoal = Number.isFinite(monthlyGoalParsed) && monthlyGoalParsed >= 0 ? Math.floor(monthlyGoalParsed) : 0;
+
       const staff = await tx.staff.create({
         data: {
           salonId,
@@ -6937,6 +6946,7 @@ router.post('/staff', authenticateToken, async (req: any, res: any) => {
           phone: typeof req.body?.phone === 'string' ? req.body.phone.trim() : null,
           themeColor: themeColor || randomStaffColor(),
           profileImageUrl: typeof req.body?.profileImageUrl === 'string' ? req.body.profileImageUrl.trim() : null,
+          monthlyGoal,
         },
         select: { id: true },
       });
@@ -6987,6 +6997,7 @@ router.post('/staff', authenticateToken, async (req: any, res: any) => {
         phone: true,
         themeColor: true,
         profileImageUrl: true,
+        monthlyGoal: true,
         StaffService: {
           where: {
             Service: { salonId },
@@ -7074,6 +7085,13 @@ router.put('/staff/:id', authenticateToken, async (req: any, res: any) => {
       updates.themeColor = themeColor;
     }
   }
+  if (req.body?.monthlyGoal !== undefined) {
+    const parsed = Number(req.body.monthlyGoal);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      throw new BusinessError('VALIDATION_FAILED', 'monthlyGoal must be a non-negative number.', 400);
+    }
+    updates.monthlyGoal = Math.floor(parsed);
+  }
 
   const hasAssignments = req.body?.serviceAssignments !== undefined;
   const assignments = hasAssignments ? parseStaffServiceAssignments(req.body?.serviceAssignments) : [];
@@ -7152,6 +7170,7 @@ router.put('/staff/:id', authenticateToken, async (req: any, res: any) => {
         phone: true,
         themeColor: true,
         profileImageUrl: true,
+        monthlyGoal: true,
         StaffService: {
           where: {
             Service: { salonId },

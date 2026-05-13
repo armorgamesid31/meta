@@ -804,4 +804,195 @@ router.post('/notifications/read-all', authenticateToken, async (req: any, res: 
   }
 });
 
+/**
+ * GET /me/dashboard  (mounted at /api/mobile)
+ *
+ * Returns the specialist dashboard payload for the *currently logged in*
+ * membership. Resolves Staff via membershipId join (same pattern as
+ * /staff-profile). Returns:
+ *   - staff: identity for header rendering
+ *   - today: { points, appointments[] }
+ *   - month: { goal, progress, revenue, appointmentsCount }
+ *
+ * todayPoints is a simple gamification formula:
+ *   per completed appointment = 10pt + floor(finalPrice / 100) bonus
+ *
+ * Returns 403 when the JWT has no membershipId. Returns 404 when no Staff row
+ * is linked to that membership (e.g. owner without a staff profile).
+ */
+router.get('/me/dashboard', authenticateToken, async (req: any, res: any) => {
+  if (!req.user) throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
+  const salonId = req.user.salonId;
+  const membershipId = Number(req.user.membershipId || 0);
+  if (!membershipId) {
+    throw new BusinessError('FORBIDDEN', 'Membership required.', 403);
+  }
+
+  const staff = await prisma.staff.findFirst({
+    where: { salonId, membershipId },
+    select: {
+      id: true,
+      name: true,
+      firstName: true,
+      lastName: true,
+      monthlyGoal: true,
+      profileImageUrl: true,
+      themeColor: true,
+    },
+  });
+  if (!staff) {
+    throw new BusinessError('NOT_FOUND', 'Linked staff profile not found.', 404);
+  }
+
+  const now = new Date();
+  const todayStart = new Date(now);
+  todayStart.setHours(0, 0, 0, 0);
+  const todayEnd = new Date(todayStart);
+  todayEnd.setDate(todayEnd.getDate() + 1);
+
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1, 0, 0, 0, 0);
+
+  const [todayAppointments, monthAppointmentsCount, monthRevenueAgg] = await Promise.all([
+    prisma.appointment.findMany({
+      where: {
+        salonId,
+        staffId: staff.id,
+        startTime: { gte: todayStart, lt: todayEnd },
+      },
+      select: {
+        id: true,
+        startTime: true,
+        endTime: true,
+        status: true,
+        notes: true,
+        customerName: true,
+        customerPhone: true,
+        finalPrice: true,
+        listPrice: true,
+        service: { select: { id: true, name: true, price: true, duration: true } },
+        customer: { select: { id: true, name: true, phone: true } },
+        appointmentLines: {
+          select: {
+            id: true,
+            finalPrice: true,
+            listPrice: true,
+            service: { select: { id: true, name: true, price: true, duration: true } },
+          },
+          orderBy: { orderIndex: 'asc' },
+        },
+      },
+      orderBy: { startTime: 'asc' },
+    }),
+    prisma.appointment.count({
+      where: {
+        salonId,
+        staffId: staff.id,
+        startTime: { gte: monthStart, lt: monthEnd },
+        status: 'COMPLETED',
+      },
+    }),
+    prisma.appointment.aggregate({
+      where: {
+        salonId,
+        staffId: staff.id,
+        startTime: { gte: monthStart, lt: monthEnd },
+        status: 'COMPLETED',
+      },
+      _sum: { finalPrice: true },
+    }),
+  ]);
+
+  // Per-appointment price helper: prefer Appointment.finalPrice, then sum of
+  // line finalPrice fallbacks, then the headline service.price as a last resort.
+  function priceFor(appt: (typeof todayAppointments)[number]): number {
+    if (typeof appt.finalPrice === 'number') return appt.finalPrice;
+    if (appt.appointmentLines?.length) {
+      return appt.appointmentLines.reduce((sum, line) => {
+        const linePrice =
+          typeof line.finalPrice === 'number'
+            ? line.finalPrice
+            : typeof line.listPrice === 'number'
+              ? line.listPrice
+              : (line.service?.price ?? 0);
+        return sum + (linePrice || 0);
+      }, 0);
+    }
+    if (typeof appt.listPrice === 'number') return appt.listPrice;
+    return appt.service?.price ?? 0;
+  }
+
+  const todayPoints = todayAppointments
+    .filter((a) => a.status === 'COMPLETED')
+    .reduce((sum, a) => sum + 10 + Math.floor((priceFor(a) || 0) / 100), 0);
+
+  const fmtTime = (d: Date | null | undefined) =>
+    d ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : null;
+
+  return res.status(200).json({
+    staff: {
+      id: staff.id,
+      name: staff.name,
+      firstName: staff.firstName,
+      lastName: staff.lastName,
+      profileImageUrl: staff.profileImageUrl,
+      themeColor: staff.themeColor,
+    },
+    today: {
+      points: todayPoints,
+      appointments: todayAppointments.map((a) => {
+        const services =
+          a.appointmentLines?.length > 0
+            ? a.appointmentLines
+                .filter((l) => l.service)
+                .map((l) => ({
+                  id: l.service!.id,
+                  name: l.service!.name,
+                  duration: l.service!.duration,
+                  price:
+                    typeof l.finalPrice === 'number'
+                      ? l.finalPrice
+                      : typeof l.listPrice === 'number'
+                        ? l.listPrice
+                        : (l.service!.price ?? 0),
+                }))
+            : a.service
+              ? [
+                  {
+                    id: a.service.id,
+                    name: a.service.name,
+                    duration: a.service.duration,
+                    price:
+                      typeof a.finalPrice === 'number'
+                        ? a.finalPrice
+                        : typeof a.listPrice === 'number'
+                          ? a.listPrice
+                          : (a.service.price ?? 0),
+                  },
+                ]
+              : [];
+        return {
+          id: a.id,
+          status: a.status,
+          notes: a.notes,
+          startTime: fmtTime(a.startTime),
+          endTime: fmtTime(a.endTime),
+          startAt: a.startTime?.toISOString() ?? null,
+          endAt: a.endTime?.toISOString() ?? null,
+          customerName: a.customer?.name || a.customerName || '',
+          customerPhone: a.customer?.phone || a.customerPhone || '',
+          totalPrice: priceFor(a),
+          services,
+        };
+      }),
+    },
+    month: {
+      goal: staff.monthlyGoal ?? 0,
+      progress: monthAppointmentsCount,
+      revenue: monthRevenueAgg._sum.finalPrice ?? 0,
+      appointmentsCount: monthAppointmentsCount,
+    },
+  });
+});
+
 export default router;

@@ -405,6 +405,7 @@ model Staff {
   bio               String?
   profileImageUrl   String?
   themeColor        String?
+  monthlyGoal       Int                 @default(0)
   appointments      Appointment[]
   appointmentLines  AppointmentLine[]
   leaves            Leave[]
