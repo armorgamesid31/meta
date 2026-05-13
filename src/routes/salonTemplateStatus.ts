@@ -19,7 +19,7 @@ import {
   promoteReserveVariation,
   shouldPromoteReserve,
 } from '../services/salonTemplateSubmitter.js';
-import { listTemplateKeys, ALL_TONES } from '../services/templateVariations.js';
+import { listTemplateKeys, ALL_TONES, getVariationBySlot } from '../services/templateVariations.js';
 
 const router = Router();
 
@@ -282,27 +282,45 @@ router.post('/templates/sync', authenticateToken, async (req: any, res) => {
     logs.push(`${orphanCleanup.count} kayıtsız satır temizlendi (zamanlama yoktu).`);
   }
 
-  // Step 2: stale-SUBMITTED cleanup — rows submitted to Meta with old
-  // template content (before button/leading-var fixes) get marked REJECTED
-  // with reason="user_marked_outdated" so the webhook handler won't
-  // promote them to ACTIVE_VALID if Meta later approves them. They keep
-  // their Meta name (we can't reuse it) but the picker will never serve
-  // them at send time.
-  const staleSubmitted = await prisma.salonMessageTemplate.findMany({
+  // Step 2: content-aware stale-SUBMITTED cleanup. Only mark a SUBMITTED
+  // row as outdated if its persisted body actually differs from the
+  // current canonical variation for its (key, tone, slot). This keeps
+  // sync idempotent: pressing the button while Meta is still reviewing
+  // valid templates no longer rejects them. Earlier we mass-rejected
+  // every SUBMITTED row which destroyed in-flight reviews on each press.
+  const submittedRows = await prisma.salonMessageTemplate.findMany({
     where: { salonId, submissionState: 'SUBMITTED' },
-    select: { id: true, templateKey: true, tone: true, templateName: true },
+    select: {
+      id: true, templateKey: true, tone: true, templateName: true,
+      templateContent: true,
+    },
   });
 
-  if (staleSubmitted.length > 0) {
+  const staleIds: number[] = [];
+  const staleSubmitted: typeof submittedRows = [];
+  for (const r of submittedRows) {
+    if (!r.templateKey || !r.tone || !r.templateName) continue;
+    const slotMatch = r.templateName.match(/_([fbp])(\d+)$/);
+    if (!slotMatch) continue;
+    const slot = Number(slotMatch[2]);
+    const canonical = getVariationBySlot(r.templateKey, r.tone as any, slot);
+    if (!canonical) continue;
+    if (canonical !== r.templateContent) {
+      staleIds.push(r.id);
+      staleSubmitted.push(r);
+    }
+  }
+
+  if (staleIds.length > 0) {
     await prisma.salonMessageTemplate.updateMany({
-      where: { id: { in: staleSubmitted.map(r => r.id) } },
+      where: { id: { in: staleIds } },
       data: {
         submissionState: 'REJECTED',
         rejectedAt: new Date(),
         rejectionReason: 'user_marked_outdated_template_content',
       },
     });
-    logs.push(`${staleSubmitted.length} eski içerikli SUBMITTED satır kullanım dışı bırakıldı.`);
+    logs.push(`${staleIds.length} eski içerikli SUBMITTED satır kullanım dışı bırakıldı.`);
   }
 
   // Step 2b: pick up CATEGORY_BUMPED rows that haven't had a reserve
