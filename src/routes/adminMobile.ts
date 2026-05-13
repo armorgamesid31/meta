@@ -78,10 +78,6 @@ const router = Router();
 // Website Routes (Moved to top for priority)
 router.get('/website/content', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   try {
     const [salon, gallery] = await prisma.$transaction([
       prisma.salon.findUnique({
@@ -136,10 +132,6 @@ router.get('/website/content', authenticateToken, async (req: any, res: any) => 
 
 router.put('/website/content', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const payload = req.body || {};
   const gallery = Array.isArray(payload.gallery) ? payload.gallery : null;
 
@@ -219,10 +211,6 @@ router.put('/website/content', authenticateToken, async (req: any, res: any) => 
 
 router.post('/website/generate', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   try {
     const salon = await prisma.salon.findUnique({
       where: { id: salonId },
@@ -322,10 +310,6 @@ router.post('/website/generate', authenticateToken, async (req: any, res: any) =
 
 router.get('/conversations/stream', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const channelFilter = asInboundChannel(req.query.channel);
   const cursorRaw = typeof req.query.cursor === 'string' ? Number(req.query.cursor) : Number(req.query.cursor || 0);
   const sinceCursor = Number.isInteger(cursorRaw) && cursorRaw > 0 ? cursorRaw : 0;
@@ -391,10 +375,6 @@ router.get('/conversations/stream', authenticateToken, async (req: any, res: any
 
 router.get('/conversations/realtime/sync', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const channelFilter = asInboundChannel(req.query.channel);
 
   try {
@@ -2192,10 +2172,6 @@ function isPackageSchemaNotReadyError(error: any): boolean {
 
 router.get('/appointments', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const from = parseIsoDate(req.query.from);
   const to = parseIsoDate(req.query.to);
 
@@ -2298,10 +2274,6 @@ router.get('/appointments', authenticateToken, async (req: any, res: any) => {
 
 router.post('/appointments', authenticateToken, validate({ body: CreateAppointmentInputSchema }), async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const startTime = parseIsoDate(req.body?.startTime);
   const customerIdRaw = req.body?.customerId;
   const customerId =
@@ -2613,10 +2585,6 @@ function resolveCustomerNameParts(input: { firstName?: unknown; lastName?: unkno
 
 router.get('/customers', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const cursorRaw = typeof req.query.cursor === 'string' ? Number(req.query.cursor) : null;
   const limit = asPositiveInt(req.query.limit, 20, 1, 100);
   const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
@@ -2722,10 +2690,6 @@ router.get('/customers', authenticateToken, async (req: any, res: any) => {
 
 router.post('/customers', authenticateToken, validate({ body: CreateAdminCustomerInputSchema }), async (req: any, res: any, next: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const input = req.validated.body as CreateAdminCustomerInput;
   const normalizedName = resolveCustomerNameParts({
     firstName: input.firstName,
@@ -2791,10 +2755,6 @@ router.post('/customers', authenticateToken, validate({ body: CreateAdminCustome
 
 router.get('/customers/:id', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const customerId = Number(req.params.id);
   if (!Number.isInteger(customerId) || customerId <= 0) {
     throw new BusinessError('VALIDATION_FAILED', 'Invalid customer id.', 400);
@@ -2932,10 +2892,6 @@ router.get('/customers/:id', authenticateToken, async (req: any, res: any) => {
 
 router.put('/customers/:id', authenticateToken, validate({ body: UpdateCustomerInputSchema }), async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const customerId = Number(req.params.id);
   if (!Number.isInteger(customerId) || customerId <= 0) {
     throw new BusinessError('VALIDATION_FAILED', 'Invalid customer id.', 400);
@@ -3117,8 +3073,6 @@ router.put('/customers/:id', authenticateToken, validate({ body: UpdateCustomerI
 
 router.get('/customer-risk-policy', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) return;
-
   try {
     const policy = await getSalonCustomerRiskPolicy(salonId);
     return res.status(200).json({ policy });
@@ -3130,8 +3084,6 @@ router.get('/customer-risk-policy', authenticateToken, async (req: any, res: any
 
 router.put('/customer-risk-policy', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) return;
-
   const payload = req.body || {};
   try {
     const policy = await upsertSalonCustomerRiskPolicy(salonId, {
@@ -3153,10 +3105,6 @@ router.put('/customer-risk-policy', authenticateToken, async (req: any, res: any
 
 router.patch('/customers/:id/no-show-risk', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const customerId = Number(req.params.id);
   if (!Number.isInteger(customerId) || customerId <= 0) {
     throw new BusinessError('VALIDATION_FAILED', 'Invalid customer id.', 400);
@@ -3286,10 +3234,6 @@ router.patch('/customers/:id/no-show-risk', authenticateToken, async (req: any, 
 
 router.put('/customers/:id/discount', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const customerId = Number(req.params.id);
   if (!Number.isInteger(customerId) || customerId <= 0) {
     throw new BusinessError('VALIDATION_FAILED', 'Invalid customer id.', 400);
@@ -3388,10 +3332,6 @@ router.put('/customers/:id/discount', authenticateToken, async (req: any, res: a
 
 router.get('/package-templates', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   try {
     const items = await (prisma as any).packageTemplate.findMany({
       where: { salonId },
@@ -3424,10 +3364,6 @@ router.get('/package-templates', authenticateToken, async (req: any, res: any) =
 
 router.post('/package-templates', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
   const services = parsePackageServices(req.body?.services);
   const scopeType = parsePackageScopeType(req.body?.scopeType);
@@ -3507,10 +3443,6 @@ router.post('/package-templates', authenticateToken, async (req: any, res: any) 
 
 router.put('/package-templates/:id', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const templateId = Number(req.params.id);
   if (!Number.isInteger(templateId) || templateId <= 0) {
     throw new BusinessError('VALIDATION_FAILED', 'Invalid template id.', 400);
@@ -3614,10 +3546,6 @@ router.put('/package-templates/:id', authenticateToken, async (req: any, res: an
 
 router.get('/customers/:id/packages', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const customerId = Number(req.params.id);
   if (!Number.isInteger(customerId) || customerId <= 0) {
     throw new BusinessError('VALIDATION_FAILED', 'Invalid customer id.', 400);
@@ -3669,10 +3597,6 @@ router.get('/customers/:id/packages', authenticateToken, async (req: any, res: a
 
 router.post('/customers/:id/packages', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const customerId = Number(req.params.id);
   if (!Number.isInteger(customerId) || customerId <= 0) {
     throw new BusinessError('VALIDATION_FAILED', 'Invalid customer id.', 400);
@@ -3849,10 +3773,6 @@ router.post('/customers/:id/packages', authenticateToken, async (req: any, res: 
 
 router.post('/customers/:id/packages/:packageId/adjust', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const customerId = Number(req.params.id);
   const packageId = Number(req.params.packageId);
   const serviceId = Number(req.body?.serviceId);
@@ -3983,10 +3903,6 @@ router.post('/customers/:id/packages/:packageId/adjust', authenticateToken, asyn
 
 router.get('/customers/:id/package-ledger', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const customerId = Number(req.params.id);
   if (!Number.isInteger(customerId) || customerId <= 0) {
     throw new BusinessError('VALIDATION_FAILED', 'Invalid customer id.', 400);
@@ -4040,10 +3956,6 @@ router.get('/customers/:id/package-ledger', authenticateToken, async (req: any, 
 
 router.patch('/appointments/:id/status', authenticateToken, validate({ body: UpdateAppointmentStatusInputSchema }), async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const appointmentId = Number(req.params.id);
   const nextStatus = asAppointmentStatus(req.body?.status);
   const paymentMethod = asPaymentMethod(req.body?.paymentMethod);
@@ -4306,8 +4218,6 @@ router.patch('/appointments/:id/status', authenticateToken, validate({ body: Upd
 
 router.patch('/appointment-lines/:id/status', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) return;
-
   const appointmentLineId = Number(req.params.id);
   const nextStatus = asAppointmentStatus(req.body?.status);
   const paymentMethod = asPaymentMethod(req.body?.paymentMethod);
@@ -4453,10 +4363,6 @@ router.patch('/appointment-lines/:id/status', authenticateToken, async (req: any
 
 router.post('/appointments/checkout', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const mode = parseCheckoutMode(req.body?.mode);
   const lines = parseCheckoutLines(req.body?.lines);
   const now = new Date();
@@ -4847,8 +4753,6 @@ router.post('/appointments/checkout', authenticateToken, async (req: any, res: a
 
 router.post('/appointments/reschedule-preview', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) return;
-
   const appointmentIds = parseAppointmentIds(req.body?.appointmentIds);
   const newStartTime = parseIsoDate(req.body?.newStartTime);
   const assignments = parseRescheduleAssignments(req.body?.assignments);
@@ -4876,8 +4780,6 @@ router.post('/appointments/reschedule-preview', authenticateToken, async (req: a
 
 router.post('/appointments/reschedule-options', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) return;
-
   const appointmentIds = parseAppointmentIds(req.body?.appointmentIds);
   const date = typeof req.body?.date === 'string' ? req.body.date.trim() : '';
   const assignments = parseRescheduleAssignments(req.body?.assignments);
@@ -4905,8 +4807,6 @@ router.post('/appointments/reschedule-options', authenticateToken, async (req: a
 
 router.post('/appointments/reschedule-commit', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) return;
-
   const appointmentIds = parseAppointmentIds(req.body?.appointmentIds);
   const newStartTime = parseIsoDate(req.body?.newStartTime);
   const assignments = parseRescheduleAssignments(req.body?.assignments);
@@ -5005,8 +4905,6 @@ router.post('/appointments/reschedule-commit', authenticateToken, async (req: an
 
 router.patch('/appointments/:id/reschedule', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) return;
-
   const appointmentId = Number(req.params.id);
   const newStartTime = parseIsoDate(req.body?.startTime);
   const explicitStaffId = Number(req.body?.staffId);
@@ -5059,8 +4957,6 @@ router.patch('/appointments/:id/reschedule', authenticateToken, async (req: any,
 
 router.get('/waitlist', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) return;
-
   const date = typeof req.query?.date === 'string' ? req.query.date.trim() : '';
   if (!date) {
     throw new BusinessError('VALIDATION_FAILED', 'date is required as YYYY-MM-DD.', 400);
@@ -5077,8 +4973,6 @@ router.get('/waitlist', authenticateToken, async (req: any, res: any) => {
 
 router.post('/waitlist', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) return;
-
   const date = typeof req.body?.date === 'string' ? req.body.date.trim() : '';
   const timeWindowStart = typeof req.body?.timeWindowStart === 'string' ? req.body.timeWindowStart.trim() : '';
   const timeWindowEnd = typeof req.body?.timeWindowEnd === 'string' ? req.body.timeWindowEnd.trim() : '';
@@ -5128,7 +5022,6 @@ router.post('/waitlist', authenticateToken, async (req: any, res: any) => {
 
 router.post('/waitlist/match', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) return;
   const date = typeof req.body?.date === 'string' ? req.body.date.trim() : '';
   if (!date) {
     throw new BusinessError('VALIDATION_FAILED', 'date is required as YYYY-MM-DD.', 400);
@@ -5146,7 +5039,6 @@ router.post('/waitlist/match', authenticateToken, async (req: any, res: any) => 
 
 router.post('/waitlist/:id/offer', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) return;
   const entryId = Number(req.params.id);
   if (!Number.isInteger(entryId) || entryId <= 0) {
     throw new BusinessError('VALIDATION_FAILED', 'Invalid waitlist id.', 400);
@@ -5167,7 +5059,6 @@ router.post('/waitlist/:id/offer', authenticateToken, async (req: any, res: any)
 
 router.post('/waitlist/:id/cancel', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) return;
   const entryId = Number(req.params.id);
   if (!Number.isInteger(entryId) || entryId <= 0) {
     throw new BusinessError('VALIDATION_FAILED', 'Invalid waitlist id.', 400);
@@ -5188,8 +5079,6 @@ router.post('/waitlist/:id/cancel', authenticateToken, async (req: any, res: any
 
 router.patch('/appointments/:id/payment', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) return;
-
   const appointmentId = Number(req.params.id);
   const appointmentLineIdRaw = req.body?.appointmentLineId;
   const appointmentLineId =
@@ -5330,10 +5219,6 @@ router.patch('/appointments/:id/payment', authenticateToken, async (req: any, re
 
 router.get('/setup', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   try {
     const [salon, settings, serviceCount, staffCount] = await prisma.$transaction([
       prisma.salon.findUnique({
@@ -5421,10 +5306,6 @@ router.post('/setup/resolve-maps-link', authenticateToken, async (req: any, res:
 
 router.put('/setup', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const payload = req.body || {};
 
   try {
@@ -5495,10 +5376,6 @@ router.put('/setup', authenticateToken, async (req: any, res: any) => {
 
 router.get('/whatsapp-agent/settings', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   try {
     const settings = await prisma.salonAiAgentSettings.findUnique({
       where: { salonId },
@@ -5546,10 +5423,6 @@ router.get('/whatsapp-agent/settings', authenticateToken, async (req: any, res: 
 
 router.put('/whatsapp-agent/settings', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   try {
     const payload = req.body || {};
     const existing = await prisma.salonAiAgentSettings.findUnique({
@@ -5655,10 +5528,6 @@ router.put('/whatsapp-agent/settings', authenticateToken, async (req: any, res: 
 
 router.get('/service-categories', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   try {
     await ensureSalonServiceCategories(salonId);
 
@@ -5717,10 +5586,6 @@ router.get('/service-categories', authenticateToken, async (req: any, res: any) 
 
 router.put('/service-categories/:id', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const categoryId = Number(req.params.id);
   if (!Number.isInteger(categoryId) || categoryId <= 0) {
     throw new BusinessError('VALIDATION_FAILED', 'Invalid category id.', 400);
@@ -5822,10 +5687,6 @@ router.put('/service-categories/:id', authenticateToken, async (req: any, res: a
 
 router.post('/service-categories/reorder', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const orderedIds = Array.isArray(req.body?.orderedIds) ? req.body.orderedIds.map((value: any) => Number(value)) : [];
   if (!orderedIds.length || orderedIds.some((id: number) => !Number.isInteger(id) || id <= 0)) {
     throw new BusinessError('VALIDATION_FAILED', 'orderedIds must be a non-empty number array.', 400);
@@ -5859,10 +5720,6 @@ router.post('/service-categories/reorder', authenticateToken, async (req: any, r
 
 router.get('/service-regions', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   try {
     await ensureSalonServiceRegions(salonId);
 
@@ -5915,10 +5772,6 @@ router.get('/service-regions', authenticateToken, async (req: any, res: any) => 
 
 router.post('/service-regions', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
   const displayOrder = req.body?.displayOrder === undefined ? null : Number(req.body.displayOrder);
   const isActive = req.body?.isActive === undefined ? true : Boolean(req.body?.isActive);
@@ -6005,10 +5858,6 @@ router.post('/service-regions', authenticateToken, async (req: any, res: any) =>
 
 router.put('/service-regions/:id', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const regionId = Number(req.params.id);
   if (!Number.isInteger(regionId) || regionId <= 0) {
     throw new BusinessError('VALIDATION_FAILED', 'Invalid region id.', 400);
@@ -6115,10 +5964,6 @@ router.put('/service-regions/:id', authenticateToken, async (req: any, res: any)
 
 router.get('/service-groups', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   try {
     const items = await prisma.serviceGroup.findMany({
       where: { salonId },
@@ -6154,10 +5999,6 @@ router.get('/service-groups', authenticateToken, async (req: any, res: any) => {
 
 router.post('/service-groups', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
   const description = typeof req.body?.description === 'string' ? req.body.description.trim() || null : null;
   const displayOrder = req.body?.displayOrder === undefined ? null : Number(req.body.displayOrder);
@@ -6225,10 +6066,6 @@ router.post('/service-groups', authenticateToken, async (req: any, res: any) => 
 
 router.put('/service-groups/:id', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const groupId = Number(req.params.id);
   if (!Number.isInteger(groupId) || groupId <= 0) {
     throw new BusinessError('VALIDATION_FAILED', 'Invalid group id.', 400);
@@ -6320,10 +6157,6 @@ router.put('/service-groups/:id', authenticateToken, async (req: any, res: any) 
 
 router.post('/service-groups/reorder', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const orderedIds = Array.isArray(req.body?.orderedIds) ? req.body.orderedIds.map((value: any) => Number(value)) : [];
   if (!orderedIds.length || orderedIds.some((id: number) => !Number.isInteger(id) || id <= 0)) {
     throw new BusinessError('VALIDATION_FAILED', 'orderedIds must be a non-empty number array.', 400);
@@ -6372,10 +6205,6 @@ function mapServiceForAdmin(item: any) {
 
 router.get('/services', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   try {
     const services = await prisma.service.findMany({
       where: { salonId },
@@ -6441,10 +6270,6 @@ router.get('/services', authenticateToken, async (req: any, res: any) => {
 
 router.get('/services/:id/staff', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const serviceId = Number(req.params.id);
   if (!Number.isInteger(serviceId) || serviceId <= 0) {
     throw new BusinessError('VALIDATION_FAILED', 'Invalid service id.', 400);
@@ -6493,10 +6318,6 @@ router.get('/services/:id/staff', authenticateToken, async (req: any, res: any) 
 
 router.post('/services', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
   const duration = Number(req.body?.duration);
   const price = Number(req.body?.price);
@@ -6678,10 +6499,6 @@ router.post('/services', authenticateToken, async (req: any, res: any) => {
 
 router.put('/services/:id', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const serviceId = Number(req.params.id);
   if (!Number.isInteger(serviceId) || serviceId <= 0) {
     throw new BusinessError('VALIDATION_FAILED', 'Invalid service id.', 400);
@@ -6913,10 +6730,6 @@ router.put('/services/:id', authenticateToken, async (req: any, res: any) => {
 
 router.delete('/services/:id', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const serviceId = Number(req.params.id);
   if (!Number.isInteger(serviceId) || serviceId <= 0) {
     throw new BusinessError('VALIDATION_FAILED', 'Invalid service id.', 400);
@@ -6944,10 +6757,6 @@ router.delete('/services/:id', authenticateToken, async (req: any, res: any) => 
 
 router.get('/staff', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   try {
     const staff = await prisma.staff.findMany({
       where: { salonId },
@@ -7009,10 +6818,6 @@ router.get('/staff', authenticateToken, async (req: any, res: any) => {
 
 router.post('/staff', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
   if (!name) {
     throw new BusinessError('VALIDATION_FAILED', 'name is required.', 400);
@@ -7141,10 +6946,6 @@ router.post('/staff', authenticateToken, async (req: any, res: any) => {
 
 router.put('/staff/:id', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const staffId = Number(req.params.id);
   if (!Number.isInteger(staffId) || staffId <= 0) {
     throw new BusinessError('VALIDATION_FAILED', 'Invalid staff id.', 400);
@@ -7313,10 +7114,6 @@ router.put('/staff/:id', authenticateToken, async (req: any, res: any) => {
 
 router.delete('/staff/:id', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const staffId = Number(req.params.id);
   if (!Number.isInteger(staffId) || staffId <= 0) {
     throw new BusinessError('VALIDATION_FAILED', 'Invalid staff id.', 400);
@@ -7348,9 +7145,6 @@ router.delete('/staff/:id', authenticateToken, async (req: any, res: any) => {
 
 router.get('/salon-closures', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
   if (!(await ensureManagementAccess(req, res))) {
     return;
   }
@@ -7369,9 +7163,6 @@ router.get('/salon-closures', authenticateToken, async (req: any, res: any) => {
 
 router.post('/salon-closures', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
   if (!(await ensureManagementAccess(req, res))) {
     return;
   }
@@ -7399,9 +7190,6 @@ router.post('/salon-closures', authenticateToken, async (req: any, res: any) => 
 
 router.put('/salon-closures/:id', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
   if (!(await ensureManagementAccess(req, res))) {
     return;
   }
@@ -7442,9 +7230,6 @@ router.put('/salon-closures/:id', authenticateToken, async (req: any, res: any) 
 
 router.delete('/salon-closures/:id', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
   if (!(await ensureManagementAccess(req, res))) {
     return;
   }
@@ -7475,9 +7260,6 @@ router.delete('/salon-closures/:id', authenticateToken, async (req: any, res: an
 
 router.get('/staff-timeoff', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
   if (!(await ensureManagementAccess(req, res))) {
     return;
   }
@@ -7505,9 +7287,6 @@ router.get('/staff-timeoff', authenticateToken, async (req: any, res: any) => {
 
 router.post('/staff-timeoff', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
   if (!(await ensureManagementAccess(req, res))) {
     return;
   }
@@ -7558,9 +7337,6 @@ router.post('/staff-timeoff', authenticateToken, async (req: any, res: any) => {
 
 router.put('/staff-timeoff/:id', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
   if (!(await ensureManagementAccess(req, res))) {
     return;
   }
@@ -7625,9 +7401,6 @@ router.put('/staff-timeoff/:id', authenticateToken, async (req: any, res: any) =
 
 router.delete('/staff-timeoff/:id', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
   if (!(await ensureManagementAccess(req, res))) {
     return;
   }
@@ -7658,10 +7431,6 @@ router.delete('/staff-timeoff/:id', authenticateToken, async (req: any, res: any
 
 router.get('/inventory/items', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   try {
     const items = await prisma.inventoryItem.findMany({
       where: { salonId, isActive: true },
@@ -7682,10 +7451,6 @@ router.get('/inventory/items', authenticateToken, async (req: any, res: any) => 
 
 router.post('/inventory/items', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
   if (!name) {
     throw new BusinessError('VALIDATION_FAILED', 'name is required.', 400);
@@ -7714,10 +7479,6 @@ router.post('/inventory/items', authenticateToken, async (req: any, res: any) =>
 
 router.post('/inventory/items/:id/adjust', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const itemId = Number(req.params.id);
   const quantity = Math.abs(Number(req.body?.quantity));
   const type = String(req.body?.type || 'IN').toUpperCase() === 'OUT' ? 'OUT' : 'IN';
@@ -7773,10 +7534,6 @@ router.post('/inventory/items/:id/adjust', authenticateToken, async (req: any, r
 
 router.get('/inventory/movements', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const itemId = typeof req.query.itemId === 'string' ? Number(req.query.itemId) : null;
   const limit = asPositiveInt(req.query.limit, 50, 1, 200);
 
@@ -7808,10 +7565,6 @@ router.get('/inventory/movements', authenticateToken, async (req: any, res: any)
 
 router.get('/campaigns', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   try {
     const campaigns = await prisma.campaign.findMany({
       where: { salonId },
@@ -7861,10 +7614,6 @@ async function validateCampaignServiceScope(salonId: number, config: unknown): P
 
 router.post('/campaigns', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
   const type = normalizeCampaignType(req.body?.type);
 
@@ -7923,10 +7672,6 @@ router.post('/campaigns', authenticateToken, async (req: any, res: any) => {
 
 router.get('/campaigns/:id', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const campaignId = Number(req.params.id);
   if (!Number.isInteger(campaignId) || campaignId <= 0) {
     throw new BusinessError('VALIDATION_FAILED', 'Invalid campaign id.', 400);
@@ -7958,10 +7703,6 @@ router.get('/campaigns/:id', authenticateToken, async (req: any, res: any) => {
 
 router.patch('/campaigns/:id', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const campaignId = Number(req.params.id);
   if (!Number.isInteger(campaignId) || campaignId <= 0) {
     throw new BusinessError('VALIDATION_FAILED', 'Invalid campaign id.', 400);
@@ -8081,10 +7822,6 @@ router.patch('/campaigns/:id', authenticateToken, async (req: any, res: any) => 
 
 router.delete('/campaigns/:id', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const campaignId = Number(req.params.id);
   if (!Number.isInteger(campaignId) || campaignId <= 0) {
     throw new BusinessError('VALIDATION_FAILED', 'Invalid campaign id.', 400);
@@ -8116,8 +7853,6 @@ router.delete('/campaigns/:id', authenticateToken, async (req: any, res: any) =>
 
 router.post('/campaigns/pricing-preview', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) return;
-
   const startTime = parseIsoDate(req.body?.startTime || new Date().toISOString());
   if (!startTime) {
     throw new BusinessError('VALIDATION_FAILED', 'startTime is required.', 400);
@@ -8151,8 +7886,6 @@ router.post('/campaigns/pricing-preview', authenticateToken, async (req: any, re
 
 router.post('/campaigns/:id/publish', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) return;
-
   const campaignId = Number(req.params.id);
   if (!Number.isInteger(campaignId) || campaignId <= 0) {
     throw new BusinessError('VALIDATION_FAILED', 'Invalid campaign id.', 400);
@@ -8184,8 +7917,6 @@ router.post('/campaigns/:id/publish', authenticateToken, async (req: any, res: a
 
 router.post('/campaigns/:id/send', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) return;
-
   const campaignId = Number(req.params.id);
   if (!Number.isInteger(campaignId) || campaignId <= 0) {
     throw new BusinessError('VALIDATION_FAILED', 'Invalid campaign id.', 400);
@@ -8258,8 +7989,6 @@ router.post('/campaigns/:id/send', authenticateToken, async (req: any, res: any)
 
 router.get('/campaigns/:id/send-executions', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) return;
-
   const campaignId = Number(req.params.id);
   if (!Number.isInteger(campaignId) || campaignId <= 0) {
     throw new BusinessError('VALIDATION_FAILED', 'Invalid campaign id.', 400);
@@ -8280,10 +8009,6 @@ router.get('/campaigns/:id/send-executions', authenticateToken, async (req: any,
 
 router.get('/automations', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   try {
     const items = await prisma.automationRule.findMany({
       where: { salonId },
@@ -8299,10 +8024,6 @@ router.get('/automations', authenticateToken, async (req: any, res: any) => {
 
 router.post('/automations', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const key = typeof req.body?.key === 'string' ? req.body.key.trim() : '';
   const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
 
@@ -8334,10 +8055,6 @@ router.post('/automations', authenticateToken, async (req: any, res: any) => {
 
 router.patch('/automations/:id', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) {
     throw new BusinessError('VALIDATION_FAILED', 'Invalid id.', 400);
@@ -8368,8 +8085,6 @@ router.patch('/automations/:id', authenticateToken, async (req: any, res: any) =
 
 router.get('/notification-settings', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) return;
-
   try {
     const policy = await getSalonNotificationPolicy(salonId);
     return res.status(200).json({ policy });
@@ -8381,8 +8096,6 @@ router.get('/notification-settings', authenticateToken, async (req: any, res: an
 
 router.put('/notification-settings', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) return;
-
   try {
     const incoming = req.body || {};
     const nextPolicy = {
@@ -8400,10 +8113,6 @@ router.put('/notification-settings', authenticateToken, async (req: any, res: an
 
 router.get('/analytics/overview', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const now = new Date();
   const defaultFrom = startOfCurrentWeekMonday(now);
 
@@ -8610,10 +8319,6 @@ router.get('/analytics/overview', authenticateToken, async (req: any, res: any) 
 
 router.get('/analytics/presets', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   try {
     const items = await prisma.analyticsPreset.findMany({
       where: { salonId },
@@ -8629,10 +8334,6 @@ router.get('/analytics/presets', authenticateToken, async (req: any, res: any) =
 
 router.post('/analytics/presets', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
   if (!name) {
     throw new BusinessError('VALIDATION_FAILED', 'name is required.', 400);
@@ -9088,10 +8789,6 @@ async function buildConversationChannelHealth(salonId: number): Promise<Conversa
 
 router.get('/conversations/profile-image', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const channelRaw = typeof req.query.channel === 'string' ? req.query.channel.trim().toUpperCase() : '';
   const channel = channelRaw === 'INSTAGRAM' || channelRaw === 'WHATSAPP' ? channelRaw : null;
   const sourceUrlRaw = asOptionalString(req.query.sourceUrl);
@@ -9176,10 +8873,6 @@ router.get('/conversations/profile-image', authenticateToken, async (req: any, r
 
 router.get('/conversations', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const limit = asPositiveInt(req.query.limit, 40, 1, 100);
   const channelFilter = asInboundChannel(req.query.channel);
 
@@ -9575,10 +9268,6 @@ router.get('/conversations', authenticateToken, async (req: any, res: any) => {
 
 router.get('/conversations/:channel/:conversationKey/messages', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const channel = asInboundChannel(req.params.channel);
   if (!channel) {
     throw new BusinessError('VALIDATION_FAILED', 'channel must be INSTAGRAM or WHATSAPP.', 400);
@@ -9747,10 +9436,6 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
 
 router.post('/conversations/:channel/:conversationKey/reply', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const channel = asInboundChannel(req.params.channel);
   if (!channel) {
     throw new BusinessError('VALIDATION_FAILED', 'channel must be INSTAGRAM or WHATSAPP.', 400);
@@ -10129,10 +9814,6 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
 
 router.post('/conversations/:channel/:conversationKey/handover', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const channel = asInboundChannel(req.params.channel);
   if (!channel) {
     throw new BusinessError('VALIDATION_FAILED', 'channel must be INSTAGRAM or WHATSAPP.', 400);
@@ -10316,10 +9997,6 @@ router.post('/conversations/:channel/:conversationKey/handover', authenticateTok
 
 router.post('/conversations/:channel/:conversationKey/resume-auto', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const channel = asInboundChannel(req.params.channel);
   if (!channel) {
     throw new BusinessError('VALIDATION_FAILED', 'channel must be INSTAGRAM or WHATSAPP.', 400);
@@ -10458,8 +10135,6 @@ router.post('/conversations/:channel/:conversationKey/resume-auto', authenticate
 
 router.get('/blacklist/check', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) return;
-
   const customerIdRaw = Number(req.query.customerId);
   const customerId = Number.isInteger(customerIdRaw) && customerIdRaw > 0 ? customerIdRaw : null;
   const phone = typeof req.query.phone === 'string' ? req.query.phone.trim() : null;
@@ -10484,9 +10159,6 @@ router.get('/blacklist/check', authenticateToken, async (req: any, res: any) => 
 
 router.get('/blacklist', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
   const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
 
   try {
@@ -10516,10 +10188,6 @@ router.get('/blacklist', authenticateToken, async (req: any, res: any) => {
 
 router.post('/blacklist', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const phone = typeof req.body?.phone === 'string' ? req.body.phone.trim() : null;
   const fullName = typeof req.body?.fullName === 'string' ? req.body.fullName.trim() : null;
   const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : null;
@@ -10596,10 +10264,6 @@ router.post('/blacklist', authenticateToken, async (req: any, res: any) => {
 
 router.patch('/blacklist/:id', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
-  if (!salonId) {
-    return;
-  }
-
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) {
     throw new BusinessError('VALIDATION_FAILED', 'Invalid id.', 400);
