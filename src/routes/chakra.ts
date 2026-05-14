@@ -908,6 +908,19 @@ async function upsertSalonAiAgentFaqAnswers(salonId: number, patch: Record<strin
   });
 }
 
+/**
+ * Persist salon-level WhatsApp connection state and (optionally) claim the
+ * underlying phone_number_id away from any other salon that still has a
+ * stale binding to it.
+ *
+ * The `allowOwnershipTransfer` flag is kept for backwards compat but the
+ * meaning flipped: when true (the default), a contested phone_number_id
+ * is now CLAIMED for the calling salon and the previous owner is wiped
+ * via channelOwnershipTransfer.claimWhatsAppOwnership. The defensive
+ * "skip the update" branch is gone — leaving stale pointers around was
+ * the bug that caused salon 2 to silently keep a dead chakraPhoneNumberId
+ * after salon 8 re-bound the same WABA number.
+ */
 async function updateSalonChakraState(
   salonId: number,
   patch: {
@@ -925,59 +938,9 @@ async function updateSalonChakraState(
     return trimmed.length > 0 ? trimmed : null;
   };
 
-  const syncWhatsappChannelBinding = async (nextWhatsappPhoneNumberId: string | null) => {
-    // Deactivate existing WhatsApp bindings for this salon first.
-    await prisma.salonChannelBinding.updateMany({
-      where: { salonId, channel: 'WHATSAPP' },
-      data: { isActive: false },
-    });
-
-    if (!nextWhatsappPhoneNumberId) return;
-
-    const allowOwnershipTransfer = options?.allowOwnershipTransfer !== false;
-    if (!allowOwnershipTransfer) {
-      const currentOwner = await prisma.salonChannelBinding.findUnique({
-        where: {
-          channel_externalAccountId: {
-            channel: 'WHATSAPP',
-            externalAccountId: nextWhatsappPhoneNumberId,
-          },
-        },
-        select: {
-          salonId: true,
-          isActive: true,
-        },
-      });
-
-      if (currentOwner && currentOwner.isActive && currentOwner.salonId !== salonId) {
-        return;
-      }
-    }
-
-    await prisma.salonChannelBinding.upsert({
-      where: {
-        channel_externalAccountId: {
-          channel: 'WHATSAPP',
-          externalAccountId: nextWhatsappPhoneNumberId,
-        },
-      },
-      update: {
-        salonId,
-        isActive: true,
-      },
-      create: {
-        salonId,
-        channel: 'WHATSAPP',
-        externalAccountId: nextWhatsappPhoneNumberId,
-        isActive: true,
-      },
-    });
-  };
-
   const data: Record<string, any> = {};
-  let shouldSyncWhatsappBinding = false;
   let nextWhatsappPhoneNumberId: string | null = null;
-  let skipWhatsappPhoneNumberIdUpdate = false;
+  let shouldClaimOwnership = false;
 
   if (patch.chakraPluginId !== undefined) {
     data.chakraPluginId = patch.chakraPluginId;
@@ -985,29 +948,8 @@ async function updateSalonChakraState(
 
   if (patch.chakraPhoneNumberId !== undefined) {
     nextWhatsappPhoneNumberId = normalizeExternalId(patch.chakraPhoneNumberId);
-    if (nextWhatsappPhoneNumberId && !allowOwnershipTransfer) {
-      const currentOwner = await prisma.salonChannelBinding.findUnique({
-        where: {
-          channel_externalAccountId: {
-            channel: 'WHATSAPP',
-            externalAccountId: nextWhatsappPhoneNumberId,
-          },
-        },
-        select: {
-          salonId: true,
-          isActive: true,
-        },
-      });
-
-      if (currentOwner && currentOwner.isActive && currentOwner.salonId !== salonId) {
-        skipWhatsappPhoneNumberIdUpdate = true;
-      }
-    }
-
-    if (!skipWhatsappPhoneNumberIdUpdate) {
-      data.chakraPhoneNumberId = nextWhatsappPhoneNumberId;
-      shouldSyncWhatsappBinding = true;
-    }
+    data.chakraPhoneNumberId = nextWhatsappPhoneNumberId;
+    shouldClaimOwnership = true;
   }
 
   if (Object.keys(data).length > 0) {
@@ -1017,9 +959,61 @@ async function updateSalonChakraState(
     });
   }
 
-  if (shouldSyncWhatsappBinding) {
-    await syncWhatsappChannelBinding(nextWhatsappPhoneNumberId);
+  if (!shouldClaimOwnership) return;
+
+  if (!nextWhatsappPhoneNumberId) {
+    // Disconnection — just deactivate this salon's own bindings.
+    await prisma.salonChannelBinding.updateMany({
+      where: { salonId, channel: 'WHATSAPP' },
+      data: { isActive: false },
+    });
+    return;
   }
+
+  if (!allowOwnershipTransfer) {
+    // Legacy callers that want to be lenient — bind only if no one owns it.
+    const owner = await prisma.salonChannelBinding.findUnique({
+      where: {
+        channel_externalAccountId: {
+          channel: 'WHATSAPP',
+          externalAccountId: nextWhatsappPhoneNumberId,
+        },
+      },
+      select: { salonId: true, isActive: true },
+    });
+    if (owner && owner.isActive && owner.salonId !== salonId) return;
+    await prisma.salonChannelBinding.upsert({
+      where: {
+        channel_externalAccountId: {
+          channel: 'WHATSAPP',
+          externalAccountId: nextWhatsappPhoneNumberId,
+        },
+      },
+      update: { salonId, isActive: true },
+      create: {
+        salonId,
+        channel: 'WHATSAPP',
+        externalAccountId: nextWhatsappPhoneNumberId,
+        isActive: true,
+      },
+    });
+    return;
+  }
+
+  // Default path: claim, wiping any previous owner. Imported lazily so we
+  // don't pull the service into modules that only need the schema piece.
+  const { claimWhatsAppOwnership } = await import('../services/channelOwnershipTransfer.js');
+  const { cancelPendingSubmissions } = await import('../services/salonTemplateSubmitter.js');
+  await claimWhatsAppOwnership(salonId, nextWhatsappPhoneNumberId, {
+    onDisplaced: async (displacedSalonId) => {
+      // Their template-submission queue was targeting a WABA they no
+      // longer own — kill in-flight rows so the worker doesn't burn
+      // attempts on a dead binding.
+      await cancelPendingSubmissions(displacedSalonId).catch((err) =>
+        console.error('cancelPendingSubmissions on displaced salon failed:', err),
+      );
+    },
+  });
 }
 
 async function setPluginActiveState(pluginId: string, isActive: boolean) {

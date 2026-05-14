@@ -368,33 +368,46 @@ async function saveStoreForSalon(salonId: number, faqAnswers: Record<string, any
   });
 }
 
+/**
+ * Persist channel bindings for a salon, taking ownership of any
+ * identifier currently held by a different salon. The previous owner's
+ * salon-level pointers, channel bindings, and AI agent settings JSON all
+ * get wiped so their UI flips to "disconnected" — Meta-side, exactly one
+ * salon can receive events for a given identifier anyway, so reflecting
+ * that in our DB is the only consistent state.
+ */
 async function setBindings(salonId: number, channel: MetaChannel, ids: string[]) {
   const normalizedIds = sanitizeIds(ids);
 
+  // Deactivate the calling salon's existing bindings on this channel
+  // first — any IDs not in `normalizedIds` are abandoned.
   await prisma.salonChannelBinding.updateMany({
     where: { salonId, channel },
     data: { isActive: false },
   });
 
+  if (normalizedIds.length === 0) return;
+
+  // For each id, run the centralized ownership transfer. That helper
+  // wipes the previous salon's binding/state, upserts the new active
+  // binding, and logs the transfer for audit.
+  const { claimChannelOwnership } = await import('../services/channelOwnershipTransfer.js');
+  const { cancelPendingSubmissions } = await import('../services/salonTemplateSubmitter.js');
   for (const externalAccountId of normalizedIds) {
-    await prisma.salonChannelBinding.upsert({
-      where: {
-        channel_externalAccountId: {
-          channel,
-          externalAccountId,
+    await claimChannelOwnership(
+      channel as 'WHATSAPP' | 'INSTAGRAM',
+      salonId,
+      externalAccountId,
+      {
+        onDisplaced: async (displacedSalonId) => {
+          if (channel === 'WHATSAPP') {
+            await cancelPendingSubmissions(displacedSalonId).catch((err) =>
+              console.error('cancelPendingSubmissions on displaced salon failed:', err),
+            );
+          }
         },
       },
-      update: {
-        salonId,
-        isActive: true,
-      },
-      create: {
-        salonId,
-        channel,
-        externalAccountId,
-        isActive: true,
-      },
-    });
+    );
   }
 }
 
