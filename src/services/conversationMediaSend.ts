@@ -40,9 +40,14 @@ import {
 } from './conversationMediaCache.js';
 
 const META_GRAPH_VERSION = (process.env.META_GRAPH_VERSION || 'v22.0').trim();
-const META_GRAPH_BASE = `https://graph.facebook.com/${META_GRAPH_VERSION}`;
 const META_INSTAGRAM_GRAPH_BASE = `https://graph.instagram.com/${META_GRAPH_VERSION}`;
 const CHAKRA_API_TOKEN = (process.env.CHAKRA_API_TOKEN || '').trim();
+const CHAKRA_API_BASE = (process.env.CHAKRA_API_BASE || 'https://api.chakrahq.com').trim();
+// WhatsApp Cloud API endpoints flow through Chakra's BSP proxy, not
+// graph.facebook.com directly. Calling Meta with our CHAKRA_API_TOKEN
+// fails 401 ("Authentication Error") because that token authorizes
+// against Chakra's surface, not Meta's OAuth one.
+const CHAKRA_WA_API_VERSION = (process.env.CHAKRA_WA_API_VERSION || 'v19.0').trim();
 const INSTAGRAM_REPLY_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 export interface SendMediaInput {
@@ -94,12 +99,12 @@ async function whatsAppUploadAndSend(
     throw new Error('chakra_api_token_missing');
   }
 
-  // Step 1: upload bytes to WhatsApp Cloud API. Through Chakra's plugin
-  // proxy so the WABA-scoped token applies automatically.
-  //
-  // POST https://graph.facebook.com/{ver}/{phone_number_id}/media
+  // Step 1: upload bytes via Chakra's BSP proxy. The proxy URL pattern
+  // mirrors WhatsApp Cloud API but is plugin-scoped:
+  //   POST {CHAKRA_API_BASE}/v1/ext/plugin/whatsapp/{pluginId}/api/{ver}/{phoneId}/media
+  //   Auth: Bearer {CHAKRA_API_TOKEN}
   //   multipart: messaging_product=whatsapp, type=<mime>, file=<bytes>
-  const uploadUrl = `${META_GRAPH_BASE}/${encodeURIComponent(phoneNumberId)}/media`;
+  const uploadUrl = `${CHAKRA_API_BASE}/v1/ext/plugin/whatsapp/${encodeURIComponent(pluginId)}/api/${encodeURIComponent(CHAKRA_WA_API_VERSION)}/${encodeURIComponent(phoneNumberId)}/media`;
   const form = new FormData();
   form.append('messaging_product', 'whatsapp');
   form.append('type', input.mimeType);
@@ -121,10 +126,8 @@ async function whatsAppUploadAndSend(
     throw new Error('whatsapp_media_upload_no_id');
   }
 
-  // Step 2: send the message with the media_id payload.
-  //
-  // POST https://graph.facebook.com/{ver}/{phone_number_id}/messages
-  const sendUrl = `${META_GRAPH_BASE}/${encodeURIComponent(phoneNumberId)}/messages`;
+  // Step 2: send the message with the media_id payload. Same Chakra proxy.
+  const sendUrl = `${CHAKRA_API_BASE}/v1/ext/plugin/whatsapp/${encodeURIComponent(pluginId)}/api/${encodeURIComponent(CHAKRA_WA_API_VERSION)}/${encodeURIComponent(phoneNumberId)}/messages`;
   const whatsAppType: 'image' | 'video' | 'audio' = input.kind;
   const mediaPayload: Record<string, unknown> = { id: metaMediaId };
   // Caption only valid for image/video on WA. Audio has no caption.
