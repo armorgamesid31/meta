@@ -43,7 +43,7 @@ const MASTER_TEMPLATE_VARIATIONS: Record<string, string[]> = {
     "Merhaba {{customer_name}} {{customer_honorific}}, {{salon_name}} olarak sizi üçüncü kez ağırlamaktan mutluyuz 🌸 Google Maps yorumunuz bizim için kıymetli."
   ],
   kdy_islem_link: [
-    "Telefon numaranızı doğrulamamız gerekiyor. Aşağıdaki butona dokunarak işlemi {{ttl}} dakika içinde tamamlayabilirsiniz."
+    "Bekleyen işleminizi tamamlamak için aşağıdaki butona dokunun.\n\nBağlantı kısa süreliğine geçerlidir."
   ],
   kdy_ekip_katilim_link: [
     "Kedy ekip katılımınızı tamamlamak için aşağıdaki butona dokunun.\n\nBağlantı kısa süreliğine geçerlidir.\n\n— Kedy"
@@ -224,8 +224,7 @@ const KEDY_MASTER_TEMPLATES = [
       },
       {
         type: 'BODY',
-        text: MASTER_TEMPLATE_VARIATIONS.kdy_islem_link[0],
-        example: { body_text_named_params: [{ param_name: 'ttl', example: '15' }] }
+        text: MASTER_TEMPLATE_VARIATIONS.kdy_islem_link[0]
       },
       {
         type: 'BUTTONS',

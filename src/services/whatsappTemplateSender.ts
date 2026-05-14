@@ -6,7 +6,7 @@
 //
 // Template shape (defined in chakra.ts):
 //   HEADER:  {{salonname}}                  — salon brand
-//   BODY:    "...{{ttl}} dakika..."         — TTL window
+//   BODY:    static text (no variables)
 //   BUTTON:  URL https://.../c/v/{{1}}     — {{1}} = raw token
 //
 // This is intentionally separate from phoneVerification.ts (legacy
@@ -46,12 +46,14 @@ export interface SendVerificationTemplateInput {
   phone: string; // E.164 or digits; will be normalized
   /** Raw verification token. Becomes {{1}} in the button URL. */
   token: string;
-  /** TTL in minutes. Goes into the body as {{ttl}}. */
-  ttlMinutes: number;
 
-  // Legacy fields retained for caller-compat. No longer mapped into the
-  // template — kdy_islem_link only has {{salonname}} + {{ttl}} + token.
-  // Removing them would break verification.ts callers; ignore at runtime.
+  // Legacy fields retained for caller-compat. The kdy_islem_link template
+  // only carries {{salonname}} (header, from DB) + static body + token
+  // (button URL). Everything else is intentionally absent so the message
+  // stays generic enough to cover all customer-verification purposes
+  // (CUSTOMER_PHONE, CUSTOMER_LINK_CONSENT, PHONE_CHANGE).
+  /** @deprecated unused — TTL is communicated by the landing page itself */
+  ttlMinutes?: number;
   /** @deprecated unused — salon name comes from DB lookup */
   name?: string;
   /** @deprecated unused — purpose is implied by the template itself */
@@ -104,7 +106,7 @@ export async function sendVerificationLinkTemplate(
 
   // Meta WhatsApp Cloud API template message shape for kdy_islem_link:
   //   HEADER:  named param salonname  → salon's display name
-  //   BODY:    named param ttl        → TTL in minutes
+  //   BODY:    static (no parameters needed)
   //   BUTTON:  URL placeholder {{1}}  → raw verification token
   const body = {
     pluginId: salon.chakraPluginId,
@@ -119,12 +121,6 @@ export async function sendVerificationLinkTemplate(
           type: 'header',
           parameters: [
             { type: 'text', parameter_name: 'salonname', text: truncate(salon.name || 'Salon', 60) },
-          ],
-        },
-        {
-          type: 'body',
-          parameters: [
-            { type: 'text', parameter_name: 'ttl', text: String(input.ttlMinutes) },
           ],
         },
         {
