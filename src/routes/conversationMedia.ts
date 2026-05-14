@@ -137,32 +137,41 @@ router.get(
     }
 
     // Lazy fetch. Coalesce so two simultaneous requests don't double-fetch.
-    const cached = await coalesce(coalesceKey(messageId, mediaIndex), async () => {
-      const token = await resolveMetaTokenForChannel(salonId, row.channel);
-      if (!token) {
-        throw new BusinessError('PRECONDITION_FAILED', 'Meta token yok.', 412);
-      }
+    // Crucially, upstream errors (Meta/Chakra rejecting OUR token) must NOT
+    // bubble out as 401 from this endpoint — the mobile client's apiFetch
+    // treats 401 as "my session expired" and tries to rotate the user's
+    // refresh token. That cascaded into a loop that eventually rate-limited
+    // /auth/refresh and logged the salon staff out. We translate upstream
+    // auth failures to 502/410 here so the client treats them as upstream
+    // issues, not session expiry.
+    let cached: MediaCachedMeta | null = null;
+    try {
+      cached = await coalesce(coalesceKey(messageId, mediaIndex), async () => {
+        const token = await resolveMetaTokenForChannel(salonId, row.channel);
+        if (!token) {
+          throw new BusinessError('PRECONDITION_FAILED', 'Meta token yok.', 412);
+        }
 
-      let downloaded: { buffer: Buffer; mimeType: string; sizeBytes: number };
-      if (row.channel === 'WHATSAPP') {
-        if (!item.providerMediaId) {
-          throw new BusinessError('GONE', 'Medya kimliği yok.', 410);
+        let downloaded: { buffer: Buffer; mimeType: string; sizeBytes: number };
+        if (row.channel === 'WHATSAPP') {
+          if (!item.providerMediaId) {
+            throw new BusinessError('GONE', 'Medya kimliği yok.', 410);
+          }
+          downloaded = await fetchWhatsAppMedia({
+            mediaId: item.providerMediaId,
+            token,
+          });
+        } else if (row.channel === 'INSTAGRAM') {
+          if (!item.providerMediaUrl) {
+            throw new BusinessError('GONE', 'Medya URL yok.', 410);
+          }
+          downloaded = await fetchInstagramMedia({
+            url: item.providerMediaUrl,
+            token,
+          });
+        } else {
+          throw new BusinessError('VALIDATION_FAILED', 'Desteklenmeyen kanal.', 400);
         }
-        downloaded = await fetchWhatsAppMedia({
-          mediaId: item.providerMediaId,
-          token,
-        });
-      } else if (row.channel === 'INSTAGRAM') {
-        if (!item.providerMediaUrl) {
-          throw new BusinessError('GONE', 'Medya URL yok.', 410);
-        }
-        downloaded = await fetchInstagramMedia({
-          url: item.providerMediaUrl,
-          token,
-        });
-      } else {
-        throw new BusinessError('VALIDATION_FAILED', 'Desteklenmeyen kanal.', 400);
-      }
 
       const kind = classifyMediaKind(item.type);
       if (!kind) {
@@ -190,7 +199,26 @@ router.get(
         newEntries: [saved],
       });
       return saved;
-    });
+      });
+    } catch (err: any) {
+      // Translate upstream auth/404 failures so the frontend doesn't try
+      // to refresh its OWN session (which would loop forever).
+      const upstreamStatus = err?.response?.status;
+      if (err instanceof BusinessError) throw err;
+      if (upstreamStatus === 401 || upstreamStatus === 403) {
+        console.error('[media] upstream auth failed:', err?.response?.data || err?.message);
+        throw new BusinessError(
+          'BAD_GATEWAY',
+          'Medya sağlayıcı kimlik hatası.',
+          502,
+        );
+      }
+      if (upstreamStatus === 404 || upstreamStatus === 410) {
+        throw new BusinessError('GONE', 'Medya artık erişilebilir değil.', 410);
+      }
+      console.error('[media] lazy fetch failed:', err?.response?.data || err?.message || err);
+      throw new BusinessError('BAD_GATEWAY', 'Medya alınamadı.', 502);
+    }
 
     if (!cached) {
       throw new BusinessError('INTERNAL_ERROR', 'Cache yazılamadı.', 500);

@@ -14,8 +14,14 @@
 
 import axios from 'axios';
 
-const META_GRAPH_VERSION = (process.env.META_GRAPH_VERSION || 'v22.0').trim();
-const META_GRAPH_BASE = `https://graph.facebook.com/${META_GRAPH_VERSION}`;
+// Chakra BSP exposes a one-shot media download endpoint that wraps Meta's
+// two-step flow (GET /{media_id} → signed URL → bytes). The Chakra Bearer
+// token authenticates here; calling graph.facebook.com directly with that
+// same token fails with 401 (it's an OAuth user token, not Chakra's BSP
+// scope). The earlier direct-Graph implementation was the bug behind the
+// 401 → refresh → 401 loop that logged users out from the chat surface.
+const CHAKRA_API_BASE = (process.env.CHAKRA_API_BASE || 'https://api.chakrahq.com').trim();
+const CHAKRA_WA_API_VERSION = (process.env.CHAKRA_WA_API_VERSION || 'v19.0').trim();
 
 export interface ProviderMediaFetchResult {
   buffer: Buffer;
@@ -24,38 +30,29 @@ export interface ProviderMediaFetchResult {
 }
 
 /**
- * WhatsApp Cloud API: two-step fetch using a persistent media_id.
+ * WhatsApp media fetch via Chakra's BSP-managed proxy.
  *
- * The Chakra BSP exposes the underlying graph.facebook.com calls through
- * its `/v1/ext/plugin/whatsapp/...` proxy. For media we go direct to
- * graph.facebook.com since the Bearer token works there too and we don't
- * need plugin scoping.
+ * Endpoint: GET {CHAKRA_API_BASE}/v1/whatsapp/{ver}/media/{media_id}/show
+ *   Auth:   Authorization: Bearer {CHAKRA_API_TOKEN}
+ *   Result: raw bytes, Content-Type set by upstream
+ *
+ * One round-trip, no signed-URL juggling. Chakra refreshes Meta's
+ * short-lived URL behind the scenes.
  */
 export async function fetchWhatsAppMedia(opts: {
   mediaId: string;
   token: string;
 }): Promise<ProviderMediaFetchResult> {
-  const metaResp = await axios.get(
-    `${META_GRAPH_BASE}/${encodeURIComponent(opts.mediaId)}`,
-    {
-      headers: { Authorization: `Bearer ${opts.token}` },
-      timeout: 15_000,
-      validateStatus: s => s >= 200 && s < 400,
-    },
-  );
-  const url = String(metaResp.data?.url || '').trim();
-  const declaredMime = String(metaResp.data?.mime_type || '').trim();
-  if (!url) throw new Error('whatsapp_media_url_missing');
-
-  const bytesResp = await axios.get<ArrayBuffer>(url, {
+  const url = `${CHAKRA_API_BASE}/v1/whatsapp/${encodeURIComponent(CHAKRA_WA_API_VERSION)}/media/${encodeURIComponent(opts.mediaId)}/show`;
+  const resp = await axios.get<ArrayBuffer>(url, {
     responseType: 'arraybuffer',
     headers: { Authorization: `Bearer ${opts.token}` },
     timeout: 30_000,
     maxRedirects: 5,
     validateStatus: s => s >= 200 && s < 400,
   });
-  const buffer = Buffer.from(bytesResp.data);
-  const mimeType = declaredMime || String(bytesResp.headers['content-type'] || 'application/octet-stream');
+  const buffer = Buffer.from(resp.data);
+  const mimeType = String(resp.headers['content-type'] || 'application/octet-stream');
   return { buffer, mimeType, sizeBytes: buffer.length };
 }
 
