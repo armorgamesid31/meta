@@ -621,27 +621,160 @@ export async function markPoolExhaustedIfNeeded(opts: {
 }
 
 // ─────────────────────────────────────────────────────────────────
+// Status reconcile tick — fallback for missing Meta webhooks.
+//
+// In theory Meta's webhook delivers APPROVED/REJECTED/CATEGORY_BUMPED
+// transitions in real time. In practice the webhook is sometimes
+// misconfigured or silently drops events, leaving our DB stuck in
+// SUBMITTED while Meta has already approved the template. This loop
+// polls Meta every ~5 min per salon with at least one in-flight row
+// and reconciles the state, so the UI never lags reality more than
+// a few minutes regardless of webhook health.
+// ─────────────────────────────────────────────────────────────────
+const STATUS_RECONCILE_INTERVAL_MS = 5 * 60 * 1000;
+
+export async function runStatusReconcileTick(): Promise<{ updated: number; salons: number }> {
+  // Only reconcile salons that currently have rows Meta might still be
+  // working on. Skip idle salons to avoid hammering the Meta list API.
+  const salons = await prisma.salon.findMany({
+    where: {
+      chakraPluginId: { not: null },
+      messageTemplates: {
+        some: {
+          submissionState: { in: ['SUBMITTED', 'CATEGORY_BUMPED'] },
+          templateKey: { not: null },
+        },
+      },
+    },
+    select: { id: true, chakraPluginId: true },
+  });
+
+  let totalUpdated = 0;
+  for (const salon of salons) {
+    if (!salon.chakraPluginId) continue;
+    try {
+      const updated = await reconcileSalonFromMeta(salon.id, salon.chakraPluginId);
+      totalUpdated += updated;
+    } catch (err) {
+      console.error('[salonTemplateSubmitter] reconcile failed for salon', salon.id, err);
+    }
+  }
+  return { updated: totalUpdated, salons: salons.length };
+}
+
+async function reconcileSalonFromMeta(salonId: number, pluginId: string): Promise<number> {
+  if (!CHAKRA_API_TOKEN) return 0;
+
+  // Resolve WABA id (same path submitOneToMeta uses).
+  const pluginRes = await axios.get(
+    `${CHAKRA_API_BASE}/plugin/${pluginId}`,
+    { headers: { Authorization: `Bearer ${CHAKRA_API_TOKEN}` }, timeout: 15_000 },
+  );
+  const wabaMap = pluginRes?.data?._data?.auth?.whatsappBusinessAccountsById;
+  const wabaId = wabaMap ? Object.keys(wabaMap)[0] : null;
+  if (!wabaId) return 0;
+
+  // Pull every template Meta knows for this WABA. Follows pagination.
+  let url: string | null = `${CHAKRA_API_BASE}/v1/ext/plugin/whatsapp/api/v22.0/${wabaId}/message_templates?limit=1000&fields=name,status,category`;
+  const metaByName = new Map<string, { status: string; category: string }>();
+  while (url) {
+    const r: any = await axios.get(url, {
+      headers: { Authorization: `Bearer ${CHAKRA_API_TOKEN}` },
+      timeout: 30_000,
+    });
+    for (const t of (r.data?.data || [])) metaByName.set(t.name, t);
+    url = r.data?.paging?.next || null;
+  }
+  if (metaByName.size === 0) return 0;
+
+  // Only touch rows that could still change. ACTIVE_VALID/REJECTED/
+  // POOL_EXHAUSTED are terminal-ish — skip them.
+  const rows = await prisma.salonMessageTemplate.findMany({
+    where: {
+      salonId,
+      submissionState: { in: ['SUBMITTED', 'CATEGORY_BUMPED'] },
+      templateName: { not: null },
+    },
+    select: {
+      id: true, templateName: true, expectedCategory: true,
+      submissionState: true, rejectionReason: true,
+    },
+  });
+
+  let updated = 0;
+  for (const row of rows) {
+    const m = row.templateName ? metaByName.get(row.templateName) : null;
+    if (!m) continue;
+
+    // Don't resurrect user_marked_outdated rows even if Meta later
+    // approves them — the body they were submitted with is known-stale.
+    if (
+      typeof row.rejectionReason === 'string' &&
+      row.rejectionReason.startsWith('user_marked_outdated')
+    ) continue;
+
+    const expected = row.expectedCategory || 'UTILITY';
+    const isBumped = m.category && m.category !== expected;
+    let next: TemplateSubmissionState | null = null;
+
+    if (m.status === 'APPROVED') {
+      next = isBumped ? 'CATEGORY_BUMPED' : 'ACTIVE_VALID';
+    } else if (m.status === 'REJECTED') {
+      next = 'REJECTED';
+    }
+    if (next === null || next === row.submissionState) continue;
+
+    await prisma.salonMessageTemplate.update({
+      where: { id: row.id },
+      data: {
+        submissionState: next,
+        metaStatus: m.status,
+        metaCategory: m.category,
+        actualCategory: m.category,
+        ...(next === 'ACTIVE_VALID' ? { approvedAt: new Date() } : {}),
+        ...(next === 'REJECTED' ? { rejectedAt: new Date() } : {}),
+        lastSyncAt: new Date(),
+      },
+    });
+    updated++;
+  }
+  return updated;
+}
+
+// ─────────────────────────────────────────────────────────────────
 // Background worker
 // ─────────────────────────────────────────────────────────────────
 let workerTimer: NodeJS.Timeout | null = null;
+let reconcileTimer: NodeJS.Timeout | null = null;
 
 export function startSubmissionWorker(): void {
-  if (workerTimer) return;
-  workerTimer = setInterval(() => {
-    runSubmissionTick().catch(err => {
-      console.error('[salonTemplateSubmitter] tick error:', err);
-    });
-  }, TICK_INTERVAL_MS);
-  // Don't keep the event loop alive solely for this timer.
-  if (typeof workerTimer.unref === 'function') workerTimer.unref();
-  console.log('[salonTemplateSubmitter] background worker started (tick =', TICK_INTERVAL_MS, 'ms)');
+  if (!workerTimer) {
+    workerTimer = setInterval(() => {
+      runSubmissionTick().catch(err => {
+        console.error('[salonTemplateSubmitter] tick error:', err);
+      });
+    }, TICK_INTERVAL_MS);
+    if (typeof workerTimer.unref === 'function') workerTimer.unref();
+    console.log('[salonTemplateSubmitter] background worker started (tick =', TICK_INTERVAL_MS, 'ms)');
+  }
+  if (!reconcileTimer) {
+    reconcileTimer = setInterval(() => {
+      runStatusReconcileTick()
+        .then(r => {
+          if (r.updated > 0) {
+            console.log('[salonTemplateSubmitter] reconciled', r.updated, 'rows across', r.salons, 'salons');
+          }
+        })
+        .catch(err => console.error('[salonTemplateSubmitter] reconcile tick error:', err));
+    }, STATUS_RECONCILE_INTERVAL_MS);
+    if (typeof reconcileTimer.unref === 'function') reconcileTimer.unref();
+    console.log('[salonTemplateSubmitter] status reconcile loop started (every', STATUS_RECONCILE_INTERVAL_MS / 1000, 's)');
+  }
 }
 
 export function stopSubmissionWorker(): void {
-  if (workerTimer) {
-    clearInterval(workerTimer);
-    workerTimer = null;
-  }
+  if (workerTimer) { clearInterval(workerTimer); workerTimer = null; }
+  if (reconcileTimer) { clearInterval(reconcileTimer); reconcileTimer = null; }
 }
 
 /**
