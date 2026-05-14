@@ -10,7 +10,8 @@
 // Auth: caller must be a member of the salon that owns the message.
 
 import { Router } from 'express';
-import { Prisma } from '@prisma/client';
+import multer from 'multer';
+import { Prisma, ChannelType } from '@prisma/client';
 import { prisma } from '../prisma.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { BusinessError } from '../lib/errors.js';
@@ -26,13 +27,37 @@ import {
   MEDIA_LIMITS,
   type MediaItemMeta,
   type MediaCachedMeta,
+  type MediaKind,
 } from '../services/conversationMediaCache.js';
 import {
   fetchWhatsAppMedia,
   fetchInstagramMedia,
 } from '../services/conversationMediaProviders.js';
+import { sendOutboundMedia } from '../services/conversationMediaSend.js';
 
 const router = Router();
+
+// Multer config: memory storage (we proxy to R2/Meta immediately, no disk
+// touch needed). Hard limit at the largest of our per-kind limits.
+const MAX_UPLOAD_BYTES = 20 * 1024 * 1024; // 20 MB — header for any kind
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_UPLOAD_BYTES, files: 1 },
+});
+
+function parseChannel(value: unknown): ChannelType | null {
+  if (typeof value !== 'string') return null;
+  const v = value.trim().toUpperCase();
+  if (v === 'WHATSAPP' || v === 'INSTAGRAM') return v as ChannelType;
+  return null;
+}
+
+function parseKind(value: unknown): MediaKind | null {
+  if (typeof value !== 'string') return null;
+  const v = value.trim().toLowerCase();
+  if (v === 'image' || v === 'video' || v === 'audio') return v as MediaKind;
+  return null;
+}
 
 router.get(
   '/conversations/messages/:messageId/media/:mediaIndex',
@@ -167,6 +192,123 @@ router.get(
       caption: item.caption || null,
       isVoice: !!item.isVoice,
     });
+  },
+);
+
+// ─────────────────────────────────────────────────────────────────
+// POST /conversations/:channel/:conversationKey/send-media
+//
+// Multipart body:
+//   file:     <binary>           (required)
+//   kind:     image|video|audio  (required)
+//   caption:  string             (optional, audio ignores)
+//   isVoice:  '1' for audio voice notes (PTT bubble)
+//   recipient: E.164 digits (WhatsApp) or PSID (Instagram)
+//
+// Returns: { messageId, providerMessageId, mediaItem }
+// ─────────────────────────────────────────────────────────────────
+router.post(
+  '/conversations/:channel/:conversationKey/send-media',
+  authenticateToken,
+  upload.single('file'),
+  async (req: any, res: any) => {
+    if (!isMediaCacheEnabled()) {
+      throw new BusinessError(
+        'PRECONDITION_FAILED',
+        'Medya gönderimi yapılandırılmamış.',
+        412,
+      );
+    }
+    if (!req.user?.salonId) {
+      throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
+    }
+    const salonId = req.user.salonId as number;
+    const channel = parseChannel(req.params.channel);
+    if (!channel) {
+      throw new BusinessError('VALIDATION_FAILED', 'channel WHATSAPP veya INSTAGRAM olmalı.', 400);
+    }
+    const conversationKey = typeof req.params.conversationKey === 'string'
+      ? req.params.conversationKey.trim()
+      : '';
+    if (!conversationKey) {
+      throw new BusinessError('VALIDATION_FAILED', 'conversationKey gerekli.', 400);
+    }
+
+    const file = req.file as Express.Multer.File | undefined;
+    if (!file) {
+      throw new BusinessError('VALIDATION_FAILED', 'Dosya gerekli.', 400);
+    }
+    const kind = parseKind(req.body?.kind);
+    if (!kind) {
+      throw new BusinessError('VALIDATION_FAILED', 'kind image|video|audio olmalı.', 400);
+    }
+    if (file.size > MEDIA_LIMITS[kind]) {
+      throw new BusinessError(
+        'PAYLOAD_TOO_LARGE',
+        `${kind} en fazla ${Math.round(MEDIA_LIMITS[kind] / 1024 / 1024)} MB olabilir.`,
+        413,
+      );
+    }
+    const recipient = typeof req.body?.recipient === 'string'
+      ? req.body.recipient.trim()
+      : '';
+    if (!recipient) {
+      throw new BusinessError('VALIDATION_FAILED', 'recipient gerekli.', 400);
+    }
+    const caption = typeof req.body?.caption === 'string'
+      ? req.body.caption.trim().slice(0, 1024)
+      : null;
+    const isVoice = req.body?.isVoice === '1' || req.body?.isVoice === 'true';
+
+    const senderUserId = Number.isInteger(Number(req.user?.userId))
+      ? Number(req.user.userId)
+      : null;
+    const senderUserEmail = typeof req.user?.email === 'string' ? req.user.email : null;
+
+    try {
+      const result = await sendOutboundMedia({
+        salonId,
+        channel,
+        conversationKey,
+        recipientPhoneOrPsid: recipient,
+        kind,
+        mimeType: file.mimetype || 'application/octet-stream',
+        buffer: file.buffer,
+        caption,
+        isVoice,
+        senderUserId,
+        senderUserEmail,
+      });
+      return res.status(200).json({
+        ok: true,
+        messageId: result.messageId,
+        providerMessageId: result.providerMessageId,
+        mediaItem: result.mediaItem,
+      });
+    } catch (err: any) {
+      const msg = err?.message || String(err);
+      if (msg === 'instagram_outbound_not_implemented') {
+        throw new BusinessError(
+          'NOT_IMPLEMENTED',
+          'Instagram\'a medya gönderimi henüz desteklenmiyor.',
+          501,
+        );
+      }
+      if (msg === 'salon_whatsapp_not_connected') {
+        throw new BusinessError(
+          'PRECONDITION_FAILED',
+          'WhatsApp bağlantısı eksik.',
+          412,
+        );
+      }
+      if (msg.startsWith('media_too_large')) {
+        throw new BusinessError('PAYLOAD_TOO_LARGE', 'Boyut sınırını aşıyor.', 413);
+      }
+      console.error('[conversationMedia/send-media] failed:', err?.response?.data || err);
+      throw new BusinessError('INTERNAL_ERROR', 'Medya gönderimi başarısız.', 500, {
+        reason: msg,
+      });
+    }
   },
 );
 
