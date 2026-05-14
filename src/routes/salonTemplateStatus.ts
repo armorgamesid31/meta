@@ -109,14 +109,22 @@ router.get('/templates/status', authenticateToken, async (req: any, res) => {
 
   const activeTone = salon.communicationTone || 'BALANCED';
 
-  // Only count tone-varied rows for the active tone. Legacy non-tone-varied
-  // rows (templateKey=null) are explicitly ignored — they belong to the old
-  // pre-queue system and no longer reflect the salon's current pipeline.
+  // Pull two row groups:
+  //   1) Tone-varied lifecycle templates for the salon's active tone
+  //   2) Non-tone-varied verification templates (tone=null) — these are
+  //      single-row per salon (kdy_islem_link, kdy_ekip_katilim_link) and
+  //      should appear regardless of which tone the salon picked.
+  // Filtering only by activeTone here previously hid the verification
+  // template, making the UI show "Henüz başlatılmadı" even after the row
+  // was successfully submitted to Meta.
   const allRows = await prisma.salonMessageTemplate.findMany({
     where: {
       salonId,
-      tone: activeTone,
       templateKey: { not: null },
+      OR: [
+        { tone: activeTone },
+        { tone: null },
+      ],
     },
     select: {
       templateKey: true,
