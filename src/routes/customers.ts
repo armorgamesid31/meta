@@ -698,19 +698,11 @@ router.post('/verify-link/start', async (req: any, res: any) => {
     userAgent,
   });
 
-  const actionText =
-    purpose === VerificationPurpose.CUSTOMER_LINK_CONSENT
-      ? `${salon.name} salonuna kayıt`
-      : `${salon.name} salonu randevu`;
-
   const sendResult = await sendVerificationLinkTemplate({
     salonId,
     phone: normalized.digits,
-    name: customerName,
-    salonOrAction: actionText,
-    verificationLink: link.link,
+    token: link.token,
     ttlMinutes: VERIFICATION_TTL_MINUTES,
-    footerBrand: salon.name,
   });
 
   if (!sendResult.ok) {

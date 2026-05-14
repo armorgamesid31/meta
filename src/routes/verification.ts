@@ -199,11 +199,8 @@ router.post('/verify/phone/start', authenticateToken, async (req: any, res: any)
   const sendResult = await sendVerificationLinkTemplate({
     salonId: membership.salonId,
     phone: normalized.digits,
-    name: greetingName,
-    salonOrAction: 'Kedy numara değişikliği',
-    verificationLink: link.link,
+    token: link.token,
     ttlMinutes: VERIFICATION_TTL_MINUTES,
-    footerBrand: 'Kedy',
   });
 
   if (!sendResult.ok) {
@@ -452,11 +449,8 @@ router.post('/verify/resend/:id', async (req: any, res: any) => {
       await sendVerificationLinkTemplate({
         salonId,
         phone,
-        name: (record.payload as any)?.firstName || 'kullanıcı',
-        salonOrAction: actionLabel(record.purpose),
-        verificationLink: newLink.link,
+        token: newLink.token,
         ttlMinutes: VERIFICATION_TTL_MINUTES,
-        footerBrand: 'Kedy',
       });
     }
   } catch (error: any) {

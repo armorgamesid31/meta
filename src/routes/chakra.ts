@@ -43,7 +43,7 @@ const MASTER_TEMPLATE_VARIATIONS: Record<string, string[]> = {
     "Merhaba {{customer_name}} {{customer_honorific}}, {{salon_name}} olarak sizi üçüncü kez ağırlamaktan mutluyuz 🌸 Google Maps yorumunuz bizim için kıymetli."
   ],
   kdy_islem_link: [
-    "Bekleyen işleminizi tamamlamak için aşağıdaki butona dokunun.\n\nBağlantı kısa süreliğine geçerlidir."
+    "Telefon numaranızı doğrulamamız gerekiyor. Aşağıdaki butona dokunarak işlemi {{ttl}} dakika içinde tamamlayabilirsiniz."
   ],
   kdy_ekip_katilim_link: [
     "Kedy ekip katılımınızı tamamlamak için aşağıdaki butona dokunun.\n\nBağlantı kısa süreliğine geçerlidir.\n\n— Kedy"
@@ -83,18 +83,10 @@ const MASTER_TEMPLATE_VARIATIONS: Record<string, string[]> = {
     "Merhaba {{customer_name}}, {{service_name}} ile gününüzün güzelleştiğini umuyoruz. Bir yorum bırakmak ister misiniz? 🌸",
     "Selamlar, {{service_name}} randevunuzu değerlendirmek için vakit ayırdığınız için teşekkürler! 👋"
   ],
-  kdy_dogrulama_link: [
-    "Merhaba {{name}}, {{salon_or_action}} işleminizi tamamlamak için linke dokunun: {{verification_link}} — Link {{ttl}} dakika geçerlidir. — {{footer_brand}}",
-    "Selam {{name}}! {{salon_or_action}} için kısa onay linkin hazır: {{verification_link}} (Link {{ttl}} dk geçerli) — {{footer_brand}}",
-    "Merhaba {{name}}, {{salon_or_action}} işlemini bu güvenli bağlantıyla onaylayabilirsin: {{verification_link}}. Süre: {{ttl}} dk. — {{footer_brand}}",
-    "{{name}}, {{salon_or_action}} işlemini tamamlamak için linke dokun: {{verification_link}}. {{ttl}} dakika içinde kullanmalısın. — {{footer_brand}}",
-    "Hey {{name}}, {{salon_or_action}} işlemini buradan onayla: {{verification_link}} — {{ttl}} dk geçerlidir. — {{footer_brand}}",
-    "Merhaba {{name}}, {{salon_or_action}} için aşağıdaki linke tıklamanız yeterli: {{verification_link}}. Linkin geçerlilik süresi {{ttl}} dakikadır. — {{footer_brand}}",
-    "Selamlar {{name}}, {{salon_or_action}} işlemine devam etmek için: {{verification_link}}. {{ttl}} dakika içinde kullanın. — {{footer_brand}}",
-    "{{name}}, {{salon_or_action}} işlemini tek dokunuşla tamamlayın: {{verification_link}}. {{ttl}} dk içinde geçerlidir. — {{footer_brand}}",
-    "Merhaba {{name}}, {{salon_or_action}} adımını tamamlamak için bağlantıyı açın: {{verification_link}}. Süre: {{ttl}} dakika. — {{footer_brand}}",
-    "Hoş geldiniz {{name}}, {{salon_or_action}} işleminize devam etmek için: {{verification_link}} — {{ttl}} dakika içinde kullanın. — {{footer_brand}}"
-  ],
+  // NOTE: kdy_dogrulama_link (legacy text body, variable at end → rejected
+  // by Meta) was removed. Customer verification now uses kdy_islem_link
+  // with a salon-header + body-ttl + button-token shape.
+
   // NOTE: kdy_auth_code (legacy AUTHENTICATION template) removed. UTILITY-link
   // flow (kdy_islem_link / kdy_ekip_katilim_link) replaces it.
 };
@@ -209,29 +201,13 @@ const KEDY_MASTER_TEMPLATES = [
       }
     ]
   },
-  // ── Legacy verification link template (deprecated for customer flows;
-  //    superseded by kdy_islem_link). Kept for backwards compat.
-  {
-    name: 'kdy_dogrulama_link',
-    category: 'UTILITY',
-    parameter_format: 'NAMED',
-    eventType: 'VERIFICATION_LINK',
-    components: [
-      {
-        type: 'BODY',
-        text: MASTER_TEMPLATE_VARIATIONS.kdy_dogrulama_link[0],
-        example: {
-          body_text_named_params: [
-            { param_name: 'name', example: 'Müşteri' },
-            { param_name: 'salon_or_action', example: 'Bella Studio salonu randevu' },
-            { param_name: 'verification_link', example: 'https://app.berkai.shop/c/v/abc123' },
-            { param_name: 'ttl', example: '15' },
-            { param_name: 'footer_brand', example: 'Kedy' }
-          ]
-        }
-      }
-    ]
-  },
+  // Note: kdy_dogrulama_link (legacy) was removed. The sender now uses
+  // kdy_islem_link for all customer phone verification flows (CUSTOMER_PHONE,
+  // CUSTOMER_LINK_CONSENT, PHONE_CHANGE). The legacy template was being
+  // rejected on every sync with LEADING_TRAILING (variable at end of body),
+  // creating an orphan NOT_QUEUED row each time. Dropping it cleans both
+  // the submission pipeline and the salon UI.
+
   // ── Customer transactional verify (CUSTOMER_PHONE / CUSTOMER_LINK_CONSENT
   //    / PHONE_CHANGE). Body is static; only URL button carries the token. ──
   {
@@ -248,7 +224,8 @@ const KEDY_MASTER_TEMPLATES = [
       },
       {
         type: 'BODY',
-        text: MASTER_TEMPLATE_VARIATIONS.kdy_islem_link[0]
+        text: MASTER_TEMPLATE_VARIATIONS.kdy_islem_link[0],
+        example: { body_text_named_params: [{ param_name: 'ttl', example: '15' }] }
       },
       {
         type: 'BUTTONS',

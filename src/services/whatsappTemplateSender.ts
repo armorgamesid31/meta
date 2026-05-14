@@ -1,9 +1,17 @@
-// WhatsApp UTILITY-template sender — sends the kdy_dogrulama_link template
-// from a salon's connected WABA via Chakra.
+// WhatsApp UTILITY-template sender — sends the kdy_islem_link template
+// from a salon's connected WABA via Chakra. Customer-facing phone
+// verification (CUSTOMER_PHONE, CUSTOMER_LINK_CONSENT, PHONE_CHANGE)
+// reaches the customer from the salon's own WhatsApp Business number,
+// so the salon's brand and trust transfers to the verification flow.
 //
-// This is intentionally separate from phoneVerification.ts (which still
-// sends plain-text OTP for legacy AUTH-style flows). The new verification
-// system is template-based and link-bearing.
+// Template shape (defined in chakra.ts):
+//   HEADER:  {{salonname}}                  — salon brand
+//   BODY:    "...{{ttl}} dakika..."         — TTL window
+//   BUTTON:  URL https://.../c/v/{{1}}     — {{1}} = raw token
+//
+// This is intentionally separate from phoneVerification.ts (legacy
+// plain-text OTP for AUTH-style flows). The new verification system is
+// template-based and link-bearing.
 
 import axios from 'axios';
 import { prisma } from '../prisma.js';
@@ -15,7 +23,7 @@ const CHAKRA_API_BASE = (process.env.CHAKRA_API_BASE || 'https://api.chakrahq.co
   .trim()
   .replace(/\/+$/, '');
 
-const TEMPLATE_NAME = 'kdy_dogrulama_link';
+const TEMPLATE_NAME = 'kdy_islem_link';
 const TEMPLATE_LANG = 'tr';
 
 function buildSendUrl(pluginId: string, phoneNumberId: string): string {
@@ -36,21 +44,22 @@ function buildSendUrl(pluginId: string, phoneNumberId: string): string {
 export interface SendVerificationTemplateInput {
   salonId: number;
   phone: string; // E.164 or digits; will be normalized
-  /**
-   * Name to greet the recipient. Customer name or user displayName.
-   */
-  name: string;
-  /**
-   * Human-readable purpose: "Bella Studio salonu randevu" /
-   * "Kedy ekip katılımı" / "Kedy numara değişikliği"
-   */
-  salonOrAction: string;
-  /** Full URL to the magic-link landing page. */
-  verificationLink: string;
-  /** TTL in minutes (string, will be coerced). */
+  /** Raw verification token. Becomes {{1}} in the button URL. */
+  token: string;
+  /** TTL in minutes. Goes into the body as {{ttl}}. */
   ttlMinutes: number;
-  /** Sender brand line — typically salon name; "Kedy" for internal flows. */
-  footerBrand: string;
+
+  // Legacy fields retained for caller-compat. No longer mapped into the
+  // template — kdy_islem_link only has {{salonname}} + {{ttl}} + token.
+  // Removing them would break verification.ts callers; ignore at runtime.
+  /** @deprecated unused — salon name comes from DB lookup */
+  name?: string;
+  /** @deprecated unused — purpose is implied by the template itself */
+  salonOrAction?: string;
+  /** @deprecated unused — full URL is no longer needed, only token */
+  verificationLink?: string;
+  /** @deprecated unused — brand comes from the salon header */
+  footerBrand?: string;
 }
 
 export interface SendVerificationTemplateResult {
@@ -64,7 +73,7 @@ export async function sendVerificationLinkTemplate(
 ): Promise<SendVerificationTemplateResult> {
   const salon = await prisma.salon.findUnique({
     where: { id: input.salonId },
-    select: { chakraPluginId: true, chakraPhoneNumberId: true },
+    select: { name: true, chakraPluginId: true, chakraPhoneNumberId: true },
   });
 
   if (!salon?.chakraPluginId) {
@@ -82,6 +91,10 @@ export async function sendVerificationLinkTemplate(
     throw new Error('recipient_phone_invalid');
   }
 
+  if (!input.token) {
+    throw new Error('verification_token_missing');
+  }
+
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (CHAKRA_API_TOKEN) {
     headers.Authorization = `Bearer ${CHAKRA_API_TOKEN}`;
@@ -89,8 +102,10 @@ export async function sendVerificationLinkTemplate(
 
   const sendUrl = buildSendUrl(salon.chakraPluginId, phoneNumberId);
 
-  // Meta WhatsApp Cloud API template message shape (NAMED parameters):
-  //   template.components[].parameters[].parameter_name + .text
+  // Meta WhatsApp Cloud API template message shape for kdy_islem_link:
+  //   HEADER:  named param salonname  → salon's display name
+  //   BODY:    named param ttl        → TTL in minutes
+  //   BUTTON:  URL placeholder {{1}}  → raw verification token
   const body = {
     pluginId: salon.chakraPluginId,
     phoneNumberId,
@@ -101,13 +116,23 @@ export async function sendVerificationLinkTemplate(
       language: { code: TEMPLATE_LANG },
       components: [
         {
+          type: 'header',
+          parameters: [
+            { type: 'text', parameter_name: 'salonname', text: truncate(salon.name || 'Salon', 60) },
+          ],
+        },
+        {
           type: 'body',
           parameters: [
-            { type: 'text', parameter_name: 'name', text: truncate(input.name, 50) },
-            { type: 'text', parameter_name: 'salon_or_action', text: truncate(input.salonOrAction, 80) },
-            { type: 'text', parameter_name: 'verification_link', text: input.verificationLink },
             { type: 'text', parameter_name: 'ttl', text: String(input.ttlMinutes) },
-            { type: 'text', parameter_name: 'footer_brand', text: truncate(input.footerBrand, 40) },
+          ],
+        },
+        {
+          type: 'button',
+          sub_type: 'url',
+          index: '0',
+          parameters: [
+            { type: 'text', text: input.token },
           ],
         },
       ],
