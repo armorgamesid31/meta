@@ -154,7 +154,9 @@ const KEDY_RANDEVU_HATIRLATMA_2_SAAT: TieredVariations = {
   FRIENDLY: {
     primary: [
       "Hey {{customer_name}}, 2 saat sonra buluşuyoruz 👀 Yol tarifi butondan açılıyor.",
-      "Hey {{customer_name}}! {{service_name}} seansına 2 saat ⏰ Yola çıkmadan tarife göz at.",
+      // Eski hali "Yola çıkmadan tarife göz at" imperative CTA içeriyordu,
+      // Meta MARKETING'e bump'ladı. Bilgilendirici tona çevrildi.
+      "Hey {{customer_name}}, {{service_name}} randevuna 2 saat kaldı ⏰ Yol tarifi butonda hazır.",
       "Hey {{customer_name}}, yaklaşıyoruz 🚀 Bugün {{appointment_time}} — yol tarifi butonda.",
     ],
     reserve: [
@@ -245,10 +247,14 @@ const KEDY_NO_SHOW_HATIRLATMA: TieredVariations = {
     primary: [
       "Sayın {{customer_name}} {{customer_surname}}, {{appointment_date}} {{appointment_time}} {{service_name}} randevunuza katılım kaydı oluşmamıştır. İptal/değişiklik bildirimleri en az {{late_policy_hours}} saat öncesinden yapılmalıdır.",
       "Sayın {{customer_name}} {{customer_surname}}, {{appointment_date}} tarihli {{service_name}} randevunuza gelinmedi statüsü işlenmiştir. Bildirim politikamız: {{late_policy_hours}} saat.",
-      "Sayın {{customer_name}} {{customer_surname}}, randevu kaydınız {{appointment_date}} {{appointment_time}} için gelinmedi olarak güncellenmiştir.",
+      // Eski hali çok kısa, değişken/kelime oranı yüksek (WORDS_RATIO red).
+      // Açıklayıcı bağlam kelimeleri eklendi.
+      "Sayın {{customer_name}} {{customer_surname}}, {{appointment_date}} {{appointment_time}} randevu kaydınız için katılım olmadığı tespit edilmiş ve randevu durumu gelinmedi olarak güncellenmiştir.",
     ],
     reserve: [
-      "Sayın {{customer_name}} {{customer_surname}}, {{appointment_date}} {{appointment_time}} {{service_name}} randevunuz katılım olmadan kapanmıştır. Politika süresi: {{late_policy_hours}} saat.",
+      // Eski hali 6 değişkene karşılık az kelime içeriyordu (WORDS_RATIO).
+      // Anlatım genişletildi, late_policy_hours bağlamı korundu.
+      "Sayın {{customer_name}} {{customer_surname}}, {{appointment_date}} tarihli randevu kaydınız için katılım gerçekleşmemiş ve süreç kapatılmıştır. Bildirim politikamız {{late_policy_hours}} saat olarak uygulanmaktadır.",
       "Sayın {{customer_name}} {{customer_surname}}, {{appointment_date}} randevu kaydınız no-show statüsü ile kapatılmıştır.",
       "Sayın {{customer_name}} {{customer_surname}}, {{service_name}} randevunuza ait katılım kaydı tamamlanmamıştır. İptal/değişiklik süresi {{late_policy_hours}} saattir.",
       "Sayın {{customer_name}} {{customer_surname}}, {{appointment_date}} {{appointment_time}} randevu kaydı katılım olmadığı için güncellenmiştir.",
@@ -267,27 +273,50 @@ const KEDY_NO_SHOW_HATIRLATMA: TieredVariations = {
 // added concrete date/time/service anchors in every primary variation,
 // kept emojis sparse, and centered language on the customer's existing
 // waitlist record rather than presenting it as a new offer.
+// Bekleme listesi şablonları — Meta defalarca MARKETING'e bump'ladı veya
+// reddetti. Onaylananları (f3, f5) inceleyerek çıkardığım pattern:
+//   1. "uygun hale geldi" yerine "ayrıldı / açıldı" (pasif, bildirimsel)
+//   2. "Onaylarsan çevirelim" gibi CTA'lar YOK
+//   3. Loss-aversion sürer ("yanıt vermezsen sıra geçer")
+//   4. Variable'lar asla cümle başında veya sonunda — çevresinde mutlaka kelimeler
+//   5. Yeterli kelime hacmi — değişken/kelime oranı %35-40 altında
 const KEDY_WAITLIST_TEKLIF: TieredVariations = {
   FRIENDLY: {
     primary: [
-      "Merhaba {{customer_name}}, bekleme listendeki {{service_name}} için {{appointment_date}} {{appointment_time}} saati uygun hale geldi. Onaylarsan randevuya çevirelim.",
-      "Selam {{customer_name}}, {{service_name}} için bekleme listendeki sıran geldi. Uygun saat: {{appointment_date}} {{appointment_time}}.",
+      // Eski: "uygun hale geldi. Onaylarsan randevuya çevirelim" — CTA → CAT_BUMP.
+      // Yeni: pasif bildirim + loss-aversion (kardeş f3 deseni).
+      "Merhaba {{customer_name}}, bekleme listendeki {{service_name}} kaydın için {{appointment_date}} {{appointment_time}} saati açıldı. Yanıt vermezsen sıra bir sonraki kişiye geçer.",
+      // Eski: variable ile bitiyordu (LEADING_TRAILING).
+      // Yeni: "ayrıldı" trailing kelimesiyle kapanış.
+      "Selam {{customer_name}}, bekleme kaydındaki {{service_name}} için sıran geldi. {{appointment_date}} {{appointment_time}} saati senin için ayrıldı.",
       "Merhaba {{customer_name}}, bekleme kaydındaki {{appointment_date}} {{appointment_time}} saati artık müsait. Yanıt vermezsen sıra bir sonrakine geçecek.",
     ],
     reserve: [
-      "Hey {{customer_name}}, bekleme listendeki {{service_name}} için {{appointment_date}} {{appointment_time}} uygun hale geldi.",
+      // Eski: "uygun hale geldi" → CAT_BUMP.
+      // Yeni: "seni bekliyor" pasif bildirim.
+      "Hey {{customer_name}}, daha önce ilettiğin {{service_name}} bekleme kaydında {{appointment_date}} {{appointment_time}} saati seni bekliyor.",
       "Merhaba {{customer_name}}, bekleme kaydın aktif. {{appointment_date}} {{appointment_time}} saati senin için ayrıldı.",
-      "Hey {{customer_name}}, daha önce talep ettiğin {{service_name}} için {{appointment_date}} {{appointment_time}} açıldı.",
-      "Merhaba {{customer_name}}, bekleme kaydın için planlama yapıldı: {{appointment_date}} {{appointment_time}}.",
-      "Selam {{customer_name}}, {{service_name}} için bekleme sıran geçerli. Saat: {{appointment_date}} {{appointment_time}}.",
-      "Hey {{customer_name}}, bekleme listendeki kayıt için uygun saat geldi: {{appointment_date}} {{appointment_time}}.",
-      "Merhaba {{customer_name}}, {{service_name}} bekleme kaydın için {{appointment_date}} {{appointment_time}} aktif edildi.",
+      // Eski: "için {{appointment_date}} {{appointment_time}} açıldı" — kelime az,
+      // 4 vars 8 word (WORDS_RATIO). Genişletildi.
+      "Hey {{customer_name}}, daha önce talep ettiğin {{service_name}} için bekleme listenden bir saat açıldı: {{appointment_date}} {{appointment_time}} senin için ayrıldı.",
+      // Eski: variable ile bitiyordu (LEADING_TRAILING).
+      "Merhaba {{customer_name}}, bekleme kaydın için {{appointment_date}} {{appointment_time}} saati planlamaya alındı, yanıtını bekliyoruz.",
+      // Eski: "Saat: {{appointment_date}} {{appointment_time}}." — variable trailing
+      // ve kısa cümle (WORDS_RATIO). Yeni: bağlam genişletildi.
+      "Selam {{customer_name}}, bekleme listendeki {{service_name}} kaydın hâlâ aktif. {{appointment_date}} {{appointment_time}} saati senin için ayrıldı, yanıtını bekliyoruz.",
+      // Eski: variable ile bitiyordu (LEADING_TRAILING).
+      "Hey {{customer_name}}, bekleme listendeki kayıt için {{appointment_date}} {{appointment_time}} saati açıldı, yanıtını bekliyoruz.",
+      // Eski: "aktif edildi" sona ulaşmadan variable bitiyordu, kelime az
+      // (WORDS_RATIO). Genişletildi.
+      "Merhaba {{customer_name}}, bekleme listendeki {{service_name}} kaydın için {{appointment_date}} {{appointment_time}} saati aktif edildi, yanıtını bekliyoruz.",
     ],
   },
   BALANCED: {
     primary: [
       "Merhaba {{customer_name}} {{customer_honorific}}, bekleme listenizdeki {{service_name}} için {{appointment_date}} {{appointment_time}} saati uygun hale gelmiştir.",
-      "Merhaba {{customer_name}} {{customer_honorific}}, bekleme kaydınız için planlama yapıldı: {{appointment_date}} {{appointment_time}}.",
+      // Eski: variable ile bitiyordu (LEADING_TRAILING) ve kelime az (WORDS_RATIO).
+      // Yeni: "tamamlanmıştır" ve "ayrılmıştır" trailing kelimelerle.
+      "Merhaba {{customer_name}} {{customer_honorific}}, bekleme kaydınız için planlama tamamlanmıştır ve {{appointment_date}} {{appointment_time}} saati tarafınıza ayrılmıştır.",
       "Merhaba {{customer_name}} {{customer_honorific}}, {{service_name}} için bekleme listenizdeki sıranız {{appointment_date}} {{appointment_time}} saati ile uyumlandı.",
     ],
     reserve: [
@@ -303,13 +332,17 @@ const KEDY_WAITLIST_TEKLIF: TieredVariations = {
   PROFESSIONAL: {
     primary: [
       "Sayın {{customer_name}} {{customer_surname}}, bekleme listesi kaydınızdaki {{service_name}} için {{appointment_date}} {{appointment_time}} saati uygun hale gelmiştir.",
-      "Sayın {{customer_name}} {{customer_surname}}, {{service_name}} bekleme kaydınız {{appointment_date}} {{appointment_time}} planlamasına alınmıştır.",
+      // Eski: 5 vars 7 word (WORDS_RATIO). Bağlam genişletildi.
+      "Sayın {{customer_name}} {{customer_surname}}, daha önce ilettiğiniz {{service_name}} bekleme kaydınız için {{appointment_date}} {{appointment_time}} saati randevu planlamasına alınmıştır.",
       "Sayın {{customer_name}} {{customer_surname}}, bekleme listenizdeki sıranıza istinaden {{appointment_date}} {{appointment_time}} saati randevu kaydı olarak hazırlanmıştır.",
     ],
     reserve: [
-      "Sayın {{customer_name}} {{customer_surname}}, daha önce iletilen {{service_name}} bekleme talebinize istinaden {{appointment_date}} {{appointment_time}} planlanmıştır.",
-      "Sayın {{customer_name}} {{customer_surname}}, bekleme kaydınız için randevu zamanı belirlenmiştir: {{appointment_date}} {{appointment_time}}.",
-      "Sayın {{customer_name}} {{customer_surname}}, {{service_name}} bekleme kaydınız {{appointment_date}} {{appointment_time}} saatinde aktif duruma getirilmiştir.",
+      // Eski: 5 vars 10 word, ratio sınırda (WORDS_RATIO). Anlatım genişletildi.
+      "Sayın {{customer_name}} {{customer_surname}}, daha önce iletmiş olduğunuz {{service_name}} bekleme talebinize istinaden {{appointment_date}} {{appointment_time}} saati randevu olarak planlamaya alınmıştır.",
+      // Eski: variable ile bitiyordu (LEADING_TRAILING).
+      "Sayın {{customer_name}} {{customer_surname}}, bekleme kaydınız için randevu zamanı {{appointment_date}} {{appointment_time}} olarak belirlenmiştir, onayınızı bekliyoruz.",
+      // Eski: 5 vars 9 word (WORDS_RATIO). Bağlam genişletildi.
+      "Sayın {{customer_name}} {{customer_surname}}, daha önce ilettiğiniz {{service_name}} bekleme talebi için randevu saati {{appointment_date}} {{appointment_time}} olarak aktif duruma getirilmiştir.",
       "Sayın {{customer_name}} {{customer_surname}}, bekleme listenizde kayıtlı talebiniz {{appointment_date}} {{appointment_time}} olarak planlanmıştır.",
       "Sayın {{customer_name}} {{customer_surname}}, bekleme kaydınızla ilişkili randevu {{appointment_date}} {{appointment_time}} saatine ayarlanmıştır.",
       "Sayın {{customer_name}} {{customer_surname}}, müşteri kaydınızdaki {{service_name}} talebi için randevu saati: {{appointment_date}} {{appointment_time}}.",
@@ -464,7 +497,9 @@ const KEDY_DOGUM_GUNU_KUTLAMASI: TieredVariations = {
   },
   PROFESSIONAL: {
     primary: [
-      "Sayın {{customer_name}} {{customer_surname}}, doğum gününüzü kutlar, tarafınıza özel {{discount_amount}} indirim fırsatımızı sunarız. Geçerlilik süresi: {{validity_period}}.",
+      // Eski hali variable ile bitiyordu ("Geçerlilik süresi: {{validity_period}}."),
+      // Meta LEADING_TRAILING ile reddetti. Trailing kelime eklendi.
+      "Sayın {{customer_name}} {{customer_surname}}, doğum gününüzü kutlar, tarafınıza özel {{discount_amount}} indirim fırsatımızı {{validity_period}} süreyle paylaşmaktan memnuniyet duyarız.",
       "Sayın {{customer_name}} {{customer_surname}}, bu özel gününüzü kutlar, {{discount_amount}} doğum günü hediyemizi sunarız. {{validity_period}} süreyle geçerlidir.",
       "Sayın {{customer_name}} {{customer_surname}}, mutlu yıllar dileklerimizle birlikte {{discount_amount}} doğum günü indirimimiz {{validity_period}} süreyle tarafınıza sunulmuştur.",
     ],
