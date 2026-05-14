@@ -9451,6 +9451,7 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
         outboundSenderEmail: true,
         eventTimestamp: true,
         rawPayload: true,
+        mediaItems: true,
       },
     });
     const stateRows = await prisma.conversationState.findMany({
@@ -9529,6 +9530,7 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
         systemActorEmail,
         systemActorDisplayName,
         eventTimestamp: row.eventTimestamp.toISOString(),
+        mediaItems: Array.isArray(row.mediaItems) ? row.mediaItems : null,
         raw,
       };
     });

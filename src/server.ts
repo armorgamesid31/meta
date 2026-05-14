@@ -21,6 +21,7 @@ import authRoutes from './routes/auth.js';
 import verificationRoutes from './routes/verification.js';
 import feedbackRoutes from './routes/feedback.js';
 import adminMobileRoutes from './routes/adminMobile.js';
+import conversationMediaRoutes from './routes/conversationMedia.js';
 import adminAccessRoutes from './routes/adminAccess.js';
 import adminImportsRoutes from './routes/adminImports.js';
 import adminContentRoutes from './routes/adminContent.js';
@@ -300,6 +301,10 @@ app.use('/api/admin/imports', authenticateToken, requirePermissionKey('imports.m
 app.use('/api/admin/salon-logo', salonLogoRoutes, logoErrorHandler);
 app.use('/api/admin/gallery', galleryRoutes, galleryErrorHandler);
 app.use('/api/admin', authenticateToken, requireAdminRoutePermission, adminMobileRoutes);
+// Conversation media read endpoints — mounted under /api/salon for parity
+// with /templates routes (same auth surface). Outbound send endpoint lives
+// here too once Stage 2 lands.
+app.use('/api/salon', conversationMediaRoutes);
 app.use('/api/onboarding', onboardingRoutes);
 app.use('/api/content', contentRoutes);
 app.use('/api/internal/service-translations', internalServiceTranslationsRoutes);

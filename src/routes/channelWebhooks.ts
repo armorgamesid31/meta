@@ -24,6 +24,7 @@ import {
 } from '../services/templateStatusWebhook.js';
 import { upsertConversationMessageEvent } from '../services/conversationMessageEvents.js';
 import { storeConversationAvatarFromUrl } from '../services/conversationAvatarStorage.js';
+import { buildMediaItemsFromWebhook } from '../services/conversationMediaCache.js';
 
 const router = Router();
 
@@ -1307,6 +1308,12 @@ async function processIncomingBatch(items: any[]) {
         } as any)
       : (rawPayloadForStorage as any);
 
+    // Extract structured media metadata from the channel-specific `media`
+    // array into our mediaItems schema. Empty → null so we don't overwrite
+    // a previously-populated row on idempotent webhook redelivery.
+    const rawMediaArray = Array.isArray((row as any).media) ? (row as any).media : [];
+    const mediaItems = buildMediaItemsFromWebhook(rawMediaArray);
+
     await upsertConversationMessageEvent({
       salonId,
       channel,
@@ -1323,6 +1330,7 @@ async function processIncomingBatch(items: any[]) {
       outboundSenderUserId: row.isEcho ? outboundTraceMeta?.sourceUserId || null : null,
       outboundSenderEmail: row.isEcho ? outboundTraceMeta?.sourceUserEmail || null : null,
       rawPayload: eventRawPayload,
+      mediaItems: mediaItems.length > 0 ? (mediaItems as any) : undefined,
     });
 
     const state = await evaluateConversationState({

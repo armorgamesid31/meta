@@ -1401,6 +1401,21 @@ model ConversationMessageEvent {
   outboundSenderUserId Int?
   outboundSenderEmail  String?
   rawPayload           Json
+  // Structured media metadata pulled out of rawPayload at webhook time so
+  // the read path doesn't have to dig into channel-specific JSON shapes.
+  // Each entry: { index, type: 'image'|'video'|'audio', mimeType, sizeBytes?,
+  //   durationSec?, isVoice?, caption?, providerMediaId?, providerMediaUrl? }
+  mediaItems           Json?
+  // Populated when each media item is downloaded from Meta and stored in
+  // our R2 bucket. Each entry: { index, r2Key, r2Bucket, sha256, cachedAt }.
+  // Inbound rows fill this lazily on first view; outbound rows fill it at
+  // send time (eager cache).
+  mediaCached          Json?
+  mediaCachedAt        DateTime?              @db.Timestamp(6)
+  // For outbound messages: stores Meta's media_id (WA) / attachment_id (IG)
+  // we got back when uploading our R2-staged file to Meta. Lets us reuse the
+  // same upload across retries without re-uploading.
+  metaMediaIds         Json?
   createdAt            DateTime?              @default(now()) @db.Timestamp(6)
   updatedAt            DateTime?              @default(now()) @updatedAt @db.Timestamp(6)
   salon                Salon                  @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
@@ -1409,6 +1424,7 @@ model ConversationMessageEvent {
   @@index([salonId, channel, conversationKey, eventTimestamp], map: "idx_message_event_salon_conv_ts")
   @@index([salonId, channel, eventTimestamp], map: "idx_message_event_salon_channel_ts")
   @@index([salonId, channel, conversationKey, processingStatus], map: "idx_message_event_salon_conv_status")
+  @@index([mediaCachedAt], map: "idx_message_event_media_cached_at")
 }
 
 model ConversationThreadSummary {

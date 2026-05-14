@@ -26,6 +26,17 @@ type UpsertConversationMessageEventInput = {
   outboundSenderUserId?: number | null;
   outboundSenderEmail?: string | null;
   rawPayload: Prisma.InputJsonValue;
+  // Structured media metadata extracted from the channel webhook. Each entry:
+  //   { index, type: 'image'|'video'|'audio', mimeType, sizeBytes?,
+  //     durationSec?, isVoice?, caption?, providerMediaId?, providerMediaUrl? }
+  // Stored separately from rawPayload so the read path stays channel-agnostic
+  // and we can index/query it (e.g. messages-with-media filter).
+  mediaItems?: Prisma.InputJsonValue | null;
+  // For outbound rows that were uploaded before sending: skip the lazy-fetch
+  // path entirely and prefill the R2-cached metadata at insert time.
+  mediaCached?: Prisma.InputJsonValue | null;
+  mediaCachedAt?: Date | null;
+  metaMediaIds?: Prisma.InputJsonValue | null;
 };
 
 export async function upsertConversationMessageEvent(
@@ -70,6 +81,13 @@ export async function upsertConversationMessageEvent(
         outboundSenderUserId: input.outboundSenderUserId || null,
         outboundSenderEmail: input.outboundSenderEmail || null,
         rawPayload: input.rawPayload,
+        // Only overwrite mediaItems / mediaCached when caller passes them.
+        // Idempotent webhook redelivery shouldn't blow away a successful
+        // lazy fetch that happened between the two webhooks.
+        ...(input.mediaItems !== undefined ? { mediaItems: input.mediaItems } : {}),
+        ...(input.mediaCached !== undefined ? { mediaCached: input.mediaCached } : {}),
+        ...(input.mediaCachedAt !== undefined ? { mediaCachedAt: input.mediaCachedAt } : {}),
+        ...(input.metaMediaIds !== undefined ? { metaMediaIds: input.metaMediaIds } : {}),
         updatedAt: new Date(),
       },
       create: {
@@ -88,6 +106,10 @@ export async function upsertConversationMessageEvent(
         outboundSenderUserId: input.outboundSenderUserId || null,
         outboundSenderEmail: input.outboundSenderEmail || null,
         rawPayload: input.rawPayload,
+        mediaItems: input.mediaItems ?? undefined,
+        mediaCached: input.mediaCached ?? undefined,
+        mediaCachedAt: input.mediaCachedAt ?? undefined,
+        metaMediaIds: input.metaMediaIds ?? undefined,
       },
       select: {
         id: true,
