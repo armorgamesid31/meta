@@ -21,6 +21,7 @@ import {
   shouldPromoteReserve,
 } from '../services/salonTemplateSubmitter.js';
 import { listTemplateKeys, ALL_TONES, getVariationBySlot } from '../services/templateVariations.js';
+import { syncAndEnsureMasterTemplates } from './chakra.js';
 
 const router = Router();
 
@@ -381,6 +382,19 @@ router.post('/templates/sync', authenticateToken, async (req: any, res) => {
     if (res.created) promoted++;
   }
   if (promoted > 0) logs.push(`${promoted} yedek slot devreye alındı.`);
+
+  // Step 2c: re-submit non-tone-varied verification templates
+  // (kdy_islem_link, kdy_ekip_katilim_link). These bypass the wave queue
+  // — they're single-template-per-salon and historically submitted at
+  // WABA-connect time. Without this step, after a kedy_*→kdy_* rename
+  // or any Meta-side cleanup, the verification template is missing and
+  // Müşteri Doğrulama can't be sent.
+  try {
+    await syncAndEnsureMasterTemplates(salonId, salon.chakraPluginId, logs);
+  } catch (err: any) {
+    logs.push(`Doğrulama şablonu senkronizasyon hatası: ${err?.message || err}`);
+    console.error('[templates/sync] master template sync failed:', err);
+  }
 
   // Step 3: enqueue any missing primary rows (90 tone-varied total).
   // skipDuplicates ensures we don't collide with retained stale-SUBMITTED

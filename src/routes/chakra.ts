@@ -546,7 +546,7 @@ async function createConnectToken(pluginId: string) {
   throw new Error('No connectToken returned from Chakra.');
 }
 
-async function syncAndEnsureMasterTemplates(salonId: number, pluginId: string, logs: string[] = []) {
+export async function syncAndEnsureMasterTemplates(salonId: number, pluginId: string, logs: string[] = []) {
   if (!CHAKRA_API_TOKEN) {
     logs.push('HATA: CHAKRA_API_TOKEN tanımlanmamış.');
     return;
