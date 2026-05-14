@@ -17,6 +17,7 @@ import {
 import {
   enqueueSalonTemplates,
   promoteReserveVariation,
+  reconcileSalonFromMeta,
   shouldPromoteReserve,
 } from '../services/salonTemplateSubmitter.js';
 import { listTemplateKeys, ALL_TONES, getVariationBySlot } from '../services/templateVariations.js';
@@ -75,6 +76,18 @@ router.get('/templates/status', authenticateToken, async (req: any, res) => {
       pending: 0,
       templates: [],
     });
+  }
+
+  // The mobile "Yenile" button passes ?refresh=1 to force a fresh pull
+  // from Meta before computing status. Without this, the user has to
+  // wait up to an hour for the background reconcile loop to catch up
+  // with Meta's APPROVED webhooks (which sometimes never fire).
+  if (req.query?.refresh === '1' || req.query?.refresh === 'true') {
+    try {
+      await reconcileSalonFromMeta(salonId, salon.chakraPluginId);
+    } catch (err) {
+      console.error('[templates/status] reconcile failed:', err);
+    }
   }
 
   const activeTone = salon.communicationTone || 'BALANCED';

@@ -631,7 +631,11 @@ export async function markPoolExhaustedIfNeeded(opts: {
 // and reconciles the state, so the UI never lags reality more than
 // a few minutes regardless of webhook health.
 // ─────────────────────────────────────────────────────────────────
-const STATUS_RECONCILE_INTERVAL_MS = 5 * 60 * 1000;
+// Hourly background poll is the safety net. The mobile "Yenile" button
+// also triggers reconcileSalonFromMeta on demand for instant feedback.
+// 5-min polling × every salon would burn the Meta business-management
+// rate limit (200/hour/BSP token) fast.
+const STATUS_RECONCILE_INTERVAL_MS = 60 * 60 * 1000;
 
 export async function runStatusReconcileTick(): Promise<{ updated: number; salons: number }> {
   // Only reconcile salons that currently have rows Meta might still be
@@ -662,7 +666,7 @@ export async function runStatusReconcileTick(): Promise<{ updated: number; salon
   return { updated: totalUpdated, salons: salons.length };
 }
 
-async function reconcileSalonFromMeta(salonId: number, pluginId: string): Promise<number> {
+export async function reconcileSalonFromMeta(salonId: number, pluginId: string): Promise<number> {
   if (!CHAKRA_API_TOKEN) return 0;
 
   // Resolve WABA id (same path submitOneToMeta uses).
