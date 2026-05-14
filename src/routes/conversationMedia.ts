@@ -312,4 +312,70 @@ router.post(
   },
 );
 
+// ─────────────────────────────────────────────────────────────────
+// POST /conversations/customer-data/delete
+//
+// KVKK/GDPR data deletion: removes all cached media for a given
+// conversationKey from R2 and clears the DB pointers. Does NOT delete
+// the message rows themselves — the salon may need the text history
+// for legal/operational reasons; only the media bytes go away.
+//
+// Auth: same authenticateToken middleware. Caller must be a salon
+// member; deletion is scoped to that salon's events.
+// ─────────────────────────────────────────────────────────────────
+router.post('/conversations/customer-data/delete', authenticateToken, async (req: any, res: any) => {
+  if (!isMediaCacheEnabled()) {
+    return res.status(200).json({ ok: true, deleted: 0, message: 'Cache not configured.' });
+  }
+  if (!req.user?.salonId) {
+    throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
+  }
+  const salonId = req.user.salonId as number;
+
+  const conversationKey = typeof req.body?.conversationKey === 'string'
+    ? req.body.conversationKey.trim()
+    : '';
+  if (!conversationKey) {
+    throw new BusinessError('VALIDATION_FAILED', 'conversationKey gerekli.', 400);
+  }
+
+  const { deleteFromR2 } = await import('../services/conversationMediaCache.js');
+
+  const rows = await prisma.conversationMessageEvent.findMany({
+    where: {
+      salonId,
+      conversationKey,
+      NOT: { mediaCached: { equals: null as any } as any },
+    },
+    select: { id: true, mediaCached: true },
+  });
+
+  let deleted = 0;
+  let failed = 0;
+  for (const row of rows) {
+    const cached = Array.isArray(row.mediaCached) ? (row.mediaCached as any[]) : [];
+    for (const c of cached) {
+      if (!c) continue;
+      try {
+        await deleteFromR2(c);
+        deleted++;
+      } catch (err) {
+        console.error('[customer-data/delete] r2 delete failed:', err);
+        failed++;
+      }
+    }
+    await prisma.conversationMessageEvent.update({
+      where: { id: row.id },
+      data: { mediaCached: Prisma.JsonNull, mediaCachedAt: null },
+    });
+  }
+
+  return res.status(200).json({
+    ok: true,
+    rowsTouched: rows.length,
+    objectsDeleted: deleted,
+    objectsFailed: failed,
+  });
+});
+
 export default router;
