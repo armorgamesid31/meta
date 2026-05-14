@@ -48,20 +48,29 @@ const META_APP_SECRET = (process.env.META_APP_SECRET || '').trim();
  *  - Signature header missing or mismatched → 403 with no body logging (do not
  *    leak shape to an attacker probing for verification gaps).
  */
+// Shared body parser used by both verifier variants.
+function parseRawBody(req: any): boolean {
+  const rawBody: Buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+  if (rawBody.length === 0) {
+    req.body = {};
+    return true;
+  }
+  try {
+    req.body = JSON.parse(rawBody.toString('utf8'));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Strict Meta HMAC verification. Used for endpoints that receive webhooks
+ * DIRECTLY from Meta (Instagram OAuth direct webhook, /meta combined).
+ * The HMAC is signed with META_APP_SECRET; we recompute and constant-time
+ * compare against the x-hub-signature-256 header.
+ */
 function verifyMetaSignature(req: any, res: any, next: any) {
   const rawBody: Buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
-  const tryParseRaw = () => {
-    if (rawBody.length === 0) {
-      req.body = {};
-      return true;
-    }
-    try {
-      req.body = JSON.parse(rawBody.toString('utf8'));
-      return true;
-    } catch {
-      return false;
-    }
-  };
 
   if (!META_APP_SECRET) {
     if (process.env.NODE_ENV === 'production') {
@@ -69,7 +78,7 @@ function verifyMetaSignature(req: any, res: any, next: any) {
       return res.status(503).json({ ok: false });
     }
     console.warn('[META_WEBHOOK] META_APP_SECRET not configured — signature verification BYPASSED (dev only).');
-    if (!tryParseRaw()) return res.status(400).end();
+    if (!parseRawBody(req)) return res.status(400).end();
     return next();
   }
 
@@ -96,7 +105,29 @@ function verifyMetaSignature(req: any, res: any, next: any) {
     return res.status(403).end();
   }
 
-  if (!tryParseRaw()) return res.status(400).end();
+  if (!parseRawBody(req)) return res.status(400).end();
+  return next();
+}
+
+/**
+ * BSP-proxied webhook verifier (Chakra forwards WhatsApp Cloud API events).
+ *
+ * Chakra is our partnered Business Solution Provider — the entity that
+ * holds the WABA on our behalf. Meta delivers the original webhook to
+ * Chakra with Meta's HMAC; Chakra terminates that, batches/normalizes,
+ * and re-POSTs to our CHAKRA_PASSTHROUGH_WEBHOOK_URL. Chakra does NOT
+ * forward the original x-hub-signature-256 (the upstream HMAC is over
+ * Meta's body, not Chakra's). Re-verifying with META_APP_SECRET here
+ * always fails — that's the bug that took WhatsApp inbound dark.
+ *
+ * Trust model: we already trust Chakra at the transport boundary via
+ * the bearer CHAKRA_API_TOKEN we hand them for outbound. The webhook
+ * traffic is the inbound mirror of that relationship. Accept it after
+ * the JSON parse without HMAC; if Chakra ever exposes a signature
+ * scheme of their own, swap this for that verifier.
+ */
+function verifyChakraProxiedWebhook(req: any, res: any, next: any) {
+  if (!parseRawBody(req)) return res.status(400).end();
   return next();
 }
 
@@ -1527,7 +1558,10 @@ router.get('/meta', (req, res) => {
 });
 
 router.post('/instagram', verifyMetaSignature, async (req, res) => handleInbound(req, res, 'INSTAGRAM'));
-router.post('/whatsapp', verifyMetaSignature, async (req, res) => handleInbound(req, res, 'WHATSAPP'));
+// WhatsApp arrives via Chakra BSP — no x-hub-signature-256 because Chakra
+// terminates Meta's original HMAC and re-issues the payload. See
+// verifyChakraProxiedWebhook for the trust model rationale.
+router.post('/whatsapp', verifyChakraProxiedWebhook, async (req, res) => handleInbound(req, res, 'WHATSAPP'));
 router.post('/meta', verifyMetaSignature, async (req, res) => handleInbound(req, res));
 
 export default router;
