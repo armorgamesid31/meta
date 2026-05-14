@@ -31,6 +31,7 @@ import { upsertConversationMessageEvent } from './conversationMessageEvents.js';
 import {
   MEDIA_LIMITS,
   classifyMediaKind,
+  presignReadUrl,
   putToR2,
   randomToken,
   type MediaItemMeta,
@@ -40,7 +41,9 @@ import {
 
 const META_GRAPH_VERSION = (process.env.META_GRAPH_VERSION || 'v22.0').trim();
 const META_GRAPH_BASE = `https://graph.facebook.com/${META_GRAPH_VERSION}`;
+const META_INSTAGRAM_GRAPH_BASE = `https://graph.instagram.com/${META_GRAPH_VERSION}`;
 const CHAKRA_API_TOKEN = (process.env.CHAKRA_API_TOKEN || '').trim();
+const INSTAGRAM_REPLY_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 export interface SendMediaInput {
   salonId: number;
@@ -146,6 +149,134 @@ async function whatsAppUploadAndSend(
   return { providerMessageId, metaMediaId };
 }
 
+// ─────────────────────────────────────────────────────────────────
+// Instagram upload-then-send
+// ─────────────────────────────────────────────────────────────────
+
+/**
+ * Resolve the salon's Instagram sender id + access token from the
+ * AI agent settings JSON where Meta Direct connect persists them.
+ */
+async function resolveInstagramIdentity(salonId: number): Promise<{
+  senderInstagramId: string;
+  accessToken: string;
+} | null> {
+  const settings = await prisma.salonAiAgentSettings.findUnique({
+    where: { salonId },
+    select: { faqAnswers: true },
+  });
+  const faq = (settings?.faqAnswers as any) || {};
+  const ig = (faq?.metaDirect?.instagram as any) || {};
+  const senderInstagramId = typeof ig.externalAccountId === 'string' ? ig.externalAccountId.trim() : '';
+  const accessToken = typeof ig.accessToken === 'string' ? ig.accessToken.trim() : '';
+  if (!senderInstagramId || !accessToken) return null;
+  return { senderInstagramId, accessToken };
+}
+
+/**
+ * Check the 24-hour customer service window for an Instagram conversation.
+ * Returns true if the window is still open (lastCustomerMessageAt within
+ * the last 24h) or unknown (no state row — assume open and let Meta reject).
+ */
+async function isInstagramReplyWindowOpen(
+  salonId: number,
+  conversationKey: string,
+): Promise<boolean> {
+  const row = await prisma.conversationState.findFirst({
+    where: { salonId, channel: 'INSTAGRAM', conversationKey },
+    select: { lastCustomerMessageAt: true },
+  });
+  if (!row?.lastCustomerMessageAt) return true; // no signal, optimistic
+  return Date.now() - row.lastCustomerMessageAt.getTime() <= INSTAGRAM_REPLY_WINDOW_MS;
+}
+
+/**
+ * Instagram outbound media flow.
+ *
+ *   1) eager-cache the bytes to R2 (so the conversation history works
+ *      cross-device immediately, and so we have a stable signed URL to
+ *      hand to Meta).
+ *   2) POST the R2 signed URL to /{ig_user_id}/message_attachments with
+ *      is_reusable=true → get attachment_id.
+ *   3) POST the message to /{ig_user_id}/messages with the attachment_id
+ *      payload. Meta delivers it to the customer.
+ *
+ * Notes:
+ *   - The signed R2 URL is valid for 30 minutes (presignReadUrl default).
+ *     Meta downloads it during step 2, well within window.
+ *   - 24-hour reply window is enforced before any Meta call — returns
+ *     instagram_reply_window_expired so the caller can show a banner.
+ *   - Instagram outbound audio: Meta accepts AAC/M4A/MP3 (we ship M4A
+ *     from capacitor-voice-recorder), no extra transcode.
+ */
+async function instagramUploadAndSend(opts: {
+  salonId: number;
+  conversationKey: string;
+  recipientPsid: string;
+  cached: MediaCachedMeta;
+  kind: MediaKind;
+}): Promise<{ providerMessageId: string; metaAttachmentId: string }> {
+  const identity = await resolveInstagramIdentity(opts.salonId);
+  if (!identity) throw new Error('salon_instagram_not_connected');
+
+  const windowOpen = await isInstagramReplyWindowOpen(opts.salonId, opts.conversationKey);
+  if (!windowOpen) throw new Error('instagram_reply_window_expired');
+
+  // Mint a signed R2 URL Meta can fetch. Public download with the query
+  // signature — no auth header needed by Meta.
+  const r2Url = await presignReadUrl(opts.cached);
+  if (!r2Url) throw new Error('r2_presign_failed');
+
+  // Step 1: upload as a reusable attachment to get back an attachment_id.
+  //
+  // POST https://graph.instagram.com/{ver}/{ig_user_id}/message_attachments
+  //   ?access_token=...
+  // Body:
+  //   { message: { attachment: { type, payload: { is_reusable: true, url } } } }
+  const uploadUrl = `${META_INSTAGRAM_GRAPH_BASE}/${encodeURIComponent(identity.senderInstagramId)}/message_attachments`;
+  const uploadResp = await axios.post(
+    uploadUrl,
+    {
+      message: {
+        attachment: {
+          type: opts.kind, // image|video|audio
+          payload: { is_reusable: true, url: r2Url },
+        },
+      },
+    },
+    {
+      params: { access_token: identity.accessToken },
+      timeout: 60_000,
+    },
+  );
+  const metaAttachmentId = String(uploadResp.data?.attachment_id || '').trim();
+  if (!metaAttachmentId) throw new Error('instagram_attachment_upload_no_id');
+
+  // Step 2: send via /messages with attachment_id reference.
+  const sendUrl = `${META_INSTAGRAM_GRAPH_BASE}/${encodeURIComponent(identity.senderInstagramId)}/messages`;
+  const sendResp = await axios.post(
+    sendUrl,
+    {
+      recipient: { id: opts.recipientPsid },
+      message: {
+        attachment: {
+          type: opts.kind,
+          payload: { attachment_id: metaAttachmentId },
+        },
+      },
+    },
+    {
+      params: { access_token: identity.accessToken },
+      timeout: 25_000,
+    },
+  );
+  const providerMessageId = String(
+    sendResp.data?.message_id ||
+      `ig_out_${randomToken(8)}`,
+  );
+  return { providerMessageId, metaAttachmentId };
+}
+
 function kindToExt(kind: MediaKind, mime: string): string {
   const m = mime.toLowerCase();
   if (kind === 'image') return m.includes('png') ? 'png' : 'jpg';
@@ -171,45 +302,67 @@ export async function sendOutboundMedia(input: SendMediaInput): Promise<SendMedi
     throw new Error(`media_too_large: ${kind} exceeds ${MEDIA_LIMITS[kind]} bytes`);
   }
 
-  if (input.channel === 'INSTAGRAM') {
-    // Instagram outbound requires the full PSID/recipient resolution dance
-    // implemented in adminMobile.ts's /reply handler. Faz 1 ships WhatsApp
-    // first; IG outbound is scheduled for Faz 1.5.
-    throw new Error('instagram_outbound_not_implemented');
-  }
-  if (input.channel !== 'WHATSAPP') {
+  if (input.channel !== 'WHATSAPP' && input.channel !== 'INSTAGRAM') {
     throw new Error('unsupported_channel');
   }
 
-  // Step 1: dispatch to Meta first so a failed upload doesn't leave a
-  // ghost R2 object + DB row that the salon never actually sent.
-  const { providerMessageId, metaMediaId } = await whatsAppUploadAndSend(input);
-
-  // Step 2: now that Meta accepted, persist to R2 (eager cache).
-  // Reserve a synthetic messageId before insert so the R2 key can include
-  // it. We'll use the providerMessageId hash; the actual DB row gets
-  // created in step 3 and references the same R2 key via mediaCached.
+  // ── Order of operations differs by channel ────────────────────────
   //
-  // We can't know the auto-incremented id ahead of time, so build the
-  // R2 key from providerMessageId + index to keep keys stable. Then the
-  // DB row carries the r2Key in mediaCached and read endpoint resolves
-  // by stored key, not by re-derivation.
-  const fakeMessageIdForKey = Math.abs(hashStr(providerMessageId)) % 2_000_000_000;
-  const cached = await putToR2({
-    salonId: input.salonId,
-    channel: input.channel,
-    conversationKey: input.conversationKey,
-    messageId: fakeMessageIdForKey,
-    mediaIndex: 0,
-    mimeType: input.mimeType,
-    kind,
-    buffer: input.buffer,
-  });
-  if (!cached) {
-    // Meta accepted the send but our R2 write failed. The customer will
-    // see the message on their phone but our staff can't replay it from
-    // history. Surface the failure; admin can retrigger ingestion later.
-    throw new Error('r2_eager_cache_failed');
+  // WhatsApp: multipart upload to Meta first, then R2. If Meta accepts
+  //   we know the WABA likes the bytes, so committing to R2 makes sense.
+  //
+  // Instagram: Meta needs a publicly-fetchable URL to ingest, so we
+  //   MUST write to R2 first to mint a signed URL. The send-to-Meta
+  //   call then references that URL.
+  //
+  // Both paths converge on the same DB write at the end.
+  let providerMessageId: string;
+  let metaIdentifier: string; // WA media_id or IG attachment_id
+  let cached: MediaCachedMeta;
+
+  if (input.channel === 'WHATSAPP') {
+    const wa = await whatsAppUploadAndSend(input);
+    providerMessageId = wa.providerMessageId;
+    metaIdentifier = wa.metaMediaId;
+
+    const fakeMessageIdForKey = Math.abs(hashStr(providerMessageId)) % 2_000_000_000;
+    const persisted = await putToR2({
+      salonId: input.salonId,
+      channel: input.channel,
+      conversationKey: input.conversationKey,
+      messageId: fakeMessageIdForKey,
+      mediaIndex: 0,
+      mimeType: input.mimeType,
+      kind,
+      buffer: input.buffer,
+    });
+    if (!persisted) throw new Error('r2_eager_cache_failed');
+    cached = persisted;
+  } else {
+    // Instagram: R2 first so we have a URL to give Meta.
+    const synthIdForKey = Math.abs(hashStr(`${input.conversationKey}:${Date.now()}`)) % 2_000_000_000;
+    const persisted = await putToR2({
+      salonId: input.salonId,
+      channel: input.channel,
+      conversationKey: input.conversationKey,
+      messageId: synthIdForKey,
+      mediaIndex: 0,
+      mimeType: input.mimeType,
+      kind,
+      buffer: input.buffer,
+    });
+    if (!persisted) throw new Error('r2_eager_cache_failed');
+    cached = persisted;
+
+    const ig = await instagramUploadAndSend({
+      salonId: input.salonId,
+      conversationKey: input.conversationKey,
+      recipientPsid: input.recipientPhoneOrPsid,
+      cached,
+      kind,
+    });
+    providerMessageId = ig.providerMessageId;
+    metaIdentifier = ig.metaAttachmentId;
   }
 
   const mediaItem: MediaItemMeta = {
@@ -219,10 +372,10 @@ export async function sendOutboundMedia(input: SendMediaInput): Promise<SendMedi
     sizeBytes: input.buffer.length,
     isVoice: kind === 'audio' && !!input.isVoice,
     caption: input.caption || undefined,
-    providerMediaId: metaMediaId,
+    providerMediaId: metaIdentifier,
   };
 
-  // Step 3: persist conversation event.
+  // Persist the conversation event with media metadata + R2 reference.
   await upsertConversationMessageEvent({
     salonId: input.salonId,
     channel: input.channel,
@@ -239,13 +392,17 @@ export async function sendOutboundMedia(input: SendMediaInput): Promise<SendMedi
     rawPayload: {
       kind: 'outbound_media',
       channel: input.channel,
-      metaMediaId,
+      metaIdentifier,
       sentAt: new Date().toISOString(),
     } as Prisma.InputJsonValue,
     mediaItems: [mediaItem] as unknown as Prisma.InputJsonValue,
     mediaCached: [cached] as unknown as Prisma.InputJsonValue,
     mediaCachedAt: new Date(),
-    metaMediaIds: { whatsapp: metaMediaId } as Prisma.InputJsonValue,
+    metaMediaIds: (
+      input.channel === 'WHATSAPP'
+        ? { whatsapp: metaIdentifier }
+        : { instagram: metaIdentifier }
+    ) as Prisma.InputJsonValue,
   });
 
   // Look up the row we just inserted so we can return its id to the caller.

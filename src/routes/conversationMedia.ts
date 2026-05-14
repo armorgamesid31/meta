@@ -287,19 +287,28 @@ router.post(
       });
     } catch (err: any) {
       const msg = err?.message || String(err);
-      if (msg === 'instagram_outbound_not_implemented') {
-        throw new BusinessError(
-          'NOT_IMPLEMENTED',
-          'Instagram\'a medya gönderimi henüz desteklenmiyor.',
-          501,
-        );
-      }
       if (msg === 'salon_whatsapp_not_connected') {
         throw new BusinessError(
           'PRECONDITION_FAILED',
           'WhatsApp bağlantısı eksik.',
           412,
         );
+      }
+      if (msg === 'salon_instagram_not_connected') {
+        throw new BusinessError(
+          'PRECONDITION_FAILED',
+          'Instagram bağlantısı eksik.',
+          412,
+        );
+      }
+      if (msg === 'instagram_reply_window_expired') {
+        // 24-hour customer-service window closed — Instagram blocks
+        // non-template outbound until customer messages again.
+        return res.status(409).json({
+          ok: false,
+          errorCode: 'INSTAGRAM_WINDOW_EXPIRED',
+          message: 'Instagram 24 saat yanıt penceresi kapalı. Müşterinin tekrar yazması gerekiyor.',
+        });
       }
       if (msg.startsWith('media_too_large')) {
         throw new BusinessError('PAYLOAD_TOO_LARGE', 'Boyut sınırını aşıyor.', 413);
