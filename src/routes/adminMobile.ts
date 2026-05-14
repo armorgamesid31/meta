@@ -10056,6 +10056,8 @@ router.post('/conversations/:channel/:conversationKey/handover', authenticateTok
             id: true,
             email: true,
             displayName: true,
+            firstName: true,
+            lastName: true,
           },
         })
       : null;
@@ -10063,7 +10065,13 @@ router.post('/conversations/:channel/:conversationKey/handover', authenticateTok
       typeof senderUser?.email === 'string' && senderUser.email.trim() ? senderUser.email.trim() : null;
     const senderUserDisplayName =
       typeof senderUser?.displayName === 'string' && senderUser.displayName.trim() ? senderUser.displayName.trim() : null;
-    const takeoverActorLabel = senderUserDisplayName || senderUserEmail || 'Salon Ekibi';
+    const senderUserFullName = (() => {
+      const first = typeof senderUser?.firstName === 'string' ? senderUser.firstName.trim() : '';
+      const last = typeof senderUser?.lastName === 'string' ? senderUser.lastName.trim() : '';
+      const joined = `${first} ${last}`.trim();
+      return joined || null;
+    })();
+    const takeoverActorLabel = senderUserFullName || senderUserDisplayName || senderUserEmail || 'Salon Ekibi';
     const stateCandidates = Array.from(
       new Set([...keyCandidates, ...conversationKeyCandidates(channel, resolvedConversationKey)]),
     );
@@ -10138,7 +10146,7 @@ router.post('/conversations/:channel/:conversationKey/handover', authenticateTok
         actor: {
           userId: senderUser?.id || null,
           email: senderUserEmail,
-          displayName: senderUserDisplayName,
+          displayName: senderUserFullName || senderUserDisplayName,
         },
       } as any,
     });
@@ -10237,6 +10245,8 @@ router.post('/conversations/:channel/:conversationKey/resume-auto', authenticate
             id: true,
             email: true,
             displayName: true,
+            firstName: true,
+            lastName: true,
           },
         })
       : null;
@@ -10244,7 +10254,13 @@ router.post('/conversations/:channel/:conversationKey/resume-auto', authenticate
       typeof senderUser?.email === 'string' && senderUser.email.trim() ? senderUser.email.trim() : null;
     const senderUserDisplayName =
       typeof senderUser?.displayName === 'string' && senderUser.displayName.trim() ? senderUser.displayName.trim() : null;
-    const resumeActorLabel = senderUserDisplayName || senderUserEmail || 'Salon Ekibi';
+    const senderUserFullName = (() => {
+      const first = typeof senderUser?.firstName === 'string' ? senderUser.firstName.trim() : '';
+      const last = typeof senderUser?.lastName === 'string' ? senderUser.lastName.trim() : '';
+      const joined = `${first} ${last}`.trim();
+      return joined || null;
+    })();
+    const resumeActorLabel = senderUserFullName || senderUserDisplayName || senderUserEmail || 'Salon Ekibi';
 
     const updatedState = await markConversationAuto({
       salonId,
@@ -10266,7 +10282,7 @@ router.post('/conversations/:channel/:conversationKey/resume-auto', authenticate
       externalAccountId: latestInbound.externalAccountId || '',
       customerName: latestInbound.customerName || null,
       messageType: 'manual_resume',
-      text: `${resumeActorLabel} KEDY AI'ı devreye aldı.`,
+      text: `${resumeActorLabel} Kedy AI'ı devreye aldı.`,
       direction: 'SYSTEM',
       eventTimestamp: new Date(),
       processingStatus: InboundMessageStatus.DONE,
@@ -10277,7 +10293,7 @@ router.post('/conversations/:channel/:conversationKey/resume-auto', authenticate
         actor: {
           userId: senderUser?.id || null,
           email: senderUserEmail,
-          displayName: senderUserDisplayName,
+          displayName: senderUserFullName || senderUserDisplayName,
         },
       } as any,
     });
