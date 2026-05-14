@@ -24,6 +24,15 @@ import { listTemplateKeys, ALL_TONES, getVariationBySlot } from '../services/tem
 
 const router = Router();
 
+// Silent rate-limit for ?refresh=1 calls. The button stays clickable so
+// users don't feel locked out, but only one Meta pull is allowed per
+// salon every REFRESH_COOLDOWN_MS. Repeated taps inside the window fall
+// through to the cached DB state. The hourly background loop still runs
+// independently, so freshness never lags more than an hour even when
+// the user hammers the button.
+const REFRESH_COOLDOWN_MS = 10 * 60 * 1000;
+const lastRefreshBySalon = new Map<number, number>();
+
 interface TemplateStatusItem {
   key: string;
   name: string;
@@ -81,12 +90,19 @@ router.get('/templates/status', authenticateToken, async (req: any, res) => {
   // The mobile "Yenile" button passes ?refresh=1 to force a fresh pull
   // from Meta before computing status. Without this, the user has to
   // wait up to an hour for the background reconcile loop to catch up
-  // with Meta's APPROVED webhooks (which sometimes never fire).
+  // with Meta's APPROVED webhooks (which sometimes never fire). A
+  // silent 10-minute cooldown keeps frantic taps from burning Meta's
+  // business-management rate limit (200/hour/BSP token).
   if (req.query?.refresh === '1' || req.query?.refresh === 'true') {
-    try {
-      await reconcileSalonFromMeta(salonId, salon.chakraPluginId);
-    } catch (err) {
-      console.error('[templates/status] reconcile failed:', err);
+    const last = lastRefreshBySalon.get(salonId) || 0;
+    const now = Date.now();
+    if (now - last >= REFRESH_COOLDOWN_MS) {
+      lastRefreshBySalon.set(salonId, now);
+      try {
+        await reconcileSalonFromMeta(salonId, salon.chakraPluginId);
+      } catch (err) {
+        console.error('[templates/status] reconcile failed:', err);
+      }
     }
   }
 
