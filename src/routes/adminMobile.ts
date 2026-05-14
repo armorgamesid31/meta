@@ -9455,6 +9455,8 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
         repliedToMessageId: true,
         repliedToProviderMessageId: true,
         repliedToText: true,
+        voiceTranscript: true,
+        voiceTranscriptLang: true,
       },
     });
     const stateRows = await prisma.conversationState.findMany({
@@ -9537,6 +9539,8 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
         repliedToMessageId: row.repliedToMessageId ?? null,
         repliedToProviderMessageId: row.repliedToProviderMessageId ?? null,
         repliedToText: row.repliedToText ?? null,
+        voiceTranscript: row.voiceTranscript ?? null,
+        voiceTranscriptLang: row.voiceTranscriptLang ?? null,
         raw,
       };
     });
