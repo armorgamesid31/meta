@@ -37,6 +37,11 @@ type UpsertConversationMessageEventInput = {
   mediaCached?: Prisma.InputJsonValue | null;
   mediaCachedAt?: Date | null;
   metaMediaIds?: Prisma.InputJsonValue | null;
+  // Quote-reply: which earlier message this reply targets (DB id + provider
+  // id for Meta context, plus a text snapshot for the UI's quoted block).
+  repliedToMessageId?: number | null;
+  repliedToProviderMessageId?: string | null;
+  repliedToText?: string | null;
 };
 
 export async function upsertConversationMessageEvent(
@@ -88,6 +93,9 @@ export async function upsertConversationMessageEvent(
         ...(input.mediaCached !== undefined ? { mediaCached: input.mediaCached } : {}),
         ...(input.mediaCachedAt !== undefined ? { mediaCachedAt: input.mediaCachedAt } : {}),
         ...(input.metaMediaIds !== undefined ? { metaMediaIds: input.metaMediaIds } : {}),
+        ...(input.repliedToMessageId !== undefined ? { repliedToMessageId: input.repliedToMessageId } : {}),
+        ...(input.repliedToProviderMessageId !== undefined ? { repliedToProviderMessageId: input.repliedToProviderMessageId } : {}),
+        ...(input.repliedToText !== undefined ? { repliedToText: input.repliedToText } : {}),
         updatedAt: new Date(),
       },
       create: {
@@ -110,6 +118,9 @@ export async function upsertConversationMessageEvent(
         mediaCached: input.mediaCached ?? undefined,
         mediaCachedAt: input.mediaCachedAt ?? undefined,
         metaMediaIds: input.metaMediaIds ?? undefined,
+        repliedToMessageId: input.repliedToMessageId ?? undefined,
+        repliedToProviderMessageId: input.repliedToProviderMessageId ?? undefined,
+        repliedToText: input.repliedToText ?? undefined,
       },
       select: {
         id: true,

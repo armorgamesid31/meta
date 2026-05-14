@@ -9452,6 +9452,9 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
         eventTimestamp: true,
         rawPayload: true,
         mediaItems: true,
+        repliedToMessageId: true,
+        repliedToProviderMessageId: true,
+        repliedToText: true,
       },
     });
     const stateRows = await prisma.conversationState.findMany({
@@ -9531,6 +9534,9 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
         systemActorDisplayName,
         eventTimestamp: row.eventTimestamp.toISOString(),
         mediaItems: Array.isArray(row.mediaItems) ? row.mediaItems : null,
+        repliedToMessageId: row.repliedToMessageId ?? null,
+        repliedToProviderMessageId: row.repliedToProviderMessageId ?? null,
+        repliedToText: row.repliedToText ?? null,
         raw,
       };
     });
@@ -9562,6 +9568,10 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
   }
 
   const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
+  // Optional quote-reply: row id of the message we're replying to. The
+  // composer's long-press menu populates this. We resolve the provider id
+  // server-side so the client can't spoof a different conversation.
+  const replyToMessageId = Number(req.body?.replyToMessageId) || null;
   if (!text) {
     throw new BusinessError('VALIDATION_FAILED', 'text is required.', 400);
   }
@@ -9709,8 +9719,46 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
     let graphMessageId = '';
     let usedExternalAccountId = '';
 
+    // Resolve quote-reply target if requested. We pull both the provider
+    // message id (for Meta's context payload) and a text snapshot to fill
+    // the quoted-block UI on the new message's bubble.
+    let replyToProviderMessageId: string | null = null;
+    let replyToText: string | null = null;
+    if (replyToMessageId) {
+      const target = await prisma.conversationMessageEvent.findUnique({
+        where: { id: replyToMessageId },
+        select: {
+          salonId: true,
+          providerMessageId: true,
+          text: true,
+          messageType: true,
+          mediaItems: true,
+        },
+      });
+      if (target && target.salonId === salonId) {
+        replyToProviderMessageId = target.providerMessageId || null;
+        replyToText =
+          target.text ||
+          (() => {
+            const items = Array.isArray(target.mediaItems)
+              ? (target.mediaItems as any[])
+              : [];
+            const first = items[0];
+            if (!first) return null;
+            if (first.type === 'image') return '📷 Görsel';
+            if (first.type === 'video') return '🎬 Video';
+            if (first.type === 'audio') return first.isVoice ? '🎙️ Sesli mesaj' : '🎵 Ses';
+            return null;
+          })() ||
+          target.messageType;
+      }
+    }
+
     if (channel === 'INSTAGRAM') {
       const url = `https://graph.instagram.com/${META_GRAPH_VERSION}/${senderInstagramId}/messages`;
+      // Instagram's Graph API for direct doesn't support reply context for
+      // text in the way Messenger does. We still persist the local pointer
+      // so the bubble shows a quoted block on our side.
       const graphResponse = await axios.post(
         url,
         {
@@ -9760,15 +9808,20 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
       const cleanTo = rawRecipientId.replace(/\D/g, '');
       const url = `https://api.chakrahq.com/v1/ext/plugin/whatsapp/${pluginId}/api/v19.0/${phoneId}/messages`;
       
+      const whatsappPayload: Record<string, unknown> = {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: cleanTo,
+        type: 'text',
+        text: { body: text },
+      };
+      // WhatsApp quote-reply via context.message_id.
+      if (replyToProviderMessageId) {
+        whatsappPayload.context = { message_id: replyToProviderMessageId };
+      }
       const whatsappResponse = await axios.post(
         url,
-        {
-          messaging_product: 'whatsapp',
-          recipient_type: 'individual',
-          to: cleanTo,
-          type: 'text',
-          text: { body: text },
-        },
+        whatsappPayload,
         {
           headers: { Authorization: `Bearer ${token}` },
           timeout: 20000,
@@ -9878,6 +9931,9 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
           email: senderUserEmail,
         },
       } as any,
+      repliedToMessageId: replyToMessageId,
+      repliedToProviderMessageId: replyToProviderMessageId,
+      repliedToText: replyToText,
     });
 
     await markConversationHumanActive({

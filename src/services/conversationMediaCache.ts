@@ -63,6 +63,7 @@ export interface MediaItemMeta {
   sizeBytes?: number;
   durationSec?: number;
   isVoice?: boolean;
+  isSticker?: boolean;
   caption?: string;
   providerMediaId?: string | null;
   providerMediaUrl?: string | null;
@@ -156,10 +157,12 @@ export function isMediaCacheEnabled(): boolean {
 
 export function classifyMediaKind(typeHint: string): MediaKind | null {
   const t = typeHint.toLowerCase();
-  // Stickers and documents are intentionally excluded from Faz 1 — we only
-  // render image / video / audio. They'll show as text fallback (no media
-  // chip) until faz 2 wires them up.
-  if (t === 'image') return 'image';
+  // Document/PDF intentionally excluded — salons don't typically need to
+  // exchange files, and rendering documents adds significant complexity
+  // (preview, download flow). Stickers map to 'image' so they ride the
+  // same R2 cache pipeline; the UI tags them with isSticker for a small
+  // visual differentiator.
+  if (t === 'image' || t === 'sticker') return 'image';
   if (t === 'video') return 'video';
   if (t === 'audio' || t === 'voice') return 'audio';
   return null;
@@ -186,13 +189,15 @@ export function buildMediaItemsFromWebhook(
   for (let i = 0; i < raw.length; i++) {
     const m = raw[i];
     if (!m) continue;
-    const kind = classifyMediaKind(String(m.type || ''));
+    const rawType = String(m.type || '').toLowerCase();
+    const kind = classifyMediaKind(rawType);
     if (!kind) continue;
     out.push({
       index: out.length,
       type: kind,
       mimeType: (m.mimeType || m.mime_type || '').toString(),
-      isVoice: m.voice === true || (kind === 'audio' && String(m.type).toLowerCase() === 'voice'),
+      isVoice: m.voice === true || (kind === 'audio' && rawType === 'voice'),
+      isSticker: rawType === 'sticker',
       caption: m.caption ? String(m.caption) : undefined,
       providerMediaId: m.id ? String(m.id) : null,
       providerMediaUrl: m.url ? String(m.url) : null,

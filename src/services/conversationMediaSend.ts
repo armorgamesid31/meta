@@ -57,6 +57,14 @@ export interface SendMediaInput {
   isVoice?: boolean;
   senderUserId?: number | null;
   senderUserEmail?: string | null;
+  // Optional quote-reply: when set, the outbound message will be threaded
+  // under the original. WhatsApp uses `context.message_id`. Instagram
+  // currently doesn't expose first-class reply-threading for media via
+  // Graph API, so the in-DB pointer still wires the bubble UI but Meta
+  // won't show a quoted block on Instagram's side.
+  replyToProviderMessageId?: string | null;
+  replyToMessageId?: number | null;
+  replyToText?: string | null;
 }
 
 export interface SendMediaResult {
@@ -127,13 +135,17 @@ async function whatsAppUploadAndSend(
   if (input.kind === 'audio' && input.isVoice) {
     mediaPayload.voice = true;
   }
-  const body = {
+  const body: Record<string, unknown> = {
     messaging_product: 'whatsapp',
     recipient_type: 'individual',
     to: input.recipientPhoneOrPsid,
     type: whatsAppType,
     [whatsAppType]: mediaPayload,
   };
+  // Quote-reply: WhatsApp threads the new message under the original.
+  if (input.replyToProviderMessageId) {
+    body.context = { message_id: input.replyToProviderMessageId };
+  }
   const sendResp = await axios.post(sendUrl, body, {
     headers: {
       Authorization: `Bearer ${CHAKRA_API_TOKEN}`,
@@ -403,6 +415,9 @@ export async function sendOutboundMedia(input: SendMediaInput): Promise<SendMedi
         ? { whatsapp: metaIdentifier }
         : { instagram: metaIdentifier }
     ) as Prisma.InputJsonValue,
+    repliedToMessageId: input.replyToMessageId ?? undefined,
+    repliedToProviderMessageId: input.replyToProviderMessageId ?? undefined,
+    repliedToText: input.replyToText ?? undefined,
   });
 
   // Look up the row we just inserted so we can return its id to the caller.

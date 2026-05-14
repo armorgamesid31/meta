@@ -59,6 +59,21 @@ function parseKind(value: unknown): MediaKind | null {
   return null;
 }
 
+/**
+ * Turn a mediaItems JSON column into a short label like "📷 Görsel" or
+ * "🎙️ Sesli mesaj" — used as the quoted-block fallback text when the
+ * original message has no body (image/video/audio with no caption).
+ */
+function labelForMediaTypes(items: unknown): string | null {
+  if (!Array.isArray(items) || items.length === 0) return null;
+  const first = items[0] as { type?: string; isVoice?: boolean } | undefined;
+  if (!first) return null;
+  if (first.type === 'image') return '📷 Görsel';
+  if (first.type === 'video') return '🎬 Video';
+  if (first.type === 'audio') return first.isVoice ? '🎙️ Sesli mesaj' : '🎵 Ses';
+  return null;
+}
+
 router.get(
   '/conversations/messages/:messageId/media/:mediaIndex',
   authenticateToken,
@@ -260,6 +275,30 @@ router.post(
       : null;
     const isVoice = req.body?.isVoice === '1' || req.body?.isVoice === 'true';
 
+    // Optional quote-reply target. The frontend long-press menu sets these.
+    // We look up the row by id (scoped to the same salon) and pass both
+    // the DB pointer and the provider message id into the send pipeline so
+    // Meta's reply context payload can attach.
+    const replyToMessageId = Number(req.body?.replyToMessageId) || null;
+    let replyToProviderMessageId: string | null = null;
+    let replyToText: string | null = null;
+    if (replyToMessageId) {
+      const target = await prisma.conversationMessageEvent.findUnique({
+        where: { id: replyToMessageId },
+        select: {
+          salonId: true,
+          providerMessageId: true,
+          text: true,
+          messageType: true,
+          mediaItems: true,
+        },
+      });
+      if (target && target.salonId === salonId) {
+        replyToProviderMessageId = target.providerMessageId || null;
+        replyToText = target.text || labelForMediaTypes(target.mediaItems) || target.messageType;
+      }
+    }
+
     const senderUserId = Number.isInteger(Number(req.user?.userId))
       ? Number(req.user.userId)
       : null;
@@ -278,6 +317,9 @@ router.post(
         isVoice,
         senderUserId,
         senderUserEmail,
+        replyToMessageId,
+        replyToProviderMessageId,
+        replyToText,
       });
       return res.status(200).json({
         ok: true,
