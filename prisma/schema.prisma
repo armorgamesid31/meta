@@ -52,6 +52,13 @@ model Salon {
   // null until the salon has any completed journey tasks.
   kurulumScore                Int                              @default(0)
   kurulumStage                String?
+  // Per-salon theme config (mobile admin writes, public homepage reads).
+  // themeResolved is derived at write time from brandColor so reads avoid
+  // re-deriving. JSON shape: ResolvedThemeTokens in src/lib/theme/derive.ts.
+  themePreset                 String?
+  brandColor                  String?
+  themeUpdatedAt              DateTime?
+  themeResolved               Json?
   analyticsPresets            AnalyticsPreset[]
   appointments                Appointment[]
   campaignApplications        AppointmentCampaignApplication[]
@@ -1385,54 +1392,54 @@ model InboundMessageQueue {
 }
 
 model ConversationMessageEvent {
-  id                   Int                    @id @default(autoincrement())
-  salonId              Int
-  channel              ChannelType
-  conversationKey      String
-  providerMessageId    String
-  externalAccountId    String?
-  customerName         String?
-  messageType          String
-  text                 String?
-  direction            MessageEventDirection
-  eventTimestamp       DateTime               @db.Timestamp(6)
-  processingStatus     InboundMessageStatus?  @default(DONE)
-  outboundSource       OutboundMessageSource?
-  outboundSenderUserId Int?
-  outboundSenderEmail  String?
-  rawPayload           Json
+  id                         Int                    @id @default(autoincrement())
+  salonId                    Int
+  channel                    ChannelType
+  conversationKey            String
+  providerMessageId          String
+  externalAccountId          String?
+  customerName               String?
+  messageType                String
+  text                       String?
+  direction                  MessageEventDirection
+  eventTimestamp             DateTime               @db.Timestamp(6)
+  processingStatus           InboundMessageStatus?  @default(DONE)
+  outboundSource             OutboundMessageSource?
+  outboundSenderUserId       Int?
+  outboundSenderEmail        String?
+  rawPayload                 Json
   // Structured media metadata pulled out of rawPayload at webhook time so
   // the read path doesn't have to dig into channel-specific JSON shapes.
   // Each entry: { index, type: 'image'|'video'|'audio', mimeType, sizeBytes?,
   //   durationSec?, isVoice?, caption?, providerMediaId?, providerMediaUrl? }
-  mediaItems           Json?
+  mediaItems                 Json?
   // Populated when each media item is downloaded from Meta and stored in
   // our R2 bucket. Each entry: { index, r2Key, r2Bucket, sha256, cachedAt }.
   // Inbound rows fill this lazily on first view; outbound rows fill it at
   // send time (eager cache).
-  mediaCached          Json?
-  mediaCachedAt        DateTime?              @db.Timestamp(6)
+  mediaCached                Json?
+  mediaCachedAt              DateTime?              @db.Timestamp(6)
   // For outbound messages: stores Meta's media_id (WA) / attachment_id (IG)
   // we got back when uploading our R2-staged file to Meta. Lets us reuse the
   // same upload across retries without re-uploading.
-  metaMediaIds         Json?
+  metaMediaIds               Json?
   // Quote-reply: pointers + text snapshot of the original message this
   // reply targets. The DB id lets us link to the source row in our system;
   // the provider id is what we hand to Meta's reply context payload; the
   // text snapshot lets the UI render the quoted block even if the source
   // message is later edited or its media expires.
-  repliedToMessageId        Int?
+  repliedToMessageId         Int?
   repliedToProviderMessageId String?
-  repliedToText             String?
+  repliedToText              String?
   // Voice message transcript pushed back by the n8n AI agent workflow
   // after Whisper finishes. Faz 2 surface — saves a second transcription
   // call by reusing the one n8n already does for prompt context.
-  voiceTranscript      String?
-  voiceTranscriptLang  String?
-  voiceTranscriptAt    DateTime?              @db.Timestamp(6)
-  createdAt            DateTime?              @default(now()) @db.Timestamp(6)
-  updatedAt            DateTime?              @default(now()) @updatedAt @db.Timestamp(6)
-  salon                Salon                  @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  voiceTranscript            String?
+  voiceTranscriptLang        String?
+  voiceTranscriptAt          DateTime?              @db.Timestamp(6)
+  createdAt                  DateTime?              @default(now()) @db.Timestamp(6)
+  updatedAt                  DateTime?              @default(now()) @updatedAt @db.Timestamp(6)
+  salon                      Salon                  @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([channel, providerMessageId], map: "uq_message_event_channel_provider")
   @@index([salonId, channel, conversationKey, eventTimestamp], map: "idx_message_event_salon_conv_ts")

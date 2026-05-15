@@ -1,11 +1,12 @@
 import { Router } from 'express';
 import axios from 'axios';
 import { randomUUID } from 'node:crypto';
-import { CampaignType, InboundMessageStatus, OutboundMessageSource, type CustomerGender } from '@prisma/client';
+import { CampaignType, InboundMessageStatus, OutboundMessageSource, Prisma, type CustomerGender } from '@prisma/client';
 import { prisma } from '../prisma.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { BusinessError } from '../lib/errors.js';
+import { deriveTones, isBlockedPastel, isPresetId, normalizeHex } from '../lib/theme/derive.js';
 import { syncCustomerToGlobalIdentity } from '../services/globalCustomerIdentity.js';
 import {
   CreateAdminCustomerInputSchema,
@@ -304,6 +305,81 @@ router.post('/website/generate', authenticateToken, async (req: any, res: any) =
     return res.status(200).json({ generated });
   } catch (error) {
     console.error('Admin website copy generate error:', error);
+    throw error;
+  }
+});
+
+router.get('/website/theme', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  try {
+    const salon = await prisma.salon.findUnique({
+      where: { id: salonId },
+      select: {
+        themePreset: true,
+        brandColor: true,
+        themeUpdatedAt: true,
+        themeResolved: true,
+      },
+    });
+
+    if (!salon) {
+      throw new BusinessError('NOT_FOUND', 'Salon not found.', 404);
+    }
+
+    return res.status(200).json({
+      preset: salon.themePreset,
+      brandColor: salon.brandColor,
+      themeUpdatedAt: salon.themeUpdatedAt,
+      themeResolved: salon.themeResolved,
+    });
+  } catch (error) {
+    console.error('Admin website theme read error:', error);
+    throw error;
+  }
+});
+
+router.put('/website/theme', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  const body = (req.body ?? {}) as { preset?: unknown; brandColor?: unknown };
+
+  if (!isPresetId(body.preset)) {
+    throw new BusinessError('VALIDATION_FAILED', 'INVALID_PRESET', 400);
+  }
+  const normalizedHex = typeof body.brandColor === 'string' ? normalizeHex(body.brandColor) : null;
+  if (!normalizedHex) {
+    throw new BusinessError('VALIDATION_FAILED', 'INVALID_HEX', 400);
+  }
+  if (isBlockedPastel(normalizedHex)) {
+    throw new BusinessError('VALIDATION_FAILED', 'PASTEL_BLOCKED', 400);
+  }
+
+  const resolved = deriveTones(normalizedHex, body.preset);
+
+  try {
+    const updated = await prisma.salon.update({
+      where: { id: salonId },
+      data: {
+        themePreset: body.preset,
+        brandColor: normalizedHex,
+        themeUpdatedAt: new Date(),
+        themeResolved: resolved as unknown as Prisma.InputJsonValue,
+      },
+      select: {
+        themePreset: true,
+        brandColor: true,
+        themeUpdatedAt: true,
+        themeResolved: true,
+      },
+    });
+
+    return res.status(200).json({
+      preset: updated.themePreset,
+      brandColor: updated.brandColor,
+      themeUpdatedAt: updated.themeUpdatedAt,
+      themeResolved: updated.themeResolved,
+    });
+  } catch (error) {
+    console.error('Admin website theme update error:', error);
     throw error;
   }
 });

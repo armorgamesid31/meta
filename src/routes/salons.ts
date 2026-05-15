@@ -1,6 +1,13 @@
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { BusinessError } from '../lib/errors.js';
+import {
+  PRESET_DEFAULT_BRAND,
+  deriveTones,
+  isPresetId,
+  type PresetId,
+  type ResolvedThemeTokens,
+} from '../lib/theme/derive.js';
 
 const router = Router();
 const DEFAULT_GALLERY_IMAGES = ['/placeholder.jpg', '/placeholder.jpg?slide=2', '/placeholder.jpg?slide=3'];
@@ -86,6 +93,10 @@ router.get('/:slug/homepage', async (req: any, res: any) => {
         instagramUrl: true,
         whatsappPhone: true,
         bookingMode: true,
+        themePreset: true,
+        brandColor: true,
+        themeUpdatedAt: true,
+        themeResolved: true,
         settings: {
           select: {
             workStartHour: true,
@@ -215,6 +226,18 @@ router.get('/:slug/homepage', async (req: any, res: any) => {
       bookingMode === 'WHATSAPP' && normalizedWhatsappPhone
         ? `https://wa.me/${normalizedWhatsappPhone}`
         : '/randevu';
+
+    const themePreset: PresetId = isPresetId(salon.themePreset) ? salon.themePreset : 'classic';
+    const themeBrandColor = salon.brandColor || PRESET_DEFAULT_BRAND[themePreset];
+    const themeResolved: ResolvedThemeTokens =
+      (salon.themeResolved as unknown as ResolvedThemeTokens | null) ??
+      deriveTones(PRESET_DEFAULT_BRAND[themePreset], themePreset);
+    const theme = {
+      preset: themePreset,
+      brandColor: themeBrandColor,
+      logoUrl: salon.logoUrl,
+      resolved: themeResolved,
+    };
 
     const gallery =
       salon.galleryImages.length > 0
@@ -346,6 +369,7 @@ router.get('/:slug/homepage', async (req: any, res: any) => {
         whatsappPhone: normalizedWhatsappPhone,
         bookingUrl,
       },
+      theme,
     });
   } catch (error) {
     console.error('Error loading salon homepage:', error);
