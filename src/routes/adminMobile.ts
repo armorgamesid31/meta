@@ -2358,9 +2358,19 @@ router.post('/appointments', authenticateToken, validate({ body: CreateAppointme
     customerIdRaw === null || customerIdRaw === undefined || customerIdRaw === ''
       ? null
       : Number(customerIdRaw);
-  const explicitCustomerName = typeof req.body?.customerName === 'string' ? req.body.customerName.trim() : '';
-  const explicitCustomerFirstName = typeof req.body?.firstName === 'string' ? req.body.firstName.trim() : '';
-  const explicitCustomerLastName = typeof req.body?.lastName === 'string' ? req.body.lastName.trim() : '';
+  const explicitCustomerNameInput = typeof req.body?.customerName === 'string' ? req.body.customerName.trim() : '';
+  // Funnel all three fields through resolveCustomerNameParts so a caller
+  // that only sends `customerName` still gets a useful firstName/lastName
+  // split on the new Customer row, and a caller that sends only the
+  // split halves gets a usable joined `name`. No drift.
+  const explicitCustomerNameResolved = resolveCustomerNameParts({
+    firstName: req.body?.firstName,
+    lastName: req.body?.lastName,
+    name: explicitCustomerNameInput,
+  });
+  const explicitCustomerName = explicitCustomerNameResolved.fullName;
+  const explicitCustomerFirstName = explicitCustomerNameResolved.firstName;
+  const explicitCustomerLastName = explicitCustomerNameResolved.lastName;
   const explicitCustomerPhone = typeof req.body?.customerPhone === 'string' ? req.body.customerPhone.trim() : '';
   const notes = typeof req.body?.notes === 'string' ? req.body.notes.trim() : null;
   const gender =
