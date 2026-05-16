@@ -40,6 +40,7 @@ import {
   commitAppointmentReschedule,
 } from '../services/appointmentReschedule.js';
 import { buildRescheduleOptions } from '../services/appointmentRescheduleOptions.js';
+import { generateAvailability, normalizePersonGroups } from '../services/availabilityService.js';
 import {
   cancelWaitlistEntry,
   createManualWaitlistOffer,
@@ -4825,6 +4826,43 @@ router.post('/appointments/checkout', authenticateToken, async (req: any, res: a
     }
     console.error('Admin appointment checkout error:', error);
     throw error;
+  }
+});
+
+// New-appointment slot picker. Returns the day's slot grid for a
+// proposed { date, services } combination so the admin sheet can show
+// "müsait / dolu" chips. Different from /reschedule-options which is
+// tied to an existing appointment id; this endpoint is for creating
+// from scratch.
+router.post('/appointments/availability', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  const date = typeof req.body?.date === 'string' ? req.body.date.trim() : '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw new BusinessError('VALIDATION_FAILED', 'date is required as YYYY-MM-DD.', 400);
+  }
+
+  // The composer sends one entry per service plus optional allowedStaffIds
+  // (locked staff for that service). normalizePersonGroups handles
+  // shape coercion + invariant checks; we always send as a single
+  // person group.
+  const servicesRaw = Array.isArray(req.body?.services) ? req.body.services : [];
+  const groups = normalizePersonGroups([{ personId: 'p1', services: servicesRaw }]);
+  if (!groups.length) {
+    throw new BusinessError('VALIDATION_FAILED', 'services must include at least one valid serviceId.', 400);
+  }
+
+  try {
+    const result = await generateAvailability({ salonId, date, groups });
+    return res.status(200).json({
+      date,
+      displaySlots: result.displaySlots, // [{ slotKey, label, available, ... }]
+      lockToken: result.lockToken,
+    });
+  } catch (error: any) {
+    console.error('Admin appointments availability error:', error?.message || error);
+    throw new BusinessError('INTERNAL_ERROR', 'Müsait saatler hesaplanamadı.', 500, {
+      reason: error?.message || 'unknown',
+    });
   }
 });
 
