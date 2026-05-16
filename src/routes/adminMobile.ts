@@ -10147,7 +10147,27 @@ router.post('/conversations/:channel/:conversationKey/handover', authenticateTok
       const joined = `${first} ${last}`.trim();
       return joined || null;
     })();
-    const takeoverActorLabel = senderUserFullName || senderUserDisplayName || senderUserEmail || 'Salon Ekibi';
+    // Fallback to UserIdentity (shared person record across multiple salons)
+    // when the per-salon SalonUser row has no name set.
+    let identityFullName: string | null = null;
+    let identityDisplayName: string | null = null;
+    if (!senderUserFullName && !senderUserDisplayName && senderUserEmail) {
+      const identity = await prisma.userIdentity.findUnique({
+        where: { email: senderUserEmail },
+        select: { firstName: true, lastName: true, displayName: true },
+      });
+      const iFirst = typeof identity?.firstName === 'string' ? identity.firstName.trim() : '';
+      const iLast = typeof identity?.lastName === 'string' ? identity.lastName.trim() : '';
+      identityFullName = `${iFirst} ${iLast}`.trim() || null;
+      identityDisplayName = typeof identity?.displayName === 'string' && identity.displayName.trim()
+        ? identity.displayName.trim()
+        : null;
+    }
+    // Display priority: SalonUser name → SalonUser displayName → UserIdentity name
+    // → UserIdentity displayName → generic. Email is intentionally hidden from
+    // the customer-facing system message — only show a friendly identifier.
+    const takeoverActorLabel =
+      senderUserFullName || senderUserDisplayName || identityFullName || identityDisplayName || 'Salon Ekibi';
     const stateCandidates = Array.from(
       new Set([...keyCandidates, ...conversationKeyCandidates(channel, resolvedConversationKey)]),
     );
@@ -10336,7 +10356,25 @@ router.post('/conversations/:channel/:conversationKey/resume-auto', authenticate
       const joined = `${first} ${last}`.trim();
       return joined || null;
     })();
-    const resumeActorLabel = senderUserFullName || senderUserDisplayName || senderUserEmail || 'Salon Ekibi';
+    // Fallback to UserIdentity (shared person record across multiple salons)
+    // when the per-salon SalonUser row has no name set.
+    let identityFullName: string | null = null;
+    let identityDisplayName: string | null = null;
+    if (!senderUserFullName && !senderUserDisplayName && senderUserEmail) {
+      const identity = await prisma.userIdentity.findUnique({
+        where: { email: senderUserEmail },
+        select: { firstName: true, lastName: true, displayName: true },
+      });
+      const iFirst = typeof identity?.firstName === 'string' ? identity.firstName.trim() : '';
+      const iLast = typeof identity?.lastName === 'string' ? identity.lastName.trim() : '';
+      identityFullName = `${iFirst} ${iLast}`.trim() || null;
+      identityDisplayName = typeof identity?.displayName === 'string' && identity.displayName.trim()
+        ? identity.displayName.trim()
+        : null;
+    }
+    // Same priority as takeover — never show email in the system bubble.
+    const resumeActorLabel =
+      senderUserFullName || senderUserDisplayName || identityFullName || identityDisplayName || 'Salon Ekibi';
 
     const updatedState = await markConversationAuto({
       salonId,
