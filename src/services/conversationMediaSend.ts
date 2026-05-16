@@ -99,12 +99,20 @@ async function whatsAppUploadAndSend(
     throw new Error('chakra_api_token_missing');
   }
 
-  // Step 1: upload bytes via Chakra's BSP proxy. The proxy URL pattern
-  // mirrors WhatsApp Cloud API but is plugin-scoped:
-  //   POST {CHAKRA_API_BASE}/v1/ext/plugin/whatsapp/{pluginId}/api/{ver}/{phoneId}/media
+  // Step 1: upload bytes via Chakra's BSP proxy.
+  //
+  // History: an earlier version targeted the plugin-scoped surface
+  //   POST /v1/ext/plugin/whatsapp/{pluginId}/api/{ver}/{phoneId}/media
+  // mirroring the working /messages path — but Chakra does NOT expose
+  // /media at the plugin-scoped surface, so every upload 404'd. Chakra's
+  // media surface is non-plugin-scoped (same pattern as the inbound
+  //   GET /v1/whatsapp/{ver}/media/{id}/show
+  // endpoint we use for fetch). For upload we mirror WhatsApp Cloud API
+  // path verbatim under that prefix:
+  //   POST {CHAKRA_API_BASE}/v1/whatsapp/{ver}/{phoneId}/media
   //   Auth: Bearer {CHAKRA_API_TOKEN}
   //   multipart: messaging_product=whatsapp, type=<mime>, file=<bytes>
-  const uploadUrl = `${CHAKRA_API_BASE}/v1/ext/plugin/whatsapp/${encodeURIComponent(pluginId)}/api/${encodeURIComponent(CHAKRA_WA_API_VERSION)}/${encodeURIComponent(phoneNumberId)}/media`;
+  const uploadUrl = `${CHAKRA_API_BASE}/v1/whatsapp/${encodeURIComponent(CHAKRA_WA_API_VERSION)}/${encodeURIComponent(phoneNumberId)}/media`;
   const form = new FormData();
   form.append('messaging_product', 'whatsapp');
   form.append('type', input.mimeType);
@@ -112,15 +120,26 @@ async function whatsAppUploadAndSend(
     contentType: input.mimeType,
     filename: `upload.${kindToExt(input.kind, input.mimeType)}`,
   });
-  const uploadResp = await axios.post(uploadUrl, form, {
-    headers: {
-      ...form.getHeaders(),
-      Authorization: `Bearer ${CHAKRA_API_TOKEN}`,
-    },
-    timeout: 60_000,
-    maxBodyLength: Infinity,
-    maxContentLength: Infinity,
-  });
+  let uploadResp;
+  try {
+    uploadResp = await axios.post(uploadUrl, form, {
+      headers: {
+        ...form.getHeaders(),
+        Authorization: `Bearer ${CHAKRA_API_TOKEN}`,
+      },
+      timeout: 60_000,
+      maxBodyLength: Infinity,
+      maxContentLength: Infinity,
+    });
+  } catch (err: any) {
+    // Surface upstream details so a future 404 is debuggable from the
+    // mobile error toast (the route handler wraps err.message into
+    // BusinessError.details.reason).
+    const status = err?.response?.status;
+    const body = err?.response?.data;
+    const bodyStr = typeof body === 'string' ? body.slice(0, 300) : JSON.stringify(body || {}).slice(0, 300);
+    throw new Error(`whatsapp_media_upload_failed status=${status ?? 'n/a'} url=${uploadUrl} body=${bodyStr}`);
+  }
   const metaMediaId = String(uploadResp.data?.id || '').trim();
   if (!metaMediaId) {
     throw new Error('whatsapp_media_upload_no_id');
@@ -149,13 +168,21 @@ async function whatsAppUploadAndSend(
   if (input.replyToProviderMessageId) {
     body.context = { message_id: input.replyToProviderMessageId };
   }
-  const sendResp = await axios.post(sendUrl, body, {
-    headers: {
-      Authorization: `Bearer ${CHAKRA_API_TOKEN}`,
-      'Content-Type': 'application/json',
-    },
-    timeout: 25_000,
-  });
+  let sendResp;
+  try {
+    sendResp = await axios.post(sendUrl, body, {
+      headers: {
+        Authorization: `Bearer ${CHAKRA_API_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      timeout: 25_000,
+    });
+  } catch (err: any) {
+    const status = err?.response?.status;
+    const respBody = err?.response?.data;
+    const bodyStr = typeof respBody === 'string' ? respBody.slice(0, 300) : JSON.stringify(respBody || {}).slice(0, 300);
+    throw new Error(`whatsapp_media_send_failed status=${status ?? 'n/a'} url=${sendUrl} body=${bodyStr}`);
+  }
   const providerMessageId = String(
     sendResp.data?.messages?.[0]?.id ||
       sendResp.data?.data?.messages?.[0]?.id ||
