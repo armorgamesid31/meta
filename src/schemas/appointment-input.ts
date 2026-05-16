@@ -8,7 +8,12 @@ export type AppointmentServiceLineInput = z.infer<typeof AppointmentServiceLineI
 
 export const CreateAppointmentInputSchema = z.object({
   customerId: z.number().int().positive().nullable().optional(),
+  // Composer sends firstName + lastName (and a derived customerName for
+  // backwards-compat). For an existing customerId both name fields are
+  // ignored, so they're just optional below.
   customerName: z.string().trim().min(1, 'Müşteri adı zorunludur.'),
+  firstName: z.string().trim().nullable().optional(),
+  lastName: z.string().trim().nullable().optional(),
   customerPhone: z.string().trim().min(4, 'Telefon zorunludur.'),
   startTime: z.string().min(1, 'Başlangıç zamanı zorunludur.'),
   notes: z.string().nullable().optional(),
@@ -48,6 +53,8 @@ export type UpdateCustomerInput = z.infer<typeof UpdateCustomerInputSchema>;
 export const CreateWaitlistInputSchema = z.object({
   customerId: z.number().int().positive().nullable().optional(),
   customerName: z.string().trim().min(1, 'Müşteri adı zorunludur.'),
+  firstName: z.string().trim().nullable().optional(),
+  lastName: z.string().trim().nullable().optional(),
   customerPhone: z.string().trim().min(4, 'Telefon zorunludur.'),
   date: z.string().min(1, 'Tarih zorunludur.'),
   timeWindowStart: z.string().min(1),

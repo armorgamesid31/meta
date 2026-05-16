@@ -2359,6 +2359,8 @@ router.post('/appointments', authenticateToken, validate({ body: CreateAppointme
       ? null
       : Number(customerIdRaw);
   const explicitCustomerName = typeof req.body?.customerName === 'string' ? req.body.customerName.trim() : '';
+  const explicitCustomerFirstName = typeof req.body?.firstName === 'string' ? req.body.firstName.trim() : '';
+  const explicitCustomerLastName = typeof req.body?.lastName === 'string' ? req.body.lastName.trim() : '';
   const explicitCustomerPhone = typeof req.body?.customerPhone === 'string' ? req.body.customerPhone.trim() : '';
   const notes = typeof req.body?.notes === 'string' ? req.body.notes.trim() : null;
   const gender =
@@ -2424,7 +2426,11 @@ router.post('/appointments', authenticateToken, validate({ body: CreateAppointme
         customer = await tx.customer.create({
           data: {
             salonId,
+            // Persist split + joined forms; queries elsewhere still rely
+            // on Customer.name being populated so we keep writing it.
             name: explicitCustomerName || null,
+            firstName: explicitCustomerFirstName || null,
+            lastName: explicitCustomerLastName || null,
             phone: explicitCustomerPhone,
             gender,
           },
@@ -5094,6 +5100,8 @@ router.post('/waitlist', authenticateToken, async (req: any, res: any) => {
   const groups = parseWaitlistGroups(req.body?.groups);
   const customerId = Number(req.body?.customerId);
   const customerName = typeof req.body?.customerName === 'string' ? req.body.customerName.trim() : '';
+  const customerFirstName = typeof req.body?.firstName === 'string' ? req.body.firstName.trim() : '';
+  const customerLastName = typeof req.body?.lastName === 'string' ? req.body.lastName.trim() : '';
   const customerPhone = typeof req.body?.customerPhone === 'string' ? req.body.customerPhone.trim() : '';
   const notes = typeof req.body?.notes === 'string' ? req.body.notes.trim() : null;
   const allowNearbyMatches = Boolean(req.body?.allowNearbyMatches);
@@ -5120,6 +5128,8 @@ router.post('/waitlist', authenticateToken, async (req: any, res: any) => {
       customer: {
         customerId: Number.isInteger(customerId) && customerId > 0 ? customerId : null,
         customerName,
+        customerFirstName: customerFirstName || null,
+        customerLastName: customerLastName || null,
         customerPhone: normalizedPhone,
       },
       notes,

@@ -17,6 +17,8 @@ export type WaitlistChannel = 'WHATSAPP' | 'WEB_LINK';
 type WaitlistCustomerInput = {
   customerId?: number | null;
   customerName: string;
+  customerFirstName?: string | null;
+  customerLastName?: string | null;
   customerPhone: string;
 };
 
@@ -236,6 +238,8 @@ async function resolveCustomer(input: { salonId: number; customer: WaitlistCusto
   }
 
   const name = trimText(input.customer.customerName);
+  const firstName = trimText(input.customer.customerFirstName || '');
+  const lastName = trimText(input.customer.customerLastName || '');
   const phone = trimText(input.customer.customerPhone);
   if (!name || !phone) {
     throw new Error('customer_name_and_phone_required');
@@ -250,7 +254,11 @@ async function resolveCustomer(input: { salonId: number; customer: WaitlistCusto
     if (!existing.name && name) {
       return prisma.customer.update({
         where: { id: existing.id },
-        data: { name },
+        data: {
+          name,
+          ...(firstName ? { firstName } : {}),
+          ...(lastName ? { lastName } : {}),
+        },
         select: { id: true, name: true, phone: true },
       });
     }
@@ -261,6 +269,8 @@ async function resolveCustomer(input: { salonId: number; customer: WaitlistCusto
     data: {
       salonId: input.salonId,
       name,
+      firstName: firstName || null,
+      lastName: lastName || null,
       phone,
       registrationStatus: 'PENDING',
       acceptMarketing: false,
