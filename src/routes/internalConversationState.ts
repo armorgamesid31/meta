@@ -6,7 +6,7 @@ import { BusinessError } from '../lib/errors.js';
 
 const router = Router();
 
-const DEFAULT_HUMAN_ACTIVE_MINUTES = Number(process.env.CONVERSATION_HUMAN_ACTIVE_MINUTES || 10080);
+const DEFAULT_HUMAN_ACTIVE_MINUTES = Number(process.env.CONVERSATION_HUMAN_ACTIVE_MINUTES || 360);
 
 function isInternalAuthorized(req: any): boolean {
   const configured = process.env.INTERNAL_API_KEY;

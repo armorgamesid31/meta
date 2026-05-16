@@ -136,13 +136,7 @@ const N8N_NORMALIZED_INSTAGRAM_WEBHOOK_URL = (process.env.N8N_NORMALIZED_INSTAGR
 const N8N_NORMALIZED_WHATSAPP_WEBHOOK_URL = (process.env.N8N_NORMALIZED_WHATSAPP_WEBHOOK_URL || '').trim();
 const N8N_INTERNAL_API_KEY = (process.env.N8N_INTERNAL_API_KEY || '').trim();
 
-// Once a human takes over, AI stays silent until either (a) the operator
-// explicitly resumes it ("Botu Devreye Al"), (b) the customer types an
-// "İptal et" signal, or (c) the conversation has been dormant longer
-// than this timeout. Default 7 days — short enough that truly abandoned
-// conversations eventually reopen for the AI, long enough that staff
-// walking away for the day doesn't surprise them with a fresh AI reply.
-const HUMAN_ACTIVE_MINUTES = Number(process.env.CONVERSATION_HUMAN_ACTIVE_MINUTES || 10080);
+const HUMAN_ACTIVE_MINUTES = Number(process.env.CONVERSATION_HUMAN_ACTIVE_MINUTES || 360);
 const META_GRAPH_VERSION = (process.env.META_GRAPH_VERSION || 'v23.0').trim();
 
 type InstagramScopedProfile = {
@@ -191,6 +185,19 @@ function buildMessageSignature(input: {
 }): string {
   const payload = `${input.conversationKey}|${input.messageType}|${input.text || ''}|${input.eventDate.getTime()}`;
   return createHash('sha1').update(payload).digest('hex').slice(0, 16);
+}
+
+// Mirrors conversationMedia.labelForMediaTypes — fallback text for the
+// quoted-block preview when the parent message has no body (a sticker,
+// audio, image with no caption, etc.).
+function labelForMediaTypes(items: unknown): string | null {
+  if (!Array.isArray(items) || items.length === 0) return null;
+  const first = items[0] as { type?: string; isVoice?: boolean } | undefined;
+  if (!first) return null;
+  if (first.type === 'image') return '📷 Görsel';
+  if (first.type === 'video') return '🎬 Video';
+  if (first.type === 'audio') return first.isVoice ? '🎙️ Sesli mesaj' : '🎵 Ses';
+  return null;
 }
 
 function normalizeMessageTypeForRetry(value: string): string {
@@ -915,11 +922,21 @@ function normalizeWebhookPayload(body: any) {
           const primaryMedia = media[0] || null;
           const primaryMediaId = primaryMedia?.id || null;
 
+          // Reply context: WhatsApp Cloud API puts the parent message id
+          // under `message.context.id`. We carry it forward so the inbox
+          // ingest can resolve it to our DB row and persist a quoted
+          // preview on the bubble.
+          const replyToProviderMessageId =
+            typeof msg?.context?.id === 'string' && msg.context.id.trim()
+              ? msg.context.id.trim()
+              : null;
+
           out.push({
             channel: 'WHATSAPP',
             providerMessageId: msg?.id ?? `wa_${Date.now()}`,
             messageType,
             routeMessageType: String(messageType || 'unknown').trim().toLowerCase(),
+            replyToProviderMessageId,
             text:
               msg?.text?.body ||
               msg?.image?.caption ||
@@ -991,11 +1008,20 @@ function normalizeWebhookPayload(body: any) {
           ],
         };
 
+        // Reply context: Instagram Graph webhook puts the parent message
+        // id under `message.reply_to.mid`. Forward it so we can render
+        // the quoted preview on the inbound bubble.
+        const replyToProviderMessageId =
+          typeof m?.reply_to?.mid === 'string' && m.reply_to.mid.trim()
+            ? m.reply_to.mid.trim()
+            : null;
+
         out.push({
           channel: 'INSTAGRAM',
           providerMessageId: m?.mid || `ig_${ev?.timestamp || Date.now()}_${ev?.sender?.id || 'unknown'}`,
           messageType,
           routeMessageType: String(messageType || 'unknown').trim().toLowerCase(),
+          replyToProviderMessageId,
           text: m?.text || postback?.title || postback?.payload || null,
           timestamp: Number(ev?.timestamp || Date.now()),
           eventTimestamp: toIsoFromTs(ev?.timestamp),
@@ -1351,6 +1377,35 @@ async function processIncomingBatch(items: any[]) {
     const rawMediaArray = Array.isArray((row as any).media) ? (row as any).media : [];
     const mediaItems = buildMediaItemsFromWebhook(rawMediaArray);
 
+    // Resolve customer's reply-to context into our DB pointer. Quoted
+    // message id comes from WhatsApp's `message.context.id` or
+    // Instagram's `message.reply_to.mid`; we look it up in our own
+    // ConversationMessageEvent table (same salon + channel) and copy
+    // the id + a short text preview into the new row so the bubble can
+    // render a quoted block above the body, mirroring how WhatsApp /
+    // Instagram do it natively.
+    const replyToProviderMessageId =
+      typeof (row as any).replyToProviderMessageId === 'string'
+        && (row as any).replyToProviderMessageId.trim()
+        ? (row as any).replyToProviderMessageId.trim() as string
+        : null;
+    let repliedToMessageId: number | null = null;
+    let repliedToText: string | null = null;
+    if (replyToProviderMessageId) {
+      const parent = await prisma.conversationMessageEvent.findFirst({
+        where: { salonId, channel, providerMessageId: replyToProviderMessageId },
+        select: { id: true, text: true, messageType: true, mediaItems: true },
+      });
+      if (parent) {
+        repliedToMessageId = parent.id;
+        repliedToText =
+          parent.text ||
+          labelForMediaTypes(parent.mediaItems) ||
+          parent.messageType ||
+          null;
+      }
+    }
+
     await upsertConversationMessageEvent({
       salonId,
       channel,
@@ -1368,6 +1423,9 @@ async function processIncomingBatch(items: any[]) {
       outboundSenderEmail: row.isEcho ? outboundTraceMeta?.sourceUserEmail || null : null,
       rawPayload: eventRawPayload,
       mediaItems: mediaItems.length > 0 ? (mediaItems as any) : undefined,
+      repliedToMessageId,
+      repliedToProviderMessageId: replyToProviderMessageId,
+      repliedToText,
     });
 
     const state = await evaluateConversationState({
