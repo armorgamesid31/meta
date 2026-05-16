@@ -761,7 +761,7 @@ const ANALYTICS_TIMEZONE = 'Europe/Istanbul';
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const META_GRAPH_VERSION = (process.env.META_GRAPH_VERSION || 'v23.0').trim();
 const MANUAL_REPLY_WINDOW_MS = 24 * 60 * 60 * 1000;
-const DEFAULT_HUMAN_ACTIVE_MINUTES = Number(process.env.CONVERSATION_HUMAN_ACTIVE_MINUTES || 360);
+const DEFAULT_HUMAN_ACTIVE_MINUTES = Number(process.env.CONVERSATION_HUMAN_ACTIVE_MINUTES || 10080);
 const DEFAULT_WORKING_DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'] as const;
 type WorkingDayKey = (typeof DEFAULT_WORKING_DAYS)[number] | 'SUN';
 type ConversationAutomationModeValue =
@@ -8714,12 +8714,17 @@ function resolveOutboundMessageMeta(input: {
 
   const outboundSourceLabel =
     outboundSource === 'AI_AGENT'
-      ? 'AI Agent'
+      ? 'Kedy AI'
       : outboundSource === 'HUMAN_APP'
         ? senderFriendlyName || 'Salon Ekibi'
+        // HUMAN_EXTERNAL = a message we received via the upstream echo
+        // (someone replied from the native WhatsApp / Instagram app
+        // outside Kedy). Friendly label per channel.
         : input.channel === 'INSTAGRAM'
-          ? 'Instagram Direct'
-          : 'External';
+          ? 'Instagram uygulamasından'
+          : input.channel === 'WHATSAPP'
+            ? 'WhatsApp uygulamasından'
+            : 'Salon dışı';
 
   return {
     outboundSource,

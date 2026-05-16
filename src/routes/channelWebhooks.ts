@@ -136,7 +136,13 @@ const N8N_NORMALIZED_INSTAGRAM_WEBHOOK_URL = (process.env.N8N_NORMALIZED_INSTAGR
 const N8N_NORMALIZED_WHATSAPP_WEBHOOK_URL = (process.env.N8N_NORMALIZED_WHATSAPP_WEBHOOK_URL || '').trim();
 const N8N_INTERNAL_API_KEY = (process.env.N8N_INTERNAL_API_KEY || '').trim();
 
-const HUMAN_ACTIVE_MINUTES = Number(process.env.CONVERSATION_HUMAN_ACTIVE_MINUTES || 360);
+// Once a human takes over, AI stays silent until either (a) the operator
+// explicitly resumes it ("Botu Devreye Al"), (b) the customer types an
+// "İptal et" signal, or (c) the conversation has been dormant longer
+// than this timeout. Default 7 days — short enough that truly abandoned
+// conversations eventually reopen for the AI, long enough that staff
+// walking away for the day doesn't surprise them with a fresh AI reply.
+const HUMAN_ACTIVE_MINUTES = Number(process.env.CONVERSATION_HUMAN_ACTIVE_MINUTES || 10080);
 const META_GRAPH_VERSION = (process.env.META_GRAPH_VERSION || 'v23.0').trim();
 
 type InstagramScopedProfile = {
