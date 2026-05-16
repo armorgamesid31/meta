@@ -264,6 +264,55 @@ router.put('/staff-profile', authenticateToken, async (req: any, res: any) => {
 });
 
 /**
+ * PUT /account-name  (mounted at /api/mobile)
+ *
+ * Updates the authenticated user's first/last name on BOTH the per-salon
+ * SalonUser row and the shared UserIdentity row. Unlike /staff-profile
+ * this does NOT require a linked Staff record — so owners (who often
+ * have no Staff link) can set a name that the conversation system
+ * messages ("X devraldı.") will use instead of falling back to email.
+ *
+ * Body: { firstName: string, lastName?: string }
+ * Response: { firstName, lastName, displayName }
+ */
+router.put('/account-name', authenticateToken, async (req: any, res: any) => {
+  if (!req.user) throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
+  const userId = Number(req.user.userId || 0);
+  const identityId = Number(req.user.identityId || 0);
+  if (!userId && !identityId) {
+    throw new BusinessError('FORBIDDEN', 'User context required.', 403);
+  }
+
+  const firstName = typeof req.body?.firstName === 'string' ? req.body.firstName.trim() : '';
+  const lastNameRaw = typeof req.body?.lastName === 'string' ? req.body.lastName.trim() : '';
+  if (!firstName) {
+    throw new BusinessError('VALIDATION_FAILED', 'firstName is required.', 400);
+  }
+  if (firstName.length > 80 || lastNameRaw.length > 80) {
+    throw new BusinessError('VALIDATION_FAILED', 'name too long.', 400);
+  }
+  const lastName = lastNameRaw || null;
+  const displayName = [firstName, lastName].filter(Boolean).join(' ').trim() || null;
+
+  // Per-salon SalonUser row (used by handover/resume actor lookup).
+  if (userId) {
+    await prisma.salonUser.update({
+      where: { id: userId },
+      data: { firstName, lastName, displayName },
+    }).catch(() => { /* row may not exist for pre-membership users */ });
+  }
+  // Shared UserIdentity row (cross-salon fallback in actor lookup).
+  if (identityId) {
+    await prisma.userIdentity.update({
+      where: { id: identityId },
+      data: { firstName, lastName, displayName },
+    }).catch(() => { /* identity may be deleted */ });
+  }
+
+  return res.status(200).json({ firstName, lastName, displayName });
+});
+
+/**
  * POST /staff-profile/photo  (mounted at /api/mobile)
  *
  * Authenticated staff/owner uploads a new profile photo for the Staff row
