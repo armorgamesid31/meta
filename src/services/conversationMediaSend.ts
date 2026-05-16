@@ -19,7 +19,6 @@
 // roadmap.
 
 import axios from 'axios';
-import FormData from 'form-data';
 import {
   ChannelType,
   InboundMessageStatus,
@@ -80,12 +79,35 @@ export interface SendMediaResult {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// WhatsApp upload-then-send
+// WhatsApp link-based send
 // ─────────────────────────────────────────────────────────────────
+//
+// WhatsApp Cloud API accepts two media payload shapes:
+//   { type: <kind>, <kind>: { id: <meta_media_id> } }
+//   { type: <kind>, <kind>: { link: <publicly-fetchable-url> } }
+//
+// We previously tried the id-based path: upload bytes via Chakra's BSP
+// proxy, get back a media_id, then send. That failed repeatedly because
+// Chakra simply does NOT expose a /media upload endpoint anywhere — not
+// at /v1/ext/plugin/whatsapp/{pluginId}/api/{ver}/{phoneId}/media (404)
+// and not at /v1/whatsapp/{ver}/{phoneId}/media (404, "Not Found" plain
+// text). The plugin-scoped surface documents only POST /messages
+// (per the comment in src/routes/chakra.ts:840: "Chakra documented
+// endpoint sadece POST /messages").
+//
+// Solution: use the link payload. We already cache outbound media to R2
+// for cross-device history; we mint a short-lived signed URL from R2 and
+// hand that to WhatsApp via the link payload. Meta fetches it during the
+// send. Same approach as the Instagram outbound path below.
+//
+// This collapses the two-call dance into one — and avoids the broken
+// upload endpoint entirely.
 
-async function whatsAppUploadAndSend(
-  input: SendMediaInput,
-): Promise<{ providerMessageId: string; metaMediaId: string }> {
+async function whatsAppLinkSend(opts: {
+  input: SendMediaInput;
+  cached: MediaCachedMeta;
+}): Promise<{ providerMessageId: string; metaMediaId: string }> {
+  const { input, cached } = opts;
   const salon = await prisma.salon.findUnique({
     where: { id: input.salonId },
     select: { chakraPluginId: true, chakraPhoneNumberId: true },
@@ -99,56 +121,18 @@ async function whatsAppUploadAndSend(
     throw new Error('chakra_api_token_missing');
   }
 
-  // Step 1: upload bytes via Chakra's BSP proxy.
-  //
-  // History: an earlier version targeted the plugin-scoped surface
-  //   POST /v1/ext/plugin/whatsapp/{pluginId}/api/{ver}/{phoneId}/media
-  // mirroring the working /messages path — but Chakra does NOT expose
-  // /media at the plugin-scoped surface, so every upload 404'd. Chakra's
-  // media surface is non-plugin-scoped (same pattern as the inbound
-  //   GET /v1/whatsapp/{ver}/media/{id}/show
-  // endpoint we use for fetch). For upload we mirror WhatsApp Cloud API
-  // path verbatim under that prefix:
-  //   POST {CHAKRA_API_BASE}/v1/whatsapp/{ver}/{phoneId}/media
-  //   Auth: Bearer {CHAKRA_API_TOKEN}
-  //   multipart: messaging_product=whatsapp, type=<mime>, file=<bytes>
-  const uploadUrl = `${CHAKRA_API_BASE}/v1/whatsapp/${encodeURIComponent(CHAKRA_WA_API_VERSION)}/${encodeURIComponent(phoneNumberId)}/media`;
-  const form = new FormData();
-  form.append('messaging_product', 'whatsapp');
-  form.append('type', input.mimeType);
-  form.append('file', input.buffer, {
-    contentType: input.mimeType,
-    filename: `upload.${kindToExt(input.kind, input.mimeType)}`,
-  });
-  let uploadResp;
-  try {
-    uploadResp = await axios.post(uploadUrl, form, {
-      headers: {
-        ...form.getHeaders(),
-        Authorization: `Bearer ${CHAKRA_API_TOKEN}`,
-      },
-      timeout: 60_000,
-      maxBodyLength: Infinity,
-      maxContentLength: Infinity,
-    });
-  } catch (err: any) {
-    // Surface upstream details so a future 404 is debuggable from the
-    // mobile error toast (the route handler wraps err.message into
-    // BusinessError.details.reason).
-    const status = err?.response?.status;
-    const body = err?.response?.data;
-    const bodyStr = typeof body === 'string' ? body.slice(0, 300) : JSON.stringify(body || {}).slice(0, 300);
-    throw new Error(`whatsapp_media_upload_failed status=${status ?? 'n/a'} url=${uploadUrl} body=${bodyStr}`);
-  }
-  const metaMediaId = String(uploadResp.data?.id || '').trim();
-  if (!metaMediaId) {
-    throw new Error('whatsapp_media_upload_no_id');
+  // Mint a fresh signed R2 URL. WhatsApp fetches it during the /messages
+  // call, well within presignReadUrl's default 30-minute window.
+  const r2Url = await presignReadUrl(cached);
+  if (!r2Url) {
+    throw new Error('whatsapp_media_r2_presign_failed');
   }
 
-  // Step 2: send the message with the media_id payload. Same Chakra proxy.
+  // POST /messages on Chakra's plugin-scoped proxy (proven working for
+  // text replies and template sends).
   const sendUrl = `${CHAKRA_API_BASE}/v1/ext/plugin/whatsapp/${encodeURIComponent(pluginId)}/api/${encodeURIComponent(CHAKRA_WA_API_VERSION)}/${encodeURIComponent(phoneNumberId)}/messages`;
   const whatsAppType: 'image' | 'video' | 'audio' = input.kind;
-  const mediaPayload: Record<string, unknown> = { id: metaMediaId };
+  const mediaPayload: Record<string, unknown> = { link: r2Url };
   // Caption only valid for image/video on WA. Audio has no caption.
   if ((input.kind === 'image' || input.kind === 'video') && input.caption) {
     mediaPayload.caption = input.caption;
@@ -188,6 +172,12 @@ async function whatsAppUploadAndSend(
       sendResp.data?.data?.messages?.[0]?.id ||
       `wa_out_${randomToken(8)}`,
   );
+  // Link-based sends don't return a Meta media id. We synthesize a stable
+  // identifier from the providerMessageId so the rest of the pipeline
+  // (mediaItem.providerMediaId, metaMediaIds.whatsapp) keeps working.
+  // The downstream lazy-fetch flow short-circuits to the already-cached
+  // R2 entry via mediaCached, so it never needs to call Meta with this id.
+  const metaMediaId = `wa_link_${providerMessageId}`;
   return { providerMessageId, metaMediaId };
 }
 
@@ -319,17 +309,6 @@ async function instagramUploadAndSend(opts: {
   return { providerMessageId, metaAttachmentId };
 }
 
-function kindToExt(kind: MediaKind, mime: string): string {
-  const m = mime.toLowerCase();
-  if (kind === 'image') return m.includes('png') ? 'png' : 'jpg';
-  if (kind === 'video') return 'mp4';
-  // audio
-  if (m.includes('ogg')) return 'ogg';
-  if (m.includes('m4a') || m.includes('mp4')) return 'm4a';
-  if (m.includes('aac')) return 'aac';
-  return 'bin';
-}
-
 // ─────────────────────────────────────────────────────────────────
 // Public entry point
 // ─────────────────────────────────────────────────────────────────
@@ -348,31 +327,27 @@ export async function sendOutboundMedia(input: SendMediaInput): Promise<SendMedi
     throw new Error('unsupported_channel');
   }
 
-  // ── Order of operations differs by channel ────────────────────────
+  // ── Order of operations is now unified across channels ────────────
   //
-  // WhatsApp: multipart upload to Meta first, then R2. If Meta accepts
-  //   we know the WABA likes the bytes, so committing to R2 makes sense.
+  // Both WhatsApp and Instagram outbound are link-based: Meta fetches
+  // the media from a signed R2 URL we provide in the send payload. So
+  // both flows must cache to R2 first, then call Meta with the URL.
   //
-  // Instagram: Meta needs a publicly-fetchable URL to ingest, so we
-  //   MUST write to R2 first to mint a signed URL. The send-to-Meta
-  //   call then references that URL.
-  //
-  // Both paths converge on the same DB write at the end.
+  // (Historically WhatsApp went upload-then-send via a Chakra /media
+  // endpoint that does not actually exist — see whatsAppLinkSend's
+  // docstring for the full forensic.)
   let providerMessageId: string;
-  let metaIdentifier: string; // WA media_id or IG attachment_id
+  let metaIdentifier: string; // WA synthetic media_id or IG attachment_id
   let cached: MediaCachedMeta;
 
   if (input.channel === 'WHATSAPP') {
-    const wa = await whatsAppUploadAndSend(input);
-    providerMessageId = wa.providerMessageId;
-    metaIdentifier = wa.metaMediaId;
-
-    const fakeMessageIdForKey = Math.abs(hashStr(providerMessageId)) % 2_000_000_000;
+    // R2 first so we have a signed URL to hand to WhatsApp.
+    const synthIdForKey = Math.abs(hashStr(`${input.conversationKey}:${Date.now()}`)) % 2_000_000_000;
     const persisted = await putToR2({
       salonId: input.salonId,
       channel: input.channel,
       conversationKey: input.conversationKey,
-      messageId: fakeMessageIdForKey,
+      messageId: synthIdForKey,
       mediaIndex: 0,
       mimeType: input.mimeType,
       kind,
@@ -380,6 +355,10 @@ export async function sendOutboundMedia(input: SendMediaInput): Promise<SendMedi
     });
     if (!persisted) throw new Error('r2_eager_cache_failed');
     cached = persisted;
+
+    const wa = await whatsAppLinkSend({ input, cached });
+    providerMessageId = wa.providerMessageId;
+    metaIdentifier = wa.metaMediaId;
   } else {
     // Instagram: R2 first so we have a URL to give Meta.
     const synthIdForKey = Math.abs(hashStr(`${input.conversationKey}:${Date.now()}`)) % 2_000_000_000;

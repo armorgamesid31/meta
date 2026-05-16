@@ -1,12 +1,22 @@
 import { App, ServiceAccount, cert, getApp, getApps, initializeApp } from 'firebase-admin/app';
 import { getMessaging, Message } from 'firebase-admin/messaging';
 
-export const ANDROID_PUSH_CHANNEL_ID = 'kdy_general_notifications';
-export const ANDROID_PUSH_CHANNEL_APPOINTMENT_ID = 'kdy_appointment_notifications';
-export const ANDROID_PUSH_CHANNEL_BOOKING_CHANGE_ID = 'kdy_booking_change_notifications';
-export const ANDROID_PUSH_CHANNEL_REPORT_ID = 'kdy_report_notifications';
-export const ANDROID_PUSH_CHANNEL_HANDOVER_ID = 'kdy_handover_notifications';
-export const ANDROID_PUSH_ICON_NAME = 'ic_stat_kdy_notification';
+// IMPORTANT: these IDs MUST match the channel IDs the mobile app creates
+// in `src/app/lib/push-notifications.ts` (Salonmanagementsaasapp repo).
+// FCM addresses notifications to a channel by exact-string id — a typo
+// here means messages route to a non-existent channel, Android creates a
+// fallback channel with no custom sound, and users hear nothing for
+// scenario-specific sounds.
+//
+// Earlier these used the "kdy_" prefix while the mobile side used
+// "kedy_" — that mismatch silenced every custom sound until both sides
+// were aligned on "kedy_".
+export const ANDROID_PUSH_CHANNEL_ID = 'kedy_general_notifications';
+export const ANDROID_PUSH_CHANNEL_APPOINTMENT_ID = 'kedy_appointment_notifications';
+export const ANDROID_PUSH_CHANNEL_BOOKING_CHANGE_ID = 'kedy_booking_change_notifications';
+export const ANDROID_PUSH_CHANNEL_REPORT_ID = 'kedy_report_notifications';
+export const ANDROID_PUSH_CHANNEL_HANDOVER_ID = 'kedy_handover_notifications';
+export const ANDROID_PUSH_ICON_NAME = 'ic_stat_kedy_notification';
 
 export type PushProviderSource = 'BASE64' | 'JSON' | 'NONE';
 export type PushDeliveryStatus = 'SENT' | 'FAILED' | 'SKIPPED';
