@@ -250,12 +250,17 @@ router.get('/:slug/homepage', async (req: any, res: any) => {
             imageUrl: item.imageUrl,
             altText: item.altText,
             displayOrder: item.displayOrder,
+            // Surfaces the per-photo category binding the mobile admin
+            // writes; the public site uses it to assemble per-category
+            // slide groups in the Stories viewer.
+            categoryId: item.categoryId ?? null,
           }))
         : DEFAULT_GALLERY_IMAGES.map((imageUrl, index) => ({
             id: `fallback-${index + 1}`,
             imageUrl,
             altText: `${salon.name} gallery image ${index + 1}`,
             displayOrder: index,
+            categoryId: null,
           }));
 
     const testimonials =
