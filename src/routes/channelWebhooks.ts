@@ -1391,18 +1391,44 @@ async function processIncomingBatch(items: any[]) {
         : null;
     let repliedToMessageId: number | null = null;
     let repliedToText: string | null = null;
+    let repliedToContext: {
+      messageId: number;
+      providerMessageId: string;
+      text: string | null;
+      direction: 'inbound' | 'outbound' | 'system' | null;
+      fromAI: boolean;
+      mediaLabel: string | null;
+      eventTimestamp: string | null;
+    } | null = null;
     if (replyToProviderMessageId) {
       const parent = await prisma.conversationMessageEvent.findFirst({
         where: { salonId, channel, providerMessageId: replyToProviderMessageId },
-        select: { id: true, text: true, messageType: true, mediaItems: true },
+        select: {
+          id: true,
+          text: true,
+          messageType: true,
+          mediaItems: true,
+          direction: true,
+          outboundSource: true,
+          eventTimestamp: true,
+        },
       });
       if (parent) {
         repliedToMessageId = parent.id;
-        repliedToText =
-          parent.text ||
-          labelForMediaTypes(parent.mediaItems) ||
-          parent.messageType ||
-          null;
+        const mediaLabel = labelForMediaTypes(parent.mediaItems);
+        repliedToText = parent.text || mediaLabel || parent.messageType || null;
+        const dir = String(parent.direction || '').toLowerCase();
+        repliedToContext = {
+          messageId: parent.id,
+          providerMessageId: replyToProviderMessageId,
+          text: parent.text || null,
+          direction: (dir === 'inbound' || dir === 'outbound' || dir === 'system')
+            ? (dir as 'inbound' | 'outbound' | 'system')
+            : null,
+          fromAI: String(parent.outboundSource || '').toUpperCase() === 'AI_AGENT',
+          mediaLabel,
+          eventTimestamp: parent.eventTimestamp ? parent.eventTimestamp.toISOString() : null,
+        };
       }
     }
 
@@ -1483,6 +1509,12 @@ async function processIncomingBatch(items: any[]) {
         responsePolicy: statePolicy.responsePolicy,
       },
       userAction: forceAutoByCancel ? 'HUMAN_CANCEL' : row.actionPayload || null,
+      // Reply-to context for the AI agent. When the customer quotes an
+      // earlier message in their reply, n8n receives the parent's body
+      // (or media-type label) plus a hint about who originally sent it,
+      // so the system prompt can ground the response on the right
+      // referent ("they're asking about your earlier suggestion to …").
+      repliedTo: repliedToContext,
       // Backward compatibility for old flows
       conversationKey,
       customer_status: customerStatus,
