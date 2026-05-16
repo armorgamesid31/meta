@@ -284,6 +284,77 @@ async function getEligibleUserIdsByPreference(
   });
 }
 
+// Per-event-type emoji prefixes. Keeping the table here (rather than
+// scattered across call sites) so the visual language of notifications
+// stays consistent — every "Yeni randevu" looks the same regardless of
+// who triggers createNotification.
+const EVENT_TYPE_EMOJI: Record<NotificationEventType, string> = {
+  HANDOVER_REQUIRED: '🆘',
+  HANDOVER_REMINDER: '⏰',
+  SAME_DAY_APPOINTMENT_CHANGE: '📅',
+  END_OF_DAY_MISSING_DATA: '📝',
+  DAILY_MANAGER_REPORT: '📊',
+  CAMPAIGN_AUTO_TRIGGER: '🚀',
+  CAMPAIGN_MANUAL_SEND: '📣',
+  WAITLIST_OFFER_CREATED: '🎟️',
+  WAITLIST_OFFER_EXPIRED: '⌛',
+  WAITLIST_OFFER_ACCEPTED: '✅',
+  WAITLIST_MATCH_FOUND: '✨',
+};
+
+// Tiny in-memory cache for salon names. The notification path runs in
+// hot loops (handover reminder sweep, daily report) and looking up the
+// same salon dozens of times per minute would be wasteful. 60s TTL is
+// short enough that rename operations show up quickly without
+// invalidation plumbing.
+const SALON_NAME_TTL_MS = 60_000;
+const salonNameCache = new Map<number, { name: string | null; expiresAt: number }>();
+
+async function getSalonName(salonId: number): Promise<string | null> {
+  const cached = salonNameCache.get(salonId);
+  const now = Date.now();
+  if (cached && cached.expiresAt > now) {
+    return cached.name;
+  }
+  const row = await prisma.salon.findUnique({
+    where: { id: salonId },
+    select: { name: true },
+  });
+  const name = (row?.name || '').trim() || null;
+  salonNameCache.set(salonId, { name, expiresAt: now + SALON_NAME_TTL_MS });
+  return name;
+}
+
+/**
+ * Decorate the raw title + body coming from the call site so every push
+ * the user sees follows the same shape:
+ *
+ *   title: `<emoji> <event title>`
+ *   body:  `<original body>\n— <Salon name>`
+ *
+ * The salon name lives in the body rather than the title because Android
+ * truncates titles aggressively (~30–40 chars) while bodies render two
+ * lines on the lock screen. Putting the salon name as a trailing line
+ * keeps the title scan-friendly and makes the multi-salon disambiguation
+ * obvious without crowding the headline.
+ */
+async function decorateForDisplay(
+  salonId: number,
+  eventType: NotificationEventType,
+  title: string,
+  body: string,
+): Promise<{ title: string; body: string }> {
+  const emoji = EVENT_TYPE_EMOJI[eventType];
+  const prefixedTitle = emoji && !title.startsWith(emoji) ? `${emoji} ${title}` : title;
+
+  const salonName = await getSalonName(salonId);
+  const decoratedBody = salonName
+    ? `${body}\n— ${salonName}`
+    : body;
+
+  return { title: prefixedTitle, body: decoratedBody };
+}
+
 export async function createNotification(input: {
   salonId: number;
   eventType: NotificationEventType;
@@ -298,6 +369,17 @@ export async function createNotification(input: {
 
   const recipientUserIds = await getEligibleUserIdsByPreference(input.salonId, recipientIdsRaw, input.eventType);
   const provider = getPushProviderStatus();
+
+  // Decorate once so both the in-app row (stored in AppNotification) and
+  // the push payload (sent to FCM) carry the same emoji + salon line.
+  const decorated = await decorateForDisplay(
+    input.salonId,
+    input.eventType,
+    input.title,
+    input.body,
+  );
+  const displayTitle = decorated.title;
+  const displayBody = decorated.body;
 
   if (!recipientUserIds.length) {
     return {
@@ -333,8 +415,8 @@ export async function createNotification(input: {
       `,
       input.salonId,
       input.eventType,
-      input.title,
-      input.body,
+      displayTitle,
+      displayBody,
       JSON.stringify(payload),
     );
 
@@ -420,8 +502,8 @@ export async function createNotification(input: {
         deliveryId: Number(target.deliveryId),
         tokenId: Number(target.tokenId),
         token: String(target.token),
-        title: input.title,
-        body: input.body,
+        title: displayTitle,
+        body: displayBody,
         data: {
           ...payload,
           notificationId,
@@ -529,13 +611,14 @@ export async function markHandoverTriggered(input: {
     input.conversationKey,
   );
 
+  const channelLabel = input.channel === 'WHATSAPP' ? 'WhatsApp' : 'Instagram';
   await createNotification({
     salonId: input.salonId,
     eventType: 'HANDOVER_REQUIRED',
-    title: 'Handover gerekli',
+    title: 'Müşteri seni bekliyor',
     body: input.customerName
-      ? `${input.customerName} konuşması için salon müdahalesi gerekli.`
-      : 'Bir konuşma için salon müdahalesi gerekli.',
+      ? `${input.customerName} • ${channelLabel}\nKonuşmayı devralman gerekiyor.`
+      : `${channelLabel} konuşması beklemede — devralman gerekiyor.`,
     payload: {
       channel: input.channel,
       conversationKey: input.conversationKey,
@@ -610,13 +693,22 @@ export async function notifySameDayAppointmentChange(input: {
     return;
   }
 
-  const eventLabel = input.event === 'CREATED' ? 'Yeni randevu' : input.event === 'UPDATED' ? 'Randevu güncellendi' : 'Randevu iptal edildi';
+  const eventLabel =
+    input.event === 'CREATED' ? 'Yeni randevu' :
+    input.event === 'UPDATED' ? 'Randevu güncellendi' :
+    'Randevu iptal edildi';
+
+  const startTimeStr = new Intl.DateTimeFormat('tr-TR', {
+    timeZone: tz,
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(input.startTime);
 
   await createNotification({
     salonId: input.salonId,
     eventType: 'SAME_DAY_APPOINTMENT_CHANGE',
     title: eventLabel,
-    body: `${input.customerName} • ${input.serviceName || 'Hizmet'} • #${input.appointmentId}`,
+    body: `${startTimeStr} • ${input.customerName}\n${input.serviceName || 'Hizmet'}`,
     payload: {
       event: input.event,
       appointmentId: input.appointmentId,
@@ -691,13 +783,14 @@ export async function runHandoverReminderSweep(): Promise<void> {
         continue;
       }
 
+      const reminderChannelLabel = row.channel === 'WHATSAPP' ? 'WhatsApp' : 'Instagram';
       await createNotification({
         salonId,
         eventType: 'HANDOVER_REMINDER',
-        title: 'Handover hatırlatması',
+        title: 'Hatırlatma',
         body: row.profileName
-          ? `${row.profileName} konuşması beklemede. Lütfen devralın.`
-          : 'Bir konuşma hala handover bekliyor. Lütfen devralın.',
+          ? `${row.profileName} • ${reminderChannelLabel}\nKonuşma hâlâ seni bekliyor.`
+          : `${reminderChannelLabel} konuşması hâlâ seni bekliyor.`,
         payload: {
           channel: row.channel,
           conversationKey: row.conversationKey,
@@ -812,11 +905,14 @@ export async function runDailyNotificationSweep(): Promise<void> {
           const missingPaymentCount = Number(missingRows?.[0]?.missingPaymentCount || 0);
 
           if (bookedCount > 0 || missingPaymentCount > 0) {
+            const missingParts: string[] = [];
+            if (bookedCount > 0) missingParts.push(`${bookedCount} randevu durumu`);
+            if (missingPaymentCount > 0) missingParts.push(`${missingPaymentCount} ödeme tipi`);
             await createNotification({
               salonId,
               eventType: 'END_OF_DAY_MISSING_DATA',
-              title: 'Gün sonu eksik veri hatırlatması',
-              body: `Eksik durum: ${bookedCount}, eksik ödeme tipi: ${missingPaymentCount}`,
+              title: 'Gün sonu kapatma',
+              body: `Eksik kalan: ${missingParts.join(' · ')}\nGünü kapatmadan önce tamamla.`,
               payload: { bookedCount, missingPaymentCount, dayKey: local.dayKey },
             });
           }
@@ -850,11 +946,16 @@ export async function runDailyNotificationSweep(): Promise<void> {
           const noShow = Number(metricsRows?.[0]?.noShow || 0);
           const revenue = Number(metricsRows?.[0]?.revenue || 0);
 
+          const revenueFmt = new Intl.NumberFormat('tr-TR', {
+            style: 'currency',
+            currency: 'TRY',
+            maximumFractionDigits: 0,
+          }).format(revenue);
           await createNotification({
             salonId,
             eventType: 'DAILY_MANAGER_REPORT',
-            title: 'Günlük rapor',
-            body: `Toplam ${total} • Tamamlanan ${completed} • İptal ${cancelled} • No-show ${noShow} • Ciro ${revenue}`,
+            title: 'Günlük özet hazır',
+            body: `${completed}/${total} tamamlandı • ${revenueFmt} ciro\nİptal ${cancelled} · No-show ${noShow}`,
             payload: { dayKey: local.dayKey, total, completed, cancelled, noShow, revenue },
           });
         }
