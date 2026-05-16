@@ -10,6 +10,7 @@ import { BusinessError } from '../lib/errors.js';
 import { slugify, withSlugCollision } from '../utils/slug.js';
 import { OnboardingStatus, OnboardingStep, Prisma } from '@prisma/client';
 import { markTaskComplete } from '../services/journeyService.js';
+import { deriveTones, PRESET_DEFAULT_BRAND, isPresetId } from '../lib/theme/derive.js';
 
 const ONBOARDING_STEP_VALUES = new Set<string>([
   'NOT_STARTED',
@@ -60,6 +61,13 @@ router.get('/public', async (req: any, res: any) => {
       throw new BusinessError('NOT_FOUND', 'Salon not found', 404);
     }
 
+    const rawPreset = (salon as any).themePreset;
+    const themePreset = isPresetId(rawPreset) ? rawPreset : 'classic';
+    const themeBrand = ((salon as any).brandColor as string | null)
+      || PRESET_DEFAULT_BRAND[themePreset];
+    const themeResolved = (salon as any).themeResolved
+      || deriveTones(themeBrand, themePreset);
+
     res.json({
       salon: {
         id: salon.id,
@@ -77,8 +85,20 @@ router.get('/public', async (req: any, res: any) => {
         workStartHour: salon.settings?.workStartHour || 9,
         workEndHour: salon.settings?.workEndHour || 18,
         slotInterval: salon.settings?.slotInterval || 30,
-        categoryOrder: salon.settings?.categoryOrder || null
-      }
+        categoryOrder: salon.settings?.categoryOrder || null,
+        theme: {
+          preset: themePreset,
+          brandColor: themeBrand,
+          logoUrl: salon.logoUrl,
+          resolved: themeResolved,
+        },
+      },
+      theme: {
+        preset: themePreset,
+        brandColor: themeBrand,
+        logoUrl: salon.logoUrl,
+        resolved: themeResolved,
+      },
     });
   } catch (error) {
     console.error('Error fetching salon public info:', error);
