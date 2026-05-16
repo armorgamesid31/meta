@@ -8667,6 +8667,9 @@ function resolveOutboundMessageMeta(input: {
   traceSource: unknown;
   traceUserId: number | null;
   traceUserEmail: string | null;
+  // Optional userId → display name lookup (firstName+lastName, displayName).
+  // Caller pre-batches a Map so this stays sync and avoids N+1 DB hits.
+  senderNameByUserId?: Map<number, string>;
 }): {
   outboundSource: MessageOutboundSource;
   outboundSourceLabel: string | null;
@@ -8702,15 +8705,18 @@ function resolveOutboundMessageMeta(input: {
       : null;
   const senderEmail = senderEmailRaw && senderEmailRaw.trim() ? senderEmailRaw.trim() : null;
 
+  // Friendly name from the prefetched salon-user map (firstName + lastName
+  // / displayName) — never expose the raw email in the bubble label.
+  const senderFriendlyName =
+    outboundSource === 'HUMAN_APP' && senderUserId && input.senderNameByUserId
+      ? input.senderNameByUserId.get(senderUserId) || null
+      : null;
+
   const outboundSourceLabel =
     outboundSource === 'AI_AGENT'
       ? 'AI Agent'
       : outboundSource === 'HUMAN_APP'
-        ? senderEmail
-          ? `App (${senderEmail})`
-          : senderUserId
-            ? `App (User #${senderUserId})`
-            : 'App User'
+        ? senderFriendlyName || 'Salon Ekibi'
         : input.channel === 'INSTAGRAM'
           ? 'Instagram Direct'
           : 'External';
@@ -9571,6 +9577,45 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
       })),
     );
 
+    // Pre-batch user names for outbound HUMAN_APP messages so the bubble
+    // label can show "Berkay Karakaya" instead of "App (email)". Collect
+    // unique senderUserIds from the rows, then a single SalonUser query.
+    const senderUserIds = Array.from(new Set(
+      rows
+        .map((r) => Number(r.outboundSenderUserId || 0))
+        .filter((id) => Number.isInteger(id) && id > 0),
+    ));
+    const senderNameByUserId = new Map<number, string>();
+    if (senderUserIds.length > 0) {
+      const users = await prisma.salonUser.findMany({
+        where: { id: { in: senderUserIds } },
+        select: { id: true, firstName: true, lastName: true, displayName: true, email: true },
+      });
+      const identityEmails = users
+        .map((u) => (typeof u.email === 'string' ? u.email.trim() : ''))
+        .filter(Boolean);
+      const identities = identityEmails.length > 0
+        ? await prisma.userIdentity.findMany({
+            where: { email: { in: identityEmails } },
+            select: { email: true, firstName: true, lastName: true, displayName: true },
+          })
+        : [];
+      const identityByEmail = new Map(identities.map((i) => [i.email, i]));
+      for (const u of users) {
+        const first = (u.firstName || '').trim();
+        const last = (u.lastName || '').trim();
+        const full = `${first} ${last}`.trim();
+        const display = (u.displayName || '').trim();
+        const identity = u.email ? identityByEmail.get(u.email.trim()) : undefined;
+        const iFirst = identity ? (identity.firstName || '').trim() : '';
+        const iLast = identity ? (identity.lastName || '').trim() : '';
+        const iFull = `${iFirst} ${iLast}`.trim();
+        const iDisplay = identity ? (identity.displayName || '').trim() : '';
+        const friendly = full || display || iFull || iDisplay;
+        if (friendly) senderNameByUserId.set(u.id, friendly);
+      }
+    }
+
     const items = rows.slice().reverse().map((row) => {
       const raw = asObject(row.rawPayload);
       const direction = resolveStoredEventDirection(row.direction, row.messageType);
@@ -9582,6 +9627,7 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
         traceSource: row.outboundSource || null,
         traceUserId: row.outboundSenderUserId || null,
         traceUserEmail: row.outboundSenderEmail || null,
+        senderNameByUserId,
       });
       const actor = asObject(raw.actor);
       const systemActorUserId =
