@@ -1437,6 +1437,15 @@ model ConversationMessageEvent {
   voiceTranscript            String?
   voiceTranscriptLang        String?
   voiceTranscriptAt          DateTime?              @db.Timestamp(6)
+  // Inbound reactions/emoji attached to this message by the customer
+  // (or the salon, for outbound echo). Shape:
+  //   [{ emoji: "❤️", from: "<psid|phone>", at: <iso-string>, action?: "react"|"unreact" }]
+  // We DO NOT create a separate ConversationMessageEvent row for each
+  // reaction — they live on the target message's reactions array so the
+  // mobile bubble can render them inline (WhatsApp/Instagram style).
+  // Reaction webhooks update this column on the target message identified
+  // by `reaction.mid` and never spawn their own row.
+  reactions                  Json?
   createdAt                  DateTime?              @default(now()) @db.Timestamp(6)
   updatedAt                  DateTime?              @default(now()) @updatedAt @db.Timestamp(6)
   salon                      Salon                  @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)

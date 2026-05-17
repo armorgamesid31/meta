@@ -984,6 +984,31 @@ function normalizeWebhookPayload(body: any) {
         for (const msg of messageList) {
           const from = msg?.from ?? null;
           const contact = from ? contactByWaId[from] : null;
+
+          // WhatsApp reaction events: msg.type === 'reaction' carries
+          // { message_id: <target>, emoji: "❤️" }. Like the IG branch,
+          // we DO NOT create a new conversation row — we route to the
+          // reactions merge path so it shows up as an inline chip under
+          // the target bubble. An empty emoji means "unreact" in Cloud
+          // API conventions.
+          if (msg?.type === 'reaction' && msg?.reaction) {
+            const emoji = typeof msg.reaction.emoji === 'string' ? msg.reaction.emoji : '';
+            out.push({
+              channel: 'WHATSAPP',
+              kind: 'reaction',
+              targetProviderMessageId:
+                typeof msg.reaction.message_id === 'string' ? msg.reaction.message_id : null,
+              action: emoji ? 'react' : 'unreact',
+              emoji: emoji || null,
+              fromId: from || null,
+              externalAccountId: value?.metadata?.phone_number_id || null,
+              externalBusinessId: entry?.id || null,
+              timestamp: Number(msg?.timestamp || Date.now()),
+              eventTimestamp: toIsoFromTs(msg?.timestamp),
+            });
+            continue;
+          }
+
           const media: any[] = [];
 
           if (msg?.image) media.push({ type: 'image', id: msg.image.id ?? null, url: msg.image.url ?? null, caption: msg.image.caption ?? null });
@@ -1066,7 +1091,37 @@ function normalizeWebhookPayload(body: any) {
       for (const ev of entry.messaging ?? []) {
         const m = ev?.message;
         const postback = ev?.postback;
-        if (!m && !postback) continue;
+        const reactionEv = ev?.reaction;
+        if (!m && !postback && !reactionEv) continue;
+
+        // Instagram reaction events: customer reacted to one of our outbound
+        // messages, or to one of their own. They DO NOT create a new
+        // conversation row — they attach to the target message
+        // (reaction.mid) and get rendered as an inline emoji on its bubble.
+        // We emit a special parsed item that processIncomingBatch routes to
+        // the reactions-merge path instead of upsertConversationMessageEvent.
+        if (reactionEv && !m && !postback) {
+          out.push({
+            channel: 'INSTAGRAM',
+            kind: 'reaction',
+            // identifies the message the reaction targets
+            targetProviderMessageId: typeof reactionEv.mid === 'string' ? reactionEv.mid : null,
+            action: typeof reactionEv.action === 'string' ? reactionEv.action : 'react',
+            emoji:
+              typeof reactionEv.emoji === 'string' && reactionEv.emoji
+                ? reactionEv.emoji
+                : typeof reactionEv.reaction === 'string'
+                  ? reactionEv.reaction
+                  : null,
+            fromId: ev?.sender?.id || null,
+            recipientId: ev?.recipient?.id || null,
+            externalAccountId: entry?.id || ev?.recipient?.id || null,
+            externalBusinessId: entry?.id || null,
+            timestamp: Number(ev?.timestamp || Date.now()),
+            eventTimestamp: toIsoFromTs(ev?.timestamp),
+          });
+          continue;
+        }
 
         const isEcho = m?.is_echo === true;
         const attachments = m?.attachments ?? [];
@@ -1140,6 +1195,71 @@ function normalizeWebhookPayload(body: any) {
   return out;
 }
 
+/**
+ * Merge a reaction event into the target message's reactions JSON column.
+ *
+ * Shape of `reactions`:
+ *   [{ emoji: "❤️", from: "<psid|phone>", at: "<iso>", action?: "react" }]
+ *
+ * `action: 'react'` adds (deduped by `from`, replaces any previous emoji
+ * from the same sender). `action: 'unreact'` removes any entry from that
+ * sender. Both Instagram and WhatsApp follow the same shape — channel
+ * differences live in how the parser pulls the emoji + target mid.
+ *
+ * Returns 'ok' on success, 'target_not_found' when the targeted message
+ * id doesn't exist in our DB (Meta sometimes delivers reactions on
+ * messages we never received the original of, e.g. ones older than our
+ * subscription start). The webhook log captures the raw event in either
+ * case so we can audit later.
+ */
+async function applyMessageReaction(
+  channel: ChannelType,
+  ev: any,
+): Promise<'ok' | 'target_not_found' | 'no_target_id'> {
+  const targetMid = typeof ev.targetProviderMessageId === 'string' ? ev.targetProviderMessageId.trim() : '';
+  if (!targetMid) return 'no_target_id';
+
+  const target = await prisma.conversationMessageEvent.findUnique({
+    where: { channel_providerMessageId: { channel, providerMessageId: targetMid } },
+    select: { id: true, reactions: true },
+  });
+  if (!target) return 'target_not_found';
+
+  const existing: Array<{ emoji: string; from: string; at: string }> = Array.isArray(target.reactions)
+    ? (target.reactions as any[]).filter((r) => r && typeof r === 'object').map((r) => ({
+        emoji: typeof r.emoji === 'string' ? r.emoji : '',
+        from: typeof r.from === 'string' ? r.from : '',
+        at: typeof r.at === 'string' ? r.at : new Date().toISOString(),
+      }))
+    : [];
+
+  const fromId = typeof ev.fromId === 'string' ? ev.fromId : '';
+  const action = ev.action === 'unreact' ? 'unreact' : 'react';
+
+  // Drop any prior reaction from this sender first — a person can only
+  // hold one active reaction per message at a time (WhatsApp behavior;
+  // Instagram lets multiple of the SAME message-target via different
+  // accounts which is already keyed on `from` here).
+  const filtered = existing.filter((r) => r.from !== fromId);
+  let next = filtered;
+  if (action === 'react' && fromId && typeof ev.emoji === 'string' && ev.emoji) {
+    next = [
+      ...filtered,
+      {
+        emoji: ev.emoji,
+        from: fromId,
+        at: typeof ev.eventTimestamp === 'string' ? ev.eventTimestamp : new Date().toISOString(),
+      },
+    ];
+  }
+
+  await prisma.conversationMessageEvent.update({
+    where: { id: target.id },
+    data: { reactions: next as any },
+  });
+  return 'ok';
+}
+
 async function processIncomingBatch(items: any[]) {
   const processed: any[] = [];
   const instagramCredentialsBySalon = new Map<number, { accessToken: string; externalAccountId: string | null } | null>();
@@ -1147,6 +1267,21 @@ async function processIncomingBatch(items: any[]) {
 
   for (const row of items) {
     const channel = row.channel as ChannelType;
+
+    // Reaction events follow a separate path: they don't create a new
+    // ConversationMessageEvent row — they merge into the target message's
+    // `reactions` JSON column. The mobile bubble then renders the emoji
+    // chip inline (WhatsApp / Instagram style) instead of as a standalone
+    // bubble. `react` adds, `unreact` removes.
+    if (row.kind === 'reaction') {
+      const result = await applyMessageReaction(channel, row).catch((err) => {
+        console.error('[reactions] apply failed:', err);
+        return 'reaction_apply_failed';
+      });
+      processed.push({ ...row, success: result === 'ok', result });
+      continue;
+    }
+
     const incomingProviderMessageId = String(row.providerMessageId || '').trim();
     let providerMessageId = incomingProviderMessageId;
     const conversationKey = String(row.channelConversationKey || '').trim();

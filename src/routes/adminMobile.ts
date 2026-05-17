@@ -9649,6 +9649,7 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
           repliedToText: true,
           voiceTranscript: true,
           voiceTranscriptLang: true,
+          reactions: true,
         },
       }),
       prisma.conversationState.findMany({
@@ -9789,6 +9790,10 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
         repliedToText: row.repliedToText ?? null,
         voiceTranscript: row.voiceTranscript ?? null,
         voiceTranscriptLang: row.voiceTranscriptLang ?? null,
+        // Reactions live on the target message's row (never as their own
+        // bubble). The mobile bubble renders these as a small emoji chip
+        // anchored under the message body.
+        reactions: Array.isArray(row.reactions) ? row.reactions : null,
         // `raw` removed from the response — see comment above. Frontend
         // had no consumer; shipping it was pure dead weight on the wire.
       };
@@ -10009,14 +10014,21 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
 
     if (channel === 'INSTAGRAM') {
       const url = `https://graph.instagram.com/${META_GRAPH_VERSION}/${senderInstagramId}/messages`;
-      // Instagram's Graph API for direct doesn't support reply context for
-      // text in the way Messenger does. We still persist the local pointer
-      // so the bubble shows a quoted block on our side.
+      // Instagram Direct via Instagram Business Login DOES support outbound
+      // quote-reply through `message.reply_to.mid` (same shape Meta uses on
+      // the inbound side under message.reply_to.mid). The old comment here
+      // claimed otherwise, so previously every IG manual reply landed in
+      // the customer's app as a fresh message with no threading — operators
+      // who picked a specific bubble to quote got their context dropped.
+      const messagePayload: Record<string, unknown> = { text };
+      if (replyToProviderMessageId) {
+        messagePayload.reply_to = { mid: replyToProviderMessageId };
+      }
       const graphResponse = await axios.post(
         url,
         {
           recipient: { id: rawRecipientId },
-          message: { text },
+          message: messagePayload,
         },
         {
           params: { access_token: accessToken },
