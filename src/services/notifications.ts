@@ -45,8 +45,11 @@ export interface NotificationDispatchResult {
 }
 
 const DEFAULT_RECIPIENTS: Record<NotificationEventType, string[]> = {
-  HANDOVER_REQUIRED: ['OWNER', 'MANAGER', 'RECEPTION'],
-  HANDOVER_REMINDER: ['OWNER', 'MANAGER', 'RECEPTION'],
+  // Handover akışı: müşteri biriyle konuşmak istiyorsa salondaki HERKES
+  // (owner/manager/reception VE staff) anlık bilmeli — owner push iznini
+  // vermemişse staff'ın telefonu çalsın diye STAFF de listede.
+  HANDOVER_REQUIRED: ['OWNER', 'MANAGER', 'RECEPTION', 'STAFF'],
+  HANDOVER_REMINDER: ['OWNER', 'MANAGER', 'RECEPTION', 'STAFF'],
   SAME_DAY_APPOINTMENT_CHANGE: ['OWNER', 'MANAGER', 'RECEPTION'],
   END_OF_DAY_MISSING_DATA: ['MANAGER', 'RECEPTION'],
   DAILY_MANAGER_REPORT: ['OWNER', 'MANAGER'],
