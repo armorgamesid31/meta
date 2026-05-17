@@ -490,6 +490,51 @@ router.put('/users/:id', authenticateToken, requirePermissionKey('access.users.m
   }
 });
 
+router.get('/users/:id/overrides', authenticateToken, requirePermissionKey('access.permission_overrides.edit'), async (req: any, res: any) => {
+  const auth = getAuth(req, res);
+  if (!auth) return;
+
+  const targetMembershipId = Number(req.params.id);
+  if (!Number.isInteger(targetMembershipId) || targetMembershipId <= 0) {
+    throw new BusinessError('VALIDATION_FAILED', 'Gecersiz kullanici kimligi.', 400);
+  }
+
+  try {
+    const overrides = await prisma.userPermissionOverride.findMany({
+      where: { salonId: auth.salonId, membershipId: targetMembershipId },
+      select: {
+        permissionId: true,
+        granted: true,
+        reason: true,
+        expiresAt: true,
+      },
+    });
+
+    const permissionIds = overrides.map((o) => o.permissionId);
+    const definitions = permissionIds.length > 0
+      ? await prisma.permissionDefinition.findMany({
+          where: { id: { in: permissionIds } },
+          select: { id: true, key: true },
+        })
+      : [];
+    const keyById = new Map(definitions.map((d) => [d.id, d.key]));
+
+    return res.status(200).json({
+      items: overrides
+        .map((item) => ({
+          permissionKey: keyById.get(item.permissionId) || null,
+          granted: item.granted,
+          reason: item.reason || null,
+          expiresAt: item.expiresAt ? item.expiresAt.toISOString() : null,
+        }))
+        .filter((item) => item.permissionKey),
+    });
+  } catch (error) {
+    console.error('Access user overrides fetch error:', error);
+    throw new BusinessError('INTERNAL_ERROR', 'Sunucu hatasi.', 500);
+  }
+});
+
 router.put('/users/:id/overrides', authenticateToken, requirePermissionKey('access.permission_overrides.edit'), async (req: any, res: any) => {
   const auth = getAuth(req, res);
   if (!auth) return;
