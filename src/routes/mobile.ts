@@ -73,18 +73,28 @@ router.get('/bootstrap', authenticateToken, async (req: any, res: any) => {
     }
 
     const normalizedWhatsapp = (user.salon.whatsappPhone || '').replace(/[^\d]/g, '');
-    await ensureSalonAccessSeed(user.salon.id);
-    const effectivePermissionSet = await getEffectivePermissionSet({
-      salonId: user.salon.id,
-      membershipId: Number(req.user.membershipId || req.user.userId),
-      role: String(req.user.role || user.role),
-    });
-    const permissions = Array.from(effectivePermissionSet).sort();
-
     const membershipId = Number(req.user.membershipId || 0);
-    const linkedStaff =
+    const effectiveMembershipId = Number(req.user.membershipId || req.user.userId);
+
+    // Run all remaining bootstrap data fetches in parallel. Previously
+    // these executed sequentially (seed → permissions → staff lookup →
+    // four-query transaction), creating a 5-round-trip waterfall that
+    // dominated login latency. The chains here are minimally
+    // ordered: ensureSalonAccessSeed must complete before
+    // getEffectivePermissionSet reads from the rows it seeds, but
+    // everything else is independent of that chain and of each other.
+    const accessChainPromise = (async () => {
+      await ensureSalonAccessSeed(user.salon.id);
+      return getEffectivePermissionSet({
+        salonId: user.salon.id,
+        membershipId: effectiveMembershipId,
+        role: String(req.user.role || user.role),
+      });
+    })();
+
+    const linkedStaffPromise =
       membershipId > 0
-        ? await prisma.staff.findFirst({
+        ? prisma.staff.findFirst({
             where: {
               salonId: user.salon.id,
               membershipId,
@@ -96,9 +106,9 @@ router.get('/bootstrap', authenticateToken, async (req: any, res: any) => {
               gender: true,
             },
           })
-        : null;
+        : Promise.resolve(null);
 
-    const [settings, serviceCount, staffCount, latestSubscription] = await prisma.$transaction([
+    const transactionPromise = prisma.$transaction([
       prisma.salonSettings.findUnique({
         where: { salonId: user.salon.id },
         select: {
@@ -116,6 +126,14 @@ router.get('/bootstrap', authenticateToken, async (req: any, res: any) => {
         select: { planKey: true, status: true },
       }),
     ]);
+
+    const [
+      effectivePermissionSet,
+      linkedStaff,
+      [settings, serviceCount, staffCount, latestSubscription],
+    ] = await Promise.all([accessChainPromise, linkedStaffPromise, transactionPromise]);
+
+    const permissions = Array.from(effectivePermissionSet).sort();
 
     const features = getFeaturesForPlan(latestSubscription?.planKey ?? null);
 
