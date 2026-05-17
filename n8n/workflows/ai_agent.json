@@ -961,14 +961,18 @@
         },
         "options": {
           "timeout": 5000
-        }
+        },
+        "toolDescription": "Aktif salonun adı, çalışma saatleri, konumu, iletişim tonu ve davranış kuralları için tek-sorgu özet bağlamı döner. Müşteri salonla ilgili genel bir soru sorduğunda (çalışma saatleri, konum, hakkımızda) veya yanıt tarzını netleştirmek istediğinde kullan.",
+        "descriptionType": "manual"
       },
       "type": "n8n-nodes-base.httpRequestTool",
       "typeVersion": 4.3,
-      "position": [-5504, 1200],
+      "position": [
+        -5504,
+        1200
+      ],
       "id": "tool-salon-context-v1",
-      "name": "tool_get_salon_context",
-      "toolDescription": "Aktif salonun adı, çalışma saatleri, konumu, iletişim tonu ve davranış kuralları için tek-sorgu özet bağlamı döner. Müşteri salonla ilgili genel bir soru sorduğunda (çalışma saatleri, konum, hakkımızda) veya yanıt tarzını netleştirmek istediğinde kullan."
+      "name": "tool_get_salon_context"
     },
     {
       "parameters": {
@@ -988,14 +992,18 @@
         "jsonBody": "={\n  \"salonId\": {{ Number($json.salonId || 0) }},\n  \"channel\": \"{{ $json.channel || 'INSTAGRAM' }}\",\n  \"subject\": \"{{ $fromAI('subject','müşteri telefonu (WhatsApp) veya Instagram kullanıcı adı/ID. Boş bırakırsa konuşmadaki kişi kullanılır.','string') || $json.channelUserId || '' }}\"\n}",
         "options": {
           "timeout": 5000
-        }
+        },
+        "toolDescription": "Müşterinin isim/profil bilgisi ve son 5 randevu özetini döner. Müşteri 'son geldiğim hizmet' / 'aynı uzmanla' gibi geçmişe referans verirse ya da müşteriyi adıyla selamlamak için kullan. subject parametresini boş bırakırsan konuşmadaki kişinin telefonu/handle'ı otomatik kullanılır.",
+        "descriptionType": "manual"
       },
       "type": "n8n-nodes-base.httpRequestTool",
       "typeVersion": 4.3,
-      "position": [-5504, 1328],
+      "position": [
+        -5504,
+        1328
+      ],
       "id": "tool-customer-lookup-v1",
-      "name": "tool_customer_lookup",
-      "toolDescription": "Müşterinin isim/profil bilgisi ve son 5 randevu özetini döner. Müşteri 'son geldiğim hizmet' / 'aynı uzmanla' gibi geçmişe referans verirse ya da müşteriyi adıyla selamlamak için kullan. subject parametresini boş bırakırsan konuşmadaki kişinin telefonu/handle'ı otomatik kullanılır."
+      "name": "tool_customer_lookup"
     },
     {
       "parameters": {
@@ -1012,14 +1020,18 @@
         },
         "options": {
           "timeout": 8000
-        }
+        },
+        "toolDescription": "Belirli bir hizmet + tarih için boş randevu saatlerinin listesini döner. Müşteri 'yarın 14:00 müsait misiniz?' / 'cumartesi boş saatleriniz neler?' tarzı somut tarihli soru sorarsa kullan. Önce tool_get_services ile service_id'yi bul. date YYYY-MM-DD formatında olmalı.",
+        "descriptionType": "manual"
       },
       "type": "n8n-nodes-base.httpRequestTool",
       "typeVersion": 4.3,
-      "position": [-5504, 1456],
+      "position": [
+        -5504,
+        1456
+      ],
       "id": "tool-availability-v1",
-      "name": "tool_get_availability",
-      "toolDescription": "Belirli bir hizmet + tarih için boş randevu saatlerinin listesini döner. Müşteri 'yarın 14:00 müsait misiniz?' / 'cumartesi boş saatleriniz neler?' tarzı somut tarihli soru sorarsa kullan. Önce tool_get_services ile service_id'yi bul. date YYYY-MM-DD formatında olmalı."
+      "name": "tool_get_availability"
     },
     {
       "parameters": {
@@ -1027,7 +1039,10 @@
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [-4592, 720],
+      "position": [
+        -4592,
+        720
+      ],
       "id": "outbound-error-log-v1",
       "name": "Outbound Error Log"
     }
