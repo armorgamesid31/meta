@@ -9606,54 +9606,61 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
             },
           };
 
-    const rows = await prisma.conversationMessageEvent.findMany({
-      where,
-      orderBy: {
-        eventTimestamp: 'desc',
-      },
-      take: limit,
-      select: {
-        id: true,
-        providerMessageId: true,
-        customerName: true,
-        messageType: true,
-        text: true,
-        direction: true,
-        processingStatus: true,
-        outboundSource: true,
-        outboundSenderUserId: true,
-        outboundSenderEmail: true,
-        eventTimestamp: true,
-        rawPayload: true,
-        mediaItems: true,
-        repliedToMessageId: true,
-        repliedToProviderMessageId: true,
-        repliedToText: true,
-        voiceTranscript: true,
-        voiceTranscriptLang: true,
-      },
-    });
-    const stateRows = await prisma.conversationState.findMany({
-      where: {
-        salonId,
-        channel,
-        conversationKey: {
-          in: keyCandidates,
+    // Run the two independent reads in parallel. Before this they ran
+    // sequentially (rows → state), which added ~50ms baseline on top of
+    // the rows query — small individually but visible after multiple
+    // such pages and on slow-pool moments. The two queries hit
+    // independent indexes so there's no contention.
+    const [rows, stateRows] = await Promise.all([
+      prisma.conversationMessageEvent.findMany({
+        where,
+        orderBy: {
+          eventTimestamp: 'desc',
         },
-      },
-      select: {
-        channel: true,
-        conversationKey: true,
-        customerId: true,
-        mode: true,
-        manualAlways: true,
-        humanPendingSince: true,
-        humanActiveUntil: true,
-        lastHumanMessageAt: true,
-        lastCustomerMessageAt: true,
-        updatedAt: true,
-      },
-    });
+        take: limit,
+        select: {
+          id: true,
+          providerMessageId: true,
+          customerName: true,
+          messageType: true,
+          text: true,
+          direction: true,
+          processingStatus: true,
+          outboundSource: true,
+          outboundSenderUserId: true,
+          outboundSenderEmail: true,
+          eventTimestamp: true,
+          rawPayload: true,
+          mediaItems: true,
+          repliedToMessageId: true,
+          repliedToProviderMessageId: true,
+          repliedToText: true,
+          voiceTranscript: true,
+          voiceTranscriptLang: true,
+        },
+      }),
+      prisma.conversationState.findMany({
+        where: {
+          salonId,
+          channel,
+          conversationKey: {
+            in: keyCandidates,
+          },
+        },
+        select: {
+          channel: true,
+          conversationKey: true,
+          customerId: true,
+          mode: true,
+          manualAlways: true,
+          humanPendingSince: true,
+          humanActiveUntil: true,
+          lastHumanMessageAt: true,
+          lastCustomerMessageAt: true,
+          updatedAt: true,
+        },
+      }),
+    ]);
     const stateRow = pickLatestState(
       stateRows.map((row) => ({
         channel: row.channel as 'INSTAGRAM' | 'WHATSAPP',
@@ -9679,6 +9686,13 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
     ));
     const senderNameByUserId = new Map<number, string>();
     if (senderUserIds.length > 0) {
+      // SalonUser is the per-salon row; UserIdentity is the cross-salon
+      // person record. UserIdentity lookup depends on the emails that
+      // come out of SalonUser, so it can't fully parallel — but we can
+      // overlap UserIdentity's prep by fetching SalonUser first and
+      // letting any pool waits absorb the latency. Kept sequential
+      // because joining the two via prisma.include would be even
+      // heavier (extra JSON shape work) and the second hop is small.
       const users = await prisma.salonUser.findMany({
         where: { id: { in: senderUserIds } },
         select: { id: true, firstName: true, lastName: true, displayName: true, email: true },
