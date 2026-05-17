@@ -472,9 +472,8 @@ router.post('/push/register', authenticateToken, async (req: any, res: any) => {
           ("salonId", "userId", "platform", "token", "appVersion", "deviceMeta", "isActive", "lastSeenAt", "createdAt", "updatedAt")
         VALUES
           ($1, $2, $3, $4, $5, $6::jsonb, true, NOW(), NOW(), NOW())
-        ON CONFLICT ("platform", "token")
+        ON CONFLICT ("platform", "token", "salonId")
         DO UPDATE SET
-          "salonId" = EXCLUDED."salonId",
           "userId" = EXCLUDED."userId",
           "appVersion" = EXCLUDED."appVersion",
           "deviceMeta" = EXCLUDED."deviceMeta",

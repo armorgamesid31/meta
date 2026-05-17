@@ -1737,7 +1737,7 @@ model PushDeviceToken {
   createdAt  DateTime? @default(now()) @db.Timestamp(6)
   updatedAt  DateTime? @default(now()) @updatedAt @db.Timestamp(6)
 
-  @@unique([platform, token], map: "uq_push_device_platform_token")
+  @@unique([platform, token, salonId], map: "uq_push_device_platform_token_salon")
   @@index([salonId, userId, isActive], map: "idx_push_device_salon_user_active")
 }
 
