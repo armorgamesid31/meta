@@ -101,7 +101,29 @@ export function normalizeRoles(rawRoles: unknown): FixedRole[] {
   return Array.from(new Set(normalized));
 }
 
+// Process-lifetime guard for the permission catalog upsert loop.
+//
+// Before this guard the function ran on EVERY bootstrap call — meaning
+// every single mobile login (and every getEffectivePermissionSet
+// call from notification policy reads, etc.) re-upserted all 31 rows.
+// pg_stat_statements told the truth: 2.3M+ INSERT-on-conflict hits
+// totalling ~47 minutes of cumulative Postgres time. The PERMISSION_CATALOG
+// is a compile-time constant; the rows it writes literally cannot change
+// without a redeploy, and a redeploy resets the in-memory flag anyway.
+//
+// We do still upsert on the first call after each process start — that
+// covers fresh DB schemas, catalog additions in new releases, and any
+// drift between code and DB without forcing a manual migration.
+let permissionCatalogEnsuredAt: number | null = null;
+const PERMISSION_CATALOG_TTL_MS = 60 * 60 * 1000; // 1 hour
+
 export async function ensurePermissionCatalog(): Promise<void> {
+  if (
+    permissionCatalogEnsuredAt !== null &&
+    Date.now() - permissionCatalogEnsuredAt < PERMISSION_CATALOG_TTL_MS
+  ) {
+    return;
+  }
   for (const item of PERMISSION_CATALOG) {
     await prisma.permissionDefinition.upsert({
       where: { key: item.key },
@@ -118,13 +140,32 @@ export async function ensurePermissionCatalog(): Promise<void> {
       },
     });
   }
+  permissionCatalogEnsuredAt = Date.now();
 }
 
+// Per-salon "already seeded" cache. Once we've confirmed (or written)
+// the default role-permission rows for a salon, we don't need to hit
+// pg_stat_statements every login to re-COUNT them. Membership in this
+// Set is process-lifetime; a redeploy clears it and the next login
+// re-confirms — which is desirable because schema/catalog changes can
+// add rows that need backfilling.
+const salonAccessSeededIds = new Set<number>();
+
 export async function ensureSalonAccessSeed(salonId: number): Promise<void> {
+  if (salonAccessSeededIds.has(salonId)) {
+    // Catalog might still need to refresh on TTL — let it own that
+    // decision and skip the expensive count() entirely.
+    await ensurePermissionCatalog();
+    return;
+  }
+
   await ensurePermissionCatalog();
 
   const existing = await prisma.salonRolePermission.count({ where: { salonId } });
-  if (existing > 0) return;
+  if (existing > 0) {
+    salonAccessSeededIds.add(salonId);
+    return;
+  }
 
   const permissions = await prisma.permissionDefinition.findMany({ select: { id: true, key: true } });
   const idByKey = new Map<string, number>(permissions.map((p) => [p.key, p.id]));
@@ -141,6 +182,7 @@ export async function ensureSalonAccessSeed(salonId: number): Promise<void> {
   if (rows.length > 0) {
     await prisma.salonRolePermission.createMany({ data: rows, skipDuplicates: true });
   }
+  salonAccessSeededIds.add(salonId);
 }
 
 export async function getPermissionCatalogWithGrants(salonId: number): Promise<{
