@@ -886,7 +886,12 @@ async function markConversationHumanActive(input: {
   conversationKey: string;
   profileName?: string | null;
 }) {
-  const canonicalConversationKey = extractRawConversationKey(input.channel, input.conversationKey);
+  // IMPORTANT: ConversationState rows must use the SAME key format the
+  // inbound webhook handler writes, otherwise mode transitions land on a
+  // separate "orphan" row while messages keep arriving on a different
+  // one. Inbound writes `<CHANNEL>:<raw>` (with prefix) — we ensure that
+  // shape here so handover / resume mutations target the same row.
+  const canonicalConversationKey = ensureChannelPrefixedKey(input.channel, input.conversationKey);
   const now = new Date();
   const until = new Date(now.getTime() + DEFAULT_HUMAN_ACTIVE_MINUTES * 60 * 1000);
   return prisma.conversationState.upsert({
@@ -926,7 +931,12 @@ async function markConversationHumanPending(input: {
   note?: string | null;
   profileName?: string | null;
 }) {
-  const canonicalConversationKey = extractRawConversationKey(input.channel, input.conversationKey);
+  // IMPORTANT: ConversationState rows must use the SAME key format the
+  // inbound webhook handler writes, otherwise mode transitions land on a
+  // separate "orphan" row while messages keep arriving on a different
+  // one. Inbound writes `<CHANNEL>:<raw>` (with prefix) — we ensure that
+  // shape here so handover / resume mutations target the same row.
+  const canonicalConversationKey = ensureChannelPrefixedKey(input.channel, input.conversationKey);
   const now = new Date();
   return prisma.conversationState.upsert({
     where: {
@@ -963,7 +973,12 @@ async function markConversationAuto(input: {
   note?: string | null;
   profileName?: string | null;
 }) {
-  const canonicalConversationKey = extractRawConversationKey(input.channel, input.conversationKey);
+  // IMPORTANT: ConversationState rows must use the SAME key format the
+  // inbound webhook handler writes, otherwise mode transitions land on a
+  // separate "orphan" row while messages keep arriving on a different
+  // one. Inbound writes `<CHANNEL>:<raw>` (with prefix) — we ensure that
+  // shape here so handover / resume mutations target the same row.
+  const canonicalConversationKey = ensureChannelPrefixedKey(input.channel, input.conversationKey);
   return prisma.conversationState.upsert({
     where: {
       salonId_channel_conversationKey: {
@@ -8614,6 +8629,20 @@ function extractRawConversationKey(channel: 'INSTAGRAM' | 'WHATSAPP', value: str
     return trimmed.slice(prefix.length).trim();
   }
   return trimmed;
+}
+
+/**
+ * Inverse of extractRawConversationKey: always returns the `<CHANNEL>:<raw>`
+ * shape that the inbound webhook handler stores conversation state under.
+ * Used by handover/resume/manual-always mutations so they target the SAME
+ * row that webhook deliveries write to. A previous bug had handover strip
+ * the prefix to raw form, creating a second orphan ConversationState row
+ * that messages never landed on — the mobile client then saw an empty
+ * conversation.
+ */
+function ensureChannelPrefixedKey(channel: 'INSTAGRAM' | 'WHATSAPP', value: string): string {
+  const raw = extractRawConversationKey(channel, value);
+  return `${channel}:${raw}`;
 }
 
 function conversationKeyCandidates(channel: 'INSTAGRAM' | 'WHATSAPP', value: string): string[] {
