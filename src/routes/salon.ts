@@ -11,6 +11,7 @@ import { slugify, withSlugCollision } from '../utils/slug.js';
 import { OnboardingStatus, OnboardingStep, Prisma } from '@prisma/client';
 import { markTaskComplete } from '../services/journeyService.js';
 import { deriveTones, PRESET_DEFAULT_BRAND, isPresetId } from '../lib/theme/derive.js';
+import { syncAgentSettingsTone, type AgentTone } from '../services/salonAgentContext.js';
 
 const ONBOARDING_STEP_VALUES = new Set<string>([
   'NOT_STARTED',
@@ -323,6 +324,15 @@ router.patch('/communication-tone', authenticateToken, async (req: any, res: any
     data: { communicationTone: raw as any },
     select: { communicationTone: true },
   });
+
+  // SalonAiAgentSettings.tone artık kullanılmıyor (kanonik kaynak Salon.communicationTone)
+  // ama legacy n8n versiyonları hâlâ okuyor olabilir. Defansif sync — best effort.
+  try {
+    await syncAgentSettingsTone(req.user.salonId, raw.toLowerCase() as AgentTone);
+  } catch (err) {
+    console.warn('[salon.communication-tone] agent settings sync failed (non-fatal)', err);
+  }
+
   return res.json({ tone: updated.communicationTone });
 });
 

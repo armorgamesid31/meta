@@ -25,6 +25,7 @@ import {
 import { upsertConversationMessageEvent } from '../services/conversationMessageEvents.js';
 import { storeConversationAvatarFromUrl } from '../services/conversationAvatarStorage.js';
 import { buildMediaItemsFromWebhook } from '../services/conversationMediaCache.js';
+import { loadSalonAgentContext } from '../services/salonAgentContext.js';
 
 const router = Router();
 
@@ -545,78 +546,6 @@ function computeStatePolicy(mode: ConversationAutomationMode) {
   if (mode === 'AUTO_RESUME_PENDING') return { aiAllowed: true, responsePolicy: 'resume_then_normal' };
   if (mode === 'MANUAL_ALWAYS') return { aiAllowed: false, responsePolicy: 'manual_notify_only' };
   return { aiAllowed: false, responsePolicy: 'human_active_suppress' };
-}
-
-async function loadAgentSettings(salonId: number) {
-  const settings = await prisma.salonAiAgentSettings.findUnique({
-    where: { salonId },
-    select: {
-      tone: true,
-      answerLength: true,
-      emojiUsage: true,
-      bookingGuidance: true,
-      handoverThreshold: true,
-      aiDisclosure: true,
-    },
-  });
-
-  return {
-    tone: settings?.tone || 'balanced',
-    answerLength: settings?.answerLength || 'medium',
-    emojiUsage: settings?.emojiUsage || 'low',
-    bookingGuidance: settings?.bookingGuidance || 'medium',
-    handoverThreshold: settings?.handoverThreshold || 'balanced',
-    aiDisclosure: settings?.aiDisclosure || 'onQuestion',
-  };
-}
-
-async function loadSalonInfo(salonId: number) {
-  const salon = await prisma.salon.findUnique({
-    where: { id: salonId },
-    select: {
-      id: true,
-      name: true,
-      city: true,
-      district: true,
-      address: true,
-      googleMapsUrl: true,
-      instagramUrl: true,
-      whatsappPhone: true,
-      tagline: true,
-      about: true,
-      settings: {
-        select: {
-          workStartHour: true,
-          workEndHour: true,
-          slotInterval: true,
-          workingDays: true,
-          timezone: true,
-          commonQuestions: true,
-        },
-      },
-    },
-  });
-
-  const settings = salon?.settings;
-
-  return {
-    salonId,
-    name: salon?.name || null,
-    city: salon?.city || null,
-    district: salon?.district || null,
-    address: salon?.address || null,
-    googleMapsUrl: salon?.googleMapsUrl || null,
-    instagramUrl: salon?.instagramUrl || null,
-    whatsappPhone: salon?.whatsappPhone || null,
-    tagline: salon?.tagline || null,
-    about: salon?.about || null,
-    timezone: settings?.timezone || 'Europe/Istanbul',
-    workStartHour: settings?.workStartHour ?? 9,
-    workEndHour: settings?.workEndHour ?? 18,
-    slotInterval: settings?.slotInterval ?? 30,
-    workingDays: settings?.workingDays ?? null,
-    commonQuestions: settings?.commonQuestions ?? null,
-  };
 }
 
 function chooseN8nTarget(channel: ChannelType) {
@@ -1691,11 +1620,42 @@ async function processIncomingBatch(items: any[]) {
     });
 
     const statePolicy = computeStatePolicy(state.mode);
-    const agentSettings = await loadAgentSettings(salonId);
-    const salonInfo = await loadSalonInfo(salonId);
+    const agentContext = await loadSalonAgentContext(salonId);
+    const agentSettings = agentContext?.agentSettings ?? {
+      tone: 'balanced',
+      answerLength: 'medium',
+      emojiUsage: 'low',
+      bookingGuidance: 'medium',
+      handoverThreshold: 'balanced',
+      aiDisclosure: 'onQuestion',
+    };
+    const salonInfo = agentContext?.salonInfo ?? {
+      salonId,
+      name: null,
+      city: null,
+      district: null,
+      address: null,
+      googleMapsUrl: null,
+      instagramUrl: null,
+      whatsappPhone: null,
+      tagline: null,
+      about: null,
+      timezone: 'Europe/Istanbul',
+      workStartHour: 9,
+      workEndHour: 18,
+      slotInterval: 30,
+      workingDays: null,
+      commonQuestions: null,
+    };
+    const toneDirective = agentContext?.toneDirective || '';
+    const styleDirective = agentContext?.styleDirective || '';
+    const salonOneLiner = agentContext?.salonOneLiner || '';
 
     processed.push({
       ...row,
+      toneDirective,
+      styleDirective,
+      salonOneLiner,
       providerMessageId,
       originalProviderMessageId: incomingProviderMessageId !== providerMessageId ? incomingProviderMessageId : undefined,
       salonId,

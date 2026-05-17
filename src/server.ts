@@ -42,6 +42,7 @@ import internalConversationStateRoutes from './routes/internalConversationState.
 import internalOutboundRoutes from './routes/internalOutbound.js';
 import internalMessageEnrichmentRoutes from './routes/internalMessageEnrichment.js';
 import internalAgentOutboundRoutes from './routes/internalAgentOutbound.js';
+import internalAgentRoutes from './routes/internalAgent.js';
 import internalImportsRoutes from './routes/internalImports.js';
 import internalWebsiteRoutes from './routes/internalWebsite.js';
 import channelWebhooksRoutes from './routes/channelWebhooks.js';
@@ -260,6 +261,7 @@ app.use('/api/internal/conversation-state', internalConversationStateRoutes);
 app.use('/api/internal/outbound', internalOutboundRoutes);
 app.use('/api/internal', internalMessageEnrichmentRoutes);
 app.use('/api/internal/agent-outbound', internalAgentOutboundRoutes);
+app.use('/api/internal/agent', internalAgentRoutes);
 app.use('/api/internal/imports', internalImportsRoutes);
 app.use('/api/internal/website', internalWebsiteRoutes);
 app.use('/api/internal/billing', internalBillingRoutes);
