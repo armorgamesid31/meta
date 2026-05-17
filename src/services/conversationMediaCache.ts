@@ -104,6 +104,16 @@ function getClient(): S3Client | null {
       accessKeyId: R2_ACCESS_KEY_ID,
       secretAccessKey: R2_SECRET_ACCESS_KEY,
     },
+    // AWS SDK v3 (>= 3.726) added "flexible checksums" — every presigned
+    // URL gets `x-amz-checksum-mode=ENABLED` baked into the signature
+    // by default. Cloudflare R2's S3 surface does not accept that
+    // header, so the browser's <img>/fetch() call to the signed URL
+    // came back as opaque/0 and conversations rendered as broken
+    // image icons. Setting both knobs to WHEN_REQUIRED reverts to
+    // the pre-3.726 behavior: checksums only when the operation
+    // really needs them (it doesn't for GetObject).
+    requestChecksumCalculation: 'WHEN_REQUIRED',
+    responseChecksumValidation: 'WHEN_REQUIRED',
   });
   return clientSingleton;
 }
