@@ -77,8 +77,9 @@ describe('Prompt template structural invariants', () => {
   });
 
   it('forbids leaking the link text (backend will add button)', () => {
-    expect(tpl).toMatch(/ASLA/);
-    expect(tpl).toMatch(/linki/i);
+    // Link asla metne yazılmamalı (eski: "ASLA yazma", yeni: "YAZMA, backend buton ekleyecek")
+    expect(tpl).toMatch(/(ASLA|YAZMA)/);
+    expect(tpl).toMatch(/(linki|backend buton)/i);
   });
 
   it('forbids leaking technical details', () => {
@@ -202,12 +203,14 @@ describe('repliedTo branch', () => {
 });
 
 describe('Token efficiency — dynamic single-tone footprint', () => {
-  it('rendered prompt is significantly smaller than legacy (≤ 2400 chars)', () => {
+  it('rendered prompt is significantly smaller than legacy (≤ 3400 chars)', () => {
     const ctx = makeContext('balanced');
     const out = renderSystemPrompt(contextToPayload(ctx, { profileName: 'Ayşe' }));
     // Legacy prompt with 3 tones + 6 axis matrix was ~4500+ chars.
-    // New dynamic single-tone target is < 2400 chars (≈ 600 token saving per call).
-    expect(out.length).toBeLessThan(2400);
+    // New dynamic single-tone target stays under 3400 chars even with the
+    // ZORUNLU tool-trigger block (added after Gemini Flash kept replying
+    // "yönlendiriyorum" without actually calling tool_request_handover).
+    expect(out.length).toBeLessThan(3400);
   });
 
   it('only contains the ACTIVE tone directive, not the other two', () => {
