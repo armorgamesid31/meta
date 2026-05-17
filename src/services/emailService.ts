@@ -106,6 +106,106 @@ export async function sendVerificationEmail(input: VerificationEmailInput): Prom
   }
 }
 
+export interface VerificationCodeEmailInput {
+  to: string;
+  name?: string | null;
+  code: string;
+  ttlMinutes: number;
+}
+
+/**
+ * Sends a 6-digit OTP code via SES (SMTP). Used by mobile flows where
+ * a magic link would force the user to switch apps mid-registration —
+ * a typed code keeps them in the app.
+ */
+export async function sendVerificationCodeEmail(input: VerificationCodeEmailInput): Promise<void> {
+  const t = getTransporter();
+  const subject = 'Kedy — E-posta doğrulama kodunuz';
+  const html = renderCodeHtml(input);
+  const text = renderCodeText(input);
+
+  try {
+    await t.sendMail({
+      from: EMAIL_FROM,
+      to: input.to,
+      subject,
+      html,
+      text,
+      headers: { 'X-Kedy-Mail-Kind': 'verification-code' },
+    });
+  } catch (error: any) {
+    const code = error?.code || error?.responseCode || 'unknown';
+    const message = error?.response || error?.message || 'smtp_send_failed';
+    console.error('[emailService] SMTP code send failed', {
+      to: input.to,
+      code,
+      message,
+    });
+    throw new Error(`email_send_failed:${code}`);
+  }
+}
+
+function renderCodeText(input: VerificationCodeEmailInput): string {
+  const greeting = input.name ? `Merhaba ${input.name},` : 'Merhaba,';
+  return [
+    greeting,
+    '',
+    `E-posta doğrulama kodunuz: ${input.code}`,
+    '',
+    `Bu kod ${input.ttlMinutes} dakika boyunca geçerlidir.`,
+    'Eğer bu işlemi siz başlatmadıysanız bu mesajı görmezden gelebilirsiniz.',
+    '',
+    '— Kedy ekibi',
+    'kedyapp.com',
+  ].join('\n');
+}
+
+function renderCodeHtml(input: VerificationCodeEmailInput): string {
+  const greeting = input.name
+    ? `Merhaba ${escapeHtml(input.name)},`
+    : 'Merhaba,';
+  return `<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>E-posta doğrulama kodu</title>
+</head>
+<body style="margin:0;padding:0;background:#F8F7F4;font-family:'Manrope','Inter',system-ui,-apple-system,sans-serif;color:#252528;">
+  <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background:#F8F7F4;padding:40px 16px;">
+    <tr><td align="center">
+      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="480" style="max-width:480px;background:#FFFFFF;border-radius:16px;border:1px solid #E7E5E1;overflow:hidden;">
+        <tr><td style="padding:32px 32px 0;">
+          <img src="https://kedyapp.com/kedy-logo-light.png" alt="Kedy" height="36" style="display:block;height:36px;width:auto;border:0;">
+        </td></tr>
+        <tr><td style="padding:24px 32px 8px;">
+          <h1 style="margin:0 0 16px;font-size:22px;font-weight:700;line-height:1.3;color:#252528;">E-posta doğrulama kodunuz</h1>
+          <p style="margin:0 0 8px;font-size:15px;line-height:1.6;color:#252528;">${greeting}</p>
+          <p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#252528;">
+            Kedy uygulamasında devam etmek için aşağıdaki kodu girin.
+          </p>
+        </td></tr>
+        <tr><td align="center" style="padding:0 32px 24px;">
+          <div style="display:inline-block;padding:18px 32px;background:#F8F7F4;border:1px solid #E7E5E1;border-radius:12px;font-size:32px;font-weight:700;letter-spacing:8px;color:#252528;">${escapeHtml(input.code)}</div>
+        </td></tr>
+        <tr><td style="padding:0 32px 24px;">
+          <p style="margin:0;font-size:13px;line-height:1.6;color:#77747A;">
+            Bu kod <strong>${input.ttlMinutes} dakika</strong> boyunca geçerlidir.
+            Eğer bu işlemi siz başlatmadıysanız bu mesajı görmezden gelebilirsiniz.
+          </p>
+        </td></tr>
+        <tr><td style="padding:20px 32px;border-top:1px solid #E7E5E1;background:#FBFAF8;">
+          <p style="margin:0;font-size:12px;line-height:1.5;color:#A3A0A6;text-align:center;">
+            © ${new Date().getFullYear()} Kedy · <a href="https://kedyapp.com" style="color:#A3A0A6;text-decoration:underline;">kedyapp.com</a>
+          </p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+}
+
 // ─────────────────────────────────────────────────────────────────
 // Templates (Kedy brand)
 // ─────────────────────────────────────────────────────────────────

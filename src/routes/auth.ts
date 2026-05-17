@@ -340,6 +340,44 @@ router.post('/invites/verify-otp', async (req: any, res: any) => {
   }
 });
 
+router.post('/invites/send-email-otp', async (req: any, res: any) => {
+  try {
+    const validated = await validateInvite({ code: req.body?.code, token: req.body?.token });
+    if (!validated) {
+      throw new BusinessError('NOT_FOUND', 'Invite not found or expired.', 404);
+    }
+    const email = String(req.body?.email || validated.user.email || '').trim().toLowerCase();
+    if (!email) {
+      throw new BusinessError('VALIDATION_FAILED', 'email is required.', 400);
+    }
+    const { createEmailOtp } = await import('../services/emailOtpService.js');
+    const verification = await createEmailOtp({
+      email,
+      salonId: validated.salon.id,
+      purpose: 'INVITE_EMAIL',
+      name: typeof req.body?.firstName === 'string' ? req.body.firstName : null,
+    });
+    return res.status(200).json({ emailVerificationId: verification.id });
+  } catch (error: any) {
+    return res.status(400).json({ message: error?.message || 'Unable to send email OTP.' });
+  }
+});
+
+router.post('/invites/verify-email-otp', async (req: any, res: any) => {
+  try {
+    const verificationId = String(req.body?.emailVerificationId || req.body?.verificationId || '').trim();
+    const code = String(req.body?.code || '').trim();
+    if (!verificationId || !code) {
+      throw new BusinessError('VALIDATION_FAILED', 'emailVerificationId and code are required.', 400);
+    }
+    const { verifyEmailOtp } = await import('../services/emailOtpService.js');
+    const verification = await verifyEmailOtp({ verificationId, code });
+    return res.status(200).json({ verified: true, emailVerificationId: verification.id });
+  } catch (error: any) {
+    return res.status(400).json({ message: error?.message || 'Email OTP verification failed.' });
+  }
+});
+
 router.post('/invites/activate', async (req: any, res: any) => {
   try {
     const verificationId = String(req.body?.verificationId || '').trim();
@@ -349,6 +387,21 @@ router.post('/invites/activate', async (req: any, res: any) => {
     const verification = await prisma.customerPhoneVerification.findUnique({ where: { id: verificationId } });
     if (!verification || verification.status !== 'VERIFIED') {
       throw new BusinessError('VALIDATION_FAILED', 'Phone verification is required before activation.', 400);
+    }
+
+    // Email verification is also required from now on. We accept either
+    // emailVerificationId (new flow) and check it against the submitted
+    // email. Old clients that don't send one get a clear 400 instead of
+    // silently activating without proof of the email address.
+    const emailVerificationId = String(req.body?.emailVerificationId || '').trim();
+    const submittedEmail = String(req.body?.email || '').trim().toLowerCase();
+    if (!emailVerificationId) {
+      throw new BusinessError('VALIDATION_FAILED', 'E-posta doğrulaması gerekli.', 400);
+    }
+    const { isEmailVerificationConsumed } = await import('../services/emailOtpService.js');
+    const emailOk = await isEmailVerificationConsumed(emailVerificationId, submittedEmail);
+    if (!emailOk) {
+      throw new BusinessError('VALIDATION_FAILED', 'Bu e-posta için doğrulama bulunamadı.', 400);
     }
 
     const result = await activateInvite({

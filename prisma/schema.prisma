@@ -2631,6 +2631,33 @@ enum MessageEventDirection {
 // Verification system (UTILITY-link based, replacing OTP)
 // ─────────────────────────────────────────────────────────────────
 
+// Lightweight 6-digit OTP-by-email model.
+//
+// `VerificationLink` covers click-through magic links; this table covers
+// the mobile flow where a typed code is more practical than asking the
+// user to switch apps mid-registration. Used by the invite activation
+// flow so a teammate joining a salon proves both their phone (via
+// WhatsApp OTP) and their email (via this code).
+model EmailOtpVerification {
+  id           String    @id @default(uuid())
+  salonId      Int?
+  email        String
+  codeHash     String
+  purpose      String    @default("INVITE_EMAIL")
+  status       String    @default("PENDING")
+  attemptCount Int       @default(0)
+  maxAttempts  Int       @default(5)
+  sendCount    Int       @default(1)
+  expiresAt    DateTime  @db.Timestamp(6)
+  verifiedAt   DateTime? @db.Timestamp(6)
+  lastSentAt   DateTime? @db.Timestamp(6)
+  createdAt    DateTime? @default(now()) @db.Timestamp(6)
+  updatedAt    DateTime? @default(now()) @updatedAt @db.Timestamp(6)
+
+  @@index([email, status], map: "idx_email_otp_email_status")
+  @@index([expiresAt], map: "idx_email_otp_expires")
+}
+
 model VerificationLink {
   id               String              @id @default(uuid())
   tokenHash        String              @unique(map: "uq_verification_token_hash")
