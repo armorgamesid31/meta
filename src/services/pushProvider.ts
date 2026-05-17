@@ -15,6 +15,7 @@ export const ANDROID_PUSH_CHANNEL_ID = 'kedy_general_notifications';
 export const ANDROID_PUSH_CHANNEL_APPOINTMENT_ID = 'kedy_appointment_notifications';
 export const ANDROID_PUSH_CHANNEL_BOOKING_CHANGE_ID = 'kedy_booking_change_notifications';
 export const ANDROID_PUSH_CHANNEL_REPORT_ID = 'kedy_report_notifications';
+export const ANDROID_PUSH_CHANNEL_EOD_ID = 'kedy_eod_notifications';
 export const ANDROID_PUSH_CHANNEL_HANDOVER_ID = 'kedy_handover_notifications';
 export const ANDROID_PUSH_ICON_NAME = 'ic_stat_kedy_notification';
 
@@ -215,7 +216,8 @@ function shouldDeactivateToken(error: unknown): boolean {
 function resolveAndroidSound(channelId: string): string {
   if (channelId === ANDROID_PUSH_CHANNEL_APPOINTMENT_ID) return 'new_appointment';
   if (channelId === ANDROID_PUSH_CHANNEL_BOOKING_CHANGE_ID) return 'booking_changed_canceled';
-  if (channelId === ANDROID_PUSH_CHANNEL_REPORT_ID) return 'report';
+  if (channelId === ANDROID_PUSH_CHANNEL_REPORT_ID) return 'new_report';
+  if (channelId === ANDROID_PUSH_CHANNEL_EOD_ID) return 'old_report';
   if (channelId === ANDROID_PUSH_CHANNEL_HANDOVER_ID) return 'handover';
   return 'default';
 }
@@ -223,7 +225,8 @@ function resolveAndroidSound(channelId: string): string {
 function resolveIosSound(channelId: string): string {
   if (channelId === ANDROID_PUSH_CHANNEL_APPOINTMENT_ID) return 'new_appointment.caf';
   if (channelId === ANDROID_PUSH_CHANNEL_BOOKING_CHANGE_ID) return 'booking_changed_canceled.caf';
-  if (channelId === ANDROID_PUSH_CHANNEL_REPORT_ID) return 'report.caf';
+  if (channelId === ANDROID_PUSH_CHANNEL_REPORT_ID) return 'new_report.caf';
+  if (channelId === ANDROID_PUSH_CHANNEL_EOD_ID) return 'old_report.caf';
   if (channelId === ANDROID_PUSH_CHANNEL_HANDOVER_ID) return 'handover.caf';
   return 'default';
 }

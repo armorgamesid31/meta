@@ -2,6 +2,7 @@ import { prisma } from '../prisma.js';
 import {
   ANDROID_PUSH_CHANNEL_APPOINTMENT_ID,
   ANDROID_PUSH_CHANNEL_BOOKING_CHANGE_ID,
+  ANDROID_PUSH_CHANNEL_EOD_ID,
   ANDROID_PUSH_CHANNEL_HANDOVER_ID,
   ANDROID_PUSH_CHANNEL_ID,
   ANDROID_PUSH_CHANNEL_REPORT_ID,
@@ -111,6 +112,10 @@ function resolveAndroidChannelId(
 ): string {
   if (eventType === 'DAILY_MANAGER_REPORT') {
     return ANDROID_PUSH_CHANNEL_REPORT_ID;
+  }
+
+  if (eventType === 'END_OF_DAY_MISSING_DATA') {
+    return ANDROID_PUSH_CHANNEL_EOD_ID;
   }
 
   if (eventType === 'HANDOVER_REQUIRED' || eventType === 'HANDOVER_REMINDER') {
