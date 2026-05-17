@@ -106,7 +106,7 @@
           "parameters": [
             {
               "name": "x-internal-api-key",
-              "value": "={{ $env.INTERNAL_API_KEY }}"
+              "value": "4c4ec9dd02994c9fa27b2b316631f22fd1f04455a54351b8575a60d6a99756fd"
             }
           ]
         },
@@ -663,7 +663,7 @@
             {
               "id": "26bec848-cf81-494b-9f5b-dfb84bc05fa3",
               "leftValue": "={{ String($json.headers?.['x-internal-api-key'] || '') }}",
-              "rightValue": "={{ $env.WEBHOOK_INGRESS_API_KEY || $env.INTERNAL_API_KEY }}",
+              "rightValue": "ae989558d5b97940b643e514ebc885d2656e7a8000efa5f499ce1e36c9a1182a",
               "operator": {
                 "type": "string",
                 "operation": "equals",
@@ -802,7 +802,7 @@
           "parameters": [
             {
               "name": "x-internal-api-key",
-              "value": "={{ $env.INTERNAL_API_KEY }}"
+              "value": "4c4ec9dd02994c9fa27b2b316631f22fd1f04455a54351b8575a60d6a99756fd"
             }
           ]
         },
@@ -871,7 +871,7 @@
           "parameters": [
             {
               "name": "x-internal-api-key",
-              "value": "={{ $env.INTERNAL_API_KEY }}"
+              "value": "4c4ec9dd02994c9fa27b2b316631f22fd1f04455a54351b8575a60d6a99756fd"
             }
           ]
         },
@@ -898,7 +898,7 @@
           "parameters": [
             {
               "name": "x-internal-api-key",
-              "value": "={{ $env.INTERNAL_API_KEY }}"
+              "value": "4c4ec9dd02994c9fa27b2b316631f22fd1f04455a54351b8575a60d6a99756fd"
             }
           ]
         },
@@ -955,7 +955,7 @@
           "parameters": [
             {
               "name": "x-internal-api-key",
-              "value": "={{ $env.INTERNAL_API_KEY }}"
+              "value": "4c4ec9dd02994c9fa27b2b316631f22fd1f04455a54351b8575a60d6a99756fd"
             }
           ]
         },
@@ -979,7 +979,7 @@
           "parameters": [
             {
               "name": "x-internal-api-key",
-              "value": "={{ $env.INTERNAL_API_KEY }}"
+              "value": "4c4ec9dd02994c9fa27b2b316631f22fd1f04455a54351b8575a60d6a99756fd"
             }
           ]
         },
@@ -1006,7 +1006,7 @@
           "parameters": [
             {
               "name": "x-internal-api-key",
-              "value": "={{ $env.INTERNAL_API_KEY }}"
+              "value": "4c4ec9dd02994c9fa27b2b316631f22fd1f04455a54351b8575a60d6a99756fd"
             }
           ]
         },

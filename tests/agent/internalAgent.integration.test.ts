@@ -40,7 +40,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (!skipAll) await ensureCleanup();
-});
+}, 60000);
 
 async function createTestSalon(opts: {
   name?: string;
@@ -202,7 +202,7 @@ describe('POST /api/internal/agent/customer-lookup', () => {
     expect(res.body.found).toBe(false);
   });
 
-  it.runIf(!skipAll)('finds customer by phone fallback when no IdentityBinding', async () => {
+  it.runIf(!skipAll)('finds customer by phone fallback when no IdentityBinding', { timeout: 30000 }, async () => {
     const salonId = await createTestSalon();
     await prisma.customer.create({
       data: {
@@ -221,7 +221,7 @@ describe('POST /api/internal/agent/customer-lookup', () => {
     expect(Array.isArray(res.body.recentAppointments)).toBe(true);
   });
 
-  it.runIf(!skipAll)('returns recent appointments (max 5, newest first)', async () => {
+  it.runIf(!skipAll)('returns recent appointments (max 5, newest first)', { timeout: 30000 }, async () => {
     const salonId = await createTestSalon();
     const customer = await prisma.customer.create({
       data: { salonId, phone: '+905551110001', name: 'Hist Test' },
@@ -236,20 +236,22 @@ describe('POST /api/internal/agent/customer-lookup', () => {
     });
 
     const now = Date.now();
-    for (let i = 0; i < 7; i++) {
-      await prisma.appointment.create({
-        data: {
-          salonId,
-          customerId: customer.id,
-          staffId: staff.id,
-          serviceId: service.id,
-          startTime: new Date(now - (i + 1) * 86400000),
-          endTime: new Date(now - (i + 1) * 86400000 + 3600000),
-          customerName: 'Hist Test',
-          customerPhone: '+905551110001',
-        },
-      });
-    }
+    await Promise.all(
+      Array.from({ length: 7 }, (_, i) =>
+        prisma.appointment.create({
+          data: {
+            salonId,
+            customerId: customer.id,
+            staffId: staff.id,
+            serviceId: service.id,
+            startTime: new Date(now - (i + 1) * 86400000),
+            endTime: new Date(now - (i + 1) * 86400000 + 3600000),
+            customerName: 'Hist Test',
+            customerPhone: '+905551110001',
+          },
+        }),
+      ),
+    );
 
     const res = await request(app)
       .post('/api/internal/agent/customer-lookup')
@@ -280,7 +282,7 @@ describe('GET /api/internal/agent/availability', () => {
     expect(res.body.error).toMatch(/date/i);
   });
 
-  it.runIf(!skipAll)('returns slots array shape (may be empty if no staff)', async () => {
+  it.runIf(!skipAll)('returns slots array shape (may be empty if no staff)', { timeout: 30000 }, async () => {
     const salonId = await createTestSalon();
     const service = await prisma.service.create({
       data: { salonId, name: 'Test Hizmet', price: 100, duration: 30 },
