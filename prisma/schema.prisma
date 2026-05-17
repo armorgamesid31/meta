@@ -2079,6 +2079,20 @@ model AppNotificationDelivery {
   @@index([salonId, userId, readAt], map: "idx_notification_delivery_user_read")
 }
 
+model SalonDailyReportState {
+  id             Int       @id @default(autoincrement())
+  salonId        Int
+  reportDate     String
+  reportSentAt   DateTime? @db.Timestamp(6)
+  lastReminderAt DateTime? @db.Timestamp(6)
+  reminderCount  Int       @default(0)
+  createdAt      DateTime? @default(now()) @db.Timestamp(6)
+  updatedAt      DateTime? @default(now()) @updatedAt @db.Timestamp(6)
+
+  @@unique([salonId, reportDate], map: "uq_salon_daily_report_state_salon_date")
+  @@index([salonId, reportDate], map: "idx_salon_daily_report_state_salon_date")
+}
+
 model HandoverAlertState {
   id                 Int                         @id @default(autoincrement())
   salonId            Int

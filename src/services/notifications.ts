@@ -51,7 +51,7 @@ const DEFAULT_RECIPIENTS: Record<NotificationEventType, string[]> = {
   HANDOVER_REQUIRED: ['OWNER', 'MANAGER', 'RECEPTION', 'STAFF'],
   HANDOVER_REMINDER: ['OWNER', 'MANAGER', 'RECEPTION', 'STAFF'],
   SAME_DAY_APPOINTMENT_CHANGE: ['OWNER', 'MANAGER', 'RECEPTION'],
-  END_OF_DAY_MISSING_DATA: ['MANAGER', 'RECEPTION'],
+  END_OF_DAY_MISSING_DATA: ['OWNER', 'MANAGER', 'RECEPTION', 'STAFF'],
   DAILY_MANAGER_REPORT: ['OWNER', 'MANAGER'],
   CAMPAIGN_AUTO_TRIGGER: ['OWNER', 'MANAGER', 'RECEPTION'],
   CAMPAIGN_MANUAL_SEND: ['OWNER', 'MANAGER', 'RECEPTION'],
@@ -843,23 +843,6 @@ function localTimeParts(date: Date, timezone: string): { dayKey: string; hour: n
   };
 }
 
-async function hasNotificationForLocalDay(salonId: number, eventType: NotificationEventType, dayKey: string): Promise<boolean> {
-  const rows = await prisma.$queryRawUnsafe<any[]>(
-    `
-      SELECT 1
-      FROM "AppNotification"
-      WHERE "salonId" = $1
-        AND "eventType" = $2::"NotificationEventType"
-        AND to_char("createdAt", 'YYYY-MM-DD') = $3
-      LIMIT 1
-    `,
-    salonId,
-    eventType,
-    dayKey,
-  );
-  return rows.length > 0;
-}
-
 export async function runDailyNotificationSweep(): Promise<void> {
   const locked = await tryAdvisoryLock(LOCK_DAILY);
   if (!locked) return;
@@ -880,89 +863,147 @@ export async function runDailyNotificationSweep(): Promise<void> {
       const workEndHour = Number(salon.workEndHour || 18);
 
       const local = localTimeParts(now, timezone);
-      const eodMinute = workEndHour * 60 + 5;
-      const reportMinute = workEndHour * 60 + 30;
       const currentMinute = local.hour * 60 + local.minute;
+      // After workEndHour + 5 minutes we begin evaluating "is the day
+      // fully closed?". The sweep tick runs every 10 minutes, and we
+      // gate retries via SalonDailyReportState (reminderCount + 30-min
+      // cooldown), so the only window check we need is "are we past
+      // the cutoff at all?".
+      const evaluationStartMinute = workEndHour * 60 + 5;
+      const isPastEod = currentMinute >= evaluationStartMinute;
+      if (!isPastEod) continue;
 
-      const shouldRunEod = Math.abs(currentMinute - eodMinute) <= 5;
-      const shouldRunReport = Math.abs(currentMinute - reportMinute) <= 5;
+      // Lazily create today's state row, then read its current flags.
+      // ON CONFLICT keeps the row idempotent across the 10-min ticks.
+      const stateRows = await prisma.$queryRawUnsafe<any[]>(
+        `
+          INSERT INTO "SalonDailyReportState" ("salonId", "reportDate", "createdAt", "updatedAt")
+          VALUES ($1, $2, NOW(), NOW())
+          ON CONFLICT ("salonId", "reportDate")
+          DO UPDATE SET "updatedAt" = NOW()
+          RETURNING "reportSentAt", "lastReminderAt", "reminderCount"
+        `,
+        salonId,
+        local.dayKey,
+      );
 
-      if (shouldRunEod) {
-        const already = await hasNotificationForLocalDay(salonId, 'END_OF_DAY_MISSING_DATA', local.dayKey);
-        if (!already) {
-          const missingRows = await prisma.$queryRawUnsafe<any[]>(
-            `
-              SELECT
-                SUM(CASE WHEN a."status" = 'BOOKED' THEN 1 ELSE 0 END) AS "bookedCount",
-                SUM(CASE WHEN a."status" = 'COMPLETED' AND a."paymentMethod" IS NULL THEN 1 ELSE 0 END) AS "missingPaymentCount"
-              FROM "Appointment" a
-              WHERE a."salonId" = $1
-                AND COALESCE(a."source", 'CUSTOMER') <> 'IMPORT'
-                AND DATE((a."startTime" AT TIME ZONE $2)) = DATE((NOW() AT TIME ZONE $2))
-            `,
-            salonId,
-            timezone,
-          );
-
-          const bookedCount = Number(missingRows?.[0]?.bookedCount || 0);
-          const missingPaymentCount = Number(missingRows?.[0]?.missingPaymentCount || 0);
-
-          if (bookedCount > 0 || missingPaymentCount > 0) {
-            const missingParts: string[] = [];
-            if (bookedCount > 0) missingParts.push(`${bookedCount} randevu durumu`);
-            if (missingPaymentCount > 0) missingParts.push(`${missingPaymentCount} ödeme tipi`);
-            await createNotification({
-              salonId,
-              eventType: 'END_OF_DAY_MISSING_DATA',
-              title: 'Gün sonu kapatma',
-              body: `Eksik kalan: ${missingParts.join(' · ')}\nGünü kapatmadan önce tamamla.`,
-              payload: { bookedCount, missingPaymentCount, dayKey: local.dayKey },
-            });
-          }
-        }
+      const state = stateRows?.[0];
+      if (!state) continue;
+      if (state.reportSentAt) {
+        // Day already closed and reported — nothing left to do for
+        // this salon today.
+        continue;
       }
 
-      if (shouldRunReport) {
-        const already = await hasNotificationForLocalDay(salonId, 'DAILY_MANAGER_REPORT', local.dayKey);
-        if (!already) {
-          const metricsRows = await prisma.$queryRawUnsafe<any[]>(
-            `
-              SELECT
-                COUNT(*) AS "total",
-                SUM(CASE WHEN a."status" = 'COMPLETED' THEN 1 ELSE 0 END) AS "completed",
-                SUM(CASE WHEN a."status" = 'CANCELLED' THEN 1 ELSE 0 END) AS "cancelled",
-                SUM(CASE WHEN a."status" = 'NO_SHOW' THEN 1 ELSE 0 END) AS "noShow",
-                SUM(CASE WHEN a."status" = 'COMPLETED' THEN COALESCE(s."price", 0) ELSE 0 END) AS "revenue"
-              FROM "Appointment" a
-              LEFT JOIN "Service" s ON s."id" = a."serviceId"
-              WHERE a."salonId" = $1
-                AND COALESCE(a."source", 'CUSTOMER') <> 'IMPORT'
-                AND DATE((a."startTime" AT TIME ZONE $2)) = DATE((NOW() AT TIME ZONE $2))
-            `,
-            salonId,
-            timezone,
-          );
+      const missingRows = await prisma.$queryRawUnsafe<any[]>(
+        `
+          SELECT
+            SUM(CASE WHEN a."status" = 'BOOKED' THEN 1 ELSE 0 END) AS "bookedCount",
+            SUM(CASE WHEN a."status" = 'COMPLETED' AND a."paymentMethod" IS NULL THEN 1 ELSE 0 END) AS "missingPaymentCount"
+          FROM "Appointment" a
+          WHERE a."salonId" = $1
+            AND COALESCE(a."source", 'CUSTOMER') <> 'IMPORT'
+            AND DATE((a."startTime" AT TIME ZONE $2)) = DATE((NOW() AT TIME ZONE $2))
+        `,
+        salonId,
+        timezone,
+      );
 
-          const total = Number(metricsRows?.[0]?.total || 0);
-          const completed = Number(metricsRows?.[0]?.completed || 0);
-          const cancelled = Number(metricsRows?.[0]?.cancelled || 0);
-          const noShow = Number(metricsRows?.[0]?.noShow || 0);
-          const revenue = Number(metricsRows?.[0]?.revenue || 0);
+      const bookedCount = Number(missingRows?.[0]?.bookedCount || 0);
+      const missingPaymentCount = Number(missingRows?.[0]?.missingPaymentCount || 0);
+      const unfinishedTotal = bookedCount + missingPaymentCount;
 
-          const revenueFmt = new Intl.NumberFormat('tr-TR', {
-            style: 'currency',
-            currency: 'TRY',
-            maximumFractionDigits: 0,
-          }).format(revenue);
+      if (unfinishedTotal > 0) {
+        const reminderCount = Number(state.reminderCount || 0);
+        const lastReminderAt = state.lastReminderAt ? new Date(state.lastReminderAt) : null;
+        const minutesSinceLast = lastReminderAt
+          ? (Date.now() - lastReminderAt.getTime()) / 60000
+          : Number.POSITIVE_INFINITY;
+
+        // Cap at 3 nudges with a 30-min cooldown so a long-running open
+        // day doesn't spam the staff at every tick.
+        if (reminderCount < 3 && minutesSinceLast >= 30) {
+          const missingParts: string[] = [];
+          if (bookedCount > 0) missingParts.push(`${bookedCount} randevu durumu`);
+          if (missingPaymentCount > 0) missingParts.push(`${missingPaymentCount} ödeme tipi`);
+
           await createNotification({
             salonId,
-            eventType: 'DAILY_MANAGER_REPORT',
-            title: 'Günlük özet hazır',
-            body: `${completed}/${total} tamamlandı • ${revenueFmt} ciro\nİptal ${cancelled} · No-show ${noShow}`,
-            payload: { dayKey: local.dayKey, total, completed, cancelled, noShow, revenue },
+            eventType: 'END_OF_DAY_MISSING_DATA',
+            title: 'Gün sonu kapatma',
+            body: `Eksik kalan: ${missingParts.join(' · ')}\nGün sonu raporu için randevuları tamamla.`,
+            payload: {
+              bookedCount,
+              missingPaymentCount,
+              dayKey: local.dayKey,
+              reminderCount: reminderCount + 1,
+            },
           });
+
+          await prisma.$executeRawUnsafe(
+            `
+              UPDATE "SalonDailyReportState"
+              SET "reminderCount" = "reminderCount" + 1,
+                  "lastReminderAt" = NOW(),
+                  "updatedAt" = NOW()
+              WHERE "salonId" = $1 AND "reportDate" = $2
+            `,
+            salonId,
+            local.dayKey,
+          );
         }
+        continue;
       }
+
+      // Everything is finalized — generate the report and lock it in.
+      const metricsRows = await prisma.$queryRawUnsafe<any[]>(
+        `
+          SELECT
+            COUNT(*) AS "total",
+            SUM(CASE WHEN a."status" = 'COMPLETED' THEN 1 ELSE 0 END) AS "completed",
+            SUM(CASE WHEN a."status" = 'CANCELLED' THEN 1 ELSE 0 END) AS "cancelled",
+            SUM(CASE WHEN a."status" = 'NO_SHOW' THEN 1 ELSE 0 END) AS "noShow",
+            SUM(CASE WHEN a."status" = 'COMPLETED' THEN COALESCE(s."price", 0) ELSE 0 END) AS "revenue"
+          FROM "Appointment" a
+          LEFT JOIN "Service" s ON s."id" = a."serviceId"
+          WHERE a."salonId" = $1
+            AND COALESCE(a."source", 'CUSTOMER') <> 'IMPORT'
+            AND DATE((a."startTime" AT TIME ZONE $2)) = DATE((NOW() AT TIME ZONE $2))
+        `,
+        salonId,
+        timezone,
+      );
+
+      const total = Number(metricsRows?.[0]?.total || 0);
+      const completed = Number(metricsRows?.[0]?.completed || 0);
+      const cancelled = Number(metricsRows?.[0]?.cancelled || 0);
+      const noShow = Number(metricsRows?.[0]?.noShow || 0);
+      const revenue = Number(metricsRows?.[0]?.revenue || 0);
+
+      const revenueFmt = new Intl.NumberFormat('tr-TR', {
+        style: 'currency',
+        currency: 'TRY',
+        maximumFractionDigits: 0,
+      }).format(revenue);
+
+      await createNotification({
+        salonId,
+        eventType: 'DAILY_MANAGER_REPORT',
+        title: 'Günlük özet hazır',
+        body: `${completed}/${total} tamamlandı • ${revenueFmt} ciro\nİptal ${cancelled} · No-show ${noShow}`,
+        payload: { dayKey: local.dayKey, total, completed, cancelled, noShow, revenue },
+      });
+
+      await prisma.$executeRawUnsafe(
+        `
+          UPDATE "SalonDailyReportState"
+          SET "reportSentAt" = NOW(),
+              "updatedAt" = NOW()
+          WHERE "salonId" = $1 AND "reportDate" = $2
+        `,
+        salonId,
+        local.dayKey,
+      );
     }
 
     await prisma.$executeRawUnsafe(
