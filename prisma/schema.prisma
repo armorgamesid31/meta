@@ -2658,6 +2658,44 @@ model EmailOtpVerification {
   @@index([expiresAt], map: "idx_email_otp_expires")
 }
 
+// Step-by-step onboarding session for the team-invite activation flow.
+//
+// One row per registration attempt. Holds the partially-collected
+// profile fields between steps so the user can resume after a phone
+// switch or app restart, and tracks the two magic-link tokens (phone
+// via WhatsApp button, email via SMTP link) so the polling /status
+// endpoint can tell the mobile shell when each step is verified.
+model OnboardingSession {
+  id               String    @id @default(uuid())
+  inviteId         Int
+  // Collected step by step
+  firstName        String?
+  lastName         String?
+  gender           String?
+  phone            String?
+  email            String?
+  photoUrl         String?
+  passwordHash     String?
+  // Phone magic link (WhatsApp kedyekip template)
+  phoneToken       String?   @unique(map: "uq_onboarding_phone_token")
+  phoneTokenSentAt DateTime? @db.Timestamp(6)
+  phoneVerifiedAt  DateTime? @db.Timestamp(6)
+  // Email magic link
+  emailToken       String?   @unique(map: "uq_onboarding_email_token")
+  emailTokenSentAt DateTime? @db.Timestamp(6)
+  emailVerifiedAt  DateTime? @db.Timestamp(6)
+  // Lifecycle
+  activatedAt      DateTime? @db.Timestamp(6)
+  expiresAt        DateTime  @db.Timestamp(6)
+  createdAt        DateTime? @default(now()) @db.Timestamp(6)
+  updatedAt        DateTime? @default(now()) @updatedAt @db.Timestamp(6)
+
+  @@index([inviteId], map: "idx_onboarding_invite")
+  @@index([phoneToken], map: "idx_onboarding_phone_token")
+  @@index([emailToken], map: "idx_onboarding_email_token")
+  @@index([expiresAt], map: "idx_onboarding_expires")
+}
+
 model VerificationLink {
   id               String              @id @default(uuid())
   tokenHash        String              @unique(map: "uq_verification_token_hash")

@@ -11,6 +11,7 @@ import { prisma } from './prisma.js';
 import salonRoutes from './routes/salon.js';
 import salonTemplateStatusRoutes from './routes/salonTemplateStatus.js';
 import redirectRoutes from './routes/redirects.js';
+import magicLinkLandingRoutes from './routes/magicLinkLanding.js';
 import salonsRoutes from './routes/salons.js';
 import categoriesRoutes from './routes/categories.js';
 import seoRoutes from './routes/seo.js';
@@ -315,6 +316,7 @@ app.use('/api/internal/service-translations', internalServiceTranslationsRoutes)
 app.use('/api/salon', salonRoutes);
 app.use('/api/salon', salonTemplateStatusRoutes);
 app.use('/r', redirectRoutes);
+app.use('/v', magicLinkLandingRoutes);
 app.use('/api/salons', salonsRoutes);
 app.use('/api/categories', categoriesRoutes);
 app.use('/api/seo', seoRoutes);

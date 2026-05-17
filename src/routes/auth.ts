@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import bcrypt from 'bcrypt';
+import multer from 'multer';
+import { randomBytes } from 'node:crypto';
 import { prisma } from '../prisma.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { InviteStatus, UserRole } from '@prisma/client';
@@ -9,9 +11,17 @@ import { ensureSalonAccessSeed } from '../services/accessControl.js';
 import { activateInvite, hashPlainToken, validateInvite } from '../services/inviteService.js';
 import { createPhoneVerification, verifyPhoneCode } from '../services/phoneVerification.js';
 import { normalizeDigitsOnly } from '../services/phoneValidation.js';
+import { isR2Configured, uploadBufferToR2 } from '../lib/r2.js';
 import { BusinessError } from '../lib/errors.js';
 
 const router = Router();
+
+const ONBOARDING_PHOTO_MAX_BYTES = 5 * 1024 * 1024;
+const ONBOARDING_PHOTO_ALLOWED = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const onboardingPhotoUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: ONBOARDING_PHOTO_MAX_BYTES },
+});
 
 async function ensureIdentityAndMembershipFromLegacy(input: {
   salonUserId: number;
@@ -337,6 +347,144 @@ router.post('/invites/verify-otp', async (req: any, res: any) => {
     return res.status(200).json({ verified: true, verificationId: verification.id });
   } catch (error: any) {
     return res.status(400).json({ message: error?.message || 'OTP verification failed.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────
+// New step-by-step onboarding (magic-link based).
+//
+// Replaces the all-at-once /invites/activate flow with a flow that
+// collects (ad → soyad → cinsiyet → telefon → telefon doğrulama →
+// email → email doğrulama → foto → şifre) in discrete steps, with
+// magic-link verification for phone (kedyekip WhatsApp template) and
+// email.
+// ─────────────────────────────────────────────────────────────────
+router.post('/onboarding/start', async (req: any, res: any) => {
+  try {
+    const { startOnboarding } = await import('../services/onboardingService.js');
+    const result = await startOnboarding({ code: req.body?.code, token: req.body?.token });
+    return res.status(200).json(result);
+  } catch (error: any) {
+    return res.status(400).json({ message: error?.message || 'Onboarding başlatılamadı.' });
+  }
+});
+
+router.post('/onboarding/:sessionId/patch', async (req: any, res: any) => {
+  try {
+    const { patchOnboarding } = await import('../services/onboardingService.js');
+    await patchOnboarding(String(req.params.sessionId), {
+      firstName: typeof req.body?.firstName === 'string' ? req.body.firstName.trim() : undefined,
+      lastName: typeof req.body?.lastName === 'string' ? req.body.lastName.trim() : undefined,
+      gender:
+        req.body?.gender === 'female' || req.body?.gender === 'male' || req.body?.gender === 'other'
+          ? req.body.gender
+          : undefined,
+      photoUrl: typeof req.body?.photoUrl === 'string' ? req.body.photoUrl.trim() : undefined,
+    });
+    return res.status(200).json({ ok: true });
+  } catch (error: any) {
+    return res.status(400).json({ message: error?.message || 'Adım kaydedilemedi.' });
+  }
+});
+
+router.post('/onboarding/:sessionId/send-phone-link', async (req: any, res: any) => {
+  try {
+    const { sendPhoneMagicLink } = await import('../services/onboardingService.js');
+    await sendPhoneMagicLink({
+      sessionId: String(req.params.sessionId),
+      phone: String(req.body?.phone || ''),
+    });
+    return res.status(200).json({ ok: true });
+  } catch (error: any) {
+    return res.status(400).json({ message: error?.message || 'WhatsApp doğrulama linki gönderilemedi.' });
+  }
+});
+
+router.post('/onboarding/:sessionId/send-email-link', async (req: any, res: any) => {
+  try {
+    const { sendEmailMagicLink } = await import('../services/onboardingService.js');
+    await sendEmailMagicLink({
+      sessionId: String(req.params.sessionId),
+      email: String(req.body?.email || ''),
+    });
+    return res.status(200).json({ ok: true });
+  } catch (error: any) {
+    return res.status(400).json({ message: error?.message || 'E-posta doğrulama linki gönderilemedi.' });
+  }
+});
+
+router.get('/onboarding/:sessionId/status', async (req: any, res: any) => {
+  try {
+    const { getOnboardingStatus } = await import('../services/onboardingService.js');
+    const status = await getOnboardingStatus(String(req.params.sessionId));
+    return res.status(200).json(status);
+  } catch (error: any) {
+    return res.status(404).json({ message: error?.message || 'Oturum bulunamadı.' });
+  }
+});
+
+router.post(
+  '/onboarding/:sessionId/photo',
+  onboardingPhotoUpload.single('image'),
+  async (req: any, res: any) => {
+    const sessionId = String(req.params.sessionId);
+    if (!isR2Configured()) {
+      return res.status(503).json({ message: 'Foto depolama şu an kullanılabilir değil.' });
+    }
+    const file = req.file as Express.Multer.File | undefined;
+    if (!file || !file.buffer?.length) {
+      return res.status(400).json({ message: 'image alanı gerekli.' });
+    }
+    const mime = (file.mimetype || '').toLowerCase();
+    const normalized = mime === 'image/jpg' ? 'image/jpeg' : mime;
+    if (!ONBOARDING_PHOTO_ALLOWED.has(normalized)) {
+      return res.status(400).json({ message: 'Sadece JPEG, PNG veya WebP yükleyebilirsin.' });
+    }
+    try {
+      const ext = normalized === 'image/png' ? 'png' : normalized === 'image/webp' ? 'webp' : 'jpg';
+      const objectKey = `avatars/onboarding/${sessionId}-${Date.now()}-${randomBytes(4).toString('hex')}.${ext}`;
+      const publicUrl = await uploadBufferToR2({
+        objectKey,
+        body: file.buffer,
+        contentType: normalized,
+      });
+      const { patchOnboarding } = await import('../services/onboardingService.js');
+      await patchOnboarding(sessionId, { photoUrl: publicUrl });
+      return res.status(200).json({ photoUrl: publicUrl });
+    } catch (error: any) {
+      console.error('Onboarding photo upload error:', error);
+      return res.status(500).json({ message: 'Fotoğraf yüklenemedi.' });
+    }
+  },
+);
+
+router.post('/onboarding/:sessionId/activate', async (req: any, res: any) => {
+  try {
+    const { activateOnboarding } = await import('../services/onboardingService.js');
+    const result = await activateOnboarding({
+      sessionId: String(req.params.sessionId),
+      password: String(req.body?.password || ''),
+    });
+    const tokens = await createAuthTokens({
+      legacyUserId: result.legacyUserId,
+      identityId: result.identityId,
+      membershipId: result.membershipId,
+      salonId: result.salonId,
+      role: result.role,
+    } as any);
+    return res.status(200).json({
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      user: {
+        id: result.identityId,
+        membershipId: result.membershipId,
+        email: result.email,
+        role: result.role,
+        salonId: result.salonId,
+      },
+    });
+  } catch (error: any) {
+    return res.status(400).json({ message: error?.message || 'Aktivasyon başarısız.' });
   }
 });
 
