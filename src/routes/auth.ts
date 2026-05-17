@@ -176,6 +176,9 @@ router.post('/login', async (req: any, res: any) => {
         memberships: {
           where: { isActive: true },
           orderBy: { id: 'asc' },
+          include: {
+            salon: { select: { id: true, name: true, slug: true, logoUrl: true } },
+          },
         },
       },
     });
@@ -200,12 +203,16 @@ router.post('/login', async (req: any, res: any) => {
     if (memberships.length > 1 && !req.body?.salonId) {
       return res.status(200).json({
         requiresSalonSelection: true,
-        salons: memberships.map((m) => ({
+        salons: memberships.map((m: any) => ({
           salonId: m.salonId,
+          salonName: m.salon?.name || `Salon #${m.salonId}`,
+          salonSlug: m.salon?.slug || null,
+          salonLogoUrl: m.salon?.logoUrl || null,
           role: m.role,
           email: identity.email || '',
           userId: m.legacySalonUserId || m.id,
           membershipId: m.id,
+          lastLoginAt: m.lastLoginAt || null,
         })),
       });
     }
