@@ -1458,6 +1458,20 @@ model ConversationMessageEvent {
   @@index([repliedToMessageId], map: "idx_message_event_replied_to")
 }
 
+model ConversationReadState {
+  id                      Int       @id @default(autoincrement())
+  salonId                 Int
+  userId                  Int
+  channel                 ChannelType
+  conversationKey         String
+  lastReadEventTimestamp  DateTime  @db.Timestamp(6)
+  updatedAt               DateTime? @default(now()) @updatedAt @db.Timestamp(6)
+
+  @@unique([salonId, userId, channel, conversationKey], map: "uq_conv_read_state_salon_user_channel_key")
+  @@index([salonId, userId], map: "idx_conv_read_state_salon_user")
+  @@index([salonId, channel, conversationKey], map: "idx_conv_read_state_salon_channel_key")
+}
+
 model ConversationThreadSummary {
   id                 Int                   @id @default(autoincrement())
   salonId            Int

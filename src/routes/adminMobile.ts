@@ -9220,19 +9220,59 @@ router.get('/conversations', authenticateToken, async (req: any, res: any) => {
     }
 
     const hasMore = summaryRows.length > limit;
-    const baseItems = summaryRows.slice(0, limit).map((row) => ({
-      channel: row.channel as 'INSTAGRAM' | 'WHATSAPP',
-      conversationKey: row.conversationKey,
-      customerName: row.customerName || null,
-      profileUsername: row.profileUsername || null,
-      profilePicUrl: row.profilePicUrl || null,
-      lastMessageType: row.lastMessageType,
-      lastMessageText: row.lastMessageText || null,
-      lastEventTimestamp: row.lastEventTimestamp,
-      unreadCount: Math.max(0, row.unreadCount || 0),
-      messageCount: Math.max(0, row.messageCount || 0),
-      hasHandoverRequest: Boolean(row.hasHandoverRequest),
-    }));
+    const slicedSummaryRows = summaryRows.slice(0, limit);
+
+    // Layer the per-user read state on top of the salon-wide unread
+    // count. The summary row's unreadCount is the salon's pile; the
+    // user only cares about events newer than their last "I saw it"
+    // marker. If they've marked at-or-past the latest event, unread
+    // for them is 0 regardless of what the salon-wide counter says.
+    const userId = Number(req.user?.userId);
+    const userReadStateMap = new Map<string, Date>();
+    if (Number.isInteger(userId) && userId > 0 && slicedSummaryRows.length > 0) {
+      const readRows = await prisma.$queryRawUnsafe<any[]>(
+        `
+          SELECT "channel"::text AS "channel", "conversationKey", "lastReadEventTimestamp"
+          FROM "ConversationReadState"
+          WHERE "salonId" = $1
+            AND "userId" = $2
+            AND "channel" = ANY($3::"ChannelType"[])
+            AND "conversationKey" = ANY($4::text[])
+        `,
+        salonId,
+        userId,
+        Array.from(new Set(slicedSummaryRows.map((row) => row.channel))),
+        Array.from(new Set(slicedSummaryRows.map((row) => row.conversationKey))),
+      );
+      for (const r of readRows) {
+        const ts = r.lastReadEventTimestamp ? new Date(r.lastReadEventTimestamp) : null;
+        if (ts && !Number.isNaN(ts.getTime())) {
+          userReadStateMap.set(`${r.channel}:${r.conversationKey}`, ts);
+        }
+      }
+    }
+
+    const baseItems = slicedSummaryRows.map((row) => {
+      const salonUnread = Math.max(0, row.unreadCount || 0);
+      const lastReadAt = userReadStateMap.get(`${row.channel}:${row.conversationKey}`);
+      const lastEventAt = row.lastEventTimestamp instanceof Date
+        ? row.lastEventTimestamp
+        : new Date(row.lastEventTimestamp as any);
+      const userHasRead = lastReadAt && lastEventAt && lastReadAt.getTime() >= lastEventAt.getTime();
+      return {
+        channel: row.channel as 'INSTAGRAM' | 'WHATSAPP',
+        conversationKey: row.conversationKey,
+        customerName: row.customerName || null,
+        profileUsername: row.profileUsername || null,
+        profilePicUrl: row.profilePicUrl || null,
+        lastMessageType: row.lastMessageType,
+        lastMessageText: row.lastMessageText || null,
+        lastEventTimestamp: row.lastEventTimestamp,
+        unreadCount: userHasRead ? 0 : salonUnread,
+        messageCount: Math.max(0, row.messageCount || 0),
+        hasHandoverRequest: Boolean(row.hasHandoverRequest),
+      };
+    });
 
     const conversationStateRows = baseItems.length
       ? await prisma.conversationState.findMany({
@@ -10615,6 +10655,272 @@ router.post('/conversations/:channel/:conversationKey/resume-auto', authenticate
     });
   } catch (error) {
     console.error('Admin conversations resume-auto error:', error);
+    throw error;
+  }
+});
+
+// "Devraldım" — used by staff when responding to an AI-flagged handover.
+// Moves the conversation from HUMAN_PENDING (AI escalated, nobody picked
+// up yet) to HUMAN_ACTIVE (a human is now responsible) AND closes out
+// the HandoverAlertState so the staff stops getting reminder pings for
+// the same conversation. Idempotent: replay-safe.
+router.post('/conversations/:channel/:conversationKey/take-over', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  const channel = asInboundChannel(req.params.channel);
+  if (!channel) {
+    throw new BusinessError('VALIDATION_FAILED', 'channel must be INSTAGRAM or WHATSAPP.', 400);
+  }
+
+  const conversationKey = typeof req.params.conversationKey === 'string' ? req.params.conversationKey.trim() : '';
+  if (!conversationKey) {
+    throw new BusinessError('VALIDATION_FAILED', 'conversationKey is required.', 400);
+  }
+
+  try {
+    const keyCandidates = conversationKeyCandidates(channel, conversationKey);
+    const rawKeyCandidates = Array.from(new Set(keyCandidates.map((key) => extractRawConversationKey(channel, key))));
+
+    // Look up the customer record so the conversation log message can
+    // attribute properly. We don't gate the action on this — even if no
+    // inbound exists yet, the take-over still flips the state.
+    const latestInbound = await prisma.conversationMessageEvent.findFirst({
+      where: {
+        salonId,
+        channel,
+        conversationKey: { in: keyCandidates },
+      },
+      orderBy: { eventTimestamp: 'desc' },
+      select: { conversationKey: true, customerName: true },
+    });
+
+    const resolvedConversationKey = latestInbound?.conversationKey || conversationKey;
+
+    const updatedState = await markConversationHumanActive({
+      salonId,
+      channel,
+      conversationKey: resolvedConversationKey,
+      profileName: latestInbound?.customerName || null,
+    });
+
+    // Resolve any open handover alert for this conversation so the
+    // reminder sweep stops nudging the team about it. HandoverAlertState
+    // is keyed by the RAW conversation key (no channel prefix) per the
+    // markHandoverTriggered convention in notifications.ts.
+    await prisma.$executeRawUnsafe(
+      `
+        UPDATE "HandoverAlertState"
+        SET "state" = 'RESOLVED',
+            "stoppedAt" = NOW(),
+            "lastHumanMessageAt" = NOW(),
+            "updatedAt" = NOW()
+        WHERE "salonId" = $1
+          AND "channel" = $2::"ChannelType"
+          AND "conversationKey" = ANY($3::text[])
+          AND "state" = 'ACTIVE'
+      `,
+      salonId,
+      channel,
+      rawKeyCandidates,
+    );
+
+    return res.status(200).json({
+      ok: true,
+      conversationKey: updatedState.conversationKey,
+      state: serializeConversationState({
+        channel,
+        conversationKey: updatedState.conversationKey,
+        customerId: updatedState.customerId || null,
+        mode: updatedState.mode as ConversationAutomationModeValue,
+        manualAlways: Boolean(updatedState.manualAlways),
+        humanPendingSince: updatedState.humanPendingSince || null,
+        humanActiveUntil: updatedState.humanActiveUntil || null,
+        lastHumanMessageAt: updatedState.lastHumanMessageAt || null,
+        lastCustomerMessageAt: updatedState.lastCustomerMessageAt || null,
+        updatedAt: updatedState.updatedAt || null,
+      }),
+    });
+  } catch (error) {
+    console.error('Admin conversations take-over error:', error);
+    throw error;
+  }
+});
+
+// Per-user conversation read marker. Mobile/web clients call this when
+// the user opens a conversation OR reaches the bottom of the message
+// list. The timestamp must be the lastEventTimestamp the user has
+// actually seen (typically the latest event in the visible window).
+// We upsert the high-water mark per (salon, user, channel, key) so
+// the conversations list can compute "unread for me" without affecting
+// the salon-wide unreadCount on ConversationThreadSummary.
+router.post('/conversations/:channel/:conversationKey/read', authenticateToken, async (req: any, res: any) => {
+  if (!req.user) throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
+  const salonId = getSalonId(req, res);
+  const userId = Number(req.user.userId);
+  if (!Number.isInteger(userId) || userId <= 0) {
+    throw new BusinessError('UNAUTHORIZED', 'Geçersiz kullanıcı.', 401);
+  }
+
+  const channel = asInboundChannel(req.params.channel);
+  if (!channel) {
+    throw new BusinessError('VALIDATION_FAILED', 'channel must be INSTAGRAM or WHATSAPP.', 400);
+  }
+
+  const conversationKey = typeof req.params.conversationKey === 'string' ? req.params.conversationKey.trim() : '';
+  if (!conversationKey) {
+    throw new BusinessError('VALIDATION_FAILED', 'conversationKey is required.', 400);
+  }
+
+  // The client passes the timestamp it knows about so we don't race
+  // with a fresh inbound that arrives between "page opened" and "mark
+  // read POST landed". Fall back to now() if it's missing.
+  const rawTs = typeof req.body?.lastEventTimestamp === 'string' ? req.body.lastEventTimestamp : null;
+  let lastReadAt = rawTs ? new Date(rawTs) : new Date();
+  if (Number.isNaN(lastReadAt.getTime())) {
+    lastReadAt = new Date();
+  }
+
+  try {
+    await prisma.$executeRawUnsafe(
+      `
+        INSERT INTO "ConversationReadState"
+          ("salonId", "userId", "channel", "conversationKey", "lastReadEventTimestamp", "updatedAt")
+        VALUES ($1, $2, $3::"ChannelType", $4, $5, NOW())
+        ON CONFLICT ("salonId", "userId", "channel", "conversationKey")
+        DO UPDATE SET
+          "lastReadEventTimestamp" = GREATEST(
+            "ConversationReadState"."lastReadEventTimestamp",
+            EXCLUDED."lastReadEventTimestamp"
+          ),
+          "updatedAt" = NOW()
+      `,
+      salonId,
+      userId,
+      channel,
+      conversationKey,
+      lastReadAt,
+    );
+
+    // Broadcast so other devices/tabs the same user has open update
+    // their unread badge without polling. ConversationRealtimeEvent is
+    // the existing fan-out channel used by the realtime sync service.
+    try {
+      await prisma.$executeRawUnsafe(
+        `
+          INSERT INTO "ConversationRealtimeEvent"
+            ("salonId", "channel", "conversationKey", "eventType", "payload", "createdAt")
+          VALUES ($1, $2::"ChannelType", $3, 'CONVERSATION_READ', $4::jsonb, NOW())
+        `,
+        salonId,
+        channel,
+        conversationKey,
+        JSON.stringify({ userId, lastReadEventTimestamp: lastReadAt.toISOString() }),
+      );
+    } catch (realtimeError) {
+      // Non-fatal — failing to broadcast still leaves the read state
+      // persisted; the next list fetch will pick it up.
+      console.warn('Conversation read realtime broadcast failed:', realtimeError);
+    }
+
+    return res.status(200).json({ ok: true, lastReadEventTimestamp: lastReadAt.toISOString() });
+  } catch (error) {
+    console.error('Admin conversation mark-read error:', error);
+    throw error;
+  }
+});
+
+// Aggregated unread badge counts for the authenticated user across ALL
+// their salon memberships. Returned shape lets the mobile app render
+// per-salon dots in the salon switcher and sum the values for the
+// native app icon badge. Conversation read state is per-user, so the
+// badge reflects "what I haven't seen" — not the salon-wide pile.
+router.get('/notifications/badge-counts', authenticateToken, async (req: any, res: any) => {
+  if (!req.user) throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
+  const identityId = Number(req.user.identityId);
+  if (!Number.isInteger(identityId) || identityId <= 0) {
+    return res.status(200).json({ total: 0, perSalon: [] });
+  }
+
+  try {
+    // Resolve every active salon membership for this identity. The
+    // notification + conversation tables key off the legacy SalonUser
+    // id, so we resolve each membership down to its legacySalonUserId
+    // (auto-created on first login).
+    const memberships = await prisma.salonMembership.findMany({
+      where: { identityId, isActive: true },
+      select: {
+        id: true,
+        salonId: true,
+        legacySalonUserId: true,
+        salon: { select: { id: true, name: true, slug: true, logoUrl: true } },
+      },
+    });
+
+    const perSalon: Array<{
+      salonId: number;
+      salonName: string | null;
+      salonSlug: string | null;
+      salonLogoUrl: string | null;
+      unreadNotifications: number;
+      unreadConversations: number;
+    }> = [];
+
+    let total = 0;
+    for (const membership of memberships) {
+      const legacyUserId = membership.legacySalonUserId;
+      let unreadNotifications = 0;
+      let unreadConversations = 0;
+
+      if (legacyUserId) {
+        const notifRows = await prisma.$queryRawUnsafe<any[]>(
+          `
+            SELECT COUNT(*)::int AS "count"
+            FROM "AppNotificationDelivery"
+            WHERE "salonId" = $1
+              AND "userId" = $2
+              AND "readAt" IS NULL
+              AND "channel" = 'IN_APP'::"NotificationDeliveryChannel"
+          `,
+          membership.salonId,
+          legacyUserId,
+        );
+        unreadNotifications = Number(notifRows?.[0]?.count || 0);
+
+        // Per-user conversation unread = conversations whose lastEvent
+        // is newer than the user's read marker (or has no marker yet).
+        const convRows = await prisma.$queryRawUnsafe<any[]>(
+          `
+            SELECT COUNT(*)::int AS "count"
+            FROM "ConversationThreadSummary" s
+            LEFT JOIN "ConversationReadState" r
+              ON r."salonId" = s."salonId"
+              AND r."channel" = s."channel"
+              AND r."conversationKey" = s."conversationKey"
+              AND r."userId" = $2
+            WHERE s."salonId" = $1
+              AND s."unreadCount" > 0
+              AND (r."lastReadEventTimestamp" IS NULL OR r."lastReadEventTimestamp" < s."lastEventTimestamp")
+          `,
+          membership.salonId,
+          legacyUserId,
+        );
+        unreadConversations = Number(convRows?.[0]?.count || 0);
+      }
+
+      const salonTotal = unreadNotifications + unreadConversations;
+      total += salonTotal;
+      perSalon.push({
+        salonId: membership.salonId,
+        salonName: membership.salon?.name || null,
+        salonSlug: membership.salon?.slug || null,
+        salonLogoUrl: membership.salon?.logoUrl || null,
+        unreadNotifications,
+        unreadConversations,
+      });
+    }
+
+    return res.status(200).json({ total, perSalon });
+  } catch (error) {
+    console.error('Admin badge counts error:', error);
     throw error;
   }
 });
