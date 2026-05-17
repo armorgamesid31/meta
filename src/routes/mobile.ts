@@ -441,6 +441,76 @@ router.use(
   },
 );
 
+// POST /me/password (mounted at /api/mobile)
+//
+// Lets the logged-in user change their OWN password. We refuse if the
+// current password doesn't match — owners must use the admin reset
+// flow to recover a forgotten password. Password policy is intentionally
+// minimal (>= 6 chars) to match the existing signup/reset path.
+router.post('/me/password', authenticateToken, async (req: any, res: any) => {
+  if (!req.user) throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
+  const identityId = Number(req.user.identityId);
+  if (!Number.isInteger(identityId) || identityId <= 0) {
+    throw new BusinessError('UNAUTHORIZED', 'Geçersiz kullanıcı.', 401);
+  }
+
+  const currentPassword = typeof req.body?.currentPassword === 'string' ? req.body.currentPassword : '';
+  const newPassword = typeof req.body?.newPassword === 'string' ? req.body.newPassword : '';
+
+  if (!currentPassword || !newPassword) {
+    throw new BusinessError('VALIDATION_FAILED', 'Mevcut ve yeni şifre zorunludur.', 400);
+  }
+  if (newPassword.length < 6) {
+    throw new BusinessError('VALIDATION_FAILED', 'Yeni şifre en az 6 karakter olmalıdır.', 422);
+  }
+  if (currentPassword === newPassword) {
+    throw new BusinessError('VALIDATION_FAILED', 'Yeni şifre, mevcut şifre ile aynı olamaz.', 422);
+  }
+
+  const bcrypt = (await import('bcrypt')).default;
+  const identity = await prisma.userIdentity.findUnique({
+    where: { id: identityId },
+    select: { id: true, passwordHash: true, isActive: true },
+  });
+  if (!identity || !identity.isActive) {
+    throw new BusinessError('UNAUTHORIZED', 'Kullanıcı bulunamadı.', 401);
+  }
+
+  const matches = await bcrypt.compare(currentPassword, identity.passwordHash);
+  if (!matches) {
+    throw new BusinessError('UNAUTHORIZED', 'Mevcut şifre hatalı.', 401);
+  }
+
+  const newHash = await bcrypt.hash(newPassword, 10);
+  await prisma.userIdentity.update({
+    where: { id: identity.id },
+    data: { passwordHash: newHash },
+  });
+
+  // Mirror into legacy SalonUser rows linked via SalonMembership so the
+  // legacy login path doesn't keep accepting the old password. Best-effort —
+  // identity-side update is authoritative.
+  try {
+    const memberships = await prisma.salonMembership.findMany({
+      where: { identityId, isActive: true },
+      select: { legacySalonUserId: true },
+    });
+    const legacyUserIds = memberships
+      .map((m) => m.legacySalonUserId)
+      .filter((id): id is number => Number.isInteger(id) && (id as number) > 0);
+    if (legacyUserIds.length > 0) {
+      await prisma.salonUser.updateMany({
+        where: { id: { in: legacyUserIds } },
+        data: { passwordHash: newHash, passwordResetRequired: false },
+      });
+    }
+  } catch (legacyError) {
+    console.warn('Legacy password mirror failed:', legacyError);
+  }
+
+  return res.status(200).json({ ok: true });
+});
+
 router.post('/push/register', authenticateToken, async (req: any, res: any) => {
   if (!req.user) throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
   const salonId = req.user.salonId;
