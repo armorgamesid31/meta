@@ -33,6 +33,11 @@ const META_INSTAGRAM_WEBHOOK_VERIFY_TOKEN = (process.env.META_INSTAGRAM_WEBHOOK_
 const META_WHATSAPP_WEBHOOK_VERIFY_TOKEN = (process.env.META_WHATSAPP_WEBHOOK_VERIFY_TOKEN || '').trim();
 
 const META_APP_SECRET = (process.env.META_APP_SECRET || '').trim();
+// Instagram Business Login is technically a separate Meta app with its
+// own App Secret. Without this, x-hub-signature-256 on /api/webhooks/
+// instagram never validates because Meta signs IG deliveries with this
+// secret, not META_APP_SECRET.
+const META_INSTAGRAM_APP_SECRET = (process.env.META_INSTAGRAM_APP_SECRET || '').trim();
 
 /**
  * HMAC-SHA256 verification of Meta webhook payloads using X-Hub-Signature-256.
@@ -108,16 +113,51 @@ function logRejectedWebhook(
     });
 }
 
+// Constant-time compare two hex digests of identical length. Returns
+// false if the hex strings differ in length (which is itself a leak-safe
+// signal: Meta's HMAC-SHA256 is always 64 hex chars).
+function hexSignaturesMatch(provided: string, expected: string): boolean {
+  try {
+    const a = Buffer.from(provided, 'hex');
+    const b = Buffer.from(expected, 'hex');
+    if (a.length !== b.length) return false;
+    return timingSafeEqual(a, b);
+  } catch {
+    return false;
+  }
+}
+
 function verifyMetaSignature(req: any, res: any, next: any) {
   const rawBody: Buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
 
-  if (!META_APP_SECRET) {
+  // Meta runs separate "apps" for Facebook Login for Business and
+  // Instagram Business Login. Each app has its OWN App Secret, and
+  // Meta signs webhook deliveries with whichever app is responsible
+  // for the integration that produced the event:
+  //
+  //   - Facebook Page + WhatsApp Business Manager → META_APP_SECRET
+  //   - Instagram Business Login (graph.instagram.com OAuth) →
+  //     META_INSTAGRAM_APP_SECRET
+  //
+  // The `/api/webhooks/instagram` route receives traffic signed with
+  // META_INSTAGRAM_APP_SECRET. The legacy `/api/webhooks/meta` combined
+  // route can carry either. Easiest correct behaviour: accept the
+  // signature if it matches ANY configured secret. Order doesn't matter
+  // for correctness; we try the secret most likely for this route first
+  // so the fast path is one HMAC compute.
+  const isInstagramRoute = String(req.originalUrl || req.url || '').includes('/webhooks/instagram');
+  const orderedSecrets = isInstagramRoute
+    ? [META_INSTAGRAM_APP_SECRET, META_APP_SECRET]
+    : [META_APP_SECRET, META_INSTAGRAM_APP_SECRET];
+  const candidateSecrets = orderedSecrets.filter((s): s is string => Boolean(s));
+
+  if (candidateSecrets.length === 0) {
     if (process.env.NODE_ENV === 'production') {
-      console.error('[META_WEBHOOK] META_APP_SECRET not configured in production — refusing webhook.');
+      console.error('[META_WEBHOOK] No app secrets configured in production — refusing webhook.');
       logRejectedWebhook('no_secret', req, rawBody);
       return res.status(503).json({ ok: false });
     }
-    console.warn('[META_WEBHOOK] META_APP_SECRET not configured — signature verification BYPASSED (dev only).');
+    console.warn('[META_WEBHOOK] No app secrets configured — signature verification BYPASSED (dev only).');
     if (!parseRawBody(req)) return res.status(400).end();
     return next();
   }
@@ -129,24 +169,23 @@ function verifyMetaSignature(req: any, res: any, next: any) {
   }
   const provided = headerValue.slice('sha256='.length);
 
-  const expected = createHmac('sha256', META_APP_SECRET).update(rawBody).digest('hex');
-
   let ok = false;
-  try {
-    const providedBuf = Buffer.from(provided, 'hex');
-    const expectedBuf = Buffer.from(expected, 'hex');
-    if (providedBuf.length === expectedBuf.length) {
-      ok = timingSafeEqual(providedBuf, expectedBuf);
+  let lastExpected = '';
+  for (const secret of candidateSecrets) {
+    const expected = createHmac('sha256', secret).update(rawBody).digest('hex');
+    lastExpected = expected;
+    if (hexSignaturesMatch(provided, expected)) {
+      ok = true;
+      break;
     }
-  } catch {
-    ok = false;
   }
 
   if (!ok) {
     logRejectedWebhook('invalid_signature', req, rawBody, {
       providedSigPreview: provided.slice(0, 8) + '...' + provided.slice(-8),
-      expectedSigPreview: expected.slice(0, 8) + '...' + expected.slice(-8),
-      secretLen: META_APP_SECRET.length,
+      expectedSigPreview: lastExpected.slice(0, 8) + '...' + lastExpected.slice(-8),
+      triedSecrets: candidateSecrets.length,
+      route: isInstagramRoute ? 'instagram' : 'other',
     });
     return res.status(403).end();
   }
