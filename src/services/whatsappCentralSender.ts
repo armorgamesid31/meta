@@ -1,27 +1,47 @@
-// Kedy-central WhatsApp sender.
+// Kedy-central WhatsApp sender — routes through Chakra.
 //
-// Distinct from whatsappTemplateSender.ts (which routes through each
-// SALON's Chakra plugin to send customer-facing messages). Kedy's own
-// operational messages — team-invite activation magic-link, password
-// reset, account verification — go through Kedy's CENTRAL WhatsApp
-// Business number directly via Meta Cloud API, so the recipient sees
-// "Kedy" as the sender rather than whichever salon happened to invite
-// them.
+// Distinct from whatsappTemplateSender.ts (which keys off each SALON's
+// Chakra plugin to send customer-facing messages). Kedy's own
+// operational outbound — team-invite activation magic-link, password
+// reset, account verification — goes through KEDY'S OWN Chakra-
+// connected WhatsApp Business number, so the recipient sees "Kedy"
+// as the sender rather than whichever salon happened to invite them.
 //
 // Required env:
-//   KEDY_WHATSAPP_TOKEN            System-user permanent access token
-//   KEDY_WHATSAPP_PHONE_NUMBER_ID  The phone-number ID of Kedy's WABA
-//   META_GRAPH_VERSION             e.g. v25.0 (default if unset)
+//   KEDY_CENTRAL_CHAKRA_PLUGIN_ID         Plugin id for Kedy's WABA
+//   KEDY_CENTRAL_CHAKRA_PHONE_NUMBER_ID   Phone-number id for Kedy's WABA
+//   CHAKRA_API_TOKEN                      Shared token (already in env)
+//   CHAKRA_WHATSAPP_SEND_URL              Optional override (else built
+//                                         from CHAKRA_API_BASE)
 
 import axios from 'axios';
 import { normalizeDigitsOnly } from './phoneValidation.js';
 
-const META_GRAPH_VERSION = (process.env.META_GRAPH_VERSION || 'v25.0').trim();
-const KEDY_WHATSAPP_TOKEN = (process.env.KEDY_WHATSAPP_TOKEN || '').trim();
-const KEDY_WHATSAPP_PHONE_NUMBER_ID = (process.env.KEDY_WHATSAPP_PHONE_NUMBER_ID || '').trim();
+const CHAKRA_API_TOKEN = (process.env.CHAKRA_API_TOKEN || '').trim();
+const CHAKRA_API_BASE = (process.env.CHAKRA_API_BASE || 'https://api.chakrahq.com')
+  .trim()
+  .replace(/\/+$/, '');
+const CHAKRA_WHATSAPP_SEND_URL = (process.env.CHAKRA_WHATSAPP_SEND_URL || '').trim();
+const KEDY_CENTRAL_PLUGIN_ID = (process.env.KEDY_CENTRAL_CHAKRA_PLUGIN_ID || '').trim();
+const KEDY_CENTRAL_PHONE_NUMBER_ID = (process.env.KEDY_CENTRAL_CHAKRA_PHONE_NUMBER_ID || '').trim();
 
 export function isKedyWhatsappConfigured(): boolean {
-  return Boolean(KEDY_WHATSAPP_TOKEN && KEDY_WHATSAPP_PHONE_NUMBER_ID);
+  return Boolean(CHAKRA_API_TOKEN && KEDY_CENTRAL_PLUGIN_ID && KEDY_CENTRAL_PHONE_NUMBER_ID);
+}
+
+function buildSendUrl(): string {
+  if (CHAKRA_WHATSAPP_SEND_URL) {
+    const hasPlaceholders =
+      CHAKRA_WHATSAPP_SEND_URL.includes('{pluginId}') ||
+      CHAKRA_WHATSAPP_SEND_URL.includes('{whatsappPhoneNumberId}');
+    if (hasPlaceholders) {
+      return CHAKRA_WHATSAPP_SEND_URL
+        .replaceAll('{pluginId}', encodeURIComponent(KEDY_CENTRAL_PLUGIN_ID))
+        .replaceAll('{whatsappPhoneNumberId}', encodeURIComponent(KEDY_CENTRAL_PHONE_NUMBER_ID));
+    }
+    return CHAKRA_WHATSAPP_SEND_URL;
+  }
+  return `${CHAKRA_API_BASE}/v1/ext/plugin/whatsapp/${encodeURIComponent(KEDY_CENTRAL_PLUGIN_ID)}/api/v19.0/${encodeURIComponent(KEDY_CENTRAL_PHONE_NUMBER_ID)}/messages`;
 }
 
 interface SendTemplateInput {
@@ -46,9 +66,14 @@ export async function sendCentralTemplate(input: SendTemplateInput): Promise<Sen
     return { ok: false, error: 'recipient_phone_invalid' };
   }
 
-  const url = `https://graph.facebook.com/${META_GRAPH_VERSION}/${encodeURIComponent(KEDY_WHATSAPP_PHONE_NUMBER_ID)}/messages`;
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${CHAKRA_API_TOKEN}`,
+  };
+
   const body = {
-    messaging_product: 'whatsapp',
+    pluginId: KEDY_CENTRAL_PLUGIN_ID,
+    phoneNumberId: KEDY_CENTRAL_PHONE_NUMBER_ID,
     to,
     type: 'template',
     template: {
@@ -59,14 +84,11 @@ export async function sendCentralTemplate(input: SendTemplateInput): Promise<Sen
   };
 
   try {
-    const response = await axios.post(url, body, {
-      headers: {
-        Authorization: `Bearer ${KEDY_WHATSAPP_TOKEN}`,
-        'Content-Type': 'application/json',
-      },
-      timeout: 25_000,
-    });
-    const messageId = response?.data?.messages?.[0]?.id || undefined;
+    const response = await axios.post(buildSendUrl(), body, { headers, timeout: 25_000 });
+    const messageId =
+      response?.data?.messages?.[0]?.id ||
+      response?.data?.data?.messages?.[0]?.id ||
+      undefined;
     return { ok: true, messageId };
   } catch (error: any) {
     const reason =
