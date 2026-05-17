@@ -69,12 +69,52 @@ function parseRawBody(req: any): boolean {
  * The HMAC is signed with META_APP_SECRET; we recompute and constant-time
  * compare against the x-hub-signature-256 header.
  */
+// Temporary diagnostic helper — fires-and-forgets a DB write whenever a
+// webhook is rejected before processing. Without this, signature failures
+// (403) and missing-header rejections (403) leave zero trace, making
+// "Meta says delivery succeeded but we see nothing" undebuggable. Logs
+// a redacted payload preview + signature fingerprints so we can tell
+// whether the request even reached us and, if so, why we rejected it.
+function logRejectedWebhook(
+  reason: 'no_secret' | 'missing_signature_header' | 'invalid_signature' | 'body_parse_failed',
+  req: any,
+  rawBody: Buffer,
+  details: Record<string, unknown> = {},
+) {
+  // Best-effort — never let the diagnostic blow up the request path.
+  void prisma.metaChannelWebhookLog
+    .create({
+      data: {
+        channel: 'INSTAGRAM',
+        direction: 'INBOUND',
+        eventType: 'signature_reject',
+        salonId: null,
+        conversationKey: null,
+        payload: {
+          reason,
+          path: req.originalUrl || req.url || null,
+          ua: String(req.headers['user-agent'] || '').slice(0, 200),
+          contentType: String(req.headers['content-type'] || '').slice(0, 100),
+          sigHeaderPresent: Boolean(req.headers['x-hub-signature-256']),
+          sigHeaderPreview: String(req.headers['x-hub-signature-256'] || '').slice(0, 24),
+          bodyBytes: rawBody.length,
+          bodyPreview: rawBody.toString('utf8').slice(0, 400),
+          ...details,
+        } as any,
+      },
+    })
+    .catch(() => {
+      // ignore — diagnostic write must never break the actual reject path
+    });
+}
+
 function verifyMetaSignature(req: any, res: any, next: any) {
   const rawBody: Buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
 
   if (!META_APP_SECRET) {
     if (process.env.NODE_ENV === 'production') {
       console.error('[META_WEBHOOK] META_APP_SECRET not configured in production — refusing webhook.');
+      logRejectedWebhook('no_secret', req, rawBody);
       return res.status(503).json({ ok: false });
     }
     console.warn('[META_WEBHOOK] META_APP_SECRET not configured — signature verification BYPASSED (dev only).');
@@ -84,6 +124,7 @@ function verifyMetaSignature(req: any, res: any, next: any) {
 
   const headerValue = String(req.headers['x-hub-signature-256'] || '').trim();
   if (!headerValue.startsWith('sha256=')) {
+    logRejectedWebhook('missing_signature_header', req, rawBody);
     return res.status(403).end();
   }
   const provided = headerValue.slice('sha256='.length);
@@ -102,10 +143,18 @@ function verifyMetaSignature(req: any, res: any, next: any) {
   }
 
   if (!ok) {
+    logRejectedWebhook('invalid_signature', req, rawBody, {
+      providedSigPreview: provided.slice(0, 8) + '...' + provided.slice(-8),
+      expectedSigPreview: expected.slice(0, 8) + '...' + expected.slice(-8),
+      secretLen: META_APP_SECRET.length,
+    });
     return res.status(403).end();
   }
 
-  if (!parseRawBody(req)) return res.status(400).end();
+  if (!parseRawBody(req)) {
+    logRejectedWebhook('body_parse_failed', req, rawBody);
+    return res.status(400).end();
+  }
   return next();
 }
 
