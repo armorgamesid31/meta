@@ -172,7 +172,14 @@ export async function getOnboardingStatus(sessionId: string) {
  * which side was verified so the landing page can render the right
  * "you can go back to the app" copy.
  */
-export async function consumeMagicLink(token: string): Promise<{ side: 'phone' | 'email'; sessionId: string } | null> {
+export async function consumeMagicLink(rawToken: string): Promise<{ side: 'phone' | 'email'; sessionId: string } | null> {
+  // WhatsApp UTILITY templates with a URL button technically substitute
+  // {{1}} in the URL with the parameter value, but when the template's
+  // approved URL is configured as a STATIC string (literal "{{1}}" in
+  // it), WhatsApp appends the parameter instead. We've seen real users
+  // land on /v/%7B%7B1%7D%7D<token> for that reason. Strip the literal
+  // placeholder defensively so existing in-flight messages still work.
+  const token = (rawToken || '').replace(/^\{\{[0-9]+\}\}/, '').trim();
   if (!token) return null;
 
   const phoneSession = await prisma.onboardingSession.findUnique({ where: { phoneToken: token } });
