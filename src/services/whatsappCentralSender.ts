@@ -71,9 +71,13 @@ export async function sendCentralTemplate(input: SendTemplateInput): Promise<Sen
     Authorization: `Bearer ${CHAKRA_API_TOKEN}`,
   };
 
+  // The new Chakra plugin shape passes the body straight through to
+  // Meta's Cloud API, which insists on messaging_product and rejects
+  // the legacy pluginId/phoneNumberId fields-in-body. The old per-salon
+  // plugins still accept the legacy shape; we only target this newer
+  // shape on the Kedy-central path.
   const body = {
-    pluginId: KEDY_CENTRAL_PLUGIN_ID,
-    phoneNumberId: KEDY_CENTRAL_PHONE_NUMBER_ID,
+    messaging_product: 'whatsapp',
     to,
     type: 'template',
     template: {
@@ -85,7 +89,11 @@ export async function sendCentralTemplate(input: SendTemplateInput): Promise<Sen
 
   try {
     const response = await axios.post(buildSendUrl(), body, { headers, timeout: 25_000 });
+    // Chakra responds with { _data: { whatsappMessageId } } when in
+    // Meta-passthrough mode, and the legacy shape with `messages[0].id`
+    // on older plugins — accept both.
     const messageId =
+      response?.data?._data?.whatsappMessageId ||
       response?.data?.messages?.[0]?.id ||
       response?.data?.data?.messages?.[0]?.id ||
       undefined;
