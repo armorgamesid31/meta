@@ -2917,6 +2917,51 @@ router.get('/customers/:id', authenticateToken, async (req: any, res: any) => {
       throw new BusinessError('NOT_FOUND', 'Customer not found.', 404);
     }
 
+    // Resolve an Instagram profile picture for this customer if the
+    // identity is bound to an IG channel. WhatsApp does NOT expose
+    // a customer profile picture (Cloud API limitation), but if the
+    // same customer has been linked to an Instagram conversation
+    // we surface that photo on the customer profile + on WhatsApp
+    // conversations elsewhere via the same lookup chain.
+    let customerProfilePicUrl: string | null = null;
+    let customerProfileUsername: string | null = null;
+    try {
+      const igBindings = await prisma.identityBinding.findMany({
+        where: { salonId, customerId, channel: 'INSTAGRAM' },
+        select: { subjectNormalized: true },
+      });
+      const normalizedSubjects = Array.from(
+        new Set(
+          igBindings
+            .map((row) => normalizeInstagramIdentity(row.subjectNormalized))
+            .filter((value) => value.length > 0),
+        ),
+      );
+      if (normalizedSubjects.length > 0) {
+        const igProfiles = await prisma.channelProfileCache.findMany({
+          where: {
+            salonId,
+            channel: 'INSTAGRAM',
+            subjectNormalized: { in: normalizedSubjects },
+          },
+          orderBy: { updatedAt: 'desc' },
+          select: { profilePicUrl: true, profileUsername: true },
+        });
+        for (const profile of igProfiles) {
+          if (!customerProfilePicUrl && profile.profilePicUrl) {
+            customerProfilePicUrl = profile.profilePicUrl;
+          }
+          if (!customerProfileUsername && profile.profileUsername) {
+            customerProfileUsername = profile.profileUsername;
+          }
+          if (customerProfilePicUrl && customerProfileUsername) break;
+        }
+      }
+    } catch (profileError) {
+      // Non-fatal — customer detail still works without the photo.
+      console.warn('Customer IG profile lookup failed:', profileError);
+    }
+
     const nonCancelled = appointments.filter((item) => item.status !== 'CANCELLED');
     const uniqueDayCount = new Set(nonCancelled.map((item) => getAppointmentDayKey(item.startTime))).size;
     const completedAppointments = appointments.filter((item) => item.status === 'COMPLETED');
@@ -2965,7 +3010,11 @@ router.get('/customers/:id', authenticateToken, async (req: any, res: any) => {
     }
 
     return res.status(200).json({
-      customer,
+      customer: {
+        ...customer,
+        profilePicUrl: customerProfilePicUrl,
+        profileUsername: customerProfileUsername || customer.instagram || null,
+      },
       summary: {
         totalAppointmentDays: uniqueDayCount,
         totalRevenue,

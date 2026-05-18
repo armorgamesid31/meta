@@ -673,7 +673,9 @@ router.get('/services/:serviceId/staff', async (req: any, res: any) => {
         Staff: {
           select: {
             id: true,
-            name: true
+            name: true,
+            title: true,
+            profileImageUrl: true,
           }
         }
       }
@@ -682,6 +684,8 @@ router.get('/services/:serviceId/staff', async (req: any, res: any) => {
     const response = staffServices.map(ss => ({
       id: ss.Staff.id,
       name: ss.Staff.name,
+      title: ss.Staff.title || null,
+      profileImageUrl: ss.Staff.profileImageUrl || null,
       price: ss.price,
       duration: ss.duration
     }));
@@ -766,6 +770,8 @@ router.get('/staff', authenticateToken, async (req: any, res: any) => {
       select: {
         id: true,
         name: true,
+        title: true,
+        profileImageUrl: true,
       },
       orderBy: { name: 'asc' }
     });
@@ -792,7 +798,9 @@ router.get('/staff/public', async (req: any, res: any) => {
       },
       select: {
         id: true,
-        name: true
+        name: true,
+        title: true,
+        profileImageUrl: true,
       },
       orderBy: { name: 'asc' }
     });
