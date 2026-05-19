@@ -291,6 +291,9 @@ app.use('/api/customers/resend-code', authRateLimiter);
 // Slug-existence probe is cheap to fan out but enables salon-enumeration if
 // hit unthrottled. Same 10/min budget as auth endpoints.
 app.use('/api/salon/slug-available', authRateLimiter);
+// Lead activation code is 8-char alphanumeric — brute-force surface.
+// Tighten the limiter for both preview + activate paths.
+app.use('/api/leads', authRateLimiter);
 
 // Loose limiter for the rest of /api traffic.
 app.use('/api', apiRateLimiter);

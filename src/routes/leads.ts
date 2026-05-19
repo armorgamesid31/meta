@@ -27,9 +27,9 @@ const createSchema = z.object({
   salonName: z.string().min(2).max(120),
   salonCategory: z.enum(SALON_CATEGORY_VALUES).optional(),
   acceptMarketing: z.boolean().optional(),
-  kvkkConsent: z.literal(true, {
-    errorMap: () => ({ message: 'KVKK metnini onaylamalısın.' }),
-  }),
+  kvkkConsent: z
+    .boolean()
+    .refine((v) => v === true, { message: 'KVKK metnini onaylamalısın.' }),
   utmSource: z.string().max(120).optional(),
   utmMedium: z.string().max(120).optional(),
   utmCampaign: z.string().max(120).optional(),

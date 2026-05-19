@@ -58,7 +58,7 @@ export interface SendConversationMagicLinkInput {
   salonId: number;
   conversationKey: string;
   type?: MagicLinkType;
-  /** Required for CANCEL / RESCHEDULE. */
+  /** Required for RESCHEDULE. */
   appointmentId?: number | null;
   /** Optional custom prelude text. Defaults to a type-aware sentence. */
   customMessage?: string | null;
@@ -82,14 +82,14 @@ export interface SendConversationMagicLinkResult {
 const DEFAULT_COPY: Record<MagicLinkType, string> = {
   BOOKING: 'Randevu almanız için hazırladığım linki paylaşıyorum:',
   RESCHEDULE: 'Randevunuzu yeniden planlamanız için linki paylaşıyorum:',
-  CANCEL: 'Randevunuzu iptal etmek için linki kullanabilirsiniz:',
+  FEEDBACK: 'Geri bildiriminiz bizim için değerli — buradan bırakabilirsiniz:',
 };
 
 export async function sendMagicLinkInConversation(
   input: SendConversationMagicLinkInput,
 ): Promise<SendConversationMagicLinkResult> {
   const type = input.type || 'BOOKING';
-  if ((type === 'CANCEL' || type === 'RESCHEDULE') && !input.appointmentId) {
+  if (type === 'RESCHEDULE' && !input.appointmentId) {
     throw new Error('APPOINTMENT_REQUIRED_FOR_TYPE');
   }
 
@@ -186,7 +186,7 @@ export async function sendMagicLinkInConversation(
   const ctaButtonLabel: Record<MagicLinkType, string> = {
     BOOKING: 'Randevu al',
     RESCHEDULE: 'Yeniden planla',
-    CANCEL: 'İptal et',
+    FEEDBACK: 'Geri bildirim',
   };
   const buttonLabel = ctaButtonLabel[type] || 'Aç';
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -287,7 +287,7 @@ export async function sendMagicLinkInConversation(
         text: textFallback,
         direction: MessageEventDirection.OUTBOUND,
         eventTimestamp: new Date(),
-        outboundSource: OutboundMessageSource.HUMAN_RESPONSE,
+        outboundSource: OutboundMessageSource.HUMAN_APP,
         outboundSenderUserId: input.senderUserId || null,
         outboundSenderEmail: input.senderUserEmail || null,
         rawPayload: { type: 'magic_link_cta', linkType: type, url: linkResult.magicUrl } as Prisma.InputJsonValue,

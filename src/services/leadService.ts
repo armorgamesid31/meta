@@ -30,12 +30,17 @@ import { createAuthTokens } from './mobileAuth.js';
 import { ensureSalonServiceCategories } from './salonCategorySetup.js';
 import { ensureSalonAccessSeed } from './accessControl.js';
 import { startSetupPeriod } from './onboarding/lifecycle.js';
-import { sendVerificationEmail, isEmailConfigured } from './emailService.js';
+import { sendLeadInviteEmail, isEmailConfigured } from './emailService.js';
 import { normalizeDigitsOnly } from './phoneValidation.js';
 import { BusinessError } from '../lib/errors.js';
 
 const LEAD_TTL_DAYS = 14;
-const TOKEN_BYTES = 24;
+
+// 8-character human-friendly code. Excludes characters that are easy to
+// confuse when typing on a phone: 0/O, 1/I/L, U/V, B/8. Same set used
+// by the existing owner-invite codes so the experience is identical.
+const CODE_ALPHABET = 'ACDEFGHJKMNPQRSTWXYZ2345679';
+const CODE_LENGTH = 8;
 
 const LEAD_ACTIVATION_BASE_URL =
   (process.env.LEAD_ACTIVATION_BASE_URL ||
@@ -47,11 +52,38 @@ const LEAD_ACTIVATION_BASE_URL =
 const N8N_LEAD_WEBHOOK_URL = (process.env.LEAD_CREATED_WEBHOOK_URL || '').trim();
 
 function hashToken(raw: string): string {
-  return crypto.createHash('sha256').update(raw).digest('hex');
+  // Codes are case-insensitive at the user input layer — we normalize
+  // to uppercase before hashing so both "k7b2x9mq" and "K7B2X9MQ"
+  // resolve to the same row.
+  return crypto
+    .createHash('sha256')
+    .update(String(raw || '').trim().toUpperCase())
+    .digest('hex');
 }
 
-function generateToken(): string {
-  return crypto.randomBytes(TOKEN_BYTES).toString('base64url');
+async function generateUniqueCode(): Promise<string> {
+  // Retry a few times in the (extremely unlikely) event of a collision;
+  // 27^8 ≈ 2.8e11 possible codes with a 14d active window keeps the
+  // birthday-paradox math comfortably below 1-in-millions even at huge
+  // signup volumes.
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const bytes = crypto.randomBytes(CODE_LENGTH);
+    let code = '';
+    for (let i = 0; i < CODE_LENGTH; i += 1) {
+      code += CODE_ALPHABET[bytes[i] % CODE_ALPHABET.length];
+    }
+    const hash = hashToken(code);
+    const taken = await prisma.lead.findUnique({ where: { activationTokenHash: hash } });
+    if (!taken) return code;
+  }
+  // Fallback: extend by 4 chars from timestamp. Truly absurd to ever
+  // reach this branch but keeps the function total.
+  const bytes = crypto.randomBytes(CODE_LENGTH);
+  let code = '';
+  for (let i = 0; i < CODE_LENGTH; i += 1) {
+    code += CODE_ALPHABET[bytes[i] % CODE_ALPHABET.length];
+  }
+  return `${code}${Date.now().toString().slice(-4)}`;
 }
 
 function normalizeEmail(input: string): string {
@@ -128,7 +160,7 @@ export async function createLead(input: CreateLeadInput): Promise<CreateLeadResu
     orderBy: { createdAt: 'desc' },
   });
 
-  const rawToken = generateToken();
+  const rawToken = await generateUniqueCode();
   const tokenHash = hashToken(rawToken);
   const expiresAt = new Date(Date.now() + LEAD_TTL_DAYS * 24 * 60 * 60 * 1000);
 
@@ -280,14 +312,19 @@ async function sendActivationEmail(
       .catch(() => null);
     return false;
   }
-  const link = `${LEAD_ACTIVATION_BASE_URL}/baslayalim/${input.rawToken}`;
+  // Hybrid email: code AS-IS for app users + clickable web link for
+  // desktop users. Both resolve to the same Lead row server-side.
+  const webLink = `${LEAD_ACTIVATION_BASE_URL}/baslayalim/${input.rawToken}`;
   try {
-    await sendVerificationEmail({
+    await sendLeadInviteEmail({
       to: input.email,
       name: input.contactName,
-      actionLabel: 'Kedy hesabını aktifleştirme',
-      link,
-      ttlMinutes: LEAD_TTL_DAYS * 24 * 60,
+      salonName: input.salonName,
+      code: input.rawToken,
+      webLink,
+      ttlDays: LEAD_TTL_DAYS,
+      appStoreUrl: process.env.KEDY_APP_STORE_URL || '',
+      playStoreUrl: process.env.KEDY_PLAY_STORE_URL || '',
     });
     return true;
   } catch (error: any) {

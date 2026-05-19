@@ -20,7 +20,7 @@ const router = Router();
 router.use(authenticateToken);
 
 const bodySchema = z.object({
-  type: z.enum(['BOOKING', 'RESCHEDULE', 'CANCEL']).optional(),
+  type: z.enum(['BOOKING', 'RESCHEDULE', 'FEEDBACK']).optional(),
   appointmentId: z.number().int().positive().optional(),
   customMessage: z.string().max(800).optional(),
 });
@@ -63,7 +63,7 @@ router.post('/:conversationKey/send-magic-link', async (req: any, res: any) => {
     if (err?.message === 'APPOINTMENT_REQUIRED_FOR_TYPE') {
       throw new BusinessError(
         'VALIDATION_FAILED',
-        'CANCEL / RESCHEDULE için appointmentId gerekli.',
+        'Yeniden planlama için appointmentId gerekli.',
         400,
       );
     }

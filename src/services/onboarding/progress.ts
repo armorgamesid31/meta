@@ -54,7 +54,10 @@ export async function loadCriteriaContext(salonId: number): Promise<CriteriaCont
       prisma.service.count({ where: { salonId, isActive: { not: false } } }),
       prisma.staff.count({ where: { salonId } }),
       prisma.staffService.count({
-        where: { staff: { salonId }, isActive: { not: false } },
+        // StaffService uses lowercased `isactive` in its column name +
+        // capitalized `Staff` relation per the upstream schema (see
+        // prisma/schema.prisma:StaffService).
+        where: { Staff: { salonId }, isactive: { not: false } as any },
       }),
       prisma.appointment.count({ where: { salonId } }),
       prisma.salonChannelBinding.findMany({ where: { salonId, isActive: true } }),
