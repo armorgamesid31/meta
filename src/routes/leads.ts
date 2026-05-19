@@ -2,7 +2,7 @@
  * DEPRECATED: Public lead capture endpoints.
  *
  * The /baslayalim email-code round-trip has been retired. Marketing
- * site now points users straight at the app stores (or app.kedyapp.com
+ * site now points users straight at the app stores (or web.kedyapp.com
  * for the web panel); registration happens inside the app via the
  * onboarding magic-link flow:
  *
