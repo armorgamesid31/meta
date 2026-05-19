@@ -396,6 +396,36 @@ router.post('/invites/verify-otp', async (req: any, res: any) => {
 // magic-link verification for phone (kedyekip WhatsApp template) and
 // email.
 // ─────────────────────────────────────────────────────────────────
+// Cheap availability check for the registration form. The UI calls
+// this on blur of the email and phone fields so the user finds out
+// "you already have an account" *while typing* instead of at the
+// final activate step when their session has already burned its
+// OTP budget. Returns booleans only — never leaks anything else
+// about the existing identity.
+router.post('/onboarding/check-identity', async (req: any, res: any) => {
+  const rawEmail = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+  const rawPhone = typeof req.body?.phone === 'string' ? normalizeDigitsOnly(req.body.phone) : '';
+  const out: { emailTaken: boolean; phoneTaken: boolean } = {
+    emailTaken: false,
+    phoneTaken: false,
+  };
+  if (rawEmail && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(rawEmail)) {
+    const hit = await prisma.userIdentity.findFirst({
+      where: { email: rawEmail },
+      select: { id: true },
+    });
+    out.emailTaken = Boolean(hit);
+  }
+  if (rawPhone && rawPhone.length >= 8) {
+    const hit = await prisma.userIdentity.findFirst({
+      where: { phone: rawPhone },
+      select: { id: true },
+    });
+    out.phoneTaken = Boolean(hit);
+  }
+  return res.json(out);
+});
+
 router.post('/onboarding/start', async (req: any, res: any) => {
   try {
     const { startOnboarding } = await import('../services/onboardingService.js');

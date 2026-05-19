@@ -5,12 +5,27 @@ import { BusinessError } from '../lib/errors.js';
 /**
  * Strict limiter for auth-style endpoints (login, refresh, register,
  * password reset). Defends against credential stuffing and brute force.
+ *
+ * Onboarding endpoints are *excluded* from this strict bucket — they
+ * carry their own state (OnboardingSession id with a short TTL +
+ * per-session send counts on magic-link senders) and the UI polls
+ * /auth/onboarding/:id/status while waiting for the user to tap a
+ * magic-link in WhatsApp/email. Rate-limiting that poll just makes
+ * the screen flicker between "doğrulanıyor" and "rate limited" with
+ * no security upside.
  */
 export const authRateLimiter = rateLimit({
   windowMs: 60_000,
-  limit: 10,
+  limit: 60,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req: Request) => {
+    // Express strips the mount prefix, so req.path here is relative
+    // to /api/auth (e.g. "/onboarding/:id/status"). Accept either
+    // shape for safety in case the mount changes.
+    const p = req.path || req.originalUrl || '';
+    return p.includes('/onboarding/');
+  },
   handler: (_req: Request, _res: Response, next: NextFunction) => {
     next(
       new BusinessError(
