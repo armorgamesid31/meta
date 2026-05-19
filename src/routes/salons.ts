@@ -8,6 +8,7 @@ import { createAuthTokens } from '../services/mobileAuth.js';
 import { ensureSalonServiceCategories } from '../services/salonCategorySetup.js';
 import { ensureSalonAccessSeed } from '../services/accessControl.js';
 import { startSetupPeriod } from '../services/onboarding/lifecycle.js';
+import { ensureSalonReferralCode, attachReferredSalon } from '../services/referralService.js';
 import {
   PRESET_DEFAULT_BRAND,
   deriveTones,
@@ -174,6 +175,34 @@ router.post('/', authenticateIdentity, async (req: any, res: any) => {
     await startSetupPeriod(created.salon.id);
   } catch (err) {
     console.error('[salons:create] startSetupPeriod failed', err);
+  }
+  // Mint this salon's own referral code so it can refer others. The
+  // reward for the *referrer* (this salon's introducer, if any) lands
+  // below.
+  try {
+    await ensureSalonReferralCode(created.salon.id);
+  } catch (err) {
+    console.error('[salons:create] ensureSalonReferralCode failed', err);
+  }
+  // If the caller pasted a referral code at signup, link this new
+  // salon as the referee and queue a PENDING reward for the referrer.
+  // Reward is only granted (status → REWARDED) once this salon
+  // converts to ACTIVE_PAID — see stripeBilling subscription webhook.
+  if (parsed.data.referralCode) {
+    try {
+      const result = await attachReferredSalon({
+        referralCode: parsed.data.referralCode,
+        referredSalonId: created.salon.id,
+      });
+      if (!result.linked) {
+        console.info('[salons:create] referral not linked', {
+          reason: result.reason,
+          code: parsed.data.referralCode,
+        });
+      }
+    } catch (err) {
+      console.error('[salons:create] attachReferredSalon failed', err);
+    }
   }
 
   // Issue a full salon-scoped token; the client should replace the

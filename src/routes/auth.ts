@@ -94,7 +94,19 @@ router.post('/test-post', (req, res) => {
   res.json({ message: 'POST routes working', body: req.body });
 });
 
+// DEPRECATED — kept functional so old mobile app builds keep working
+// through the rollout window. New flow: POST /api/auth/onboarding/start
+// (no invite) → magic-link verify → POST /api/auth/onboarding/:id/activate
+// (identity-only tokens) → POST /api/salons (creates salon, full tokens).
+// Telemetry-friendly: emits a Deprecation header so we can spot which
+// client builds still hit this endpoint.
 router.post('/register-salon', async (req: any, res: any) => {
+  res.setHeader('Deprecation', 'true');
+  res.setHeader('Sunset', 'Fri, 19 Jun 2026 00:00:00 GMT');
+  console.warn('[deprecated] POST /auth/register-salon used by client', {
+    userAgent: req.headers['user-agent'],
+    ip: req.ip,
+  });
   const { email, password, salonName } = req.body;
 
   if (!email || !password || !salonName) {
@@ -605,7 +617,17 @@ router.post('/invites/verify-email-otp', async (req: any, res: any) => {
   }
 });
 
+// DEPRECATED — all-at-once invite activation. The new flow is
+// authenticated and stateless: caller already has a UserIdentity
+// (from /auth/onboarding/* register), then POSTs to /invites/redeem
+// with just { code }. Kept functional for old mobile builds.
 router.post('/invites/activate', async (req: any, res: any) => {
+  res.setHeader('Deprecation', 'true');
+  res.setHeader('Sunset', 'Fri, 19 Jun 2026 00:00:00 GMT');
+  console.warn('[deprecated] POST /auth/invites/activate used by client', {
+    userAgent: req.headers['user-agent'],
+    ip: req.ip,
+  });
   try {
     const verificationId = String(req.body?.verificationId || '').trim();
     if (!verificationId) {
