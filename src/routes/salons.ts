@@ -171,10 +171,36 @@ router.post('/', authenticateIdentity, async (req: any, res: any) => {
   } catch (err) {
     console.error('[salons:create] ensureSalonAccessSeed failed', err);
   }
-  try {
-    await startSetupPeriod(created.salon.id);
-  } catch (err) {
-    console.error('[salons:create] startSetupPeriod failed', err);
+  // Reviewer accounts (App Store / Play Console review team) need
+  // full access without hitting the 14-day setup clock — reviewers
+  // typically test signup + a few core flows in one sitting and
+  // would otherwise see a PAYMENT_REQUIRED lockout before they
+  // approve the app. Pin their salon to ACTIVE_PAID up front; the
+  // lifecycle cron only scans SETUP/BONUS/GRACE so it'll never
+  // touch this row again. Comma-separated env list of identity
+  // emails — typically the per-store reviewer fake account(s).
+  const reviewerEmails = (process.env.REVIEWER_IDENTITY_EMAILS || '')
+    .split(',')
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+  const isReviewer =
+    identityRow.email && reviewerEmails.includes(identityRow.email.toLowerCase());
+
+  if (isReviewer) {
+    try {
+      await prisma.salon.update({
+        where: { id: created.salon.id },
+        data: { setupAccessStatus: 'ACTIVE_PAID', status: 'ACTIVE' },
+      });
+    } catch (err) {
+      console.error('[salons:create] reviewer pinning failed', err);
+    }
+  } else {
+    try {
+      await startSetupPeriod(created.salon.id);
+    } catch (err) {
+      console.error('[salons:create] startSetupPeriod failed', err);
+    }
   }
   // Mint this salon's own referral code so it can refer others. The
   // reward for the *referrer* (this salon's introducer, if any) lands
