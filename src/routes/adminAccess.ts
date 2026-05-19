@@ -211,20 +211,35 @@ router.get('/users', authenticateToken, requirePermissionKey('access.users.manag
     }
 
     return res.status(200).json({
-      items: users.map((membership) => ({
-        id: membership.id,
-        identityId: membership.identity.id,
-        email: membership.identity.email ?? null,
-        displayName: membership.identity.displayName,
-        role: normalizeRole(membership.role),
-        roles: Array.from(new Set([normalizeRole(membership.role), ...normalizeRoles(membership.secondaryRoles)])).sort(),
-        isActive: membership.isActive && membership.identity.isActive,
-        passwordResetRequired: membership.passwordResetRequired,
-        lastLoginAt: membership.lastLoginAt,
-        createdAt: membership.createdAt,
-        updatedAt: membership.updatedAt,
-        linkedStaff: staffByMembershipId.get(membership.id) || null,
-      })),
+      items: users.map((membership) => {
+        // Derive the safest display label server-side so legacy rows
+        // (where displayName was never populated but firstName/lastName
+        // are) still show a real name in the team list instead of
+        // the email's local part. The raw fields are also exposed so
+        // the client can render initials and richer cards.
+        const first = (membership.identity.firstName || '').trim();
+        const last = (membership.identity.lastName || '').trim();
+        const composed = `${first} ${last}`.trim();
+        const resolvedDisplayName =
+          (membership.identity.displayName || '').trim() || composed || null;
+        return {
+          id: membership.id,
+          identityId: membership.identity.id,
+          email: membership.identity.email ?? null,
+          displayName: resolvedDisplayName,
+          firstName: membership.identity.firstName ?? null,
+          lastName: membership.identity.lastName ?? null,
+          phone: membership.identity.phone ?? null,
+          role: normalizeRole(membership.role),
+          roles: Array.from(new Set([normalizeRole(membership.role), ...normalizeRoles(membership.secondaryRoles)])).sort(),
+          isActive: membership.isActive && membership.identity.isActive,
+          passwordResetRequired: membership.passwordResetRequired,
+          lastLoginAt: membership.lastLoginAt,
+          createdAt: membership.createdAt,
+          updatedAt: membership.updatedAt,
+          linkedStaff: staffByMembershipId.get(membership.id) || null,
+        };
+      }),
     });
   } catch (error) {
     console.error('Access users list error:', error);
