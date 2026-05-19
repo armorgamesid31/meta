@@ -5,7 +5,7 @@ import { randomBytes } from 'node:crypto';
 import { prisma } from '../prisma.js';
 import { authenticateToken, authenticateIdentity } from '../middleware/auth.js';
 import { InviteStatus, UserRole } from '@prisma/client';
-import { createAuthTokens, revokeRefreshToken, rotateRefreshToken } from '../services/mobileAuth.js';
+import { createAuthTokens, createIdentityTokens, revokeRefreshToken, rotateRefreshToken } from '../services/mobileAuth.js';
 import { ensureSalonServiceCategories } from '../services/salonCategorySetup.js';
 import { ensureSalonAccessSeed } from '../services/accessControl.js';
 import { activateInvite, hashPlainToken, validateInvite, redeemInviteForIdentity } from '../services/inviteService.js';
@@ -228,8 +228,23 @@ router.post('/login', async (req: any, res: any) => {
     }
 
     const memberships = identity.memberships;
+    // Salonless identity: user registered via /kayit but hasn't joined
+    // or opened a salon yet. Mint an identity-only token so the client
+    // can land on /app/welcome and pick a path (open salon / redeem
+    // invite). Mirrors what activateOnboarding returns for SELF_REGISTER.
     if (!memberships.length) {
-      throw new BusinessError('FORBIDDEN', 'Aktif salon uyeligi bulunamadi.', 403);
+      const tokens = await createIdentityTokens({ identityId: identity.id });
+      return res.json({
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        user: {
+          id: identity.id,
+          email: identity.email,
+          salonId: null,
+          membershipId: null,
+          role: null,
+        },
+      });
     }
 
     if (memberships.length > 1 && !req.body?.salonId) {
@@ -526,6 +541,57 @@ router.post('/onboarding/:sessionId/activate', async (req: any, res: any) => {
   } catch (error: any) {
     return res.status(400).json({ message: error?.message || 'Aktivasyon başarısız.' });
   }
+});
+
+// Minimal identity bootstrap for salonless sessions.
+//
+// /api/mobile/bootstrap requires a full salon-scoped token. Identity-
+// only tokens (issued by activateOnboarding SELF_REGISTER, or by
+// /auth/login when an identity has no memberships) get rejected
+// there. This endpoint returns just enough for the client to render
+// the WelcomePage chooser without 401'ing the entire UI.
+router.get('/me', authenticateIdentity, async (req: any, res: any) => {
+  const identityId = Number(req.identity?.identityId || 0);
+  if (!identityId) {
+    throw new BusinessError('UNAUTHORIZED', 'Kimlik bulunamadı.', 401);
+  }
+  const identity = await prisma.userIdentity.findUnique({
+    where: { id: identityId },
+    select: {
+      id: true,
+      email: true,
+      phone: true,
+      firstName: true,
+      lastName: true,
+      displayName: true,
+      memberships: {
+        where: { isActive: true },
+        select: {
+          id: true,
+          role: true,
+          salon: { select: { id: true, name: true, slug: true, logoUrl: true } },
+        },
+      },
+    },
+  });
+  if (!identity) {
+    throw new BusinessError('NOT_FOUND', 'Kimlik bulunamadı.', 404);
+  }
+  return res.json({
+    user: {
+      id: identity.id,
+      email: identity.email,
+      phone: identity.phone,
+      firstName: identity.firstName,
+      lastName: identity.lastName,
+      displayName: identity.displayName,
+    },
+    memberships: identity.memberships.map((m) => ({
+      membershipId: m.id,
+      role: m.role,
+      salon: m.salon,
+    })),
+  });
 });
 
 // Authenticated invite redemption.
