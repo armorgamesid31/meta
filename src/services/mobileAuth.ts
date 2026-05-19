@@ -80,19 +80,52 @@ export async function rotateRefreshToken(refreshToken: string) {
       },
     });
 
-    if (
-      !session ||
-      !session.membership ||
-      !session.identity ||
-      !session.membershipId ||
-      !session.identityId ||
-      !session.salonId ||
-      !session.userId
-    ) {
-      // Identity-only sessions (no salon scope) are not rotated by this
-      // path — they're consumed when the user opens a salon or
-      // redeems an invite, which mints a fresh full token.
+    if (!session || !session.identity || !session.identityId) {
       return null;
+    }
+
+    // Identity-only session (registered via /kayit, no salon attached
+    // yet): mint a fresh identity-only token. Previously this path
+    // returned null, which caused the AuthContext apiFetch interceptor
+    // to call logout() the moment any salon-scoped request 401'd —
+    // the user got booted right back to the login screen immediately
+    // after logging in.
+    if (!session.membership || !session.salonId || !session.userId) {
+      const newRefreshToken = createRefreshToken();
+      const newRefreshTokenHash = hashToken(newRefreshToken);
+
+      await tx.mobileAuthSession.update({
+        where: { id: session.id },
+        data: { revokedAt: now },
+      });
+      await tx.mobileAuthSession.create({
+        data: {
+          identityId: session.identityId,
+          refreshTokenHash: newRefreshTokenHash,
+          expiresAt: getTokenExpiry(REFRESH_TOKEN_TTL_DAYS),
+        },
+      });
+
+      const accessToken = generateToken({
+        identityId: session.identityId,
+        userId: 0,
+      } as any);
+
+      return {
+        accessToken,
+        refreshToken: newRefreshToken,
+        user: {
+          id: session.identity.id,
+          email: session.identity.email,
+          role: null,
+          salonId: null,
+          passwordResetRequired: false,
+          isActive: session.identity.isActive === true,
+        },
+        membershipId: null,
+        identityId: session.identityId,
+        legacyUserId: null,
+      };
     }
 
     const newRefreshToken = createRefreshToken();
@@ -114,17 +147,23 @@ export async function rotateRefreshToken(refreshToken: string) {
       },
     });
 
+    // Past the identity-only early return, all of these are guaranteed
+    // non-null — assert for TS so the narrowing carries through.
+    const membershipId = session.membershipId!;
+    const userId = session.userId!;
+    const salonId = session.salonId!;
+
     await tx.salonMembership.update({
-      where: { id: session.membershipId },
+      where: { id: membershipId },
       data: { lastLoginAt: now },
     });
 
     const accessToken = generateToken(
       toAccessTokenPayload({
-        legacyUserId: session.userId,
+        legacyUserId: userId,
         identityId: session.identityId,
-        membershipId: session.membershipId,
-        salonId: session.salonId,
+        membershipId: membershipId,
+        salonId: salonId,
         role: session.membership.role,
       }),
     );
