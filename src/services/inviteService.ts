@@ -420,6 +420,26 @@ export async function redeemInviteForIdentity(input: {
       data: { legacySalonUserId: legacyUser.id },
     });
 
+    // Mirror the activateInvite() Staff sync. The owner created a
+    // Staff row up front with the invited person's placeholder data;
+    // now that the real identity is attached we re-point that row's
+    // membershipId + userId so the team list shows the new joiner
+    // and the displayName/phone match what they registered with.
+    // Without this the team UI keeps showing the placeholder name
+    // and the role/availability widgets can't resolve the row.
+    await tx.staff.updateMany({
+      where: {
+        salonId: membership.salonId,
+        OR: [{ membershipId: membership.id }, { userId: legacyUser.id }],
+      },
+      data: {
+        ...(identity.displayName ? { name: identity.displayName } : {}),
+        phone: identity.phone || null,
+        membershipId: membership.id,
+        userId: legacyUser.id,
+      },
+    });
+
     await tx.invite.update({
       where: { id: invite.id },
       data: {
