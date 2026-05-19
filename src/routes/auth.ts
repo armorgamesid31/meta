@@ -265,7 +265,15 @@ router.post('/login', async (req: any, res: any) => {
     }
 
     const requestedSalonId = Number(req.body?.salonId || 0);
-    const membership = requestedSalonId > 0 ? memberships.find((m) => m.salonId === requestedSalonId) || null : memberships[0];
+    // Tolerate stale lastSelectedSalonId in localStorage: if the
+    // requested salon isn't one this identity is a member of, fall
+    // through to the first available membership instead of 404'ing.
+    // The salon-picker view (returned earlier when memberships > 1)
+    // handles explicit salon selection; this branch is the cold-start
+    // path where the client's hint just happens to be wrong.
+    const membership =
+      (requestedSalonId > 0 ? memberships.find((m) => m.salonId === requestedSalonId) : null) ||
+      memberships[0];
     if (!membership) {
       throw new BusinessError('NOT_FOUND', 'Selected salon membership was not found.', 404);
     }
