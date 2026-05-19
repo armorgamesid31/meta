@@ -106,7 +106,7 @@ node scripts/reset-instagram-connections.mjs --apply --salon-id=5
 3. Create a fresh review test salon through real registration flow:
 
 ```bash
-node scripts/create-meta-review-test-salon.mjs --base-url=https://app.berkai.shop
+node scripts/create-meta-review-test-salon.mjs --base-url=https://api.kedyapp.com
 ```
 
 The script outputs:

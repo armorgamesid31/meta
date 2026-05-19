@@ -11,8 +11,13 @@
 // below should be invoked from the same spot.
 
 import { cleanupActivationCodes } from './cleanupActivationCodes.js';
+import { processStatusTransitions } from '../services/onboarding/lifecycle.js';
 
 const HOURLY_MS = 60 * 60 * 1000;
+// Lifecycle transitions only need to run daily, but we run every 6h
+// because (a) Stripe webhooks can leave a salon stuck in BONUS_PERIOD
+// briefly, and (b) the calculation is cheap (single indexed scan).
+const SIX_HOURS_MS = 6 * HOURLY_MS;
 
 let started = false;
 
@@ -23,7 +28,7 @@ export function startBackgroundJobs(): void {
   started = true;
 
   // Hourly: clear plaintext activation codes older than 24h.
-  const tick = async () => {
+  const tickActivationCleanup = async () => {
     try {
       const { cleared } = await cleanupActivationCodes();
       if (cleared > 0) {
@@ -34,8 +39,25 @@ export function startBackgroundJobs(): void {
     }
   };
 
+  // 6-hourly: advance setup/bonus/grace periods. Idempotent — running
+  // again before the next deadline passes is a no-op. See
+  // services/onboarding/lifecycle.ts:processStatusTransitions for the
+  // transition table.
+  const tickLifecycle = async () => {
+    try {
+      const result = await processStatusTransitions();
+      if (result.toBonus + result.toGrace + result.toPaymentRequired > 0) {
+        console.log('[jobs/setupCenterTransitions]', result);
+      }
+    } catch (error) {
+      console.error('[jobs/setupCenterTransitions] failed', error);
+    }
+  };
+
   // Run once at startup so a long process restart catches up promptly,
-  // then settle into the hourly cadence.
-  void tick();
-  setInterval(tick, HOURLY_MS).unref();
+  // then settle into the regular cadence.
+  void tickActivationCleanup();
+  void tickLifecycle();
+  setInterval(tickActivationCleanup, HOURLY_MS).unref();
+  setInterval(tickLifecycle, SIX_HOURS_MS).unref();
 }

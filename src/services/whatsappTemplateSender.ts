@@ -14,8 +14,15 @@
 // template-based and link-bearing.
 
 import axios from 'axios';
+import {
+  ChannelType,
+  InboundMessageStatus,
+  MessageEventDirection,
+  Prisma,
+} from '@prisma/client';
 import { prisma } from '../prisma.js';
 import { normalizeDigitsOnly } from './phoneValidation.js';
+import { upsertConversationMessageEvent } from './conversationMessageEvents.js';
 
 const CHAKRA_WHATSAPP_SEND_URL = (process.env.CHAKRA_WHATSAPP_SEND_URL || '').trim();
 const CHAKRA_API_TOKEN = (process.env.CHAKRA_API_TOKEN || '').trim();
@@ -141,6 +148,26 @@ export async function sendVerificationLinkTemplate(
       response?.data?.messages?.[0]?.id ||
       response?.data?.data?.messages?.[0]?.id ||
       undefined;
+
+    // Log verification template into conversation thread so the salon
+    // sees an outbound "doğrulama linki gönderildi" bubble.
+    if (messageId) {
+      void logTemplateOutbound({
+        salonId: input.salonId,
+        recipientPhoneNormalized: to,
+        externalAccountId: phoneNumberId,
+        messageId,
+        templateName: TEMPLATE_NAME,
+        displayText: 'Doğrulama linki gönderildi.',
+        bodyParams: undefined,
+        metadata: { kind: 'verification_link', token: input.token },
+      }).catch((err) => {
+        console.error('[whatsappTemplateSender] verify-template log failed', {
+          salonId: input.salonId,
+          err,
+        });
+      });
+    }
     return { ok: true, messageId };
   } catch (error: any) {
     const reason =
@@ -187,6 +214,20 @@ export interface SendTemplateInput {
   headerParams?: Record<string, string>;
   buttonParams?: Array<{ type: 'url' | 'quick_reply'; value: string }>;
   language?: string;
+  /**
+   * Optional human-readable preview text for the conversation log. When
+   * provided this becomes the `text` field on the ConversationMessageEvent
+   * row so the salon's chat thread shows the same wording the customer
+   * sees on WhatsApp. If omitted we fall back to a synthetic "[Şablon:
+   * <name>]" placeholder so the row at least appears in the thread.
+   */
+  conversationDisplayText?: string;
+  /**
+   * Optional appointment / customer / magic-link metadata to attach to
+   * the conversation row (rawPayload). Helps the UI deeplink the system
+   * notification back to the appointment when the salon taps the row.
+   */
+  conversationMetadata?: Record<string, unknown>;
 }
 
 export interface SendTemplateResult {
@@ -280,6 +321,25 @@ export async function sendTemplate(input: SendTemplateInput): Promise<SendTempla
       response?.data?.messages?.[0]?.id ||
       response?.data?.data?.messages?.[0]?.id ||
       undefined;
+
+    if (messageId) {
+      void logTemplateOutbound({
+        salonId: input.salonId,
+        recipientPhoneNormalized: to,
+        externalAccountId: phoneNumberId,
+        messageId,
+        templateName: input.templateName,
+        displayText: input.conversationDisplayText,
+        bodyParams: input.bodyParams,
+        metadata: input.conversationMetadata,
+      }).catch((err) => {
+        console.error('[sendTemplate] conversation log failed', {
+          salonId: input.salonId,
+          template: input.templateName,
+          err,
+        });
+      });
+    }
     return { ok: true, messageId };
   } catch (error: any) {
     const reason =
@@ -296,4 +356,89 @@ export async function sendTemplate(input: SendTemplateInput): Promise<SendTempla
     });
     return { ok: false, error: String(reason) };
   }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Conversation-thread logging for outbound templates.
+//
+// Without this, lifecycle reminders / waitlist offers / verification
+// links / birthday vouchers etc. get sent silently — the salon never
+// sees them in their chat thread. We mirror each successful send into
+// ConversationMessageEvent so the bubble appears alongside the rest of
+// the conversation. Read by adminMobile.ts conversation-detail.
+// ─────────────────────────────────────────────────────────────────
+
+interface LogTemplateOutboundInput {
+  salonId: number;
+  recipientPhoneNormalized: string;
+  externalAccountId: string;
+  messageId: string;
+  templateName: string;
+  displayText?: string;
+  bodyParams?: Record<string, string>;
+  metadata?: Record<string, unknown>;
+}
+
+function renderDisplayText(
+  templateName: string,
+  displayText?: string,
+  bodyParams?: Record<string, string>,
+): string {
+  if (displayText && displayText.trim()) return displayText.trim();
+  const params =
+    bodyParams && Object.keys(bodyParams).length > 0
+      ? Object.values(bodyParams).filter((v) => v && v.trim()).join(' · ')
+      : '';
+  return params ? `[Şablon: ${templateName}] ${params}` : `[Şablon: ${templateName}]`;
+}
+
+async function resolveConversationKeyForPhone(
+  salonId: number,
+  phoneNormalized: string,
+): Promise<string> {
+  // Prefer an existing identity session's conversationKey so the row
+  // threads correctly under the same chat the customer started. Falls
+  // back to a synthetic `WHATSAPP:<digits>` key — same shape webhook
+  // ingestion uses for net-new threads.
+  const session = await prisma.identitySession.findFirst({
+    where: {
+      salonId,
+      channel: ChannelType.WHATSAPP,
+      subjectNormalized: phoneNormalized,
+    },
+    orderBy: { updatedAt: 'desc' },
+    select: { conversationKey: true },
+  });
+  if (session?.conversationKey) return session.conversationKey;
+  return `WHATSAPP:${phoneNormalized}`;
+}
+
+async function logTemplateOutbound(input: LogTemplateOutboundInput): Promise<void> {
+  const conversationKey = await resolveConversationKeyForPhone(
+    input.salonId,
+    input.recipientPhoneNormalized,
+  );
+  const text = renderDisplayText(input.templateName, input.displayText, input.bodyParams);
+  await upsertConversationMessageEvent({
+    salonId: input.salonId,
+    channel: ChannelType.WHATSAPP,
+    conversationKey,
+    providerMessageId: input.messageId,
+    externalAccountId: input.externalAccountId,
+    messageType: `template_${input.templateName}_outbound`,
+    text,
+    direction: MessageEventDirection.OUTBOUND,
+    eventTimestamp: new Date(),
+    processingStatus: InboundMessageStatus.DONE,
+    // No outboundSource — automated template sends are system-triggered,
+    // not "AI agent" or "human in the app". The frontend's
+    // resolveOutboundMessageMeta degrades gracefully when null.
+    outboundSource: null,
+    rawPayload: {
+      kind: 'template_outbound',
+      templateName: input.templateName,
+      bodyParams: input.bodyParams || null,
+      metadata: input.metadata || null,
+    } as Prisma.InputJsonValue,
+  });
 }

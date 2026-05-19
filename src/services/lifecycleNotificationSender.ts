@@ -81,7 +81,7 @@ interface AppointmentInput {
 }
 
 // Resolve the salon slug that fills the {{1}} placeholder in URL buttons
-// (e.g. https://app.berkai.shop/r/booking/{{1}} → r/booking/bella-studio).
+// (e.g. https://api.kedyapp.com/r/booking/{{1}} → r/booking/bella-studio).
 async function resolveSalonSlug(salonId: number): Promise<string | null> {
   const salon = await prisma.salon.findUnique({
     where: { id: salonId },
@@ -147,12 +147,55 @@ async function sendAppointmentBound(
     recipientPhone: ctx.recipientPhone,
     bodyParams: ctx.params,
     buttonParams,
+    conversationDisplayText: renderHumanDisplayText(kind, ctx.params),
+    conversationMetadata: {
+      kind,
+      customerId: input.customerId,
+      appointmentId: input.appointmentId,
+      logicalKey,
+      templateName,
+    },
   });
 
   if (result.ok) {
     await logSent(kind, input.customerId, input.appointmentId);
   }
   return result;
+}
+
+// Map lifecycle kinds → human-readable bubble preview for the salon's
+// chat thread. Falls back to the generic "[Şablon: ...]" placeholder
+// from whatsappTemplateSender if a kind isn't mapped here.
+function renderHumanDisplayText(
+  kind: NotificationKind,
+  bodyParams: Record<string, string>,
+): string | undefined {
+  const customerFirst = (bodyParams.customer_first_name || bodyParams.customer_name || '').trim();
+  const start = (bodyParams.start_time_human || bodyParams.appointment_time || '').trim();
+  const service = (bodyParams.service_name || '').trim();
+  const greet = customerFirst ? `${customerFirst}, ` : '';
+  switch (kind) {
+    case 'REMINDER_1_DAY':
+      return `📅 ${greet}yarınki ${start || 'randevunuz'} için hatırlatma gönderildi${service ? ` (${service})` : ''}.`;
+    case 'REMINDER_3_DAY':
+      return `📅 ${greet}3 gün sonraki ${start || 'randevunuz'} için hatırlatma gönderildi.`;
+    case 'REMINDER_2_HOUR':
+      return `⏰ ${greet}2 saat sonraki randevunuz için hatırlatma + yol tarifi gönderildi.`;
+    case 'NO_SHOW':
+      return `❌ ${greet}gelmediğin randevu için takip mesajı gönderildi.`;
+    case 'SATISFACTION_SURVEY':
+      return `⭐ ${greet}memnuniyet anketi linki gönderildi.`;
+    case 'GOOGLE_MAPS_REVIEW':
+      return `🗺️ ${greet}Google yorum bağlantısı gönderildi.`;
+    case 'WAITLIST_OFFER':
+      return `🎟️ ${greet}bekleme listesi teklifi gönderildi.`;
+    case 'BIRTHDAY':
+      return `🎂 ${greet}doğum günü kuponu gönderildi.`;
+    case 'WINBACK':
+      return `💌 ${greet}geri dönüş kampanyası gönderildi.`;
+    default:
+      return undefined;
+  }
 }
 
 // sendAppointmentConfirmation removed — kdy_randevu_onay template is no
@@ -205,6 +248,14 @@ export async function sendSatisfactionSurvey(input: AppointmentInput): Promise<N
     recipientPhone: ctx.recipientPhone,
     bodyParams: ctx.params,
     buttonParams: [{ type: 'url', value: link.token }],
+    conversationDisplayText: renderHumanDisplayText(kind, ctx.params),
+    conversationMetadata: {
+      kind,
+      customerId: input.customerId,
+      appointmentId: input.appointmentId,
+      templateName,
+      feedbackToken: link.token,
+    },
   });
 
   if (result.ok) await logSent(kind, input.customerId, input.appointmentId);
@@ -249,6 +300,12 @@ export async function sendGoogleMapsReview(input: {
     recipientPhone: ctx.recipientPhone,
     bodyParams: ctx.params,
     buttonParams,
+    conversationDisplayText: renderHumanDisplayText('GOOGLE_MAPS_REVIEW', ctx.params),
+    conversationMetadata: {
+      kind: 'GOOGLE_MAPS_REVIEW',
+      customerId: input.customerId,
+      templateName,
+    },
   });
 
   if (result.ok) {
@@ -302,6 +359,12 @@ export async function sendBirthday(input: {
     recipientPhone: ctx.recipientPhone,
     bodyParams: ctx.params,
     buttonParams,
+    conversationDisplayText: renderHumanDisplayText(kind, ctx.params),
+    conversationMetadata: {
+      kind,
+      customerId: input.customerId,
+      templateName,
+    },
   });
 
   if (result.ok) await logSent(kind, input.customerId, null);
@@ -349,6 +412,12 @@ export async function sendWinback(input: {
     recipientPhone: ctx.recipientPhone,
     bodyParams: ctx.params,
     buttonParams,
+    conversationDisplayText: renderHumanDisplayText(kind, ctx.params),
+    conversationMetadata: {
+      kind,
+      customerId: input.customerId,
+      templateName,
+    },
   });
 
   if (result.ok) await logSent(kind, input.customerId, null);
@@ -380,6 +449,13 @@ export async function sendWaitlistOfferTemplate(input: {
     recipientPhone: ctx.recipientPhone,
     bodyParams: ctx.params,
     buttonParams: [{ type: 'url', value: input.offerToken }],
+    conversationDisplayText: renderHumanDisplayText('WAITLIST_OFFER', ctx.params),
+    conversationMetadata: {
+      kind: 'WAITLIST_OFFER',
+      customerId: input.customerId,
+      templateName,
+      offerToken: input.offerToken,
+    },
   });
 
   if (result.ok) await logSent('WAITLIST_OFFER', input.customerId, null);

@@ -6,7 +6,7 @@ import crypto from 'crypto';
 function usage() {
   console.log('Usage:');
   console.log('  node scripts/create-meta-review-test-salon.mjs');
-  console.log('  node scripts/create-meta-review-test-salon.mjs --base-url=https://app.berkai.shop');
+  console.log('  node scripts/create-meta-review-test-salon.mjs --base-url=https://api.kedyapp.com');
   console.log('  node scripts/create-meta-review-test-salon.mjs --email=test@example.com --password=StrongPass!123');
 }
 

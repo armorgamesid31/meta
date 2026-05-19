@@ -52,6 +52,10 @@ import internalLifecycleRoutes from './routes/internalLifecycle.js';
 import billingRoutes from './routes/billing.js';
 import checkoutRoutes from './routes/checkout.js';
 import publicRoutes from './routes/public.js';
+import setupCenterRoutes from './routes/setupCenter.js';
+import internalSetupCenterRoutes from './routes/internalSetupCenter.js';
+import conversationActionsRoutes from './routes/conversationActions.js';
+import leadRoutes from './routes/leads.js';
 import { processStripeWebhook } from './services/stripeBilling.js';
 import { multiTenantMiddleware } from './middleware/multiTenant.js';
 import { authenticateToken } from './middleware/auth.js';
@@ -267,6 +271,10 @@ app.use('/api/internal/imports', internalImportsRoutes);
 app.use('/api/internal/website', internalWebsiteRoutes);
 app.use('/api/internal/billing', internalBillingRoutes);
 app.use('/api/internal/lifecycle', internalLifecycleRoutes);
+// Setup Center admin endpoints (grant/revoke bonus, extend period,
+// run-transitions). Same X-Internal-API-Key guard as the rest of
+// /api/internal. See routes/internalSetupCenter.ts.
+app.use('/api/internal/setup-center', internalSetupCenterRoutes);
 app.use('/api/webhooks', channelWebhooksRoutes);
 
 // Apply tenant middleware to ALL other API routes
@@ -329,6 +337,19 @@ app.use('/api/waitlist', waitlistRoutes);
 app.use('/api/public', publicRoutes);
 app.use('/api/billing', billingRoutes);
 app.use('/api/checkout', checkoutRoutes);
+// Setup Center (salon-facing): progress dashboard + criterion mutations.
+// Authentication is enforced inside the router via authenticateToken so
+// new endpoints can't accidentally ship unauthenticated.
+app.use('/api/setup-center', setupCenterRoutes);
+// Conversation panel actions: salon-facing endpoints that mutate the
+// active chat (currently: send-magic-link CTA button). See
+// routes/conversationActions.ts.
+app.use('/api/conversations', conversationActionsRoutes);
+// Public lead capture from the marketing site /baslayalim form. No
+// authentication; rate-limited by the global /api limiter and again
+// implicitly via Lead.activationLinkSendCount tracking. See
+// routes/leads.ts + services/leadService.ts.
+app.use('/api/leads', leadRoutes);
 app.use('/api/app/chakra', chakraRoutes);
 app.use('/api/app/meta-direct', metaDirectRoutes);
 app.use('/availability', availabilityRoutes);

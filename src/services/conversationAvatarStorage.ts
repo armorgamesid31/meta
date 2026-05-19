@@ -112,7 +112,7 @@ export async function storeConversationAvatarFromUrl(input: {
       validateStatus: (status) => status >= 200 && status < 400,
       headers: {
         Accept: 'image/*,*/*;q=0.8',
-        'User-Agent': 'KedySalon/1.0 (+https://app.berkai.shop)',
+        'User-Agent': 'KedySalon/1.0 (+https://kedyapp.com)',
       },
     });
 

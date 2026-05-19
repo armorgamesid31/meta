@@ -4,6 +4,11 @@ import { createOwnerPendingProvisioning } from './inviteService.js';
 import { getPlanByKey } from './billingCatalog.js';
 import { attachReferredSalon } from './referralService.js';
 import { enqueueActivationDelivery } from './activationDeliveryQueue.js';
+import {
+  setPaymentMethodOnFile,
+  activatePaid,
+  tryGrantBonus,
+} from './onboarding/lifecycle.js';
 
 let stripeClient: Stripe | null = null;
 
@@ -301,20 +306,80 @@ export async function processStripeWebhook(rawBody: Buffer, signature: string) {
     });
   }
 
-  if (event.type === 'customer.subscription.updated' || event.type === 'customer.subscription.deleted') {
+  if (
+    event.type === 'customer.subscription.created' ||
+    event.type === 'customer.subscription.updated' ||
+    event.type === 'customer.subscription.deleted'
+  ) {
     const subscription = event.data.object as Stripe.Subscription;
     const nextStatus = String(subscription.status || '').toLowerCase();
     const currentPeriodEndUnix = Number((subscription as any).current_period_end || 0);
-    await prisma.salonSubscription.updateMany({
-      where: { stripeSubscriptionId: subscription.id },
-      data: {
-        status: nextStatus || 'unknown',
-        cancelAtPeriodEnd: subscription.cancel_at_period_end === true,
-        currentPeriodEnd: currentPeriodEndUnix > 0
-          ? new Date(currentPeriodEndUnix * 1000)
-          : null,
-      },
-    });
+    const customerId = typeof subscription.customer === 'string' ? subscription.customer : null;
+    const stripePriceId = subscription.items?.data?.[0]?.price?.id || null;
+    const flowMeta = String(subscription.metadata?.flow || '').trim();
+
+    // Setup-Center trial flow: row was upserted at checkout time with
+    // status='trial_checkout_pending'. Update it in place.
+    if (customerId) {
+      const existing = await prisma.salonSubscription.findFirst({
+        where: { stripeCustomerId: customerId },
+        select: { id: true, salonId: true, planKey: true },
+      });
+      if (existing) {
+        await prisma.salonSubscription.update({
+          where: { id: existing.id },
+          data: {
+            stripeSubscriptionId: subscription.id,
+            stripePriceId,
+            status: nextStatus || 'unknown',
+            cancelAtPeriodEnd: subscription.cancel_at_period_end === true,
+            currentPeriodEnd: currentPeriodEndUnix > 0
+              ? new Date(currentPeriodEndUnix * 1000)
+              : null,
+          },
+        });
+
+        // Side effects per status:
+        //  - 'trialing' (subscription created with a future trial_end):
+        //    treat as "payment method attached", set the flag, then
+        //    re-evaluate bonus eligibility. This is the path the new
+        //    Setup-Center trial-subscription checkout takes.
+        //  - 'active' (trial ended cleanly, first invoice paid):
+        //    flip access status to ACTIVE_PAID.
+        //  - 'past_due' / 'unpaid' / 'canceled' / 'incomplete_expired':
+        //    we leave access alone for now — the lifecycle cron + grace
+        //    period handle the eventual paywall. A future iteration
+        //    can surface a "your card was declined" banner.
+        if (nextStatus === 'trialing' && flowMeta === 'trial_subscription') {
+          await setPaymentMethodOnFile(existing.salonId, { type: 'system' }, {
+            stripeSubscriptionId: subscription.id,
+            stripeCustomerId: customerId,
+          });
+          await tryGrantBonus(existing.salonId, { type: 'system' }).catch((err) => {
+            console.error('[stripe-webhook] tryGrantBonus after trialing failed', err);
+          });
+        } else if (nextStatus === 'active') {
+          await activatePaid(existing.salonId, { type: 'system' }, {
+            stripeSubscriptionId: subscription.id,
+            stripeCustomerId: customerId,
+          });
+        }
+      } else {
+        // Legacy flow path: stripeBilling row doesn't exist yet (the
+        // pay-first marketing checkout creates it inside
+        // checkout.session.completed). Keep the original behavior.
+        await prisma.salonSubscription.updateMany({
+          where: { stripeSubscriptionId: subscription.id },
+          data: {
+            status: nextStatus || 'unknown',
+            cancelAtPeriodEnd: subscription.cancel_at_period_end === true,
+            currentPeriodEnd: currentPeriodEndUnix > 0
+              ? new Date(currentPeriodEndUnix * 1000)
+              : null,
+          },
+        });
+      }
+    }
   }
 
   if (event.type === 'invoice.payment_failed' || event.type === 'invoice.payment_action_required') {

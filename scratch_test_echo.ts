@@ -41,7 +41,7 @@ async function main() {
   };
 
   try {
-    const res = await axios.post('https://app.berkai.shop/api/webhooks/whatsapp', payload);
+    const res = await axios.post('https://api.kedyapp.com/api/webhooks/whatsapp', payload);
     console.log('Status:', res.status);
     console.log('Data:', res.data);
   } catch (e: any) {

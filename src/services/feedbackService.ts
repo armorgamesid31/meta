@@ -50,7 +50,7 @@ export interface FeedbackLink {
 }
 
 const FRONTEND_BASE =
-  (process.env.FEEDBACK_BASE_URL || process.env.BOOKING_BASE_URL || 'https://app.berkai.shop')
+  (process.env.FEEDBACK_BASE_URL || process.env.BOOKING_BASE_URL || 'https://web.kedyapp.com')
     .trim()
     .replace(/\/+$/, '');
 

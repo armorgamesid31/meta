@@ -21,7 +21,7 @@
  *   BACKEND_URL=https://my-backend ... node scripts/e2e-flow-test.mjs
  */
 
-const BACKEND = process.env.BACKEND_URL || 'https://app.berkai.shop';
+const BACKEND = process.env.BACKEND_URL || 'https://api.kedyapp.com';
 const EMAIL = process.env.TEST_EMAIL;
 const PASSWORD = process.env.TEST_PASSWORD;
 

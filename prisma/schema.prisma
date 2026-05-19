@@ -59,6 +59,38 @@ model Salon {
   brandColor                  String?
   themeUpdatedAt              DateTime?
   themeResolved               Json?
+  // Setup Center / free trial / bonus bookkeeping.
+  //
+  // The flow: signup -> SETUP_PERIOD (14d) -> meet bonus criteria + add
+  // payment method -> BONUS_PERIOD (30d) -> GRACE_PERIOD (7d) -> either
+  // ACTIVE_PAID (Stripe subscription with trial_end honored) or
+  // PAYMENT_REQUIRED (paywall shown in admin app).
+  //
+  // offerKey points to a config row in src/onboarding/offers.ts that
+  // declares period lengths + criteria set + plan. Older salons that
+  // came in via the pay-first marketing checkout flow are stamped with
+  // offerKey = 'LEGACY_*' so the lifecycle cron leaves them alone.
+  // channelOnboardingState carries the user's self-declared status for
+  // WhatsApp/Instagram when a real channel binding can't be created
+  // yet (Meta business verification in flight, no WA Business account
+  // yet, etc.). See src/onboarding/criteria.ts:channel_connected_or_blocked.
+  offerKey                    String?
+  setupPeriodStartedAt        DateTime?                        @db.Timestamp(6)
+  setupPeriodEndsAt           DateTime?                        @db.Timestamp(6)
+  setupBonusEligibleAt        DateTime?                        @db.Timestamp(6)
+  setupBonusGrantedAt         DateTime?                        @db.Timestamp(6)
+  setupBonusEndsAt            DateTime?                        @db.Timestamp(6)
+  setupBonusGrantedBy         String?
+  setupGracePeriodEndsAt      DateTime?                        @db.Timestamp(6)
+  setupAccessStatus           SalonAccessStatus                @default(SETUP_PERIOD)
+  channelOnboardingState      Json?
+  paymentMethodOnFile         Boolean                          @default(false)
+  paymentMethodAddedAt        DateTime?                        @db.Timestamp(6)
+  bookingLinkTestedAt         DateTime?                        @db.Timestamp(6)
+  appointmentImportDecision   String?
+  appointmentImportDecidedAt  DateTime?                        @db.Timestamp(6)
+  setupEvents                 SalonOnboardingEvent[]
+  activatedLeads              Lead[]                           @relation("LeadActivatedSalon")
   analyticsPresets            AnalyticsPreset[]
   appointments                Appointment[]
   campaignApplications        AppointmentCampaignApplication[]
@@ -2805,4 +2837,98 @@ enum OnboardingStep {
   SERVICES
   TONE
   COMPLETED
+}
+
+// Setup Center / free-trial state machine. Owned by
+// src/services/onboarding/lifecycle.ts:processStatusTransitions().
+//
+// SETUP_PERIOD     -> the 14-day free window starting at salon signup
+// BONUS_PERIOD     -> earned +30 days by completing bonus criteria
+// GRACE_PERIOD     -> soft 7-day window after setup/bonus ends; full
+//                     access kept, but the dashboard nags hard
+// ACTIVE_PAID      -> Stripe subscription is live (or legacy paid)
+// PAYMENT_REQUIRED -> grace expired without a working subscription;
+//                     middleware blocks non-billing routes
+// SUSPENDED        -> admin-frozen (chargeback, abuse, etc.)
+// CANCELLED        -> owner cancelled; effectively read-only
+enum SalonAccessStatus {
+  SETUP_PERIOD
+  BONUS_PERIOD
+  GRACE_PERIOD
+  ACTIVE_PAID
+  PAYMENT_REQUIRED
+  SUSPENDED
+  CANCELLED
+}
+
+// Lead capture from the marketing site /baslayalim form. A row sits in
+// LeadStatus.NEW once submitted, transitions to INVITED when the
+// activation email goes out, and finally ACTIVATED once the owner
+// clicks the link and the resulting Salon is created. See
+// src/services/leadService.ts for the lifecycle.
+enum LeadStatus {
+  NEW
+  INVITED
+  ACTIVATED
+  EXPIRED
+  BLOCKED
+}
+
+model Lead {
+  id                      Int        @id @default(autoincrement())
+  status                  LeadStatus @default(NEW)
+  contactName             String
+  phone                   String
+  phoneNormalized         String
+  email                   String
+  emailNormalized         String
+  salonName               String
+  salonCategory           SalonCategory?
+  utmSource               String?
+  utmMedium               String?
+  utmCampaign             String?
+  utmContent              String?
+  utmTerm                 String?
+  referrer                String?
+  landingPath             String?
+  ipAddress               String?
+  userAgent               String?
+  kvkkConsentAt           DateTime   @default(now()) @db.Timestamp(6)
+  acceptMarketing         Boolean    @default(false)
+  activationTokenHash     String     @unique
+  activationLinkSentAt    DateTime?  @db.Timestamp(6)
+  activationLinkSendCount Int        @default(0)
+  activationLastError     String?
+  expiresAt               DateTime   @db.Timestamp(6)
+  activatedAt             DateTime?  @db.Timestamp(6)
+  activatedSalonId        Int?
+  webhookSentAt           DateTime?  @db.Timestamp(6)
+  webhookLastError        String?
+  internalNotes           String?
+  createdAt               DateTime   @default(now()) @db.Timestamp(6)
+  updatedAt               DateTime   @default(now()) @updatedAt @db.Timestamp(6)
+  activatedSalon          Salon?     @relation("LeadActivatedSalon", fields: [activatedSalonId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([emailNormalized])
+  @@index([phoneNormalized])
+  @@index([status, createdAt])
+}
+
+// Audit log row for every Setup Center / trial transition. Written by
+// src/services/onboarding/lifecycle.ts and the admin grant/revoke
+// endpoints. Read by the admin dashboard timeline view and by support
+// when a salon disputes "neden bonus iptal oldu".
+model SalonOnboardingEvent {
+  id        Int      @id @default(autoincrement())
+  salonId   Int
+  eventType String   // 'period_started' | 'bonus_granted' | 'bonus_revoked' | 'grace_started' | 'paid_activated' | 'access_status_changed' | 'channel_status_updated' | 'booking_link_tested' | 'import_decision' | 'period_extended'
+  payload   Json?
+  actorType String   // 'system' | 'salon' | 'admin'
+  actorId   String?
+  createdAt DateTime @default(now()) @db.Timestamp(6)
+  salon     Salon    @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([salonId, createdAt])
+  @@index([eventType])
+  @@map("SalonOnboardingEvent")
 }

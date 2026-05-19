@@ -8925,6 +8925,95 @@ function isEchoMessageType(messageType: string): boolean {
   return (messageType || '').trim().toLowerCase().startsWith('echo_');
 }
 
+// Outbound interactive CTA extraction.
+//
+// Different senders (conversation magic-link button, AI agent
+// agent-outbound/send, lifecycle template sender) all stash the button
+// data in slightly different rawPayload shapes:
+//
+//   conversationMagicLink.ts:
+//     { type: 'magic_link_cta', linkType, url }
+//
+//   internalAgentOutbound.ts:
+//     { actionKind: 'booking'|'cancel'|'none', magicLinkUrl, ... }
+//
+//   whatsappTemplateSender.ts:
+//     { kind: 'template_outbound', metadata: { feedbackToken / offerToken / ... } }
+//     (URL is reconstructable from buttonParams if we stored them; for
+//      template-based sends we currently surface the message as a CTA
+//      hint with the magic-link URL if metadata.url is present.)
+//
+// This helper normalises all of those into a single shape:
+//   { kind: 'cta_url' | 'reply_button', buttons: [{ label, url?, payload? }] }
+// or returns null when the row isn't interactive.
+type InteractiveSurface = {
+  kind: 'cta_url' | 'reply_button';
+  buttons: Array<{ label: string; url?: string; payload?: string }>;
+} | null;
+
+function extractInteractiveFromRawPayload(rawPayload: unknown): InteractiveSurface {
+  if (!rawPayload || typeof rawPayload !== 'object') return null;
+  const payload = rawPayload as Record<string, any>;
+
+  // 1) Magic link CTA from conversationMagicLink.ts
+  if (payload.type === 'magic_link_cta' && typeof payload.url === 'string' && payload.url.trim()) {
+    const linkType = String(payload.linkType || 'BOOKING').toUpperCase();
+    const labelByType: Record<string, string> = {
+      BOOKING: 'Randevu Al',
+      RESCHEDULE: 'Yeniden Planla',
+      CANCEL: 'İptal Et',
+    };
+    return {
+      kind: 'cta_url',
+      buttons: [{ label: labelByType[linkType] || 'Aç', url: payload.url.trim() }],
+    };
+  }
+
+  // 2) AI agent outbound from internalAgentOutbound.ts
+  if (typeof payload.actionKind === 'string') {
+    const actionKind = payload.actionKind as string;
+    if (actionKind === 'booking' && typeof payload.magicLinkUrl === 'string' && payload.magicLinkUrl.trim()) {
+      return {
+        kind: 'cta_url',
+        buttons: [{ label: 'Randevu Oluştur', url: payload.magicLinkUrl.trim() }],
+      };
+    }
+    if (actionKind === 'cancel') {
+      return {
+        kind: 'reply_button',
+        buttons: [{ label: 'İptal Et', payload: 'HUMAN_CANCEL' }],
+      };
+    }
+  }
+
+  // 3) Template outbound from whatsappTemplateSender.ts. We don't always
+  //    have the exact button URL persisted (Meta-approved templates
+  //    embed the URL in the template definition, not in the send call),
+  //    but if metadata carries one (e.g. waitlist offerToken / feedback
+  //    token / magic-link), surface it.
+  if (payload.kind === 'template_outbound') {
+    const metadata = (payload.metadata && typeof payload.metadata === 'object') ? payload.metadata : null;
+    if (metadata) {
+      const url =
+        typeof metadata.magicLinkUrl === 'string' ? metadata.magicLinkUrl.trim() :
+        typeof metadata.feedbackUrl === 'string' ? metadata.feedbackUrl.trim() :
+        typeof metadata.url === 'string' ? metadata.url.trim() : '';
+      if (url) {
+        return {
+          kind: 'cta_url',
+          buttons: [{ label: 'Aç', url }],
+        };
+      }
+    }
+    // Even without a known URL, we still expose a CTA hint chip so the
+    // bubble can render "Şablon: kdy_xxx" badge style. The frontend
+    // chooses whether to render an empty buttons array as a chip.
+    return null;
+  }
+
+  return null;
+}
+
 function resolveInstagramConversationKeyFromRow(input: {
   conversationKey: string;
   messageType: string;
@@ -9148,7 +9237,7 @@ router.get('/conversations/profile-image', authenticateToken, async (req: any, r
   try {
     const headers: Record<string, string> = {
       Accept: 'image/*,*/*;q=0.8',
-      'User-Agent': 'KedySalon/1.0 (+https://app.berkai.shop)',
+      'User-Agent': 'KedySalon/1.0 (+https://kedyapp.com)',
     };
 
     if (channel === 'INSTAGRAM') {
@@ -9739,6 +9828,11 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
           voiceTranscript: true,
           voiceTranscriptLang: true,
           reactions: true,
+          // rawPayload IS selected back, but ONLY because we extract
+          // the slim `interactive` slice (CTA buttons) from it in the
+          // response mapping below. The full object is NOT shipped —
+          // see the `interactive` field in the response object.
+          rawPayload: true,
         },
       }),
       prisma.conversationState.findMany({
@@ -9830,15 +9924,17 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
         direction,
         channel,
         messageType: row.messageType,
-        // rawPayload no longer selected — see comment on the findMany
-        // select above. resolveOutboundMessageMeta degrades to the
-        // dedicated columns when rawPayload is undefined.
-        rawPayload: undefined,
+        rawPayload: row.rawPayload,
         traceSource: row.outboundSource || null,
         traceUserId: row.outboundSenderUserId || null,
         traceUserEmail: row.outboundSenderEmail || null,
         senderNameByUserId,
       });
+      // Outbound CTA / quick-reply extraction. Different senders store
+      // the button info in slightly different shapes inside rawPayload;
+      // this helper normalises them into one structure the frontend
+      // bubble can render unambiguously.
+      const interactive = extractInteractiveFromRawPayload(row.rawPayload);
       // SYSTEM message metadata (manual_takeover / manual_resume) used
       // to be extracted from rawPayload.actor / rawPayload.action. The
       // dedicated outboundSenderUserId / outboundSenderEmail columns
@@ -9883,8 +9979,11 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
         // bubble). The mobile bubble renders these as a small emoji chip
         // anchored under the message body.
         reactions: Array.isArray(row.reactions) ? row.reactions : null,
-        // `raw` removed from the response — see comment above. Frontend
-        // had no consumer; shipping it was pure dead weight on the wire.
+        // Interactive buttons / quick replies. When set the frontend
+        // bubble renders the button(s) below the text so the salon sees
+        // the same CTA the customer received on WhatsApp / Instagram.
+        // null for plain text rows.
+        interactive,
       };
     });
 

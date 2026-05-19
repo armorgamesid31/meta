@@ -969,7 +969,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ 'https://app.berkai.shop/api/internal/imports/' + $json.batchId + '/ocr-callback' }}",
+        "url": "={{ 'https://api.kedyapp.com/api/internal/imports/' + $json.batchId + '/ocr-callback' }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -996,7 +996,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ 'https://app.berkai.shop/api/internal/imports/' + $json.batchId + '/ocr-callback' }}",
+        "url": "={{ 'https://api.kedyapp.com/api/internal/imports/' + $json.batchId + '/ocr-callback' }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [

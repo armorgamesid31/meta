@@ -17,7 +17,6 @@ export default defineConfig({
     host: '0.0.0.0', // Listen on all interfaces for Docker/reverse proxy
     port: 5173,
     allowedHosts: [
-      'code.berkai.shop',
       'localhost',
       '127.0.0.1'
     ],

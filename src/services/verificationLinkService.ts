@@ -23,10 +23,10 @@ const TOKEN_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz2345678
 const TOKEN_BYTE_LEN = 18; // 18 random bytes → ~24 base58 chars
 
 // BASE_URL_KEDY → marketing site (kedyapp.com/v/[token]) — Kedy auth flows
-// BASE_URL_CUSTOMER → booking frontend (app.berkai.shop/c/v/[token]) —
-// customer-side verify (same host serves booking pages + the backend API).
+// BASE_URL_CUSTOMER → salon admin web panel (web.kedyapp.com/c/v/[token]) —
+// customer-side verify (the panel-host renders these landing pages).
 const BASE_URL_KEDY = (process.env.VERIFICATION_BASE_URL_KEDY || 'https://kedyapp.com').replace(/\/+$/, '');
-const BASE_URL_CUSTOMER = (process.env.VERIFICATION_BASE_URL_CUSTOMER || 'https://app.berkai.shop').replace(/\/+$/, '');
+const BASE_URL_CUSTOMER = (process.env.VERIFICATION_BASE_URL_CUSTOMER || 'https://web.kedyapp.com').replace(/\/+$/, '');
 
 // ─────────────────────────────────────────────────────────────────
 // Token primitives

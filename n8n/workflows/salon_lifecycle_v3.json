@@ -166,7 +166,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "=https://app.berkai.shop/api/internal/lifecycle/reminder-1-day",
+        "url": "=https://api.kedyapp.com/api/internal/lifecycle/reminder-1-day",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
@@ -203,7 +203,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "=https://app.berkai.shop/api/internal/lifecycle/reminder-3-day",
+        "url": "=https://api.kedyapp.com/api/internal/lifecycle/reminder-3-day",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
@@ -239,7 +239,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "=https://app.berkai.shop/api/internal/lifecycle/reminder-2-hour",
+        "url": "=https://api.kedyapp.com/api/internal/lifecycle/reminder-2-hour",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
@@ -275,7 +275,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "=https://app.berkai.shop/api/internal/lifecycle/no-show",
+        "url": "=https://api.kedyapp.com/api/internal/lifecycle/no-show",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
@@ -311,7 +311,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "=https://app.berkai.shop/api/internal/lifecycle/satisfaction-survey",
+        "url": "=https://api.kedyapp.com/api/internal/lifecycle/satisfaction-survey",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
@@ -347,7 +347,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "=https://app.berkai.shop/api/internal/lifecycle/google-maps-review",
+        "url": "=https://api.kedyapp.com/api/internal/lifecycle/google-maps-review",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
@@ -383,7 +383,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "=https://app.berkai.shop/api/internal/lifecycle/birthday",
+        "url": "=https://api.kedyapp.com/api/internal/lifecycle/birthday",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
@@ -419,7 +419,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "=https://app.berkai.shop/api/internal/lifecycle/winback",
+        "url": "=https://api.kedyapp.com/api/internal/lifecycle/winback",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
@@ -500,7 +500,7 @@
     "errorWorkflow": ""
   },
   "meta": {
-    "description": "Kedy salon lifecycle notifications. Hourly cron queries 8 notification types (3 reminders, no-show, survey, google maps, birthday, winback) and POSTs each row to the corresponding https://app.berkai.shop/api/internal/lifecycle/* endpoint. Backend handles context resolution, send, and NotificationLog dedup — n8n is dumb dispatch only.\n\nAPI host is hardcoded to https://app.berkai.shop in all Send nodes.\n\nRequired n8n credentials:\n- 'Kedy Postgres' (postgres): DATABASE_URL of meta backend\n- 'Kedy Internal API Key' (httpHeaderAuth): Name='x-internal-api-key', Value=$INTERNAL_API_KEY",
+    "description": "Kedy salon lifecycle notifications. Hourly cron queries 8 notification types (3 reminders, no-show, survey, google maps, birthday, winback) and POSTs each row to the corresponding https://api.kedyapp.com/api/internal/lifecycle/* endpoint. Backend handles context resolution, send, and NotificationLog dedup — n8n is dumb dispatch only.\n\nAPI host is hardcoded to https://api.kedyapp.com in all Send nodes.\n\nRequired n8n credentials:\n- 'Kedy Postgres' (postgres): DATABASE_URL of meta backend\n- 'Kedy Internal API Key' (httpHeaderAuth): Name='x-internal-api-key', Value=$INTERNAL_API_KEY",
     "templateCredsSetupCompleted": false
   }
 }

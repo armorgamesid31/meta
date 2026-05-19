@@ -4,7 +4,7 @@
 # Form: 2 soru × 5 yıldız (hizmet memnuniyeti + salon memnuniyeti)
 #
 # Değişkenler: {{customer_name}}, {{customer_surname}}, {{customer_honorific}}, {{service_name}}
-# Buton: [Değerlendir -> https://app.berkai.shop/feedback/{{magic_token}}]
+# Buton: [Değerlendir -> https://api.kedyapp.com/feedback/{{magic_token}}]
 
 # ═══════════════════════════════════════════════════════════════════
 # FRIENDLY

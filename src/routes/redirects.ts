@@ -1,6 +1,6 @@
 // Short-link redirect endpoints used by WhatsApp template URL buttons.
 //
-// Each Meta template URL is `https://app.berkai.shop/r/<kind>/{{1}}`
+// Each Meta template URL is `https://api.kedyapp.com/r/<kind>/{{1}}`
 // where {{1}} is filled with the salon slug at send time. The salon's
 // real destination URL (booking page, Google Maps URL, etc) is resolved
 // here from the salon record and a 302 redirect issued.
@@ -15,7 +15,7 @@ import { prisma } from '../prisma.js';
 
 const router = Router();
 
-const FRONTEND_BASE = (process.env.FRONTEND_URL || 'https://app.berkai.shop').replace(/\/$/, '');
+const FRONTEND_BASE = (process.env.FRONTEND_URL || 'https://web.kedyapp.com').replace(/\/$/, '');
 
 router.get('/booking/:slug', async (req, res) => {
   const slug = String(req.params?.slug || '').trim().toLowerCase();

@@ -51,7 +51,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://app.berkai.shop/api/internal/chakra/templates/send",
+        "url": "https://api.kedyapp.com/api/internal/chakra/templates/send",
         "sendBody": true,
         "bodyParameters": {
           "parameters": [
@@ -111,7 +111,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://app.berkai.shop/api/internal/chakra/templates/send",
+        "url": "https://api.kedyapp.com/api/internal/chakra/templates/send",
         "sendBody": true,
         "bodyParameters": {
           "parameters": [

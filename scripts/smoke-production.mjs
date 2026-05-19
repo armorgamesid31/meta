@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
  * Production smoke test — uses no credentials, runs against the
- * live backend (app.berkai.shop) and the live frontend
- * (mobil.berkai.shop) and verifies the contract pieces we built:
+ * live backend (api.kedyapp.com) and the live frontend
+ * (web.kedyapp.com) and verifies the contract pieces we built:
  *
  *   1. /health returns 200 + valid JSON
  *   2. Every response carries an X-Trace-Id header
@@ -20,8 +20,8 @@
  *   FRONTEND_URL=https://my-frontend node scripts/smoke-production.mjs
  */
 
-const BACKEND = process.env.BACKEND_URL || 'https://app.berkai.shop';
-const FRONTEND = process.env.FRONTEND_URL || 'https://mobil.berkai.shop';
+const BACKEND = process.env.BACKEND_URL || 'https://api.kedyapp.com';
+const FRONTEND = process.env.FRONTEND_URL || 'https://web.kedyapp.com';
 
 const GREEN = '\x1b[32m';
 const RED = '\x1b[31m';

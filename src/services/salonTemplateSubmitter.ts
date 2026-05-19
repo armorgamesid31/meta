@@ -35,9 +35,9 @@ import { OPERATIONAL_TEMPLATES } from './templateOperationalNames.js';
 
 // Same base URL chakra.ts uses for plugin and template management.
 // CHAKRA_WHATSAPP_SEND_URL is a SEND endpoint and does not host /plugin/:id
-// or /v1/ext/plugin/whatsapp/...; using it here caused "self-signed certificate"
-// errors because requests were going to the wrong host (chakra.berkai.shop
-// fallback) instead of api.chakrahq.com.
+// or /v1/ext/plugin/whatsapp/...; using it here previously caused "self-signed
+// certificate" errors because requests went to the wrong host. Always pin to
+// api.chakrahq.com here regardless of the SEND URL env override.
 const CHAKRA_API_BASE = 'https://api.chakrahq.com';
 const CHAKRA_API_TOKEN = process.env.CHAKRA_API_TOKEN || '';
 const SUBMIT_INTERVAL_SEC = 30;
@@ -111,7 +111,7 @@ const TEMPLATES: TemplateMeta[] = [
     buttons: [
       // {{1}} = salon slug. Backend /r/maps/:slug 302-redirects to the
       // salon's configured googleMapsUrl (or a search fallback).
-      { type: 'URL', text: 'Yol Tarifi »', url: 'https://app.berkai.shop/r/maps/{{1}}', example: ['bella-studio'] },
+      { type: 'URL', text: 'Yol Tarifi »', url: 'https://api.kedyapp.com/r/maps/{{1}}', example: ['bella-studio'] },
     ],
   },
   {
@@ -122,7 +122,7 @@ const TEMPLATES: TemplateMeta[] = [
     buttons: [
       // {{1}} = salon slug; backend /r/booking/:slug redirects to the
       // salon's public booking page.
-      { type: 'URL', text: 'Yeni Randevu Al', url: 'https://app.berkai.shop/r/booking/{{1}}', example: ['bella-studio'] },
+      { type: 'URL', text: 'Yeni Randevu Al', url: 'https://api.kedyapp.com/r/booking/{{1}}', example: ['bella-studio'] },
     ],
   },
   {
@@ -131,7 +131,7 @@ const TEMPLATES: TemplateMeta[] = [
     paramNames: ['customer_name', 'customer_surname', 'customer_honorific', 'appointment_date', 'appointment_time', 'service_name'],
     paramExamples: PARAM_EXAMPLES,
     buttons: [
-      { type: 'URL', text: 'Teklifi Gör', url: 'https://app.berkai.shop/booking?waitlistOffer={{1}}', example: ['offer_token'] },
+      { type: 'URL', text: 'Teklifi Gör', url: 'https://web.kedyapp.com/booking?waitlistOffer={{1}}', example: ['offer_token'] },
     ],
   },
   {
@@ -140,7 +140,7 @@ const TEMPLATES: TemplateMeta[] = [
     paramNames: ['customer_name', 'customer_surname', 'customer_honorific', 'service_name'],
     paramExamples: PARAM_EXAMPLES,
     buttons: [
-      { type: 'URL', text: 'Değerlendir ★', url: 'https://app.berkai.shop/feedback/{{1}}', example: ['feedback_token'] },
+      { type: 'URL', text: 'Değerlendir ★', url: 'https://web.kedyapp.com/feedback/{{1}}', example: ['feedback_token'] },
     ],
   },
   {
@@ -151,7 +151,7 @@ const TEMPLATES: TemplateMeta[] = [
     buttons: [
       // Same /r/maps/:slug redirect — sends the customer to the salon's
       // Google Maps page where they can leave a review.
-      { type: 'URL', text: "Google'da Yorum Yap", url: 'https://app.berkai.shop/r/maps/{{1}}', example: ['bella-studio'] },
+      { type: 'URL', text: "Google'da Yorum Yap", url: 'https://api.kedyapp.com/r/maps/{{1}}', example: ['bella-studio'] },
     ],
   },
   {
@@ -160,7 +160,7 @@ const TEMPLATES: TemplateMeta[] = [
     paramNames: ['customer_name', 'customer_surname', 'customer_honorific', 'discount_amount', 'validity_period'],
     paramExamples: PARAM_EXAMPLES,
     buttons: [
-      { type: 'URL', text: 'Randevu Al', url: 'https://app.berkai.shop/r/booking/{{1}}', example: ['bella-studio'] },
+      { type: 'URL', text: 'Randevu Al', url: 'https://api.kedyapp.com/r/booking/{{1}}', example: ['bella-studio'] },
     ],
   },
   {
@@ -169,7 +169,7 @@ const TEMPLATES: TemplateMeta[] = [
     paramNames: ['customer_name', 'customer_surname', 'customer_honorific', 'discount_amount', 'validity_period'],
     paramExamples: PARAM_EXAMPLES,
     buttons: [
-      { type: 'URL', text: 'Randevu Al', url: 'https://app.berkai.shop/r/booking/{{1}}', example: ['bella-studio'] },
+      { type: 'URL', text: 'Randevu Al', url: 'https://api.kedyapp.com/r/booking/{{1}}', example: ['bella-studio'] },
     ],
   },
 ];

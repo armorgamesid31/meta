@@ -100,7 +100,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://app.berkai.shop/api/internal/messages/transcript",
+        "url": "https://api.kedyapp.com/api/internal/messages/transcript",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -796,7 +796,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://app.berkai.shop/api/internal/conversation-state/set",
+        "url": "https://api.kedyapp.com/api/internal/conversation-state/set",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -865,7 +865,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://app.berkai.shop/api/internal/magic-link/ensure",
+        "url": "https://api.kedyapp.com/api/internal/magic-link/ensure",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -892,7 +892,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://app.berkai.shop/api/internal/agent-outbound/send",
+        "url": "https://api.kedyapp.com/api/internal/agent-outbound/send",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -949,7 +949,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "=https://app.berkai.shop/api/internal/agent/salon-context?salonId={{ Number($json.salonId || ($json.body && $json.body.salonId) || 0) }}",
+        "url": "=https://api.kedyapp.com/api/internal/agent/salon-context?salonId={{ Number($json.salonId || ($json.body && $json.body.salonId) || 0) }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -977,7 +977,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://app.berkai.shop/api/internal/agent/customer-lookup",
+        "url": "https://api.kedyapp.com/api/internal/agent/customer-lookup",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -1008,7 +1008,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "=https://app.berkai.shop/api/internal/agent/availability?salonId={{ Number($json.salonId || 0) }}&serviceId={{ $fromAI('service_id','hizmet ID (önce tool_get_services ile bul)','number') }}&date={{ $fromAI('date','YYYY-MM-DD formatında tarih','string') }}&peopleCount={{ $fromAI('people_count','kişi sayısı (varsayılan 1)','number') || 1 }}",
+        "url": "=https://api.kedyapp.com/api/internal/agent/availability?salonId={{ Number($json.salonId || 0) }}&serviceId={{ $fromAI('service_id','hizmet ID (önce tool_get_services ile bul)','number') }}&date={{ $fromAI('date','YYYY-MM-DD formatında tarih','string') }}&peopleCount={{ $fromAI('people_count','kişi sayısı (varsayılan 1)','number') || 1 }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [

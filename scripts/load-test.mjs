@@ -19,7 +19,7 @@
  *   BACKEND_URL=https://my-backend node scripts/load-test.mjs
  */
 
-const BACKEND = process.env.BACKEND_URL || 'https://app.berkai.shop';
+const BACKEND = process.env.BACKEND_URL || 'https://api.kedyapp.com';
 const PROFILE = process.env.PROFILE || 'default';
 
 const PROFILES = {

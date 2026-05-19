@@ -19,7 +19,7 @@ const PHONE_LINK_TTL_MINUTES = 15;
 const EMAIL_LINK_TTL_MINUTES = 30;
 
 const VERIFICATION_BASE_URL =
-  (process.env.VERIFICATION_BASE_URL_KEDY || process.env.FRONTEND_URL || 'https://app.berkai.shop').trim().replace(/\/+$/, '');
+  (process.env.VERIFICATION_BASE_URL_KEDY || process.env.FRONTEND_URL || 'https://web.kedyapp.com').trim().replace(/\/+$/, '');
 
 function generateToken(): string {
   // url-safe, ~22 chars

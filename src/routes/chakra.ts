@@ -18,7 +18,7 @@ const CHAKRA_API_BASE = 'https://api.chakrahq.com';
 const CHAKRA_API_TOKEN = process.env.CHAKRA_API_TOKEN;
 
 const CHAKRA_SDK_URL = 'https://embed.chakrahq.com/whatsapp-partner-connect/v1_0_1/sdk.js';
-const DEFAULT_CHAKRA_PASSTHROUGH_WEBHOOK_URL = 'https://app.berkai.shop/api/webhooks/whatsapp';
+const DEFAULT_CHAKRA_PASSTHROUGH_WEBHOOK_URL = 'https://api.kedyapp.com/api/webhooks/whatsapp';
 const CHAKRA_PASSTHROUGH_WEBHOOK_URL = (
   process.env.CHAKRA_PASSTHROUGH_WEBHOOK_URL ||
   process.env.CHAKRA_WEBHOOK_URL ||
@@ -229,7 +229,7 @@ const KEDY_MASTER_TEMPLATES = [
       {
         type: 'BUTTONS',
         buttons: [
-          { type: 'URL', text: 'Devam Et', url: 'https://app.berkai.shop/c/v/{{1}}', example: ['Hx7kT3pQmRn2Xs8VyZbCfWdL'] }
+          { type: 'URL', text: 'Devam Et', url: 'https://web.kedyapp.com/c/v/{{1}}', example: ['Hx7kT3pQmRn2Xs8VyZbCfWdL'] }
         ]
       }
     ]
@@ -276,7 +276,7 @@ const KEDY_MASTER_TEMPLATES = [
       {
         type: 'BUTTONS',
         buttons: [
-          { type: 'URL', text: 'Teklifi Gör', url: 'https://app.berkai.shop/booking?waitlistOffer={{1}}', example: ['offer_token'] }
+          { type: 'URL', text: 'Teklifi Gör', url: 'https://web.kedyapp.com/booking?waitlistOffer={{1}}', example: ['offer_token'] }
         ]
       }
     ]
@@ -303,7 +303,7 @@ const KEDY_MASTER_TEMPLATES = [
       {
         type: 'BUTTONS',
         buttons: [
-          { type: 'URL', text: 'Değerlendir', url: 'https://app.berkai.shop/feedback/{{1}}', example: ['feedback_token'] }
+          { type: 'URL', text: 'Değerlendir', url: 'https://web.kedyapp.com/feedback/{{1}}', example: ['feedback_token'] }
         ]
       }
     ]

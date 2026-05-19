@@ -9,6 +9,7 @@ import { createAuthTokens, revokeRefreshToken, rotateRefreshToken } from '../ser
 import { ensureSalonServiceCategories } from '../services/salonCategorySetup.js';
 import { ensureSalonAccessSeed } from '../services/accessControl.js';
 import { activateInvite, hashPlainToken, validateInvite } from '../services/inviteService.js';
+import { startSetupPeriod } from '../services/onboarding/lifecycle.js';
 import { createPhoneVerification, verifyPhoneCode } from '../services/phoneVerification.js';
 import { normalizeDigitsOnly } from '../services/phoneValidation.js';
 import { isR2Configured, uploadBufferToR2 } from '../lib/r2.js';
@@ -144,6 +145,15 @@ router.post('/register-salon', async (req: any, res: any) => {
       await ensureSalonAccessSeed(salon.id);
     } catch (accessSeedError) {
       console.error('Salon access seed warning:', accessSeedError);
+    }
+    // Stamp the new salon with the default acquisition offer and start
+    // the 14-day setup clock. Failure here is non-fatal — the lifecycle
+    // cron will reconcile next tick — but we log loudly so we notice
+    // the funnel is broken in staging.
+    try {
+      await startSetupPeriod(salon.id);
+    } catch (lifecycleError) {
+      console.error('Salon setup period start warning:', lifecycleError);
     }
 
     const { accessToken, refreshToken } = await createAuthTokens({
