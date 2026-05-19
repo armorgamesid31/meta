@@ -33,11 +33,27 @@ export const multiTenantMiddleware = async (req: Request, res: Response, next: N
     }
   }
 
+  // Infrastructure subdomains never carry a tenant in their slug — they
+  // are gateway hosts (api), the salon admin web panel (web / app), the
+  // marketing root (www), or operator tooling (admin/portal). When the
+  // request lands on one of these, we MUST fall back to the x-tenant-
+  // slug header for tenant resolution (e.g. the booking frontend's
+  // server-side fetch from api.kedyapp.com with header=palmbeauty).
+  // Without this fallback every public API call from booking-frontend
+  // got "Tenant context required".
+  const INFRA_SUBDOMAINS = new Set(['api', 'www', 'web', 'app', 'admin', 'portal']);
+
   let hostSlug: string | null = null;
+  let hostIsInfra = false;
   if (host) {
     const cleanHost = host.split(':')[0].toLowerCase();
     if (cleanHost.endsWith(`.${baseDomain}`)) {
-      hostSlug = cleanHost.replace(`.${baseDomain}`, '');
+      const candidate = cleanHost.replace(`.${baseDomain}`, '');
+      if (INFRA_SUBDOMAINS.has(candidate)) {
+        hostIsInfra = true;
+      } else {
+        hostSlug = candidate;
+      }
     }
   }
 
@@ -49,11 +65,18 @@ export const multiTenantMiddleware = async (req: Request, res: Response, next: N
     // layer already constrains what membership the token can act on, so
     // header is acceptable here.
     slug = headerSlug || originSlug || hostSlug;
+  } else if (hostIsInfra) {
+    // Infra host (api.kedyapp.com etc): no host-derived slug, so trust
+    // the x-tenant-slug header. This is the booking-frontend server-
+    // side fetch path. We cannot use the Host as a forgery shield
+    // because by design the booking-frontend talks to api.kedyapp.com
+    // and passes the tenant via header.
+    slug = headerSlug || originSlug;
   } else {
-    // Unauthenticated traffic (booking page, OTP register, public APIs).
-    // A forged x-tenant-slug here lets an attacker spam OTPs and create
-    // customers against any tenant. Lock the slug to what the Host /
-    // Origin says.
+    // Unauthenticated traffic on a tenant subdomain (palmbeauty.kedyapp
+    // .com). A forged x-tenant-slug here lets an attacker spam OTPs and
+    // create customers against any tenant. Lock the slug to what the
+    // Host / Origin says.
     const derivedSlug = hostSlug || originSlug;
     if (headerSlug && derivedSlug && headerSlug !== derivedSlug) {
       // Mismatch → ignore the header. Do not 400 because legitimate
@@ -66,9 +89,13 @@ export const multiTenantMiddleware = async (req: Request, res: Response, next: N
     }
   }
 
-  // 3. Skip tenant requirement for non-tenant subdomains
-  const restrictedSlugs = ['api', 'www', 'admin', 'portal', ''];
-  if (!slug || restrictedSlugs.includes(slug.toLowerCase())) {
+  // 3. Skip tenant requirement for non-tenant subdomains. INFRA_SUBDOMAINS
+  // catch on the Host derivation above (hostSlug stays null + hostIsInfra
+  // routes via header), so the only thing left here is the literal-slug
+  // case where someone sends x-tenant-slug:api / x-tenant-slug:www. Treat
+  // those as "no tenant" to avoid querying for non-existent salons.
+  const restrictedSlugs = new Set(['api', 'www', 'web', 'app', 'admin', 'portal', '']);
+  if (!slug || restrictedSlugs.has(slug.toLowerCase())) {
     return next();
   }
 
