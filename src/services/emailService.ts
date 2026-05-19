@@ -452,3 +452,72 @@ function renderCodeHtml(input: VerificationCodeEmailInput): string {
 </body>
 </html>`;
 }
+
+// ─────────────────────────────────────────────────────────────────
+// Lifecycle reminder emails — sent by the jobs/lifecycleReminders
+// cron at milestone days during a salon's setup/grace lifecycle.
+// ─────────────────────────────────────────────────────────────────
+
+export interface LifecycleReminderEmailInput {
+  to: string;
+  salonName: string;
+  subject: string;
+  paragraphs: string[];
+  cta?: { label: string; url: string };
+  milestone: string;
+}
+
+export async function sendLifecycleReminderEmail(input: LifecycleReminderEmailInput): Promise<void> {
+  await send({
+    to: input.to,
+    subject: input.subject,
+    html: renderLifecycleHtml(input),
+    text: renderLifecycleText(input),
+    kind: `lifecycle-${input.milestone}`,
+  });
+}
+
+function renderLifecycleText(input: LifecycleReminderEmailInput): string {
+  return [
+    `Merhaba ${input.salonName},`,
+    '',
+    ...input.paragraphs,
+    ...(input.cta ? ['', `${input.cta.label}: ${input.cta.url}`] : []),
+    '',
+    '— Kedy ekibi',
+    'kedyapp.com',
+  ].join('\n');
+}
+
+function renderLifecycleHtml(input: LifecycleReminderEmailInput): string {
+  const greeting = `Merhaba ${escapeHtml(input.salonName)},`;
+  const paragraphs = input.paragraphs
+    .map(
+      (p) =>
+        `<p style="margin:0 0 14px;font-size:15px;line-height:1.6;color:#333">${escapeHtml(p)}</p>`,
+    )
+    .join('\n');
+  const ctaBlock = input.cta
+    ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0">
+        <tr><td>
+          <a href="${escapeHtml(input.cta.url)}" style="display:inline-block;background:#E08B5C;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;font-size:15px">${escapeHtml(input.cta.label)}</a>
+        </td></tr>
+      </table>`
+    : '';
+  return `<!doctype html>
+<html><body style="margin:0;padding:0;background:#FAF8F4;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif">
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#FAF8F4;padding:32px 16px">
+    <tr><td align="center">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="560" style="max-width:560px;background:#fff;border-radius:12px;padding:32px;box-shadow:0 1px 2px rgba(0,0,0,0.04)">
+        <tr><td>
+          <p style="margin:0 0 16px;font-size:15px;color:#111;font-weight:600">${greeting}</p>
+          ${paragraphs}
+          ${ctaBlock}
+          <p style="margin:24px 0 0;font-size:12px;color:#999">— Kedy ekibi · <a href="https://kedyapp.com" style="color:#999">kedyapp.com</a></p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+}

@@ -89,6 +89,11 @@ model Salon {
   bookingLinkTestedAt         DateTime?                        @db.Timestamp(6)
   appointmentImportDecision   String?
   appointmentImportDecidedAt  DateTime?                        @db.Timestamp(6)
+  // Map of reminder milestone code -> ISO timestamp it was last sent.
+  // Used by lifecycleReminders cron to avoid double-sending. Keys are
+  // 'setup_d7', 'setup_d11', 'setup_d13', 'grace_d17', 'grace_d20',
+  // 'payment_required_d0', 'trial_ending_d7' — see services/lifecycleReminders.ts.
+  lifecycleReminderState      Json?
   setupEvents                 SalonOnboardingEvent[]
   activatedLeads              Lead[]                           @relation("LeadActivatedSalon")
   analyticsPresets            AnalyticsPreset[]

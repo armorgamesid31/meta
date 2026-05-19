@@ -12,6 +12,7 @@
 
 import { cleanupActivationCodes } from './cleanupActivationCodes.js';
 import { processStatusTransitions } from '../services/onboarding/lifecycle.js';
+import { processLifecycleReminders } from '../services/lifecycleReminders.js';
 
 const HOURLY_MS = 60 * 60 * 1000;
 // Lifecycle transitions only need to run daily, but we run every 6h
@@ -54,10 +55,27 @@ export function startBackgroundJobs(): void {
     }
   };
 
+  // 6-hourly: drip milestone-based reminder emails to salons in
+  // SETUP/GRACE/PAYMENT_REQUIRED so they don't quietly miss the
+  // 14-day setup bonus or hit a lockout without warning. Dedupes
+  // via salon.lifecycleReminderState so re-ticks don't double-send.
+  const tickLifecycleReminders = async () => {
+    try {
+      const result = await processLifecycleReminders();
+      if (result.sent + result.failed > 0) {
+        console.log('[jobs/lifecycleReminders]', result);
+      }
+    } catch (error) {
+      console.error('[jobs/lifecycleReminders] failed', error);
+    }
+  };
+
   // Run once at startup so a long process restart catches up promptly,
   // then settle into the regular cadence.
   void tickActivationCleanup();
   void tickLifecycle();
+  void tickLifecycleReminders();
   setInterval(tickActivationCleanup, HOURLY_MS).unref();
   setInterval(tickLifecycle, SIX_HOURS_MS).unref();
+  setInterval(tickLifecycleReminders, SIX_HOURS_MS).unref();
 }
