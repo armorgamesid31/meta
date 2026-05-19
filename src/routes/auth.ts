@@ -632,6 +632,125 @@ router.get('/me', authenticateIdentity, async (req: any, res: any) => {
   });
 });
 
+// Self-serve identity profile edit. Lets a logged-in user (with or
+// without a salon) update their own name + phone + email. Re-using
+// /api/salon/* legacy patch endpoints isn't an option here because
+// those expect a SalonUser row tied to a salonId — identity-only
+// sessions don't have one.
+//
+// Email and phone changes invalidate the corresponding verifiedAt
+// timestamps; downstream flows can re-issue a magic-link via
+// /auth/onboarding/* if the user needs to re-verify. Skipping that
+// re-verification step is deliberate scope cut — most edits are
+// typo fixes, and we don't want to interrupt the flow with another
+// OTP cycle. If we need to gate this later, the timestamps are the
+// hook.
+router.patch('/me/profile', authenticateIdentity, async (req: any, res: any) => {
+  const identityId = Number(req.identity?.identityId || 0);
+  if (!identityId) {
+    throw new BusinessError('UNAUTHORIZED', 'Kimlik bulunamadı.', 401);
+  }
+  const firstName =
+    typeof req.body?.firstName === 'string' ? req.body.firstName.trim().slice(0, 80) : undefined;
+  const lastName =
+    typeof req.body?.lastName === 'string' ? req.body.lastName.trim().slice(0, 80) : undefined;
+  const rawEmail = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : undefined;
+  const rawPhone = typeof req.body?.phone === 'string' ? normalizeDigitsOnly(req.body.phone) : undefined;
+
+  if (rawEmail !== undefined && rawEmail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(rawEmail)) {
+    throw new BusinessError('VALIDATION_FAILED', 'Geçersiz e-posta.', 400);
+  }
+  if (rawPhone !== undefined && rawPhone && rawPhone.length < 8) {
+    throw new BusinessError('VALIDATION_FAILED', 'Geçersiz telefon.', 400);
+  }
+
+  // Block trying to claim somebody else's email/phone.
+  if (rawEmail) {
+    const taken = await prisma.userIdentity.findFirst({
+      where: { email: rawEmail, id: { not: identityId } },
+      select: { id: true },
+    });
+    if (taken) throw new BusinessError('CONFLICT', 'Bu e-posta başka bir hesapta kullanılıyor.', 409);
+  }
+  if (rawPhone) {
+    const taken = await prisma.userIdentity.findFirst({
+      where: { phone: rawPhone, id: { not: identityId } },
+      select: { id: true },
+    });
+    if (taken) throw new BusinessError('CONFLICT', 'Bu telefon başka bir hesapta kullanılıyor.', 409);
+  }
+
+  const current = await prisma.userIdentity.findUnique({ where: { id: identityId } });
+  if (!current) throw new BusinessError('NOT_FOUND', 'Kimlik bulunamadı.', 404);
+
+  const data: any = {};
+  if (firstName !== undefined) data.firstName = firstName || null;
+  if (lastName !== undefined) data.lastName = lastName || null;
+  if (firstName !== undefined || lastName !== undefined) {
+    const f = firstName !== undefined ? firstName : current.firstName || '';
+    const l = lastName !== undefined ? lastName : current.lastName || '';
+    data.displayName = `${f} ${l}`.trim() || null;
+  }
+  if (rawEmail !== undefined && rawEmail !== current.email) {
+    data.email = rawEmail || null;
+    data.emailVerifiedAt = null;
+  }
+  if (rawPhone !== undefined && rawPhone !== current.phone) {
+    data.phone = rawPhone || null;
+    data.phoneVerifiedAt = null;
+  }
+
+  const updated = await prisma.userIdentity.update({
+    where: { id: identityId },
+    data,
+    select: {
+      id: true,
+      email: true,
+      phone: true,
+      firstName: true,
+      lastName: true,
+      displayName: true,
+      emailVerifiedAt: true,
+      phoneVerifiedAt: true,
+    },
+  });
+  return res.json({ user: updated });
+});
+
+// Self-serve password change. Requires the old password so a
+// stolen access token can't change creds on its own. Returns 200
+// with no body on success — the client doesn't need to do
+// anything else.
+router.post('/me/password', authenticateIdentity, async (req: any, res: any) => {
+  const identityId = Number(req.identity?.identityId || 0);
+  if (!identityId) {
+    throw new BusinessError('UNAUTHORIZED', 'Kimlik bulunamadı.', 401);
+  }
+  const currentPassword = String(req.body?.currentPassword || '');
+  const newPassword = String(req.body?.newPassword || '');
+  if (newPassword.length < 8) {
+    throw new BusinessError('VALIDATION_FAILED', 'Yeni şifre en az 8 karakter olmalı.', 400);
+  }
+  const identity = await prisma.userIdentity.findUnique({ where: { id: identityId } });
+  if (!identity) throw new BusinessError('NOT_FOUND', 'Kimlik bulunamadı.', 404);
+  const ok = await bcrypt.compare(currentPassword, identity.passwordHash);
+  if (!ok) throw new BusinessError('UNAUTHORIZED', 'Mevcut şifre hatalı.', 401);
+  const passwordHash = await bcrypt.hash(newPassword, 10);
+  await prisma.userIdentity.update({
+    where: { id: identityId },
+    data: { passwordHash },
+  });
+  // Mirror to any legacy SalonUser rows so logging in via legacy
+  // (e.g. older mobile builds, password reset flows) keeps working.
+  if (identity.email) {
+    await prisma.salonUser.updateMany({
+      where: { email: identity.email },
+      data: { passwordHash },
+    });
+  }
+  return res.json({ ok: true });
+});
+
 // Authenticated invite redemption.
 //
 // The new self-register flow: user already has a UserIdentity (no
