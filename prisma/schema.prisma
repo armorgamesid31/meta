@@ -282,22 +282,23 @@ model SalonMembership {
 
 model MobileAuthSession {
   id               Int              @id @default(autoincrement())
-  userId           Int
+  userId           Int?
   identityId       Int?
   membershipId     Int?
-  salonId          Int
+  salonId          Int?
   refreshTokenHash String           @unique(map: "uq_mobile_auth_refresh_token_hash")
   expiresAt        DateTime         @db.Timestamp(6)
   revokedAt        DateTime?        @db.Timestamp(6)
   createdAt        DateTime?        @default(now()) @db.Timestamp(6)
   updatedAt        DateTime?        @default(now()) @updatedAt @db.Timestamp(6)
-  salon            Salon            @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  user             SalonUser        @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  salon            Salon?           @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user             SalonUser?       @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   identity         UserIdentity?    @relation(fields: [identityId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   membership       SalonMembership? @relation(fields: [membershipId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([userId, salonId], map: "idx_mobile_auth_user_salon")
   @@index([salonId, expiresAt], map: "idx_mobile_auth_salon_expires")
+  @@index([identityId, expiresAt], map: "idx_mobile_auth_identity_expires")
 }
 
 model SalonSubscription {
@@ -2699,7 +2700,9 @@ model EmailOtpVerification {
 // endpoint can tell the mobile shell when each step is verified.
 model OnboardingSession {
   id               String    @id @default(uuid())
-  inviteId         Int
+  inviteId         Int?
+  // 'INVITE' (legacy team-invite flow) or 'SELF_REGISTER' (no salon yet).
+  flow             String?
   // Collected step by step
   firstName        String?
   lastName         String?

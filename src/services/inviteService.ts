@@ -306,3 +306,143 @@ export async function activateInvite(input: {
 
   return activated;
 }
+
+// Redeem an invite code on behalf of an already-registered UserIdentity.
+//
+// Different from activateInvite(): the caller is already a verified
+// user (came in via authenticateIdentity), so we don't collect name /
+// phone / password again. We just re-point the invite's pre-created
+// membership at the caller's identity and mark it active.
+//
+// Email/phone mismatch with the invite is tolerated — the staff member
+// might have a different email than the one the owner used to send
+// the invite. The invite code itself is the proof of consent.
+export async function redeemInviteForIdentity(input: {
+  code?: string;
+  token?: string;
+  identityId: number;
+}): Promise<{
+  salonId: number;
+  membershipId: number;
+  identityId: number;
+  legacyUserId: number;
+  role: string;
+}> {
+  if (!input.identityId) throw new Error('IDENTITY_REQUIRED');
+  const code = input.code ? String(input.code).trim().toUpperCase() : '';
+  const token = input.token ? String(input.token).trim() : '';
+  if (!code && !token) throw new Error('INVITE_REQUIRED');
+
+  const result = await prisma.$transaction(async (tx) => {
+    const invite = await tx.invite.findFirst({
+      where: {
+        status: InviteStatus.PENDING,
+        expiresAt: { gt: new Date() },
+        OR: [
+          ...(code ? [{ inviteCodeHash: hashPlainToken(code) }] : []),
+          ...(token ? [{ inviteTokenHash: hashPlainToken(token) }] : []),
+        ],
+      },
+      include: { invitedMembership: true },
+    });
+    if (!invite || !invite.invitedMembership) throw new Error('INVITE_INVALID');
+
+    const targetMembership = invite.invitedMembership;
+    const identity = await tx.userIdentity.findUnique({
+      where: { id: input.identityId },
+      select: {
+        id: true,
+        email: true,
+        phone: true,
+        firstName: true,
+        lastName: true,
+        displayName: true,
+        passwordHash: true,
+      },
+    });
+    if (!identity) throw new Error('IDENTITY_NOT_FOUND');
+
+    // Block double-membership in the same salon.
+    const dupe = await tx.salonMembership.findFirst({
+      where: {
+        salonId: targetMembership.salonId,
+        identityId: identity.id,
+        id: { not: targetMembership.id },
+        isActive: true,
+      },
+      select: { id: true },
+    });
+    if (dupe) throw new Error('ALREADY_MEMBER');
+
+    const membership = await tx.salonMembership.update({
+      where: { id: targetMembership.id },
+      data: {
+        identityId: identity.id,
+        isActive: true,
+        passwordResetRequired: false,
+      },
+    });
+
+    const legacyUser = membership.legacySalonUserId
+      ? await tx.salonUser.update({
+          where: { id: membership.legacySalonUserId },
+          data: {
+            email: identity.email || `legacy-${identity.id}@kedy.local`,
+            phone: identity.phone || null,
+            firstName: identity.firstName || null,
+            lastName: identity.lastName || null,
+            displayName: identity.displayName || null,
+            passwordHash: identity.passwordHash,
+            isActive: true,
+            passwordResetRequired: false,
+            activationCompletedAt: new Date(),
+            role: membership.role,
+          },
+        })
+      : await tx.salonUser.create({
+          data: {
+            salonId: membership.salonId,
+            email: identity.email || `legacy-${identity.id}@kedy.local`,
+            phone: identity.phone || null,
+            firstName: identity.firstName || null,
+            lastName: identity.lastName || null,
+            displayName: identity.displayName || null,
+            role: membership.role,
+            isActive: true,
+            passwordResetRequired: false,
+            activationCompletedAt: new Date(),
+            passwordHash: identity.passwordHash,
+          },
+        });
+
+    await tx.salonMembership.update({
+      where: { id: membership.id },
+      data: { legacySalonUserId: legacyUser.id },
+    });
+
+    await tx.invite.update({
+      where: { id: invite.id },
+      data: {
+        status: InviteStatus.ACCEPTED,
+        acceptedAt: new Date(),
+        invitedIdentityPhone: identity.phone || null,
+        invitedIdentityEmail: identity.email || null,
+      },
+    });
+
+    await tx.salon.update({
+      where: { id: membership.salonId },
+      data: { status: 'ACTIVE' },
+    });
+
+    return {
+      salonId: membership.salonId,
+      membershipId: membership.id,
+      identityId: identity.id,
+      legacyUserId: legacyUser.id,
+      role: membership.role,
+    };
+  });
+
+  return result;
+}

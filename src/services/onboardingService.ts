@@ -13,6 +13,7 @@ import { prisma } from '../prisma.js';
 import { validateInvite, activateInvite } from './inviteService.js';
 import { sendKedyEkipTemplate } from './whatsappCentralSender.js';
 import { sendVerificationEmail, isEmailConfigured } from './emailService.js';
+import { createIdentityTokens } from './mobileAuth.js';
 
 const ONBOARDING_TTL_HOURS = 24;
 const PHONE_LINK_TTL_MINUTES = 15;
@@ -26,17 +27,44 @@ function generateToken(): string {
   return crypto.randomBytes(16).toString('base64url');
 }
 
-export async function startOnboarding(input: { code?: string; token?: string }): Promise<{
-  sessionId: string;
-  salon: { id: number; name: string; slug: string | null; logoUrl: string | null };
-  invite: { id: number; role: string };
-}> {
+export type StartOnboardingResult =
+  | {
+      flow: 'INVITE';
+      sessionId: string;
+      salon: { id: number; name: string; slug: string | null; logoUrl: string | null };
+      invite: { id: number; role: string };
+    }
+  | {
+      flow: 'SELF_REGISTER';
+      sessionId: string;
+    };
+
+export async function startOnboarding(input: {
+  code?: string;
+  token?: string;
+}): Promise<StartOnboardingResult> {
+  // No invite supplied → start a self-register session. The user will
+  // be a UserIdentity with no salon attached until they call
+  // POST /api/salons (to create their own) or POST /api/auth/invites/redeem
+  // (to join an existing one).
+  if (!input.code && !input.token) {
+    const session = await prisma.onboardingSession.create({
+      data: {
+        inviteId: null,
+        flow: 'SELF_REGISTER',
+        expiresAt: new Date(Date.now() + ONBOARDING_TTL_HOURS * 60 * 60 * 1000),
+      },
+    });
+    return { flow: 'SELF_REGISTER', sessionId: session.id };
+  }
+
   const validated = await validateInvite({ code: input.code, token: input.token });
   if (!validated) throw new Error('INVITE_INVALID');
 
   const session = await prisma.onboardingSession.create({
     data: {
       inviteId: validated.inviteId,
+      flow: 'INVITE',
       expiresAt: new Date(Date.now() + ONBOARDING_TTL_HOURS * 60 * 60 * 1000),
     },
   });
@@ -53,6 +81,7 @@ export async function startOnboarding(input: { code?: string; token?: string }):
   ]);
 
   return {
+    flow: 'INVITE',
     sessionId: session.id,
     salon: {
       id: validated.salon.id,
@@ -215,16 +244,87 @@ export async function consumeMagicLink(rawToken: string): Promise<{ side: 'phone
   return null;
 }
 
+export type ActivateOnboardingResult =
+  | {
+      flow: 'INVITE';
+      salonId: number;
+      identityId: number;
+      membershipId: number;
+      legacyUserId: number;
+      role: string;
+      email: string | null;
+    }
+  | {
+      flow: 'SELF_REGISTER';
+      identityId: number;
+      email: string | null;
+      accessToken: string;
+      refreshToken: string;
+    };
+
 export async function activateOnboarding(input: {
   sessionId: string;
   password: string;
-}): Promise<Awaited<ReturnType<typeof activateInvite>>> {
+}): Promise<ActivateOnboardingResult> {
   const session = await getActiveSession(input.sessionId);
 
   if (!session.firstName || !session.lastName) throw new Error('NAME_REQUIRED');
   if (!session.phone || !session.phoneVerifiedAt) throw new Error('PHONE_NOT_VERIFIED');
   if (!session.email || !session.emailVerifiedAt) throw new Error('EMAIL_NOT_VERIFIED');
   if (!input.password || input.password.length < 8) throw new Error('PASSWORD_TOO_SHORT');
+
+  // Self-register path: no invite, no salon. Create a UserIdentity
+  // and hand back identity-only tokens. The user can then create a
+  // salon (POST /api/salons) or redeem an invite to a salon they
+  // were emailed about (POST /api/auth/invites/redeem).
+  if (session.flow === 'SELF_REGISTER' || !session.inviteId) {
+    const firstName = session.firstName.trim();
+    const lastName = session.lastName.trim();
+    const displayName = `${firstName} ${lastName}`.trim();
+    const passwordHash = await bcrypt.hash(input.password, 10);
+
+    // Reject duplicates with a stable error code so the client can
+    // route the user to login instead of showing a generic 500.
+    const existing = await prisma.userIdentity.findFirst({
+      where: {
+        OR: [
+          session.email ? { email: session.email } : undefined,
+          session.phone ? { phone: session.phone } : undefined,
+        ].filter(Boolean) as any,
+      },
+      select: { id: true },
+    });
+    if (existing) throw new Error('IDENTITY_ALREADY_EXISTS');
+
+    const identity = await prisma.userIdentity.create({
+      data: {
+        firstName,
+        lastName,
+        displayName,
+        phone: session.phone,
+        email: session.email,
+        passwordHash,
+        phoneVerifiedAt: session.phoneVerifiedAt,
+        emailVerifiedAt: session.emailVerifiedAt,
+        isActive: true,
+      },
+    });
+
+    await prisma.onboardingSession.update({
+      where: { id: session.id },
+      data: { activatedAt: new Date(), passwordHash },
+    });
+
+    const tokens = await createIdentityTokens({ identityId: identity.id });
+
+    return {
+      flow: 'SELF_REGISTER',
+      identityId: identity.id,
+      email: identity.email,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+    };
+  }
 
   const invite = await prisma.invite.findUnique({ where: { id: session.inviteId } });
   if (!invite) throw new Error('INVITE_INVALID');
@@ -282,7 +382,7 @@ export async function activateOnboarding(input: {
             lastName,
             displayName,
             phone: session.phone,
-            email: session.email,
+            email: session.email ?? undefined,
             passwordHash,
             isActive: true,
             passwordResetRequired: false,
@@ -331,5 +431,5 @@ export async function activateOnboarding(input: {
     };
   });
 
-  return result;
+  return { flow: 'INVITE' as const, ...result };
 }

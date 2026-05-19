@@ -100,6 +100,57 @@ export const authenticateToken = async (req: AuthRequest, _res: Response, next: 
   }
 };
 
+// Lightweight auth for endpoints that only need a verified identity
+// (no salon scope). Used by /api/salons (create), /api/auth/invites/redeem,
+// /api/me, and similar pre-salon flows. Tokens from createIdentityTokens()
+// carry identityId but no membershipId/salonId — the full authenticateToken
+// rejects them; this middleware accepts them.
+interface IdentityRequest extends Request {
+  identity?: {
+    identityId: number;
+    email: string | null;
+    phone: string | null;
+  };
+}
+
+export const authenticateIdentity = async (
+  req: IdentityRequest,
+  _res: Response,
+  next: NextFunction,
+) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  if (!token) {
+    return next(new BusinessError('UNAUTHORIZED', 'Oturum açmanız gerekiyor.', 401));
+  }
+  const payload = verifyToken(token);
+  if (!payload) {
+    return next(new BusinessError('UNAUTHORIZED', 'Oturum süresi dolmuş veya geçersiz.', 401));
+  }
+  const identityId = Number((payload as any).identityId || 0);
+  if (!identityId) {
+    return next(new BusinessError('UNAUTHORIZED', 'Kimlik bilgisi eksik.', 401));
+  }
+  try {
+    const identity = await prisma.userIdentity.findUnique({
+      where: { id: identityId },
+      select: { id: true, email: true, phone: true, isActive: true },
+    });
+    if (!identity || !identity.isActive) {
+      return next(new BusinessError('UNAUTHORIZED', 'Hesap pasif veya bulunamadı.', 401));
+    }
+    req.identity = {
+      identityId: identity.id,
+      email: identity.email,
+      phone: identity.phone,
+    };
+    next();
+  } catch (error) {
+    console.error('authenticateIdentity error:', error);
+    next(error);
+  }
+};
+
 export const authorizeRoles = (roles: UserRole[]) => {
   return (req: AuthRequest, _res: Response, next: NextFunction) => {
     if (!req.user || !roles.includes(req.user.role)) {

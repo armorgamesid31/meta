@@ -80,7 +80,18 @@ export async function rotateRefreshToken(refreshToken: string) {
       },
     });
 
-    if (!session || !session.membership || !session.identity || !session.membershipId || !session.identityId) {
+    if (
+      !session ||
+      !session.membership ||
+      !session.identity ||
+      !session.membershipId ||
+      !session.identityId ||
+      !session.salonId ||
+      !session.userId
+    ) {
+      // Identity-only sessions (no salon scope) are not rotated by this
+      // path — they're consumed when the user opens a salon or
+      // redeems an invite, which mints a fresh full token.
       return null;
     }
 
@@ -134,6 +145,31 @@ export async function rotateRefreshToken(refreshToken: string) {
       legacyUserId: session.userId,
     };
   });
+}
+
+// Identity-only tokens for users who registered but haven't joined or
+// created a salon yet. The token carries identityId but no salonId,
+// membershipId, or legacy userId. Only endpoints that explicitly use
+// the authenticateIdentity middleware accept these — full-fat
+// authenticateToken (which requires salon scope) will reject them.
+export async function createIdentityTokens(input: { identityId: number }) {
+  const accessToken = generateToken({
+    identityId: input.identityId,
+    // legacy field kept for token signature compatibility; consumers
+    // that read it should fall back to identityId when 0.
+    userId: 0,
+  } as any);
+  const refreshToken = createRefreshToken();
+
+  await prisma.mobileAuthSession.create({
+    data: {
+      identityId: input.identityId,
+      refreshTokenHash: hashToken(refreshToken),
+      expiresAt: getTokenExpiry(REFRESH_TOKEN_TTL_DAYS),
+    },
+  });
+
+  return { accessToken, refreshToken };
 }
 
 export async function revokeRefreshToken(refreshToken: string) {

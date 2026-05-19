@@ -1,6 +1,13 @@
 import { Router } from 'express';
+import { UserRole, SalonCategory } from '@prisma/client';
+import { z } from 'zod';
 import { prisma } from '../prisma.js';
 import { BusinessError } from '../lib/errors.js';
+import { authenticateIdentity } from '../middleware/auth.js';
+import { createAuthTokens } from '../services/mobileAuth.js';
+import { ensureSalonServiceCategories } from '../services/salonCategorySetup.js';
+import { ensureSalonAccessSeed } from '../services/accessControl.js';
+import { startSetupPeriod } from '../services/onboarding/lifecycle.js';
 import {
   PRESET_DEFAULT_BRAND,
   deriveTones,
@@ -71,6 +78,131 @@ function fillTemplate(template: string, values: { expert?: string; service?: str
     .replaceAll('{expert}', values.expert || 'Uzman')
     .replaceAll('{service}', values.service || 'hizmet');
 }
+
+// Authenticated salon creation. The caller's UserIdentity becomes the
+// OWNER. Replaces the legacy POST /api/auth/register-salon by letting
+// users register first (identity-only token) and create the salon
+// from inside the app/web panel afterwards.
+const SALON_CATEGORY_VALUES = Object.values(SalonCategory) as [SalonCategory, ...SalonCategory[]];
+const createSalonSchema = z.object({
+  salonName: z.string().trim().min(2).max(120),
+  salonCategory: z.enum(SALON_CATEGORY_VALUES).optional(),
+  referralCode: z.string().trim().max(64).optional(),
+});
+
+router.post('/', authenticateIdentity, async (req: any, res: any) => {
+  const parsed = createSalonSchema.safeParse(req.body || {});
+  if (!parsed.success) {
+    throw new BusinessError('VALIDATION_FAILED', 'Salon bilgileri eksik.', 400, {
+      issues: parsed.error.issues,
+    });
+  }
+  const identity = req.identity as { identityId: number; email: string | null; phone: string | null };
+  if (!identity?.identityId) {
+    throw new BusinessError('UNAUTHORIZED', 'Kimlik bulunamadı.', 401);
+  }
+
+  const identityRow = await prisma.userIdentity.findUnique({
+    where: { id: identity.identityId },
+    select: {
+      id: true,
+      email: true,
+      phone: true,
+      firstName: true,
+      lastName: true,
+      displayName: true,
+      passwordHash: true,
+    },
+  });
+  if (!identityRow) {
+    throw new BusinessError('UNAUTHORIZED', 'Kimlik bulunamadı.', 401);
+  }
+
+  const salonName = parsed.data.salonName;
+  const salonCategory = parsed.data.salonCategory ?? null;
+
+  const created = await prisma.$transaction(async (tx) => {
+    const salon = await tx.salon.create({
+      data: {
+        name: salonName,
+        ...(salonCategory ? { category: salonCategory } : {}),
+      },
+    });
+
+    // Mirror the legacy SalonUser row so downstream queries that still
+    // join through the legacy table keep working.
+    const legacyUser = await tx.salonUser.create({
+      data: {
+        salonId: salon.id,
+        email: identityRow.email || '',
+        phone: identityRow.phone || null,
+        firstName: identityRow.firstName || null,
+        lastName: identityRow.lastName || null,
+        displayName: identityRow.displayName || null,
+        passwordHash: identityRow.passwordHash,
+        role: UserRole.OWNER,
+        isActive: true,
+        activationCompletedAt: new Date(),
+      },
+    });
+
+    const membership = await tx.salonMembership.create({
+      data: {
+        salonId: salon.id,
+        identityId: identityRow.id,
+        role: UserRole.OWNER,
+        isActive: true,
+        legacySalonUserId: legacyUser.id,
+      },
+    });
+
+    return { salon, legacyUser, membership };
+  });
+
+  // Best-effort setup tasks — failures here shouldn't block the user.
+  try {
+    await ensureSalonServiceCategories(created.salon.id);
+  } catch (err) {
+    console.error('[salons:create] ensureSalonServiceCategories failed', err);
+  }
+  try {
+    await ensureSalonAccessSeed(created.salon.id);
+  } catch (err) {
+    console.error('[salons:create] ensureSalonAccessSeed failed', err);
+  }
+  try {
+    await startSetupPeriod(created.salon.id);
+  } catch (err) {
+    console.error('[salons:create] startSetupPeriod failed', err);
+  }
+
+  // Issue a full salon-scoped token; the client should replace the
+  // identity-only token it currently holds.
+  const tokens = await createAuthTokens({
+    legacyUserId: created.legacyUser.id,
+    identityId: identityRow.id,
+    membershipId: created.membership.id,
+    salonId: created.salon.id,
+    role: UserRole.OWNER,
+  });
+
+  return res.status(201).json({
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken,
+    salon: {
+      id: created.salon.id,
+      name: created.salon.name,
+      slug: created.salon.slug,
+    },
+    user: {
+      id: identityRow.id,
+      membershipId: created.membership.id,
+      email: identityRow.email,
+      role: UserRole.OWNER,
+      salonId: created.salon.id,
+    },
+  });
+});
 
 router.get('/:slug/homepage', async (req: any, res: any) => {
   const { slug } = req.params;

@@ -3,12 +3,12 @@ import bcrypt from 'bcrypt';
 import multer from 'multer';
 import { randomBytes } from 'node:crypto';
 import { prisma } from '../prisma.js';
-import { authenticateToken } from '../middleware/auth.js';
+import { authenticateToken, authenticateIdentity } from '../middleware/auth.js';
 import { InviteStatus, UserRole } from '@prisma/client';
 import { createAuthTokens, revokeRefreshToken, rotateRefreshToken } from '../services/mobileAuth.js';
 import { ensureSalonServiceCategories } from '../services/salonCategorySetup.js';
 import { ensureSalonAccessSeed } from '../services/accessControl.js';
-import { activateInvite, hashPlainToken, validateInvite } from '../services/inviteService.js';
+import { activateInvite, hashPlainToken, validateInvite, redeemInviteForIdentity } from '../services/inviteService.js';
 import { startSetupPeriod } from '../services/onboarding/lifecycle.js';
 import { createPhoneVerification, verifyPhoneCode } from '../services/phoneVerification.js';
 import { normalizeDigitsOnly } from '../services/phoneValidation.js';
@@ -475,6 +475,24 @@ router.post('/onboarding/:sessionId/activate', async (req: any, res: any) => {
       sessionId: String(req.params.sessionId),
       password: String(req.body?.password || ''),
     });
+
+    // Self-register: identity-only token (no salon yet). Client should
+    // route to the "Salon Aç" / "Davete Katıl" empty dashboard.
+    if (result.flow === 'SELF_REGISTER') {
+      return res.status(200).json({
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
+        user: {
+          id: result.identityId,
+          email: result.email,
+          salonId: null,
+          membershipId: null,
+          role: null,
+        },
+      });
+    }
+
+    // Legacy invite flow: full token with salon scope.
     const tokens = await createAuthTokens({
       legacyUserId: result.legacyUserId,
       identityId: result.identityId,
@@ -495,6 +513,57 @@ router.post('/onboarding/:sessionId/activate', async (req: any, res: any) => {
     });
   } catch (error: any) {
     return res.status(400).json({ message: error?.message || 'Aktivasyon başarısız.' });
+  }
+});
+
+// Authenticated invite redemption.
+//
+// The new self-register flow: user already has a UserIdentity (no
+// salon yet), they paste an 8-char invite code, and we attach them
+// to the salon as STAFF/OWNER per the invite's pre-baked role. The
+// response includes fresh salon-scoped tokens so the client can
+// replace its identity-only token.
+//
+// Contrast with /invites/activate (legacy): that one accepted name +
+// phone + email + password in the same payload and created the
+// identity inline. Now the identity exists before the redemption, so
+// we just bind the membership.
+router.post('/invites/redeem', authenticateIdentity, async (req: any, res: any) => {
+  const code = typeof req.body?.code === 'string' ? req.body.code : undefined;
+  const token = typeof req.body?.token === 'string' ? req.body.token : undefined;
+  const identityId = Number(req.identity?.identityId || 0);
+  if (!identityId) {
+    throw new BusinessError('UNAUTHORIZED', 'Kimlik bulunamadı.', 401);
+  }
+  try {
+    const result = await redeemInviteForIdentity({ code, token, identityId });
+    const tokens = await createAuthTokens({
+      legacyUserId: result.legacyUserId,
+      identityId: result.identityId,
+      membershipId: result.membershipId,
+      salonId: result.salonId,
+      role: result.role,
+    } as any);
+    return res.status(200).json({
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      user: {
+        id: result.identityId,
+        membershipId: result.membershipId,
+        salonId: result.salonId,
+        role: result.role,
+      },
+    });
+  } catch (error: any) {
+    const msg = error?.message || 'Davet kullanılamadı.';
+    const code =
+      msg === 'INVITE_INVALID' || msg === 'INVITE_REQUIRED'
+        ? 'NOT_FOUND'
+        : msg === 'ALREADY_MEMBER'
+          ? 'CONFLICT'
+          : 'VALIDATION_FAILED';
+    const status = code === 'NOT_FOUND' ? 404 : code === 'CONFLICT' ? 409 : 400;
+    return res.status(status).json({ message: msg });
   }
 });
 
