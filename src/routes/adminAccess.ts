@@ -550,6 +550,92 @@ router.get('/users/:id/overrides', authenticateToken, requirePermissionKey('acce
   }
 });
 
+// Delete (revoke) a team member's salon membership. The UserIdentity
+// stays — that account might be used elsewhere (another salon, a
+// customer-side login, etc.) — but its tie to this salon is severed.
+// Staff/SalonUser/MobileAuthSession rows attached to the membership
+// get cleaned up so dangling pointers don't surface in admin lists.
+//
+// Owners can't delete themselves and can't delete other owners;
+// those would lock the salon out of its own admin.
+router.delete('/users/:id', authenticateToken, requirePermissionKey('access.users.manage'), async (req: any, res: any) => {
+  const auth = getAuth(req, res);
+  if (!auth) return;
+
+  const targetMembershipId = Number(req.params.id);
+  if (!Number.isInteger(targetMembershipId) || targetMembershipId <= 0) {
+    throw new BusinessError('VALIDATION_FAILED', 'Geçersiz üye id.', 400);
+  }
+  if (targetMembershipId === Number(auth.membershipId)) {
+    throw new BusinessError('VALIDATION_FAILED', 'Kendi üyeliğini silemezsin.', 400);
+  }
+
+  const target = await prisma.salonMembership.findUnique({
+    where: { id: targetMembershipId },
+    select: {
+      id: true,
+      salonId: true,
+      role: true,
+      legacySalonUserId: true,
+    },
+  });
+  if (!target || target.salonId !== auth.salonId) {
+    throw new BusinessError('NOT_FOUND', 'Üye bulunamadı.', 404);
+  }
+  if (normalizeRole(target.role) === 'OWNER') {
+    throw new BusinessError('FORBIDDEN', 'Sahip rolündeki üyeleri silemezsin.', 403);
+  }
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      // Detach Staff rows so the expert card stays in place but
+      // unbinds from the deleted membership/legacy user.
+      await tx.staff.updateMany({
+        where: { salonId: target.salonId, membershipId: target.id },
+        data: { membershipId: null },
+      });
+      if (target.legacySalonUserId) {
+        await tx.staff.updateMany({
+          where: { salonId: target.salonId, userId: target.legacySalonUserId },
+          data: { userId: null },
+        });
+      }
+
+      // Revoke any open refresh tokens so the deleted user is
+      // booted from any device they were logged in on.
+      await tx.mobileAuthSession.updateMany({
+        where: { membershipId: target.id, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+
+      // Cancel pending invites pointing at this membership.
+      await tx.invite.updateMany({
+        where: { invitedMembershipId: target.id, status: 'PENDING' },
+        data: { status: 'REVOKED', revokedAt: new Date() },
+      });
+
+      await tx.salonMembership.delete({ where: { id: target.id } });
+
+      // The legacy SalonUser row is technically per-salon, so it's
+      // safe to delete alongside the membership. If it's referenced
+      // anywhere else (e.g. legacy appointments), Prisma will
+      // surface the FK error and we leave it alone (best-effort).
+      if (target.legacySalonUserId) {
+        try {
+          await tx.salonUser.delete({ where: { id: target.legacySalonUserId } });
+        } catch {
+          // FK still references it — leave the row, just orphan it.
+        }
+      }
+    });
+  } catch (error: any) {
+    console.error('Access user delete error:', error);
+    throw new BusinessError('INTERNAL_ERROR', 'Üye silinemedi.', 500);
+  }
+
+  return res.status(200).json({ ok: true });
+});
+
 router.put('/users/:id/overrides', authenticateToken, requirePermissionKey('access.permission_overrides.edit'), async (req: any, res: any) => {
   const auth = getAuth(req, res);
   if (!auth) return;
