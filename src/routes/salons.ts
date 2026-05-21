@@ -259,6 +259,67 @@ router.post('/', authenticateIdentity, async (req: any, res: any) => {
   });
 });
 
+// Schedule salon deletion. 30-day grace. Caller must be an OWNER
+// of the salon. If the salon has an active Stripe subscription
+// the deletion is blocked — the user is told to cancel billing
+// first via the Stripe customer portal, which keeps Kedy's
+// subscription state aligned with Stripe's.
+router.post('/:id/delete', authenticateIdentity, async (req: any, res: any) => {
+  const salonId = Number(req.params.id);
+  const identityId = Number(req.identity?.identityId || 0);
+  if (!Number.isInteger(salonId) || salonId <= 0) {
+    throw new BusinessError('VALIDATION_FAILED', 'Geçersiz salon id.', 400);
+  }
+  if (!identityId) throw new BusinessError('UNAUTHORIZED', 'Kimlik bulunamadı.', 401);
+
+  // Owner check
+  const membership = await prisma.salonMembership.findFirst({
+    where: { salonId, identityId, role: 'OWNER', isActive: true },
+    select: { id: true },
+  });
+  if (!membership) {
+    throw new BusinessError('FORBIDDEN', 'Bu salonu yalnızca OWNER silebilir.', 403);
+  }
+
+  // Active subscription guard
+  const sub = await prisma.salonSubscription.findFirst({
+    where: { salonId, status: { in: ['active', 'trialing', 'past_due'] } },
+    select: { id: true, status: true, stripeSubscriptionId: true },
+  });
+  if (sub && sub.stripeSubscriptionId) {
+    return res.status(409).json({
+      code: 'SUBSCRIPTION_ACTIVE',
+      message: 'Aktif aboneliğin var. Önce Stripe üzerinden iptal etmen lazım.',
+      subscriptionStatus: sub.status,
+    });
+  }
+
+  const { scheduleSalonDeletion } = await import('../services/deletionService.js');
+  const { scheduledAt } = await scheduleSalonDeletion({ salonId, initiatedByIdentityId: identityId });
+  return res.json({ deletionScheduledAt: scheduledAt.toISOString() });
+});
+
+router.post('/:id/cancel-deletion', authenticateIdentity, async (req: any, res: any) => {
+  const salonId = Number(req.params.id);
+  const identityId = Number(req.identity?.identityId || 0);
+  if (!Number.isInteger(salonId) || salonId <= 0) {
+    throw new BusinessError('VALIDATION_FAILED', 'Geçersiz salon id.', 400);
+  }
+  if (!identityId) throw new BusinessError('UNAUTHORIZED', 'Kimlik bulunamadı.', 401);
+
+  const membership = await prisma.salonMembership.findFirst({
+    where: { salonId, identityId, role: 'OWNER', isActive: true },
+    select: { id: true },
+  });
+  if (!membership) {
+    throw new BusinessError('FORBIDDEN', 'Sadece OWNER silme işlemini iptal edebilir.', 403);
+  }
+
+  const { cancelSalonDeletion } = await import('../services/deletionService.js');
+  await cancelSalonDeletion(salonId);
+  return res.json({ ok: true });
+});
+
 router.get('/:slug/homepage', async (req: any, res: any) => {
   const { slug } = req.params;
 

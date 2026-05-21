@@ -94,6 +94,11 @@ model Salon {
   // 'setup_d7', 'setup_d11', 'setup_d13', 'grace_d17', 'grace_d20',
   // 'payment_required_d0', 'trial_ending_d7' — see services/lifecycleReminders.ts.
   lifecycleReminderState      Json?
+  // 30-day grace deletion. NULL = not scheduled; set to a future
+  // timestamp to mark the salon for hard-delete. Daily cron in
+  // jobs/scheduledDeletions cascades-delete after the timestamp
+  // passes.
+  deletionScheduledAt         DateTime?                        @db.Timestamp(6)
   setupEvents                 SalonOnboardingEvent[]
   activatedLeads              Lead[]                           @relation("LeadActivatedSalon")
   analyticsPresets            AnalyticsPreset[]
@@ -254,6 +259,10 @@ model UserIdentity {
   isActive          Boolean             @default(true)
   phoneVerifiedAt   DateTime?
   emailVerifiedAt   DateTime?
+  // When set, this identity is scheduled for hard-delete + PII anonymisation
+  // at the stored timestamp. NULL = not scheduled. The daily cron in
+  // jobs/scheduledDeletions sweeps rows whose deletionScheduledAt has passed.
+  deletionScheduledAt DateTime?         @db.Timestamp(6)
   createdAt         DateTime?           @default(now()) @db.Timestamp(6)
   updatedAt         DateTime?           @default(now()) @updatedAt @db.Timestamp(6)
   memberships       SalonMembership[]

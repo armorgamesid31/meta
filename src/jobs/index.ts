@@ -13,6 +13,7 @@
 import { cleanupActivationCodes } from './cleanupActivationCodes.js';
 import { processStatusTransitions } from '../services/onboarding/lifecycle.js';
 import { processLifecycleReminders } from '../services/lifecycleReminders.js';
+import { processScheduledDeletions } from '../services/deletionService.js';
 
 const HOURLY_MS = 60 * 60 * 1000;
 // Lifecycle transitions only need to run daily, but we run every 6h
@@ -70,12 +71,29 @@ export function startBackgroundJobs(): void {
     }
   };
 
+  // Daily-ish: sweep accounts + salons whose 30-day deletion grace
+  // has elapsed and hard-delete them. Runs every 6h on the same
+  // cadence as the other lifecycle jobs; the operations are idempotent
+  // so multiple sweeps in a window do nothing extra.
+  const tickScheduledDeletions = async () => {
+    try {
+      const result = await processScheduledDeletions();
+      if (result.salonsDeleted + result.accountsDeleted > 0) {
+        console.log('[jobs/scheduledDeletions]', result);
+      }
+    } catch (error) {
+      console.error('[jobs/scheduledDeletions] failed', error);
+    }
+  };
+
   // Run once at startup so a long process restart catches up promptly,
   // then settle into the regular cadence.
   void tickActivationCleanup();
   void tickLifecycle();
   void tickLifecycleReminders();
+  void tickScheduledDeletions();
   setInterval(tickActivationCleanup, HOURLY_MS).unref();
   setInterval(tickLifecycle, SIX_HOURS_MS).unref();
   setInterval(tickLifecycleReminders, SIX_HOURS_MS).unref();
+  setInterval(tickScheduledDeletions, SIX_HOURS_MS).unref();
 }

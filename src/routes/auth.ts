@@ -602,12 +602,15 @@ router.get('/me', authenticateIdentity, async (req: any, res: any) => {
       firstName: true,
       lastName: true,
       displayName: true,
+      emailVerifiedAt: true,
+      phoneVerifiedAt: true,
+      deletionScheduledAt: true,
       memberships: {
         where: { isActive: true },
         select: {
           id: true,
           role: true,
-          salon: { select: { id: true, name: true, slug: true, logoUrl: true } },
+          salon: { select: { id: true, name: true, slug: true, logoUrl: true, deletionScheduledAt: true } },
         },
       },
     },
@@ -623,11 +626,17 @@ router.get('/me', authenticateIdentity, async (req: any, res: any) => {
       firstName: identity.firstName,
       lastName: identity.lastName,
       displayName: identity.displayName,
+      emailVerifiedAt: identity.emailVerifiedAt,
+      phoneVerifiedAt: identity.phoneVerifiedAt,
+      deletionScheduledAt: identity.deletionScheduledAt?.toISOString() ?? null,
     },
     memberships: identity.memberships.map((m) => ({
       membershipId: m.id,
       role: m.role,
-      salon: m.salon,
+      salon: {
+        ...m.salon,
+        deletionScheduledAt: m.salon?.deletionScheduledAt?.toISOString() ?? null,
+      },
     })),
   });
 });
@@ -748,6 +757,109 @@ router.post('/me/password', authenticateIdentity, async (req: any, res: any) => 
       data: { passwordHash },
     });
   }
+  return res.json({ ok: true });
+});
+
+// Schedule account deletion. 30-day grace; daily cron in
+// jobs/scheduledDeletions hard-deletes after the timestamp passes.
+// Until then the user can cancel via POST /me/cancel-deletion.
+//
+// Two confirmation requirements per the brainstorm:
+//   1. currentPassword — proves it's the account owner, not a
+//      stolen access token
+//   2. confirmEmail must match the identity's email — forces a
+//      deliberate "yes I really mean it" action
+//
+// If the user is the OWNER of any salons, those are also scheduled
+// for deletion (the caller is shown the list in the confirm UI).
+router.post('/me/delete', authenticateIdentity, async (req: any, res: any) => {
+  const identityId = Number(req.identity?.identityId || 0);
+  if (!identityId) throw new BusinessError('UNAUTHORIZED', 'Kimlik bulunamadı.', 401);
+
+  const currentPassword = String(req.body?.currentPassword || '');
+  const confirmEmail = String(req.body?.confirmEmail || '').trim().toLowerCase();
+
+  const identity = await prisma.userIdentity.findUnique({ where: { id: identityId } });
+  if (!identity) throw new BusinessError('NOT_FOUND', 'Kimlik bulunamadı.', 404);
+
+  const ok = await bcrypt.compare(currentPassword, identity.passwordHash);
+  if (!ok) throw new BusinessError('UNAUTHORIZED', 'Mevcut şifre hatalı.', 401);
+  if (!identity.email || identity.email.toLowerCase() !== confirmEmail) {
+    throw new BusinessError('VALIDATION_FAILED', 'E-posta doğrulaması eşleşmedi.', 400);
+  }
+
+  const { scheduleAccountDeletion } = await import('../services/deletionService.js');
+  const { scheduledAt, scheduledSalonIds } = await scheduleAccountDeletion({ identityId });
+  return res.json({
+    deletionScheduledAt: scheduledAt.toISOString(),
+    scheduledSalonIds,
+  });
+});
+
+router.post('/me/cancel-deletion', authenticateIdentity, async (req: any, res: any) => {
+  const identityId = Number(req.identity?.identityId || 0);
+  if (!identityId) throw new BusinessError('UNAUTHORIZED', 'Kimlik bulunamadı.', 401);
+  const { cancelAccountDeletion } = await import('../services/deletionService.js');
+  await cancelAccountDeletion(identityId);
+  return res.json({ ok: true });
+});
+
+// Leave a salon — instant, no grace. Different from account or
+// salon deletion: only the user-salon relationship goes away,
+// everything else stays. The user can still log in and access
+// their other salons. If they're the last OWNER of the salon
+// the request is blocked — the salon needs at least one admin
+// and a unilateral "I'm out" would orphan it.
+router.delete('/me/memberships/:salonId', authenticateIdentity, async (req: any, res: any) => {
+  const identityId = Number(req.identity?.identityId || 0);
+  const salonId = Number(req.params.salonId);
+  if (!identityId) throw new BusinessError('UNAUTHORIZED', 'Kimlik bulunamadı.', 401);
+  if (!Number.isInteger(salonId) || salonId <= 0) {
+    throw new BusinessError('VALIDATION_FAILED', 'Geçersiz salon id.', 400);
+  }
+
+  const membership = await prisma.salonMembership.findFirst({
+    where: { salonId, identityId },
+    select: { id: true, role: true, legacySalonUserId: true },
+  });
+  if (!membership) {
+    throw new BusinessError('NOT_FOUND', 'Bu salonda üyeliğin yok.', 404);
+  }
+
+  if (membership.role === 'OWNER') {
+    const otherOwners = await prisma.salonMembership.count({
+      where: { salonId, role: 'OWNER', isActive: true, id: { not: membership.id } },
+    });
+    if (otherOwners === 0) {
+      throw new BusinessError(
+        'LAST_OWNER',
+        'Bu salonun son sahibisin. Önce başka bir OWNER ataman veya salonu silmen gerek.',
+        409,
+      );
+    }
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.staff.updateMany({
+      where: { salonId, membershipId: membership.id },
+      data: { membershipId: null },
+    });
+    if (membership.legacySalonUserId) {
+      await tx.staff.updateMany({
+        where: { salonId, userId: membership.legacySalonUserId },
+        data: { userId: null },
+      });
+    }
+    await tx.mobileAuthSession.updateMany({
+      where: { membershipId: membership.id, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    await tx.salonMembership.delete({ where: { id: membership.id } });
+    if (membership.legacySalonUserId) {
+      await tx.salonUser.delete({ where: { id: membership.legacySalonUserId } }).catch(() => null);
+    }
+  });
+
   return res.json({ ok: true });
 });
 
