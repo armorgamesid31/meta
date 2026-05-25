@@ -579,6 +579,40 @@ router.get('/services/public', async (req: any, res: any) => {
       sourceLocale,
     });
 
+    // Pre-compute per-service campaign badges so the booking UI can
+    // show small pills like "⭐ Sadakat sayar" / "🎯 Çoklu uygun" at
+    // the bottom of a service card. We only badge the campaign types
+    // where being included actually changes how the customer thinks
+    // about that service. Things like OFF_PEAK or WINBACK depend on
+    // timing / customer state, not the service itself, so we skip them
+    // here — those still surface as their own cards in HEDİYELER.
+    const badgeableTypes = ['LOYALTY', 'MULTI_SERVICE_DISCOUNT', 'BILL_THRESHOLD', 'BIRTHDAY', 'WELCOME_FIRST_VISIT'] as const;
+    const activeCampaigns = await prisma.campaign.findMany({
+      where: { salonId, isActive: true, type: { in: badgeableTypes as any } },
+      select: { id: true, type: true, config: true },
+    });
+    const badgeLabelByType: Record<string, string> = {
+      LOYALTY: 'Sadakat sayar',
+      MULTI_SERVICE_DISCOUNT: 'Çoklu uygun',
+      BILL_THRESHOLD: 'Tutar ödülü',
+      BIRTHDAY: 'Doğum günü',
+      WELCOME_FIRST_VISIT: 'Hoş geldin',
+    };
+    function serviceBadgesFor(serviceId: number): Array<{ type: string; label: string }> {
+      const out: Array<{ type: string; label: string }> = [];
+      for (const c of activeCampaigns) {
+        const cfg = (c.config || {}) as Record<string, any>;
+        const included = Array.isArray(cfg.eligibleServiceIds) ? cfg.eligibleServiceIds.map((n: any) => Number(n)).filter(Boolean) : [];
+        const excluded = Array.isArray(cfg.excludedServiceIds) ? cfg.excludedServiceIds.map((n: any) => Number(n)).filter(Boolean) : [];
+        // Excluded wins; otherwise empty include list = "all services".
+        if (excluded.includes(serviceId)) continue;
+        if (included.length > 0 && !included.includes(serviceId)) continue;
+        const label = badgeLabelByType[String(c.type)];
+        if (label) out.push({ type: String(c.type), label });
+      }
+      return out;
+    }
+
     // 3. Group services by category
     const groupedMap: Record<string, any[]> = {};
     
@@ -615,6 +649,7 @@ router.get('/services/public', async (req: any, res: any) => {
         regionId: service.regionId,
         regionName: service.ServiceRegion?.name || null,
         regionCategoryId: service.ServiceRegion?.categoryId || null,
+        campaignBadges: serviceBadgesFor(service.id),
       });
     });
 
