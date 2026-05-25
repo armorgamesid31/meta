@@ -106,24 +106,39 @@ async function computeCampaignsMeta(input: {
   // Pre-fetch referral attribution counts grouped by campaignId. One query
   // per customer (not per campaign) — cheaper and the per-campaign meta
   // just looks up its bucket.
+  //
+  // The status enum (CampaignAttributionStatus) lives at the Postgres
+  // level — passing wrong string labels makes the cast fail and the whole
+  // request 500s. Valid values: PENDING / REGISTERED / QUALIFIED /
+  // REWARDED / CANCELLED. We treat a referred friend who actually came
+  // back (REGISTERED, QUALIFIED, or REWARDED) as "joined"; PENDING /
+  // CANCELLED stay invitation-only.
   const referralBuckets = new Map<number, { invited: number; joined: number }>();
   if (customer) {
-    const rows = await prisma.$queryRawUnsafe<any[]>(
-      `
-        SELECT "campaignId", COUNT(*) AS "invited",
-          SUM(CASE WHEN "status" IN ('CONFIRMED', 'COMPLETED', 'REWARDED') THEN 1 ELSE 0 END) AS "joined"
-        FROM "CampaignAttribution"
-        WHERE "salonId" = $1 AND "referrerCustomerId" = $2
-        GROUP BY "campaignId"
-      `,
-      input.salonId,
-      customer.id,
-    );
-    for (const r of rows) {
-      referralBuckets.set(Number(r.campaignId), {
-        invited: Number(r.invited || 0),
-        joined: Number(r.joined || 0),
-      });
+    try {
+      const rows = await prisma.$queryRawUnsafe<any[]>(
+        `
+          SELECT "campaignId",
+                 COUNT(*) AS "invited",
+                 SUM(CASE WHEN "status"::text IN ('REGISTERED', 'QUALIFIED', 'REWARDED') THEN 1 ELSE 0 END) AS "joined"
+          FROM "CampaignAttribution"
+          WHERE "salonId" = $1 AND "referrerCustomerId" = $2
+          GROUP BY "campaignId"
+        `,
+        input.salonId,
+        customer.id,
+      );
+      for (const r of rows) {
+        referralBuckets.set(Number(r.campaignId), {
+          invited: Number(r.invited || 0),
+          joined: Number(r.joined || 0),
+        });
+      }
+    } catch (err) {
+      // Don't fail the whole booking context if attribution counts blow
+      // up (e.g. schema drift on the enum). Log and continue with
+      // empty buckets so the UI just shows zeros.
+      console.warn('[bookingContext] referral attribution stats failed:', err);
     }
   }
 
