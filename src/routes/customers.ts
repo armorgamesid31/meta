@@ -500,26 +500,64 @@ router.post('/register', async (req: any, res: any) => {
       });
     }
 
-    const registered = await upsertRegisteredCustomer({
+    // FAST PATH: arrival via the salon's own WhatsApp link AND the
+    // phone the customer typed matches the WhatsApp sender. We treat
+    // that as proof of possession because the WABA inbound webhook
+    // confirms both the channel and the number — no extra OTP needed.
+    if (isWhatsappOrigin && isPhoneMatch) {
+      const registered = await upsertRegisteredCustomer({
+        salonId: salonIdNum,
+        firstName: normalizedName.firstName,
+        lastName: normalizedName.lastName,
+        fullName: normalizedName.fullName,
+        phoneDigits: validatedPhone.digits,
+        gender: body.gender,
+        birthDate: body.birthDate,
+        acceptMarketing: body.acceptMarketing,
+        registrationStatus: 'VERIFIED',
+        instagramId: resolvedInstagramId,
+        identity,
+        magicLink: magicLink ? { token: magicLink.token, context: magicLink.context } : null,
+      });
+
+      return res.status(registered.isNew ? 201 : 200).json({
+        status: 'registered',
+        customerId: registered.customer.id,
+        isNew: registered.isNew,
+        registrationStatus: registered.customer.registrationStatus,
+      });
+    }
+
+    // VERIFICATION PATH: every other arrival (referral link, direct
+    // booking URL, organic web, magic link with mismatched phone)
+    // must prove possession of the phone before a Customer row is
+    // created. We push a 6-digit code via the salon's WABA using the
+    // same primitive Instagram uses. The Customer row only lands when
+    // `/verify-phone/confirm` succeeds — eliminates the unverified
+    // PENDING ghosts the old default branch was minting.
+    const verification = await createPhoneVerification({
       salonId: salonIdNum,
-      firstName: normalizedName.firstName,
-      lastName: normalizedName.lastName,
-      fullName: normalizedName.fullName,
-      phoneDigits: validatedPhone.digits,
-      gender: body.gender,
-      birthDate: body.birthDate,
-      acceptMarketing: body.acceptMarketing,
-      registrationStatus: isWhatsappOrigin && isPhoneMatch ? 'VERIFIED' : 'PENDING',
-      instagramId: resolvedInstagramId,
-      identity,
-      magicLink: magicLink ? { token: magicLink.token, context: magicLink.context } : null,
+      phone: validatedPhone.digits,
+      countryIso: validatedPhone.countryIso,
+      purpose: CustomerPhoneVerificationPurpose.BOOKING_REGISTER,
+      payload: {
+        firstName: normalizedName.firstName,
+        lastName: normalizedName.lastName || null,
+        fullName: normalizedName.fullName,
+        gender: body.gender || null,
+        birthDate: body.birthDate || null,
+        acceptMarketing: body.acceptMarketing,
+        instagramId: resolvedInstagramId,
+        magicToken: body.magicToken || null,
+        originChannel: magicLink?.channel || originChannelTyped,
+        originPhone: body.originPhone || magicLink?.phone || null,
+      },
     });
 
-    return res.status(registered.isNew ? 201 : 200).json({
-      status: 'registered',
-      customerId: registered.customer.id,
-      isNew: registered.isNew,
-      registrationStatus: registered.customer.registrationStatus,
+    return res.status(202).json({
+      status: 'verification_code_sent',
+      verificationId: verification.id,
+      message: 'Telefon dogrulama kodu WhatsApp uzerinden gonderildi.',
     });
   } catch (error: any) {
     const message = error?.message || 'Internal server error';
