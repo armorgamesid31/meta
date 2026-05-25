@@ -25,6 +25,13 @@ function isRescheduleSchemaMissingError(error: unknown): boolean {
 }
 
 router.get('/context', async (req: any, res: any) => {
+  // The same token can flip between 200 and 410 within a single browser
+  // session (admin extends expiry, customer just logged in via a binding,
+  // etc.) so no-store is required — otherwise the browser cache will serve
+  // a stale 410 GONE response and the customer lands in "register me"
+  // flow even though backend resolution would now return their record.
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+
   const { token } = req.query;
 
   if (!token || typeof token !== 'string') {
