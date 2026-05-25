@@ -534,36 +534,128 @@ router.post('/register', async (req: any, res: any) => {
       });
     }
 
-    // ROLLED BACK from the OTP-gated path: `createPhoneVerification`
-    // tries to ship a plain-text WhatsApp message via the salon's
-    // WABA, which the platform rejects (400) unless we're already
-    // inside a 24-hour customer service window. The only approved
-    // OTP-style template right now is `kdy_dogrulama_link` (magic
-    // link, consumed by /api/customers/verify-link/*). Switching the
-    // booking registration over to that flow needs frontend work and
-    // is tracked separately — until then the customer registers as
-    // PENDING and the duplicate-phone probe (POST /exists) plus the
-    // existing-VERIFIED fast path above keep abuse manageable.
-    const registered = await upsertRegisteredCustomer({
-      salonId: salonIdNum,
-      firstName: normalizedName.firstName,
-      lastName: normalizedName.lastName,
-      fullName: normalizedName.fullName,
-      phoneDigits: validatedPhone.digits,
-      gender: body.gender,
-      birthDate: body.birthDate,
-      acceptMarketing: body.acceptMarketing,
-      registrationStatus: isWhatsappOrigin && isPhoneMatch ? 'VERIFIED' : 'PENDING',
-      instagramId: resolvedInstagramId,
-      identity,
-      magicLink: magicLink ? { token: magicLink.token, context: magicLink.context } : null,
+    // FAST PATH 1: arrival via the salon's own WhatsApp link AND the
+    // phone the customer typed matches the WhatsApp sender. WABA inbound
+    // already proves possession of the number, so no second verification
+    // is needed.
+    if (isWhatsappOrigin && isPhoneMatch) {
+      const registered = await upsertRegisteredCustomer({
+        salonId: salonIdNum,
+        firstName: normalizedName.firstName,
+        lastName: normalizedName.lastName,
+        fullName: normalizedName.fullName,
+        phoneDigits: validatedPhone.digits,
+        gender: body.gender,
+        birthDate: body.birthDate,
+        acceptMarketing: body.acceptMarketing,
+        registrationStatus: 'VERIFIED',
+        instagramId: resolvedInstagramId,
+        identity,
+        magicLink: magicLink ? { token: magicLink.token, context: magicLink.context } : null,
+      });
+      return res.status(registered.isNew ? 201 : 200).json({
+        status: 'registered',
+        customerId: registered.customer.id,
+        isNew: registered.isNew,
+        registrationStatus: registered.customer.registrationStatus,
+      });
+    }
+
+    // FAST PATH 2: phone is already in the cross-salon PhoneIdentity
+    // ecosystem AND already bound to THIS salon. The customer is just
+    // refilling the form (or hit it again from a fresh tab); we don't
+    // need to bounce them through WhatsApp again.
+    const ecoLinks = await findSalonLinksForPhone(validatedPhone.digits);
+    const alreadyLinkedHere = ecoLinks.identity
+      ? ecoLinks.links.some((l) => l.salonId === salonIdNum)
+      : false;
+    if (alreadyLinkedHere) {
+      const existingHere = await prisma.customer.findFirst({
+        where: { salonId: salonIdNum, phone: validatedPhone.digits },
+        select: { id: true, registrationStatus: true },
+      });
+      if (existingHere?.registrationStatus === 'VERIFIED') {
+        return res.status(200).json({
+          status: 'registered',
+          customerId: existingHere.id,
+          isNew: false,
+          registrationStatus: existingHere.registrationStatus,
+        });
+      }
+    }
+
+    // VERIFY-LINK PATH: every other arrival (referral, direct booking
+    // URL, organic web) has to prove they own the phone before a
+    // Customer row lands. We send the salon's APPROVED `kdy_dogrulama_link`
+    // WhatsApp template via the existing verify-link infrastructure,
+    // embedding the full registration payload so /verify-link/confirm
+    // can mint the Customer with the right name/gender/birthDate when
+    // the user taps the link.
+    const salonForVerify = await prisma.salon.findUnique({
+      where: { id: salonIdNum },
+      select: { id: true, name: true, slug: true, chakraPluginId: true, chakraPhoneNumberId: true },
+    });
+    if (!salonForVerify?.chakraPluginId || !salonForVerify.chakraPhoneNumberId) {
+      throw new BusinessError(
+        'PRECONDITION_FAILED',
+        'Bu salon için WhatsApp doğrulama servisi henüz hazır değil. Lütfen salonla iletişime geçin.',
+        412,
+      );
+    }
+
+    const { ipAddress, userAgent } = clientReqInfo(req);
+    const verifyLink = await createVerificationLink({
+      purpose: VerificationPurpose.CUSTOMER_PHONE,
+      channel: VerificationChannel.WHATSAPP,
+      targetSalonId: salonIdNum,
+      targetPhone: validatedPhone.digits,
+      payload: {
+        salonName: salonForVerify.name,
+        customerName: normalizedName.fullName,
+        source: 'BOOKING',
+        countryIso: validatedPhone.countryIso,
+        e164: validatedPhone.e164,
+        // Booking-specific registration payload — consumed by
+        // /verify-link/confirm to populate Customer fields beyond the
+        // basic name. Without these the magic link landing path would
+        // create a stub Customer with only the phone + name.
+        registration: {
+          firstName: normalizedName.firstName,
+          lastName: normalizedName.lastName,
+          fullName: normalizedName.fullName,
+          gender: body.gender || null,
+          birthDate: body.birthDate || null,
+          acceptMarketing: Boolean(body.acceptMarketing),
+          originChannel: magicLink?.channel || originChannelTyped || null,
+          originPhone: body.originPhone || magicLink?.phone || null,
+          instagramId: resolvedInstagramId,
+          magicToken: body.magicToken || null,
+        },
+      },
+      salonSlug: salonForVerify.slug || null,
+      ipAddress,
+      userAgent,
     });
 
-    return res.status(registered.isNew ? 201 : 200).json({
-      status: 'registered',
-      customerId: registered.customer.id,
-      isNew: registered.isNew,
-      registrationStatus: registered.customer.registrationStatus,
+    const sendResult = await sendVerificationLinkTemplate({
+      salonId: salonIdNum,
+      phone: validatedPhone.digits,
+      token: verifyLink.token,
+      ttlMinutes: VERIFICATION_TTL_MINUTES,
+    });
+
+    if (!sendResult.ok) {
+      throw new BusinessError('INTERNAL_ERROR', 'WhatsApp doğrulama mesajı gönderilemedi.', 500, {
+        reason: sendResult.error,
+      });
+    }
+
+    return res.status(202).json({
+      status: 'verification_link_sent',
+      verificationLinkId: verifyLink.id,
+      expiresAt: verifyLink.expiresAt.toISOString(),
+      resendCooldownSeconds: VERIFICATION_RESEND_COOLDOWN_SECONDS,
+      message: 'Telefon numaranıza WhatsApp\'tan doğrulama linki gönderildi. Tıkladığında randevu işlemine devam edebilirsin.',
     });
   } catch (error: any) {
     const message = error?.message || 'Internal server error';
@@ -803,6 +895,58 @@ router.post('/verify-link/start', async (req: any, res: any) => {
   });
 });
 
+// GET /api/customers/verify-link/poll?id=...
+// Used by the booking-form's "WhatsApp linkine tıkla, bekliyoruz" step.
+// Frontend polls every few seconds after /register returns
+// `verification_link_sent`; this endpoint reports whether the customer
+// has tapped the link yet. Salon-scoped to prevent cross-tenant probing.
+router.get('/verify-link/poll', async (req: any, res: any) => {
+  const salonId = req.salon?.id;
+  if (!salonId) {
+    throw new BusinessError('VALIDATION_FAILED', 'Salon kontekstı bulunamadı.', 400);
+  }
+  const id = String(req.query?.id || '').trim();
+  if (!id) {
+    throw new BusinessError('VALIDATION_FAILED', 'id gereklidir.', 400);
+  }
+  const link = await prisma.verificationLink.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      targetSalonId: true,
+      targetPhone: true,
+      usedAt: true,
+      expiresAt: true,
+      purpose: true,
+    },
+  });
+  if (!link || link.targetSalonId !== salonId) {
+    return res.status(404).json({ state: 'not_found' });
+  }
+  if (link.usedAt) {
+    // Find the Customer this verification just minted/upgraded so the
+    // frontend can hand the booking flow a customerId and continue.
+    const customer = link.targetPhone
+      ? await prisma.customer.findFirst({
+          where: { salonId, phone: link.targetPhone },
+          select: { id: true, registrationStatus: true },
+        })
+      : null;
+    return res.status(200).json({
+      state: 'verified',
+      customerId: customer?.id || null,
+      registrationStatus: customer?.registrationStatus || null,
+    });
+  }
+  if (link.expiresAt && link.expiresAt.getTime() < Date.now()) {
+    return res.status(200).json({ state: 'expired' });
+  }
+  return res.status(200).json({
+    state: 'pending',
+    expiresAt: link.expiresAt?.toISOString() || null,
+  });
+});
+
 // GET /api/customers/verify-link/peek?token=...
 // Read-only check used by the landing page to differentiate UI:
 //   - CUSTOMER_LINK_CONSENT  → cross-salon, show "Tekrar hoş geldin" CTA
@@ -884,6 +1028,23 @@ router.post('/verify-link/confirm', async (req: any, res: any) => {
     | 'WHATSAPP_INBOUND'
     | 'WEB';
 
+  // Booking-registration payload (only present when /api/customers/register
+  // routed through verify-link). Carries the gender/birthDate/marketing-
+  // consent fields that the magic-link landing page can't collect on its
+  // own — without these the new Customer would be a stub.
+  const registrationPayload = payloadAny?.registration as {
+    firstName?: string;
+    lastName?: string;
+    fullName?: string;
+    gender?: 'male' | 'female' | 'other' | null;
+    birthDate?: string | null;
+    acceptMarketing?: boolean;
+    originChannel?: string | null;
+    originPhone?: string | null;
+    instagramId?: string | null;
+    magicToken?: string | null;
+  } | null | undefined;
+
   // Upsert ecosystem PhoneIdentity.
   const phoneIdentity = await upsertPhoneIdentity({ phone });
 
@@ -896,7 +1057,22 @@ router.post('/verify-link/confirm', async (req: any, res: any) => {
   if (existing) {
     customer = await prisma.customer.update({
       where: { id: existing.id },
-      data: { registrationStatus: 'VERIFIED' },
+      data: {
+        registrationStatus: 'VERIFIED',
+        // If the verify-link carried a booking registration payload,
+        // upgrade the stub fields too (existing PENDING customers from
+        // the rollback window had no gender/birthDate).
+        ...(registrationPayload
+          ? {
+              name: registrationPayload.fullName || customerName,
+              firstName: registrationPayload.firstName || existing.firstName,
+              lastName: registrationPayload.lastName || existing.lastName,
+              ...(registrationPayload.gender ? { gender: registrationPayload.gender } : {}),
+              ...(registrationPayload.birthDate ? { birthDate: new Date(registrationPayload.birthDate) } : {}),
+              acceptMarketing: Boolean(registrationPayload.acceptMarketing),
+            }
+          : {}),
+      },
     });
   } else {
     const splitName = customerName.split(' ');
@@ -904,11 +1080,15 @@ router.post('/verify-link/confirm', async (req: any, res: any) => {
       data: {
         phone,
         salonId,
-        name: customerName,
-        firstName: splitName[0] || null,
-        lastName: splitName.slice(1).join(' ') || null,
+        name: registrationPayload?.fullName || customerName,
+        firstName: registrationPayload?.firstName || splitName[0] || null,
+        lastName: registrationPayload?.lastName || splitName.slice(1).join(' ') || null,
+        ...(registrationPayload?.gender ? { gender: registrationPayload.gender } : {}),
+        ...(registrationPayload?.birthDate
+          ? { birthDate: new Date(registrationPayload.birthDate) }
+          : {}),
         registrationStatus: 'VERIFIED',
-        acceptMarketing: false,
+        acceptMarketing: Boolean(registrationPayload?.acceptMarketing),
       },
     });
     await prisma.customerRiskProfile.create({
