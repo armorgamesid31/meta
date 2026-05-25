@@ -534,64 +534,36 @@ router.post('/register', async (req: any, res: any) => {
       });
     }
 
-    // FAST PATH: arrival via the salon's own WhatsApp link AND the
-    // phone the customer typed matches the WhatsApp sender. We treat
-    // that as proof of possession because the WABA inbound webhook
-    // confirms both the channel and the number — no extra OTP needed.
-    if (isWhatsappOrigin && isPhoneMatch) {
-      const registered = await upsertRegisteredCustomer({
-        salonId: salonIdNum,
-        firstName: normalizedName.firstName,
-        lastName: normalizedName.lastName,
-        fullName: normalizedName.fullName,
-        phoneDigits: validatedPhone.digits,
-        gender: body.gender,
-        birthDate: body.birthDate,
-        acceptMarketing: body.acceptMarketing,
-        registrationStatus: 'VERIFIED',
-        instagramId: resolvedInstagramId,
-        identity,
-        magicLink: magicLink ? { token: magicLink.token, context: magicLink.context } : null,
-      });
-
-      return res.status(registered.isNew ? 201 : 200).json({
-        status: 'registered',
-        customerId: registered.customer.id,
-        isNew: registered.isNew,
-        registrationStatus: registered.customer.registrationStatus,
-      });
-    }
-
-    // VERIFICATION PATH: every other arrival (referral link, direct
-    // booking URL, organic web, magic link with mismatched phone)
-    // must prove possession of the phone before a Customer row is
-    // created. We push a 6-digit code via the salon's WABA using the
-    // same primitive Instagram uses. The Customer row only lands when
-    // `/verify-phone/confirm` succeeds — eliminates the unverified
-    // PENDING ghosts the old default branch was minting.
-    const verification = await createPhoneVerification({
+    // ROLLED BACK from the OTP-gated path: `createPhoneVerification`
+    // tries to ship a plain-text WhatsApp message via the salon's
+    // WABA, which the platform rejects (400) unless we're already
+    // inside a 24-hour customer service window. The only approved
+    // OTP-style template right now is `kdy_dogrulama_link` (magic
+    // link, consumed by /api/customers/verify-link/*). Switching the
+    // booking registration over to that flow needs frontend work and
+    // is tracked separately — until then the customer registers as
+    // PENDING and the duplicate-phone probe (POST /exists) plus the
+    // existing-VERIFIED fast path above keep abuse manageable.
+    const registered = await upsertRegisteredCustomer({
       salonId: salonIdNum,
-      phone: validatedPhone.digits,
-      countryIso: validatedPhone.countryIso,
-      purpose: CustomerPhoneVerificationPurpose.BOOKING_REGISTER,
-      payload: {
-        firstName: normalizedName.firstName,
-        lastName: normalizedName.lastName || null,
-        fullName: normalizedName.fullName,
-        gender: body.gender || null,
-        birthDate: body.birthDate || null,
-        acceptMarketing: body.acceptMarketing,
-        instagramId: resolvedInstagramId,
-        magicToken: body.magicToken || null,
-        originChannel: magicLink?.channel || originChannelTyped,
-        originPhone: body.originPhone || magicLink?.phone || null,
-      },
+      firstName: normalizedName.firstName,
+      lastName: normalizedName.lastName,
+      fullName: normalizedName.fullName,
+      phoneDigits: validatedPhone.digits,
+      gender: body.gender,
+      birthDate: body.birthDate,
+      acceptMarketing: body.acceptMarketing,
+      registrationStatus: isWhatsappOrigin && isPhoneMatch ? 'VERIFIED' : 'PENDING',
+      instagramId: resolvedInstagramId,
+      identity,
+      magicLink: magicLink ? { token: magicLink.token, context: magicLink.context } : null,
     });
 
-    return res.status(202).json({
-      status: 'verification_code_sent',
-      verificationId: verification.id,
-      message: 'Telefon dogrulama kodu WhatsApp uzerinden gonderildi.',
+    return res.status(registered.isNew ? 201 : 200).json({
+      status: 'registered',
+      customerId: registered.customer.id,
+      isNew: registered.isNew,
+      registrationStatus: registered.customer.registrationStatus,
     });
   } catch (error: any) {
     const message = error?.message || 'Internal server error';
