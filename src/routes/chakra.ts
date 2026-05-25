@@ -522,6 +522,62 @@ async function createConnectToken(pluginId: string) {
   throw new Error('No connectToken returned from Chakra.');
 }
 
+// Pick the WABA that owns a given salon's WhatsApp phone number, falling
+// back to a deterministic choice if nothing matches. Used by template
+// sync to handle the (rare but real, see salon 8) case where a single
+// Chakra plugin has more than one WABA bound to it.
+//
+// Without this helper the sync did `Object.keys(wabaMap)[0]` which is
+// JavaScript-iteration-order dependent. For salon 8 that produced the
+// right answer by luck — both WABAs claimed the same phoneNumberId,
+// and the lexicographically-smaller WABA id happened to be the real
+// one. Future tenants would not be so lucky.
+export function pickWabaForPhone(
+  wabaMap: Record<string, any> | null | undefined,
+  phoneNumberId: string | null | undefined,
+): { wabaId: string; ambiguous: boolean; reason: string } | null {
+  const entries = Object.entries(wabaMap || {});
+  if (!entries.length) return null;
+
+  const sortedIds = entries.map(([id]) => id).sort();
+
+  if (!phoneNumberId) {
+    return {
+      wabaId: sortedIds[0],
+      ambiguous: entries.length > 1,
+      reason: entries.length > 1
+        ? 'no-phone-hint, picked sorted-first of multiple'
+        : 'no-phone-hint, only WABA',
+    };
+  }
+
+  const matches = entries.filter(([, waba]) => {
+    const phones = Array.isArray((waba as any)?.phoneNumbers)
+      ? (waba as any).phoneNumbers
+      : [];
+    return phones.some((p: any) => typeof p === 'string' && p === phoneNumberId);
+  });
+
+  if (matches.length === 0) {
+    return {
+      wabaId: sortedIds[0],
+      ambiguous: true,
+      reason: `phone ${phoneNumberId} not found in any WABA; defaulted to sorted-first`,
+    };
+  }
+
+  if (matches.length === 1) {
+    return { wabaId: matches[0][0], ambiguous: false, reason: 'unique phone match' };
+  }
+
+  const sortedMatches = matches.map(([id]) => id).sort();
+  return {
+    wabaId: sortedMatches[0],
+    ambiguous: true,
+    reason: `phone ${phoneNumberId} listed in ${matches.length} WABAs; picked sorted-first`,
+  };
+}
+
 export async function syncAndEnsureMasterTemplates(salonId: number, pluginId: string, logs: string[] = []) {
   if (!CHAKRA_API_TOKEN) {
     logs.push('HATA: CHAKRA_API_TOKEN tanımlanmamış.');
@@ -530,13 +586,16 @@ export async function syncAndEnsureMasterTemplates(salonId: number, pluginId: st
 
   logs.push(`Senkronizasyon başlatıldı. Salon: ${salonId}, Plugin: ${pluginId}`);
 
-  // Resolve the salon's communicationTone for tier-aware variation picking.
+  // Resolve the salon's communicationTone for tier-aware variation picking,
+  // and the phone number id used by pickWabaForPhone() to disambiguate
+  // multi-WABA plugins.
   const salonRow = await prisma.salon.findUnique({
     where: { id: salonId },
-    select: { communicationTone: true },
+    select: { communicationTone: true, chakraPhoneNumberId: true },
   });
   const tone = salonRow?.communicationTone || 'BALANCED';
-  logs.push(`Salon iletişim tonu: ${tone}`);
+  const phoneNumberId = salonRow?.chakraPhoneNumberId || null;
+  logs.push(`Salon iletişim tonu: ${tone}, phoneNumberId: ${phoneNumberId || '(yok)'}`);
 
   try {
     // 1. Fetch Plugin info to get WABA ID
@@ -552,14 +611,21 @@ export async function syncAndEnsureMasterTemplates(salonId: number, pluginId: st
     }
 
     const wabaMap = pluginData.auth?.whatsappBusinessAccountsById;
-    const wabaId = wabaMap ? Object.keys(wabaMap)[0] : null;
+    const pick = pickWabaForPhone(wabaMap, phoneNumberId);
 
-    if (!wabaId) {
+    if (!pick) {
         logs.push('HATA: Bu plugin için bağlı bir WhatsApp Business Account (WABA) bulunamadı.');
         return;
     }
 
-    logs.push(`WABA ID bulundu: ${wabaId}. Şablonlar sorgulanıyor...`);
+    const wabaId = pick.wabaId;
+    if (pick.ambiguous) {
+      logs.push(`UYARI: WABA seçimi belirsiz — ${pick.reason}. Seçildi: ${wabaId}.`);
+    } else {
+      logs.push(`WABA seçildi: ${wabaId} (${pick.reason}).`);
+    }
+
+    logs.push(`Şablonlar sorgulanıyor...`);
 
     const templatesUrl = `${CHAKRA_API_BASE}/v1/ext/plugin/whatsapp/api/v22.0/${wabaId}/message_templates`;
 
@@ -1401,12 +1467,19 @@ router.post('/connect-event', authenticateToken, async (req: any, res: any) => {
         whatsappConnectedAt: new Date().toISOString(),
       });
 
-      // SYNC MASTER TEMPLATES ON SUCCESS
-      await syncAndEnsureMasterTemplates(salon.id, pluginId).catch(err => {
-        console.error('Initial template sync failed:', err);
-      });
-      // Queue the 90 tone-varied primaries (wave-based, active tone first).
+      // SYNC MASTER TEMPLATES + ENQUEUE TONE-VARIED ON SUCCESS.
+      //
+      // We used to wrap both calls in .catch() / try-catch and swallow
+      // failures into console.error. The route returned 200 OK while
+      // the salon was left with zero template rows — exactly how salon
+      // 8 ended up showing "0 onaylı şablon" with the WABA fully
+      // approved on the Meta side. Letting the error propagate is
+      // strictly better: the client sees a 500 and can retry, and the
+      // problem stops being invisible until a customer fails to get a
+      // reminder weeks later.
+      const reconnectSyncLogs: string[] = [];
       try {
+        await syncAndEnsureMasterTemplates(salon.id, pluginId, reconnectSyncLogs);
         const salonRow = await prisma.salon.findUnique({
           where: { id: salon.id },
           select: { communicationTone: true },
@@ -1416,8 +1489,31 @@ router.post('/connect-event', authenticateToken, async (req: any, res: any) => {
           tone: salonRow?.communicationTone || 'BALANCED',
         });
         console.log(`[chakra] Enqueued ${result.enqueued} template submissions for salon ${salon.id}`);
-      } catch (err) {
-        console.error('Template queue enqueue failed:', err);
+
+        // Post-sync sanity: with sync + enqueue we should have landed
+        // at minimum the 90 tone-varied rows (10 keys × 3 tones × 3
+        // slots). 0 means both steps did their try/return-empty dance
+        // and produced nothing — same failure mode salon 8 hit.
+        const rowCount = await prisma.salonMessageTemplate.count({
+          where: { salonId: salon.id },
+        });
+        if (rowCount === 0) {
+          throw new BusinessError(
+            'TEMPLATE_SYNC_FAILED',
+            'Şablon senkronizasyonu tamamlandı görünüyor ama hiçbir satır yazılmadı. Lütfen WhatsApp bağlantısını tekrar deneyin.',
+            500,
+            { syncLogs: reconnectSyncLogs },
+          );
+        }
+      } catch (err: any) {
+        if (err instanceof BusinessError) throw err;
+        console.error('[chakra:connect-event] template sync/enqueue failed:', err);
+        throw new BusinessError(
+          'TEMPLATE_SYNC_FAILED',
+          err?.message || 'WhatsApp bağlantısı yapıldı ama şablonlar senkronize edilemedi.',
+          500,
+          { syncLogs: reconnectSyncLogs, cause: err?.response?.data || err?.message },
+        );
       }
     } else if (CHAKRA_API_TOKEN) {
       // Popup event adı beklediğimiz formatta gelmese bile canlı plugin durumundan doğrulayalım.
@@ -1442,11 +1538,12 @@ router.post('/connect-event', authenticateToken, async (req: any, res: any) => {
             whatsappConnectedAt: new Date().toISOString(),
           });
 
-          // SYNC MASTER TEMPLATES ON SUCCESS (Live Check)
-          await syncAndEnsureMasterTemplates(salon.id, pluginId).catch(err => {
-            console.error('Initial template sync (live) failed:', err);
-          });
+          // SYNC MASTER TEMPLATES + ENQUEUE TONE-VARIED ON SUCCESS (Live Check).
+          // Mirror of the explicit-event branch above — see comment there
+          // for why we no longer swallow these failures.
+          const liveSyncLogs: string[] = [];
           try {
+            await syncAndEnsureMasterTemplates(salon.id, pluginId, liveSyncLogs);
             const salonRow = await prisma.salon.findUnique({
               where: { id: salon.id },
               select: { communicationTone: true },
@@ -1456,8 +1553,27 @@ router.post('/connect-event', authenticateToken, async (req: any, res: any) => {
               tone: salonRow?.communicationTone || 'BALANCED',
             });
             console.log(`[chakra] Enqueued ${result.enqueued} template submissions for salon ${salon.id} (live)`);
-          } catch (err) {
-            console.error('Template queue enqueue (live) failed:', err);
+
+            const rowCount = await prisma.salonMessageTemplate.count({
+              where: { salonId: salon.id },
+            });
+            if (rowCount === 0) {
+              throw new BusinessError(
+                'TEMPLATE_SYNC_FAILED',
+                'Şablon senkronizasyonu tamamlandı görünüyor ama hiçbir satır yazılmadı (live check). Lütfen tekrar deneyin.',
+                500,
+                { syncLogs: liveSyncLogs },
+              );
+            }
+          } catch (err: any) {
+            if (err instanceof BusinessError) throw err;
+            console.error('[chakra:connect-event:live] template sync/enqueue failed:', err);
+            throw new BusinessError(
+              'TEMPLATE_SYNC_FAILED',
+              err?.message || 'WhatsApp bağlantısı doğrulandı ama şablonlar senkronize edilemedi.',
+              500,
+              { syncLogs: liveSyncLogs, cause: err?.response?.data || err?.message },
+            );
           }
         }
       } catch (liveCheckError: any) {
