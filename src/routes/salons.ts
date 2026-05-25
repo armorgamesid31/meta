@@ -109,6 +109,8 @@ router.post('/', authenticateIdentity, async (req: any, res: any) => {
       id: true,
       email: true,
       phone: true,
+      phoneVerifiedAt: true,
+      emailVerifiedAt: true,
       firstName: true,
       lastName: true,
       displayName: true,
@@ -117,6 +119,29 @@ router.post('/', authenticateIdentity, async (req: any, res: any) => {
   });
   if (!identityRow) {
     throw new BusinessError('UNAUTHORIZED', 'Kimlik bulunamadı.', 401);
+  }
+
+  // Second gate against the verification bypass we caught in prod
+  // (referral signup minted a salon for identity #1 whose phone +
+  // email were both stamped but never verified — `activateOnboarding`
+  // had the right guard but the identity already existed from the
+  // legacy `/api/auth/register-salon` path which never checked).
+  // Salon creation is the right place to lock this down: it's a
+  // one-time per-identity action, and anyone reaching it without
+  // verification has skipped a step.
+  if (!identityRow.phoneVerifiedAt) {
+    throw new BusinessError(
+      'PHONE_NOT_VERIFIED',
+      'Telefon numaranızı doğrulamadan salon oluşturamazsınız.',
+      403,
+    );
+  }
+  if (!identityRow.emailVerifiedAt) {
+    throw new BusinessError(
+      'EMAIL_NOT_VERIFIED',
+      'E-posta adresinizi doğrulamadan salon oluşturamazsınız.',
+      403,
+    );
   }
 
   const salonName = parsed.data.salonName;
