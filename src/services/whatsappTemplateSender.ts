@@ -115,7 +115,13 @@ export async function sendVerificationLinkTemplate(
   //   HEADER:  named param salonname  → salon's display name
   //   BODY:    static (no parameters needed)
   //   BUTTON:  URL placeholder {{1}}  → raw verification token
+  //
+  // `messaging_product: 'whatsapp'` is mandatory on the Cloud API v19+
+  // request body — Chakra surfaces the schema rejection as 400 if we
+  // forget it, which is exactly the failure that pinned the booking
+  // registration flow earlier.
   const body = {
+    messaging_product: 'whatsapp',
     pluginId: salon.chakraPluginId,
     phoneNumberId,
     to,
@@ -144,7 +150,12 @@ export async function sendVerificationLinkTemplate(
 
   try {
     const response = await axios.post(sendUrl, body, { headers, timeout: 25_000 });
+    // Chakra wraps the Cloud-API response in `_data` and surfaces the
+    // outbound id as `whatsappMessageId`. Keep the legacy paths as
+    // fallbacks for callers that still target the raw Meta shape.
     const messageId =
+      response?.data?._data?.whatsappMessageId ||
+      response?.data?.whatsappMessageId ||
       response?.data?.messages?.[0]?.id ||
       response?.data?.data?.messages?.[0]?.id ||
       undefined;
@@ -303,7 +314,10 @@ export async function sendTemplate(input: SendTemplateInput): Promise<SendTempla
     });
   }
 
+  // `messaging_product: 'whatsapp'` is mandatory on Cloud API v19+ —
+  // omitting it fails the JSON schema check at Chakra and returns 400.
   const body = {
+    messaging_product: 'whatsapp',
     pluginId: salon.chakraPluginId,
     phoneNumberId,
     to,
@@ -317,7 +331,12 @@ export async function sendTemplate(input: SendTemplateInput): Promise<SendTempla
 
   try {
     const response = await axios.post(sendUrl, body, { headers, timeout: 25_000 });
+    // Chakra wraps the Cloud-API response in `_data` and surfaces the
+    // outbound id as `whatsappMessageId`. Keep the legacy paths as
+    // fallbacks for callers that still target the raw Meta shape.
     const messageId =
+      response?.data?._data?.whatsappMessageId ||
+      response?.data?.whatsappMessageId ||
       response?.data?.messages?.[0]?.id ||
       response?.data?.data?.messages?.[0]?.id ||
       undefined;
