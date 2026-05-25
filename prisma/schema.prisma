@@ -2363,6 +2363,11 @@ enum CampaignType {
   MULTI_SERVICE_DISCOUNT
   OFF_PEAK
   REFERRAL
+  // Single-appointment bill threshold reward. Trigger fires when the
+  // computed bill for a single booking exceeds `config.thresholdAmount`,
+  // applying an additional reward on top of any other auto-stacks. See
+  // services/campaignPricing.ts for evaluation.
+  BILL_THRESHOLD
 }
 
 enum CampaignLifecycleStatus {
