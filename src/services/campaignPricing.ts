@@ -390,6 +390,14 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
       const cfg = campaign.config;
       const type = campaign.type;
 
+      // BILL_THRESHOLD is evaluated AFTER the per-line loop because it
+      // depends on the aggregated bill, not the individual line. Skip
+      // here so the generic discount fallback below doesn't accidentally
+      // apply its rewardValue to every line.
+      if (type === 'BILL_THRESHOLD') {
+        continue;
+      }
+
       if (
         (type === 'WELCOME_FIRST_VISIT' ||
           type === 'BIRTHDAY' ||
@@ -504,6 +512,84 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
       packageCovered,
     };
   });
+
+  // BILL_THRESHOLD aggregate pass. These campaigns fire when the total
+  // bill (after all per-line stacks) exceeds a configured threshold —
+  // i.e. they care about the BASKET, not individual services. We split
+  // the reward proportionally across non-package-covered lines so the
+  // discount appears as a normal line-attached entry; downstream
+  // aggregation + persistence keeps working unchanged.
+  const billThresholdCampaigns = sortedCampaigns.filter((c) => c.type === 'BILL_THRESHOLD');
+  for (const campaign of billThresholdCampaigns) {
+    if (campaign.maxGlobalUsage !== null) {
+      const used = usage.global.get(campaign.id) || 0;
+      if (used >= campaign.maxGlobalUsage) continue;
+    }
+    if (campaign.maxPerCustomer !== null && input.customerId) {
+      const usedByCustomer = usage.perCustomer.get(campaign.id) || 0;
+      if (usedByCustomer >= campaign.maxPerCustomer) continue;
+    }
+
+    const cfg = (campaign.config || {}) as Record<string, any>;
+    const thresholdAmount = Math.max(0, Number(cfg.thresholdAmount || 0));
+    const rewardType = String(cfg.rewardType || cfg.discountType || '').trim().toLowerCase();
+    const rewardValue = Number(cfg.rewardValue || cfg.discountValue || 0);
+    if (thresholdAmount <= 0 || rewardValue <= 0) continue;
+
+    // Only consider lines that aren't already fully covered (package
+    // lines have finalPrice 0 and shouldn't count toward the threshold).
+    const candidateLines = lines.filter((l) => !l.packageCovered && l.finalPrice > 0);
+    const currentTotal = candidateLines.reduce((acc, l) => acc + l.finalPrice, 0);
+    if (currentTotal < thresholdAmount) continue;
+    if (!candidateLines.length) continue;
+
+    // Filter by service scope — if the campaign restricts to certain
+    // services, only those count for both the threshold and the reward
+    // distribution. This keeps the rule "%10 ekstra on Yüz & Cilt
+    // appointments over 500₺" working as expected.
+    const eligibleForScope = candidateLines.filter((l) => isServiceEligibleByScope(cfg, l.serviceId));
+    if (!eligibleForScope.length) continue;
+    const eligibleTotal = eligibleForScope.reduce((acc, l) => acc + l.finalPrice, 0);
+    if (eligibleTotal < thresholdAmount) continue;
+
+    let totalRewardAmount = 0;
+    if (rewardType === 'discount_percent') {
+      totalRewardAmount = Math.max(0, (eligibleTotal * rewardValue) / 100);
+    } else if (rewardType === 'discount_fixed' || rewardType === 'fixed_amount') {
+      totalRewardAmount = Math.min(eligibleTotal, rewardValue);
+    } else {
+      // free_service or other unknown — bail out for now. The free
+      // service flow lives in the per-line loop and doesn't make sense
+      // as a BILL_THRESHOLD aggregate.
+      continue;
+    }
+    if (totalRewardAmount <= 0) continue;
+
+    // Distribute proportionally and update each line's discountTotal /
+    // finalPrice / appliedCampaigns so the downstream aggregator picks
+    // it up. Keep the campaign's amount rounded to 2dp per line so
+    // float drift doesn't show up in the UI.
+    let remaining = totalRewardAmount;
+    eligibleForScope.forEach((line, idx) => {
+      const isLast = idx === eligibleForScope.length - 1;
+      const share = isLast
+        ? Math.max(0, Number(remaining.toFixed(2)))
+        : Math.max(0, Number(((line.finalPrice / eligibleTotal) * totalRewardAmount).toFixed(2)));
+      if (share <= 0) return;
+      // Cap per-line share to its current finalPrice so we never go
+      // negative (e.g. on rounding edge cases).
+      const capped = Math.min(line.finalPrice, share);
+      line.discountTotal = Number((line.discountTotal + capped).toFixed(2));
+      line.finalPrice = Number((line.finalPrice - capped).toFixed(2));
+      line.appliedCampaigns.push({
+        campaignId: campaign.id,
+        campaignType: campaign.type,
+        campaignName: campaign.name,
+        amount: capped,
+      });
+      remaining = Number((remaining - capped).toFixed(2));
+    });
+  }
 
   const subtotal = Number(lines.reduce((acc, line) => acc + line.listPrice, 0).toFixed(2));
   const discountTotal = Number(lines.reduce((acc, line) => acc + line.discountTotal, 0).toFixed(2));
