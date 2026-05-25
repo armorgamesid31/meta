@@ -227,18 +227,35 @@ async function upsertRegisteredCustomer(input: {
     },
   });
 
+  // Existing-customer guardrails: a verified customer who re-runs the
+  // registration form (e.g. clicked a referral link with the same
+  // phone) must not have their identity overwritten by partial form
+  // values. Specifically:
+  //   • Never downgrade VERIFIED → PENDING.
+  //   • Don't overwrite name fields that are already populated unless
+  //     the form actually carries a non-empty value AND the existing
+  //     record is blank. This kept Berkay's record reading "berkay kkk"
+  //     after he hit the form again.
+  // Gender, birthDate, acceptMarketing and Instagram id are preference
+  // / contact fields where the latest value wins.
+  const isExistingVerified = existing?.registrationStatus === 'VERIFIED';
+  const protectNames = isExistingVerified && Boolean(existing?.firstName && existing?.lastName);
   const customer = existing
     ? await prisma.customer.update({
         where: { id: existing.id },
         data: {
-          ...(normalizedName.fullName ? { name: normalizedName.fullName } : {}),
-          ...(normalizedName.firstName ? { firstName: normalizedName.firstName } : {}),
-          ...(normalizedName.lastName ? { lastName: normalizedName.lastName } : {}),
+          ...(normalizedName.fullName && !protectNames ? { name: normalizedName.fullName } : {}),
+          ...(normalizedName.firstName && !protectNames ? { firstName: normalizedName.firstName } : {}),
+          ...(normalizedName.lastName && !protectNames ? { lastName: normalizedName.lastName } : {}),
           ...(genderVal ? { gender: genderVal } : {}),
           ...(birthDateVal ? { birthDate: birthDateVal } : {}),
           acceptMarketing: input.acceptMarketing,
           ...(resolvedInstagramId ? { instagram: resolvedInstagramId } : {}),
-          registrationStatus: input.registrationStatus,
+          // Promote PENDING → VERIFIED if the incoming request claims
+          // verified, but never the other way round.
+          ...(input.registrationStatus === 'VERIFIED' || !isExistingVerified
+            ? { registrationStatus: input.registrationStatus }
+            : {}),
         },
       })
     : await prisma.customer.create({
@@ -354,6 +371,28 @@ router.post('/register', async (req: any, res: any) => {
       countryIso: body.countryIso,
       normalizedPhone: body.normalizedPhone,
     });
+
+    // Already-verified short-circuit. A customer who is already
+    // registered with this phone on this salon doesn't need to fill the
+    // form again — clicking a referral link or refreshing the booking
+    // page used to push them through registration and overwrite their
+    // record. Now we acknowledge them and let the booking flow proceed.
+    const existingVerified = await prisma.customer.findFirst({
+      where: {
+        salonId: salonIdNum,
+        phone: validatedPhone.digits,
+        registrationStatus: 'VERIFIED',
+      },
+      select: { id: true, registrationStatus: true },
+    });
+    if (existingVerified) {
+      return res.status(200).json({
+        status: 'registered',
+        customerId: existingVerified.id,
+        isNew: false,
+        registrationStatus: existingVerified.registrationStatus,
+      });
+    }
 
     const originChannelTyped = asChannel(body.originChannel);
     const { magicLink, originProfileName } = await resolveMagicLinkContext({
