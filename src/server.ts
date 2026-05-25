@@ -288,6 +288,8 @@ app.use('/api/auth', authRateLimiter);
 app.use('/api/customers/register', authRateLimiter);
 app.use('/api/customers/verify', authRateLimiter);
 app.use('/api/customers/resend-code', authRateLimiter);
+// Phone-duplicate probe — enumeration surface, same 10/min budget.
+app.use('/api/customers/exists', authRateLimiter);
 // Slug-existence probe is cheap to fan out but enables salon-enumeration if
 // hit unthrottled. Same 10/min budget as auth endpoints.
 app.use('/api/salon/slug-available', authRateLimiter);

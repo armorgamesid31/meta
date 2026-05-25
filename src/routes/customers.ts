@@ -330,6 +330,40 @@ async function upsertRegisteredCustomer(input: {
   return { customer, isNew: !existing };
 }
 
+// Pre-submit duplicate-phone probe for the customer registration form.
+// Frontend debounces a call here while the customer types — if the
+// number is already on this salon's books we surface a banner and
+// stop them from re-filling the form (otherwise verification would
+// still succeed via the fast path, but the UX is "form just closes"
+// with no context for the returning customer).
+//
+// Privacy/enumeration considerations:
+//   - Salon-scoped: a probe on tenant A only sees tenant A's customers.
+//   - Boolean only — no name, id, or status leaks.
+//   - Rate-limited at the mount in server.ts (authRateLimiter — 10/min).
+//   - Phone is validated as a real mobile number first; garbage input
+//     short-circuits to `exists: false` without hitting the DB.
+router.post('/exists', async (req: any, res: any) => {
+  const salonIdNum = req.salon?.id;
+  const body = req.body || {};
+  const rawPhone = String(body.rawPhone || body.phone || '').trim();
+  const countryIso = String(body.countryIso || 'TR').trim().toUpperCase();
+  if (!salonIdNum || !rawPhone) {
+    return res.status(200).json({ exists: false });
+  }
+  let validated;
+  try {
+    validated = validateMobilePhone({ rawPhone, countryIso });
+  } catch {
+    return res.status(200).json({ exists: false });
+  }
+  const match = await prisma.customer.findFirst({
+    where: { salonId: salonIdNum, phone: validated.digits },
+    select: { id: true },
+  });
+  return res.status(200).json({ exists: Boolean(match) });
+});
+
 router.post('/register', async (req: any, res: any) => {
   const body = req.body as RegisterRequest;
   const salonIdNum = req.salon?.id;
