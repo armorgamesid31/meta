@@ -12,6 +12,7 @@ import salonRoutes from './routes/salon.js';
 import salonTemplateStatusRoutes from './routes/salonTemplateStatus.js';
 import redirectRoutes from './routes/redirects.js';
 import magicLinkLandingRoutes from './routes/magicLinkLanding.js';
+import customerVerifyLandingRoutes from './routes/customerVerifyLanding.js';
 import salonsRoutes from './routes/salons.js';
 import categoriesRoutes from './routes/categories.js';
 import seoRoutes from './routes/seo.js';
@@ -330,6 +331,11 @@ app.use('/api/salon', salonRoutes);
 app.use('/api/salon', salonTemplateStatusRoutes);
 app.use('/r', redirectRoutes);
 app.use('/v', magicLinkLandingRoutes);
+// Customer-facing verify-link landing (mirrors the kdy_islem_link
+// WhatsApp template's button URL pattern). Public, no salon middleware
+// needed — token in path IS the credential and the link payload
+// carries targetSalonId. See routes/customerVerifyLanding.ts.
+app.use('/c/v', customerVerifyLandingRoutes);
 app.use('/api/salons', salonsRoutes);
 app.use('/api/categories', categoriesRoutes);
 app.use('/api/seo', seoRoutes);
