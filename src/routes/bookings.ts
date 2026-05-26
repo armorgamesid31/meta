@@ -375,7 +375,7 @@ async function createExactSlotBooking(input: {
     return candidate < earliest ? candidate : earliest;
   }, Number.MAX_SAFE_INTEGER);
 
-  const pricingInputLines = orderedPeople.flatMap(([, personServices]) =>
+  const pricingInputLines = orderedPeople.flatMap(([personIndex, personServices]) =>
     personServices.map((serviceItem: any) => {
       const serviceId = Number(serviceItem?.serviceId);
       const catalog = serviceById.get(serviceId);
@@ -383,6 +383,10 @@ async function createExactSlotBooking(input: {
         serviceId,
         listPrice: catalog ? catalog.price : 0,
         isPackageCovered: packageByService.has(serviceId),
+        // Faz 42: pricing engine scopes campaigns to the booker
+        // (personIndex 1) only. Companion lines (personIndex >= 2)
+        // pass through with no discount applied.
+        personIndex,
       };
     }),
   );
@@ -1658,15 +1662,25 @@ router.post('/pricing-preview', async (req: any, res: any) => {
     if (Number.isInteger(serviceId) && serviceId > 0) packageByService.add(serviceId);
   }
 
-  const requestedServiceIds = services
-    .map((item: any) => Number(item?.serviceId))
-    .filter((id: number) => Number.isInteger(id) && id > 0);
-  if (!requestedServiceIds.length) {
+  // Faz 42: also extract personIndex per line so the pricing engine
+  // can scope discounts to the booker. Default to 1 (the booker) when
+  // the client doesn't send a personIndex — pre-companion clients keep
+  // working unchanged.
+  const requestedLines: Array<{ serviceId: number; personIndex: number }> = services
+    .map((item: any) => ({
+      serviceId: Number(item?.serviceId),
+      personIndex:
+        Number.isInteger(Number(item?.personIndex)) && Number(item?.personIndex) > 0
+          ? Number(item.personIndex)
+          : 1,
+    }))
+    .filter((line: { serviceId: number }) => Number.isInteger(line.serviceId) && line.serviceId > 0);
+  if (!requestedLines.length) {
     throw new BusinessError('VALIDATION_FAILED', 'services[] is required.', 400);
   }
 
   try {
-    const uniqueServiceIds: number[] = Array.from(new Set<number>(requestedServiceIds));
+    const uniqueServiceIds: number[] = Array.from(new Set<number>(requestedLines.map((l) => l.serviceId)));
     const catalog = await prisma.service.findMany({
       where: { salonId, id: { in: uniqueServiceIds } },
       select: { id: true, price: true },
@@ -1676,10 +1690,11 @@ router.post('/pricing-preview', async (req: any, res: any) => {
       priceByServiceId.set(Number(item.id), Number(item.price || 0));
     }
 
-    const lines = requestedServiceIds.map((serviceId) => ({
+    const lines = requestedLines.map(({ serviceId, personIndex }: { serviceId: number; personIndex: number }) => ({
       serviceId,
       listPrice: Math.max(0, Number(priceByServiceId.get(serviceId) || 0)),
       isPackageCovered: packageByService.has(serviceId),
+      personIndex,
     }));
 
     const pricing = await previewCampaignPricing({
@@ -1912,7 +1927,7 @@ router.post('/', async (req: any, res: any, next: any) => {
       }
 
       const orderedPeople = Array.from(servicesByPerson.entries()).sort((a, b) => a[0] - b[0]);
-      const pricingInputLines = orderedPeople.flatMap(([, personServices]) =>
+      const pricingInputLines = orderedPeople.flatMap(([personIndex, personServices]) =>
         personServices.map((serviceItem: any) => {
           const serviceId = Number(serviceItem?.serviceId);
           const catalog = serviceById.get(serviceId);
@@ -1920,6 +1935,7 @@ router.post('/', async (req: any, res: any, next: any) => {
             serviceId,
             listPrice: catalog ? catalog.price : 0,
             isPackageCovered: packageByService.has(serviceId),
+            personIndex,
           };
         }),
       );

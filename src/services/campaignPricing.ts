@@ -18,6 +18,10 @@ export type CampaignPricingLineInput = {
   serviceId: number;
   listPrice: number;
   isPackageCovered?: boolean;
+  // 1 = booker, 2..N = companions. Faz 42 scopes campaigns to the
+  // booker only — companion lines pass through with no discount.
+  // Optional for back-compat: undefined behaves as 1.
+  personIndex?: number;
 };
 
 export type CampaignPricingInput = {
@@ -48,7 +52,8 @@ export type SkippedCampaignDetail = {
     | 'OFF_PEAK_NOT_ELIGIBLE'
     | 'WALLET_EMPTY'
     | 'SERVICE_NOT_ELIGIBLE'
-    | 'INVALID_DISCOUNT_CONFIG';
+    | 'INVALID_DISCOUNT_CONFIG'
+    | 'COMPANION_LINE';
 };
 
 export type CampaignPricingLineResult = {
@@ -59,6 +64,10 @@ export type CampaignPricingLineResult = {
   appliedCampaigns: AppliedCampaignDetail[];
   skippedCampaigns: SkippedCampaignDetail[];
   packageCovered: boolean;
+  // Mirrored from input so the BILL_THRESHOLD aggregate pass can
+  // restrict its bill calculation + reward distribution to the
+  // booker's lines (Faz 42).
+  personIndex?: number;
 };
 
 export type CampaignPricingResult = {
@@ -340,7 +349,15 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
   ]);
 
   const sortedCampaigns = [...campaigns].sort(buildCampaignComparator);
-  const eligibleServiceCount = input.lines.filter((line) => !line.isPackageCovered).length;
+  // Faz 42: campaigns scope to the booker (personIndex 1) only. Both
+  // the eligibility count (how many qualifying services) and the
+  // bill threshold below honor that scope — companion lines neither
+  // contribute to the threshold nor receive a discount.
+  const isMainPersonLine = (line: CampaignPricingLineInput): boolean =>
+    (line.personIndex ?? 1) === 1;
+  const eligibleServiceCount = input.lines.filter(
+    (line) => !line.isPackageCovered && isMainPersonLine(line),
+  ).length;
   const weekdayKey = getInTimezoneWeekdayKey(startTime, timezone);
   const minuteOfDay = getInTimezoneMinuteOfDay(startTime, timezone);
 
@@ -356,6 +373,28 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
         appliedCampaigns: [],
         skippedCampaigns: [],
         packageCovered,
+        personIndex: line.personIndex,
+      };
+    }
+
+    // Companion lines: list price stands, every campaign records as
+    // skipped with COMPANION_LINE so the UI can surface "this offer
+    // only applies to your services" if it wants to.
+    if (!isMainPersonLine(line)) {
+      return {
+        serviceId: Number(line.serviceId),
+        listPrice: base,
+        discountTotal: 0,
+        finalPrice: base,
+        appliedCampaigns: [],
+        skippedCampaigns: sortedCampaigns.map((campaign) => ({
+          campaignId: campaign.id,
+          campaignType: campaign.type,
+          campaignName: campaign.name,
+          reasonCode: 'COMPANION_LINE' as const,
+        })),
+        packageCovered,
+        personIndex: line.personIndex,
       };
     }
 
@@ -510,6 +549,7 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
       appliedCampaigns,
       skippedCampaigns,
       packageCovered,
+      personIndex: line.personIndex,
     };
   });
 
@@ -537,8 +577,13 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
     if (thresholdAmount <= 0 || rewardValue <= 0) continue;
 
     // Only consider lines that aren't already fully covered (package
-    // lines have finalPrice 0 and shouldn't count toward the threshold).
-    const candidateLines = lines.filter((l) => !l.packageCovered && l.finalPrice > 0);
+    // lines have finalPrice 0 and shouldn't count toward the threshold)
+    // AND belong to the booker — companion lines have no campaign
+    // entitlement, so they neither push the bill across the threshold
+    // nor receive a share of the reward (Faz 42).
+    const candidateLines = lines.filter(
+      (l) => !l.packageCovered && l.finalPrice > 0 && (l.personIndex ?? 1) === 1,
+    );
     const currentTotal = candidateLines.reduce((acc, l) => acc + l.finalPrice, 0);
     if (currentTotal < thresholdAmount) continue;
     if (!candidateLines.length) continue;
