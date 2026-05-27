@@ -3,6 +3,7 @@ import { UserRole, SalonCategory } from '@prisma/client';
 import { z } from 'zod';
 import { prisma } from '../prisma.js';
 import { BusinessError } from '../lib/errors.js';
+import { resolveStaffProfile } from '../services/staffProfileResolver.js';
 import { authenticateIdentity } from '../middleware/auth.js';
 import { createAuthTokens } from '../services/mobileAuth.js';
 import { ensureSalonServiceCategories } from '../services/salonCategorySetup.js';
@@ -419,10 +420,27 @@ router.get('/:slug/homepage', async (req: any, res: any) => {
             id: true,
             name: true,
             firstName: true,
+            lastName: true,
             gender: true,
             title: true,
             bio: true,
             profileImageUrl: true,
+            // Pull the linked identity for the cross-salon profile
+            // resolver. Orphan staff (no membership) fall back to
+            // the Staff columns above.
+            membership: {
+              select: {
+                identity: {
+                  select: {
+                    firstName: true,
+                    lastName: true,
+                    displayName: true,
+                    gender: true,
+                    profileImageUrl: true,
+                  },
+                },
+              },
+            },
             // NOTE: StaffService is used here for testimonial-category matching only;
             // 10 is enough to find a category match. For the full staff-service mapping
             // a dedicated endpoint should be used (TODO: GET /api/salons/:slug/staff/:id/services).
@@ -641,13 +659,16 @@ router.get('/:slug/homepage', async (req: any, res: any) => {
         displayOrder: category.displayOrder,
         serviceCount: category._count.Service,
       })),
-      experts: salon.staff.map((expert) => ({
-        id: expert.id,
-        name: expert.name,
-        title: expert.title,
-        bio: expert.bio,
-        profileImageUrl: expert.profileImageUrl,
-      })),
+      experts: salon.staff.map((expert) => {
+        const resolved = resolveStaffProfile(expert, expert.membership?.identity ?? null);
+        return {
+          id: expert.id,
+          name: resolved.name,
+          title: expert.title,
+          bio: expert.bio,
+          profileImageUrl: resolved.profileImageUrl,
+        };
+      }),
       gallery,
       testimonials,
       booking: {

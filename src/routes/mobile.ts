@@ -93,20 +93,46 @@ router.get('/bootstrap', authenticateToken, async (req: any, res: any) => {
       });
     })();
 
+    // Bootstrap profile: read the identity for cross-salon name +
+    // gender (post-Phase-3 source of truth), and resolve a
+    // Staff.id when the user has a Staff record in THIS salon so
+    // the app can keep deep-linking to per-salon operational data
+    // (schedule, time-off, commission). For users who are
+    // membership-only in this salon (e.g. an owner without a
+    // Staff record), linkedStaffId will be null and the profile
+    // editor still works against the identity.
     const linkedStaffPromise =
       membershipId > 0
-        ? prisma.staff.findFirst({
-            where: {
-              salonId: user.salon.id,
-              membershipId,
-            },
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              gender: true,
-            },
-          })
+        ? (async () => {
+            const [staffRow, membership] = await Promise.all([
+              prisma.staff.findFirst({
+                where: { salonId: user.salon.id, membershipId },
+                select: { id: true },
+              }),
+              prisma.salonMembership.findUnique({
+                where: { id: membershipId },
+                select: {
+                  identity: {
+                    select: {
+                      firstName: true,
+                      lastName: true,
+                      gender: true,
+                      profileImageUrl: true,
+                    },
+                  },
+                },
+              }),
+            ]);
+            const i = membership?.identity;
+            if (!staffRow && !i) return null;
+            return {
+              id: staffRow?.id ?? null,
+              firstName: i?.firstName ?? null,
+              lastName: i?.lastName ?? null,
+              gender: i?.gender ?? null,
+              profileImageUrl: i?.profileImageUrl ?? null,
+            };
+          })()
         : Promise.resolve(null);
 
     const transactionPromise = prisma.$transaction([
@@ -185,10 +211,24 @@ router.get('/bootstrap', authenticateToken, async (req: any, res: any) => {
         workingDays: settings?.workingDays ?? null,
       },
       staffProfile: {
+        // linkedStaffId is the per-salon Staff row id when this
+        // user actually has one in the current salon; null for
+        // membership-only users (typically owners who never
+        // appear in the staff list). The profile editor itself
+        // does not need this — it writes to the identity — but
+        // some screens still deep-link to staff-scoped pages.
         linkedStaffId: linkedStaff?.id ?? null,
         firstName: linkedStaff?.firstName ?? null,
         lastName: linkedStaff?.lastName ?? null,
         gender: linkedStaff?.gender ?? null,
+        // Identity-owned photo. Same value for the same user
+        // across every salon they belong to.
+        profileImageUrl: linkedStaff?.profileImageUrl ?? null,
+        // Prompt the profile-completion flow when the identity
+        // doesn't yet have firstName + gender. Users without a
+        // linked Staff still get prompted (owners are encouraged
+        // to fill their account profile so conversation system
+        // messages and the team list show a real name).
         completionRequired: Boolean(linkedStaff && (!linkedStaff.firstName || !linkedStaff.gender)),
       },
       notifications: {
@@ -203,6 +243,20 @@ router.get('/bootstrap', authenticateToken, async (req: any, res: any) => {
   }
 });
 
+/**
+ * GET /staff-profile  (mounted at /api/mobile)
+ *
+ * Returns the authenticated user's profile. Profile fields
+ * (firstName, lastName, gender, profileImageUrl) live on
+ * UserIdentity so the same account sees the same profile across
+ * every salon they belong to. Per-salon Staff overrides (title,
+ * bio) are layered in when a Staff row exists for this
+ * membership — they're genuinely role-specific.
+ *
+ * The endpoint no longer 404s when no Staff row is linked: an
+ * owner who is a membership-only user (e.g. salon 2 owner without
+ * a Staff record) still has a profile and is allowed to edit it.
+ */
 router.get('/staff-profile', authenticateToken, async (req: any, res: any) => {
   if (!req.user) throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
   const salonId = req.user.salonId;
@@ -211,29 +265,64 @@ router.get('/staff-profile', authenticateToken, async (req: any, res: any) => {
     throw new BusinessError('FORBIDDEN', 'Membership required.', 403);
   }
 
-  const staff = await prisma.staff.findFirst({
-    where: { salonId, membershipId },
-    select: {
-      id: true,
-      name: true,
-      firstName: true,
-      lastName: true,
-      gender: true,
-      title: true,
-      bio: true,
-      profileImageUrl: true,
+  const membership = await prisma.salonMembership.findUnique({
+    where: { id: membershipId },
+    include: {
+      identity: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          displayName: true,
+          gender: true,
+          profileImageUrl: true,
+        },
+      },
     },
   });
-  if (!staff) {
-    throw new BusinessError('NOT_FOUND', 'Linked staff profile not found.', 404);
+  if (!membership) {
+    throw new BusinessError('NOT_FOUND', 'Membership not found.', 404);
   }
 
-  return res.status(200).json({ item: staff });
+  // Per-salon overrides — title and bio are intentionally per-salon
+  // because a person's role can differ between salons. Surface them
+  // alongside the identity-owned fields so the client doesn't need
+  // to make a second call.
+  const staff = await prisma.staff.findFirst({
+    where: { salonId, membershipId },
+    select: { id: true, title: true, bio: true },
+  });
+
+  const i = membership.identity;
+  return res.status(200).json({
+    item: {
+      id: staff?.id ?? null,
+      firstName: i.firstName,
+      lastName: i.lastName,
+      name: i.displayName || [i.firstName, i.lastName].filter(Boolean).join(' ').trim() || null,
+      gender: i.gender,
+      profileImageUrl: i.profileImageUrl,
+      title: staff?.title ?? null,
+      bio: staff?.bio ?? null,
+    },
+  });
 });
 
+/**
+ * PUT /staff-profile  (mounted at /api/mobile)
+ *
+ * Saves the cross-salon profile fields onto UserIdentity. Does NOT
+ * touch any Staff row — Staff is a per-salon operational record
+ * (StaffService assignments, monthly goal, theme color, title)
+ * and its name/photo columns are deprecated (a separate Phase 6
+ * migration drops them).
+ *
+ * Works for owners who have no Staff record at all — they're a
+ * membership without staffMembers, and this endpoint just updates
+ * their identity.
+ */
 router.put('/staff-profile', authenticateToken, async (req: any, res: any) => {
   if (!req.user) throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
-  const salonId = req.user.salonId;
   const membershipId = Number(req.user.membershipId || 0);
   if (!membershipId) {
     throw new BusinessError('FORBIDDEN', 'Membership required.', 403);
@@ -250,58 +339,47 @@ router.put('/staff-profile', authenticateToken, async (req: any, res: any) => {
     throw new BusinessError('VALIDATION_FAILED', 'gender must be female, male or other.', 400);
   }
 
-  const staff = await prisma.staff.findFirst({
-    where: { salonId, membershipId },
-    select: { id: true },
-  });
-  if (!staff) {
-    throw new BusinessError('NOT_FOUND', 'Linked staff profile not found.', 404);
-  }
-
-  const lastName = lastNameRaw || null;
-  const name = [firstName, lastName].filter(Boolean).join(' ').trim();
   const membership = await prisma.salonMembership.findUnique({
     where: { id: membershipId },
     select: { identityId: true },
   });
+  if (!membership?.identityId) {
+    throw new BusinessError('NOT_FOUND', 'Linked identity not found.', 404);
+  }
 
-  const updated = await prisma.$transaction(async (tx) => {
-    const next = await tx.staff.update({
-      where: { id: staff.id },
-      data: {
-        firstName,
-        lastName,
-        gender: genderRaw as any,
-        name,
-      },
-      select: {
-        id: true,
-        name: true,
-        firstName: true,
-        lastName: true,
-        gender: true,
-        title: true,
-        bio: true,
-        profileImageUrl: true,
-      },
-    });
+  const lastName = lastNameRaw || null;
+  const displayName = [firstName, lastName].filter(Boolean).join(' ').trim() || null;
 
-    // Mirror name fields onto UserIdentity so the access-users list
-    // (team management screen) and any other consumer that reads from
-    // Identity show the same value the owner just saved on Staff.
-    // Without this, Staff is fresh but Identity.displayName stays
-    // stale, and the team list keeps the old name visible.
-    if (membership?.identityId) {
-      await tx.userIdentity.update({
-        where: { id: membership.identityId },
-        data: { firstName, lastName, displayName: name || null },
-      });
-    }
-
-    return next;
+  const identity = await prisma.userIdentity.update({
+    where: { id: membership.identityId },
+    data: {
+      firstName,
+      lastName,
+      displayName,
+      gender: genderRaw as any,
+    },
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      displayName: true,
+      gender: true,
+      profileImageUrl: true,
+    },
   });
 
-  return res.status(200).json({ item: updated });
+  return res.status(200).json({
+    item: {
+      id: null,
+      firstName: identity.firstName,
+      lastName: identity.lastName,
+      name: identity.displayName,
+      gender: identity.gender,
+      profileImageUrl: identity.profileImageUrl,
+      title: null,
+      bio: null,
+    },
+  });
 });
 
 /**
@@ -356,13 +434,18 @@ router.put('/account-name', authenticateToken, async (req: any, res: any) => {
 /**
  * POST /staff-profile/photo  (mounted at /api/mobile)
  *
- * Authenticated staff/owner uploads a new profile photo for the Staff row
- * linked to their SalonMembership. Mirrors the R2 upload pattern from
- * routes/salonLogo.ts (multer memory storage + lib/r2 helper).
+ * Authenticated user uploads a new profile photo. The image is
+ * stored on R2 and the URL is written to UserIdentity — the same
+ * photo therefore shows up in every salon this account belongs to
+ * instead of being scoped to one Staff row.
  *
  * Multipart field name: `image`. Max 2 MB. JPEG / PNG / WebP only.
  *
- * Response: { staff: { id, profileImageUrl } }
+ * Response: { staff: { id, profileImageUrl } } — the `staff` key
+ * is kept for backwards compatibility with existing mobile clients
+ * that destructure `resp.staff.profileImageUrl`. The `id` is the
+ * identity id (not a salon-scoped staff id) for users without a
+ * Staff record (owners-only memberships).
  */
 router.post(
   '/staff-profile/photo',
@@ -370,9 +453,8 @@ router.post(
   staffPhotoUpload.single('image'),
   async (req: any, res: Response) => {
     if (!req.user) throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
-    const salonId = Number(req.user.salonId || 0);
     const membershipId = Number(req.user.membershipId || 0);
-    if (!salonId || !membershipId) {
+    if (!membershipId) {
       throw new BusinessError('FORBIDDEN', 'Membership required.', 403);
     }
 
@@ -395,16 +477,28 @@ router.post(
       );
     }
 
-    const staff = await prisma.staff.findFirst({
-      where: { salonId, membershipId },
+    const membership = await prisma.salonMembership.findUnique({
+      where: { id: membershipId },
+      select: { identityId: true },
+    });
+    if (!membership?.identityId) {
+      throw new BusinessError('NOT_FOUND', 'Linked identity not found.', 404);
+    }
+
+    const identity = await prisma.userIdentity.findUnique({
+      where: { id: membership.identityId },
       select: { id: true, profileImageUrl: true },
     });
-    if (!staff) {
-      throw new BusinessError('NOT_FOUND', 'Linked staff profile not found.', 404);
+    if (!identity) {
+      throw new BusinessError('NOT_FOUND', 'Identity not found.', 404);
     }
 
     const ext = inferStaffPhotoExtension(normalizedType);
-    const objectKey = `salons/${salonId}/staff/${staff.id}-${Date.now()}-${randomBytes(4).toString('hex')}.${ext}`;
+    // Photos live under `users/<identityId>/` (not under a salon
+    // prefix) so they're shared across every salon this user
+    // belongs to. The salon prefix from the legacy path is kept
+    // around only for the cleanup heuristic below.
+    const objectKey = `users/${identity.id}/avatar-${Date.now()}-${randomBytes(4).toString('hex')}.${ext}`;
 
     let publicUrl: string;
     try {
@@ -415,27 +509,30 @@ router.post(
       });
     } catch (err: any) {
       console.error('[staff-photo] R2 upload failed', {
-        salonId,
-        staffId: staff.id,
+        identityId: identity.id,
         message: err?.message || String(err),
       });
       throw new BusinessError('UPLOAD_FAILED', 'Fotoğraf yüklenemedi.', 500);
     }
 
-    const updated = await prisma.staff.update({
-      where: { id: staff.id },
+    const updated = await prisma.userIdentity.update({
+      where: { id: identity.id },
       data: { profileImageUrl: publicUrl },
       select: { id: true, profileImageUrl: true },
     });
 
-    // Best-effort cleanup of the previous photo. We only delete if the prior
-    // URL is under our staff prefix so we don't accidentally drop avatars
-    // hosted elsewhere (e.g. legacy seeded URLs).
-    if (staff.profileImageUrl) {
+    // Best-effort cleanup of the previous photo. Delete only if the
+    // prior URL is under one of OUR managed prefixes (the new
+    // `users/<id>/` or the legacy `salons/<id>/staff/`) so we never
+    // drop avatars hosted elsewhere (e.g. external seed URLs).
+    if (identity.profileImageUrl) {
       try {
-        const parsed = new URL(staff.profileImageUrl);
+        const parsed = new URL(identity.profileImageUrl);
         const prevKey = parsed.pathname.replace(/^\/+/, '').replace(/^[^/]+\//, '');
-        if (prevKey.startsWith(`salons/${salonId}/staff/`) && prevKey !== objectKey) {
+        const ours =
+          prevKey.startsWith(`users/${identity.id}/`) ||
+          /^salons\/\d+\/staff\//.test(prevKey);
+        if (ours && prevKey !== objectKey) {
           await deleteR2Object(prevKey);
         }
       } catch {
@@ -443,6 +540,8 @@ router.post(
       }
     }
 
+    // Response shape kept compatible with existing mobile clients
+    // (`resp.staff.profileImageUrl` is the destructure they use).
     return res.status(200).json({ staff: updated });
   },
 );

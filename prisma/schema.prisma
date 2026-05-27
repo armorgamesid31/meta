@@ -260,6 +260,15 @@ model UserIdentity {
   firstName           String?
   lastName            String?
   displayName         String?
+  // Cross-salon profile fields. Historically these lived on each
+  // per-salon Staff row, which meant the same account had a
+  // different profile per salon they belonged to. Phase 1 of the
+  // staff-profile-to-identity migration added them here; the
+  // resolver in services/staffProfileResolver.ts treats Identity
+  // as the source of truth for linked staff and falls back to
+  // Staff for orphan rows.
+  profileImageUrl     String?
+  gender              CustomerGender?
   isActive            Boolean             @default(true)
   phoneVerifiedAt     DateTime?
   emailVerifiedAt     DateTime?

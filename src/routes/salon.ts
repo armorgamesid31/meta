@@ -8,6 +8,7 @@ import { normalizeLocale } from '../constants/locales.js';
 import { resolveServiceTranslations } from '../services/serviceTranslations.js';
 import { BusinessError } from '../lib/errors.js';
 import { slugify, withSlugCollision } from '../utils/slug.js';
+import { resolveStaffProfile } from '../services/staffProfileResolver.js';
 import { OnboardingStatus, OnboardingStep, Prisma } from '@prisma/client';
 import { markTaskComplete } from '../services/journeyService.js';
 import { deriveTones, PRESET_DEFAULT_BRAND, isPresetId } from '../lib/theme/derive.js';
@@ -708,22 +709,43 @@ router.get('/services/:serviceId/staff', async (req: any, res: any) => {
         Staff: {
           select: {
             id: true,
+            // Legacy Staff profile columns are kept as a fallback
+            // for orphan staff (no membership/identity). For
+            // membership-linked staff the identity values win via
+            // resolveStaffProfile.
             name: true,
-            title: true,
+            firstName: true,
+            lastName: true,
             profileImageUrl: true,
+            title: true,
+            membership: {
+              select: {
+                identity: {
+                  select: {
+                    firstName: true,
+                    lastName: true,
+                    displayName: true,
+                    profileImageUrl: true,
+                  },
+                },
+              },
+            },
           }
         }
       }
     });
 
-    const response = staffServices.map(ss => ({
-      id: ss.Staff.id,
-      name: ss.Staff.name,
-      title: ss.Staff.title || null,
-      profileImageUrl: ss.Staff.profileImageUrl || null,
-      price: ss.price,
-      duration: ss.duration
-    }));
+    const response = staffServices.map(ss => {
+      const resolved = resolveStaffProfile(ss.Staff, ss.Staff.membership?.identity ?? null);
+      return {
+        id: ss.Staff.id,
+        name: resolved.name,
+        title: ss.Staff.title || null,
+        profileImageUrl: resolved.profileImageUrl,
+        price: ss.price,
+        duration: ss.duration,
+      };
+    });
 
     res.json({ staff: response });
   } catch (error) {
@@ -798,17 +820,39 @@ router.get('/staff', authenticateToken, async (req: any, res: any) => {
   }
 
   try {
-    const staff = await prisma.staff.findMany({
-      where: {
-        salonId: req.user.salonId
-      },
+    const rows = await prisma.staff.findMany({
+      where: { salonId: req.user.salonId },
       select: {
         id: true,
         name: true,
-        title: true,
+        firstName: true,
+        lastName: true,
         profileImageUrl: true,
+        title: true,
+        membership: {
+          select: {
+            identity: {
+              select: {
+                firstName: true,
+                lastName: true,
+                displayName: true,
+                profileImageUrl: true,
+              },
+            },
+          },
+        },
       },
-      orderBy: { name: 'asc' }
+      orderBy: { name: 'asc' },
+    });
+
+    const staff = rows.map((row) => {
+      const resolved = resolveStaffProfile(row, row.membership?.identity ?? null);
+      return {
+        id: row.id,
+        name: resolved.name,
+        title: row.title || null,
+        profileImageUrl: resolved.profileImageUrl,
+      };
     });
 
     res.json({ staff });
@@ -827,17 +871,39 @@ router.get('/staff/public', async (req: any, res: any) => {
   }
 
   try {
-    const staff = await prisma.staff.findMany({
-      where: {
-        salonId
-      },
+    const rows = await prisma.staff.findMany({
+      where: { salonId },
       select: {
         id: true,
         name: true,
-        title: true,
+        firstName: true,
+        lastName: true,
         profileImageUrl: true,
+        title: true,
+        membership: {
+          select: {
+            identity: {
+              select: {
+                firstName: true,
+                lastName: true,
+                displayName: true,
+                profileImageUrl: true,
+              },
+            },
+          },
+        },
       },
-      orderBy: { name: 'asc' }
+      orderBy: { name: 'asc' },
+    });
+
+    const staff = rows.map((row) => {
+      const resolved = resolveStaffProfile(row, row.membership?.identity ?? null);
+      return {
+        id: row.id,
+        name: resolved.name,
+        title: row.title || null,
+        profileImageUrl: resolved.profileImageUrl,
+      };
     });
 
     res.json({ staff });

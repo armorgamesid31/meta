@@ -21,6 +21,7 @@ import { ensureSalonServiceCategories } from '../services/salonCategorySetup.js'
 import { ensureSalonServiceRegions } from '../services/salonRegionSetup.js';
 import { normalizeInstagramIdentity, normalizePhoneDigits } from '../services/identityService.js';
 import { upsertConversationMessageEvent } from '../services/conversationMessageEvents.js';
+import { resolveStaffProfile } from '../services/staffProfileResolver.js';
 import { subscribeConversationStream } from '../services/conversationEventsBus.js';
 import {
   getLatestRealtimeCursor,
@@ -2245,16 +2246,26 @@ function mapStaffForMobile(staff: any) {
 
   const services = Array.from(serviceById.values()).sort((a, b) => a.name.localeCompare(b.name, 'tr'));
 
+  // Cross-salon profile resolution: when the staff row is linked
+  // to a membership, the linked UserIdentity is the source of
+  // truth for firstName/lastName/displayName/photo/gender. The
+  // Staff columns remain as a fallback for orphan staff (no
+  // membership). The caller must `include: { membership: { select:
+  // { identity: { select: { ... } } } } }` for the resolver to
+  // surface fresh values.
+  const identity = staff?.membership?.identity ?? null;
+  const resolved = resolveStaffProfile(staff, identity);
+
   return {
     id: staff.id,
-    name: staff.name,
-    firstName: staff.firstName,
-    lastName: staff.lastName,
-    gender: staff.gender,
+    name: resolved.name,
+    firstName: resolved.firstName,
+    lastName: resolved.lastName,
+    gender: resolved.gender,
     title: staff.title,
     bio: staff.bio,
     phone: staff.phone,
-    profileImageUrl: staff.profileImageUrl,
+    profileImageUrl: resolved.profileImageUrl,
     themeColor: normalizeThemeColor(staff.themeColor) || paletteColorBySeed(staff.id),
     monthlyGoal: staff.monthlyGoal ?? 0,
     services,
@@ -7106,6 +7117,23 @@ router.get('/staff', authenticateToken, async (req: any, res: any) => {
         profileImageUrl: true,
         monthlyGoal: true,
         commissionRate: true,
+        // Cross-salon profile (Phase 3): for membership-linked
+        // staff the resolver reads firstName / lastName /
+        // displayName / photo / gender from the identity row
+        // instead of the legacy Staff columns.
+        membership: {
+          select: {
+            identity: {
+              select: {
+                firstName: true,
+                lastName: true,
+                displayName: true,
+                gender: true,
+                profileImageUrl: true,
+              },
+            },
+          },
+        },
         StaffService: {
           where: {
             Service: { salonId },
@@ -7241,6 +7269,23 @@ router.post('/staff', authenticateToken, async (req: any, res: any) => {
         themeColor: true,
         profileImageUrl: true,
         monthlyGoal: true,
+        // Cross-salon profile (Phase 3): for membership-linked
+        // staff the resolver reads firstName / lastName /
+        // displayName / photo / gender from the identity row
+        // instead of the legacy Staff columns.
+        membership: {
+          select: {
+            identity: {
+              select: {
+                firstName: true,
+                lastName: true,
+                displayName: true,
+                gender: true,
+                profileImageUrl: true,
+              },
+            },
+          },
+        },
         StaffService: {
           where: {
             Service: { salonId },
@@ -7365,49 +7410,66 @@ router.put('/staff/:id', authenticateToken, async (req: any, res: any) => {
       }
 
       if (Object.keys(updates).length > 0) {
-        await tx.staff.update({
-          where: { id: staffId },
-          data: updates,
-        });
+        // Split the patch into identity-owned fields (cross-salon
+        // profile) and salon-owned fields (per-salon operational
+        // record). For staff linked to a membership, identity
+        // fields are sent to UserIdentity and the Staff row keeps
+        // only the operational columns. For orphans, everything
+        // lands on Staff as before — they have no identity to
+        // write to.
+        const IDENTITY_FIELDS = new Set([
+          'firstName',
+          'lastName',
+          'name',
+          'profileImageUrl',
+          'phone',
+        ]);
+        const staffPatch: Record<string, unknown> = {};
+        const identityPatch: Record<string, unknown> = {};
+        for (const [key, value] of Object.entries(updates)) {
+          if (existing.membershipId && IDENTITY_FIELDS.has(key)) {
+            // Translate `name` → `displayName` for the identity row.
+            if (key === 'name') identityPatch.displayName = value;
+            else identityPatch[key] = value;
+          } else {
+            staffPatch[key] = value;
+          }
+        }
 
-        // Mirror identity-bound fields onto UserIdentity for any staff
-        // row that is linked to a SalonMembership (most notably the
-        // salon owner). The team-management list and access-control
-        // screens read displayName/firstName/lastName from
-        // UserIdentity, so without this sync those screens keep
-        // showing the pre-edit name even after Staff was updated.
-        if (existing.membershipId) {
-          const identityPatch: Record<string, unknown> = {};
-          if (updates.firstName !== undefined) identityPatch.firstName = updates.firstName;
-          if (updates.lastName !== undefined) identityPatch.lastName = updates.lastName;
-          if (updates.name !== undefined) identityPatch.displayName = updates.name;
-          if (updates.phone !== undefined) identityPatch.phone = updates.phone;
-          if (Object.keys(identityPatch).length > 0) {
-            const membership = await tx.salonMembership.findUnique({
-              where: { id: existing.membershipId },
-              select: { identityId: true },
-            });
-            if (membership?.identityId) {
-              try {
-                await tx.userIdentity.update({
-                  where: { id: membership.identityId },
-                  data: identityPatch,
-                });
-              } catch (identityError: any) {
-                // Phone has a global unique index; if the new value
-                // collides with another identity we keep the Staff
-                // update but skip the identity mirror for phone only.
-                if (identityError?.code === 'P2002' && identityPatch.phone !== undefined) {
-                  const { phone: _phone, ...rest } = identityPatch;
-                  if (Object.keys(rest).length > 0) {
-                    await tx.userIdentity.update({
-                      where: { id: membership.identityId },
-                      data: rest,
-                    });
-                  }
-                } else {
-                  throw identityError;
+        if (Object.keys(staffPatch).length > 0) {
+          await tx.staff.update({
+            where: { id: staffId },
+            data: staffPatch,
+          });
+        }
+
+        if (existing.membershipId && Object.keys(identityPatch).length > 0) {
+          const membership = await tx.salonMembership.findUnique({
+            where: { id: existing.membershipId },
+            select: { identityId: true },
+          });
+          if (membership?.identityId) {
+            try {
+              await tx.userIdentity.update({
+                where: { id: membership.identityId },
+                data: identityPatch,
+              });
+            } catch (identityError: any) {
+              // Phone has a global unique index; if the new value
+              // collides with another identity we drop just the
+              // phone from the patch and apply the rest. This
+              // matches the legacy "best-effort mirror" semantics
+              // — phone collisions shouldn't block a name edit.
+              if (identityError?.code === 'P2002' && identityPatch.phone !== undefined) {
+                const { phone: _phone, ...rest } = identityPatch;
+                if (Object.keys(rest).length > 0) {
+                  await tx.userIdentity.update({
+                    where: { id: membership.identityId },
+                    data: rest,
+                  });
                 }
+              } else {
+                throw identityError;
               }
             }
           }
@@ -7468,6 +7530,23 @@ router.put('/staff/:id', authenticateToken, async (req: any, res: any) => {
         themeColor: true,
         profileImageUrl: true,
         monthlyGoal: true,
+        // Cross-salon profile (Phase 3): for membership-linked
+        // staff the resolver reads firstName / lastName /
+        // displayName / photo / gender from the identity row
+        // instead of the legacy Staff columns.
+        membership: {
+          select: {
+            identity: {
+              select: {
+                firstName: true,
+                lastName: true,
+                displayName: true,
+                gender: true,
+                profileImageUrl: true,
+              },
+            },
+          },
+        },
         StaffService: {
           where: {
             Service: { salonId },
@@ -9438,8 +9517,16 @@ router.get('/analytics/inventory', authenticateToken, async (req: any, res: any)
 
     // Period içindeki hareketler — reason bazlı dağılım
     const itemNameById = new Map(items.map((i) => [i.id, i.name]));
+    const itemsById = new Map(items.map((i) => [i.id, i]));
     const reasonStats: Record<string, { count: number; totalIn: number; totalOut: number }> = {};
     const itemMovementMap = new Map<number, { id: number; name: string; inQty: number; outQty: number; netQty: number; movementCount: number }>();
+
+    // "Bu dönem stoka harcama" agregasyonu — sadece PURCHASE reason'lı
+    // IN hareketleri sayılır, ürünün purchasePrice'ı null ise hesaba
+    // dahil edilmez (frontend disclaimer için sayısını ayrı tutuyoruz).
+    let purchaseSpend = 0;
+    const spendByItem = new Map<number, { id: number; name: string; spend: number }>();
+    const missingPriceItemIds = new Set<number>();
 
     for (const m of movements) {
       const reason = m.reason || 'UNKNOWN';
@@ -9461,7 +9548,28 @@ router.get('/analytics/inventory', authenticateToken, async (req: any, res: any)
       row.netQty = row.inQty - row.outQty;
       row.movementCount += 1;
       itemMovementMap.set(m.inventoryItemId, row);
+
+      // Purchase spend ayrı agregasyon
+      if (reason === 'PURCHASE' && m.type === 'IN') {
+        const item = itemsById.get(m.inventoryItemId);
+        if (item) {
+          if (item.purchasePrice == null) {
+            missingPriceItemIds.add(item.id);
+          } else {
+            const amount = m.quantity * item.purchasePrice;
+            purchaseSpend += amount;
+            const spendRow = spendByItem.get(item.id) || { id: item.id, name: item.name, spend: 0 };
+            spendRow.spend += amount;
+            spendByItem.set(item.id, spendRow);
+          }
+        }
+      }
     }
+
+    const topSpendItems = Array.from(spendByItem.values())
+      .sort((a, b) => b.spend - a.spend)
+      .slice(0, 5)
+      .map((row) => ({ ...row, spend: Math.round(row.spend * 100) / 100 }));
 
     // En hareketli ürünler — toplam hareket sayısına göre
     const topMovers = Array.from(itemMovementMap.values())
@@ -9478,10 +9586,13 @@ router.get('/analytics/inventory', authenticateToken, async (req: any, res: any)
         totalMargin: Math.round(totalMargin * 100) / 100,
         itemsWithPrice,
         itemsWithCost,
+        purchaseSpend: Math.round(purchaseSpend * 100) / 100,
+        missingPriceItemCount: missingPriceItemIds.size,
       },
       categories,
       reasonStats,
       topMovers,
+      topSpendItems,
       lowStockItems: lowStockItems.slice(0, 20).map((i) => ({
         id: i.id,
         name: i.name,
