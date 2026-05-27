@@ -9369,6 +9369,135 @@ router.get('/analytics/overview', authenticateToken, async (req: any, res: any) 
   }
 });
 
+// Stok analitiği — overview'dan ayrı çünkü cost'u period filtresine
+// göre değişiyor ve overview'ı her dakikada bir koşan dashboard'ları
+// gereksiz şişiriyor. AnalyticsPage bu endpoint'i ikinci request'le
+// yan yana çağırıyor.
+router.get('/analytics/inventory', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  const now = new Date();
+  const from = parseIsoDate(req.query.from) || startOfCurrentWeekMonday(now);
+  const to = parseIsoDate(req.query.to) || now;
+
+  if (from >= to) {
+    throw new BusinessError('VALIDATION_FAILED', 'from must be earlier than to.', 400);
+  }
+
+  try {
+    const [items, movements] = await Promise.all([
+      prisma.inventoryItem.findMany({
+        where: { salonId, isActive: true },
+      }),
+      prisma.inventoryMovement.findMany({
+        where: {
+          salonId,
+          createdAt: { gte: from, lte: to },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
+
+    // Üst seviye agregasyon
+    const totalItems = items.length;
+    const lowStockItems = items.filter((i) => i.currentStock <= i.minStock);
+    const outOfStockItems = items.filter((i) => i.currentStock <= 0);
+
+    // Stok değeri — satış fiyatı üzerinden, alış fiyatı üzerinden ve
+    // marj (varsa). NULL fiyatları sayma.
+    let totalValueAtSale = 0;
+    let totalValueAtCost = 0;
+    let totalMargin = 0;
+    let itemsWithPrice = 0;
+    let itemsWithCost = 0;
+    for (const it of items) {
+      if (it.price != null) {
+        totalValueAtSale += it.price * it.currentStock;
+        itemsWithPrice += 1;
+      }
+      if (it.purchasePrice != null) {
+        totalValueAtCost += it.purchasePrice * it.currentStock;
+        itemsWithCost += 1;
+        if (it.price != null) {
+          totalMargin += (it.price - it.purchasePrice) * it.currentStock;
+        }
+      }
+    }
+
+    // Kategori dağılımı — ürün sayısı + stok değeri
+    const categoryMap = new Map<string, { name: string; itemCount: number; stockUnits: number; valueAtSale: number }>();
+    for (const it of items) {
+      const cat = (it.category || '').trim() || 'Genel';
+      const row = categoryMap.get(cat) || { name: cat, itemCount: 0, stockUnits: 0, valueAtSale: 0 };
+      row.itemCount += 1;
+      row.stockUnits += it.currentStock;
+      if (it.price != null) row.valueAtSale += it.price * it.currentStock;
+      categoryMap.set(cat, row);
+    }
+    const categories = Array.from(categoryMap.values())
+      .sort((a, b) => b.valueAtSale - a.valueAtSale || b.itemCount - a.itemCount);
+
+    // Period içindeki hareketler — reason bazlı dağılım
+    const itemNameById = new Map(items.map((i) => [i.id, i.name]));
+    const reasonStats: Record<string, { count: number; totalIn: number; totalOut: number }> = {};
+    const itemMovementMap = new Map<number, { id: number; name: string; inQty: number; outQty: number; netQty: number; movementCount: number }>();
+
+    for (const m of movements) {
+      const reason = m.reason || 'UNKNOWN';
+      if (!reasonStats[reason]) reasonStats[reason] = { count: 0, totalIn: 0, totalOut: 0 };
+      reasonStats[reason].count += 1;
+      if (m.type === 'IN') reasonStats[reason].totalIn += m.quantity;
+      else reasonStats[reason].totalOut += m.quantity;
+
+      const row = itemMovementMap.get(m.inventoryItemId) || {
+        id: m.inventoryItemId,
+        name: itemNameById.get(m.inventoryItemId) || `#${m.inventoryItemId}`,
+        inQty: 0,
+        outQty: 0,
+        netQty: 0,
+        movementCount: 0,
+      };
+      if (m.type === 'IN') row.inQty += m.quantity;
+      else row.outQty += m.quantity;
+      row.netQty = row.inQty - row.outQty;
+      row.movementCount += 1;
+      itemMovementMap.set(m.inventoryItemId, row);
+    }
+
+    // En hareketli ürünler — toplam hareket sayısına göre
+    const topMovers = Array.from(itemMovementMap.values())
+      .sort((a, b) => (b.inQty + b.outQty) - (a.inQty + a.outQty))
+      .slice(0, 10);
+
+    return res.status(200).json({
+      summary: {
+        totalItems,
+        lowStockCount: lowStockItems.length,
+        outOfStockCount: outOfStockItems.length,
+        totalValueAtSale: Math.round(totalValueAtSale * 100) / 100,
+        totalValueAtCost: Math.round(totalValueAtCost * 100) / 100,
+        totalMargin: Math.round(totalMargin * 100) / 100,
+        itemsWithPrice,
+        itemsWithCost,
+      },
+      categories,
+      reasonStats,
+      topMovers,
+      lowStockItems: lowStockItems.slice(0, 20).map((i) => ({
+        id: i.id,
+        name: i.name,
+        currentStock: i.currentStock,
+        minStock: i.minStock,
+        unit: i.unit,
+        category: i.category,
+      })),
+      period: { from: from.toISOString(), to: to.toISOString() },
+    });
+  } catch (error) {
+    console.error('Admin analytics inventory error:', error);
+    throw error;
+  }
+});
+
 router.get('/analytics/presets', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
   try {
