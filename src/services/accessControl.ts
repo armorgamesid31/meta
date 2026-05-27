@@ -161,26 +161,51 @@ export async function ensureSalonAccessSeed(salonId: number): Promise<void> {
 
   await ensurePermissionCatalog();
 
-  const existing = await prisma.salonRolePermission.count({ where: { salonId } });
-  if (existing > 0) {
-    salonAccessSeededIds.add(salonId);
-    return;
-  }
-
   const permissions = await prisma.permissionDefinition.findMany({ select: { id: true, key: true } });
   const idByKey = new Map<string, number>(permissions.map((p) => [p.key, p.id]));
 
-  const rows: Array<{ salonId: number; role: string; permissionId: number; granted: boolean }> = [];
+  // Build the canonical desired set from DEFAULT_ROLE_PERMISSIONS.
+  // Previously this function only ran on the *first* seed — so any
+  // permission added to the catalog after a salon was created
+  // never made it into that salon's role matrix (the MANAGER role
+  // famously ended up missing `access.users.manage`, which hid the
+  // "Ekip Üyeleri" tab for owners who logged in via secondary
+  // MANAGER role). The drift-aware version below diffs the
+  // desired set against what's actually persisted and inserts only
+  // the missing rows — so adding a new key to
+  // DEFAULT_ROLE_PERMISSIONS automatically backfills every existing
+  // salon on its next login.
+  const desired: Array<{ role: string; permissionId: number }> = [];
   for (const role of FIXED_ROLES) {
     for (const key of DEFAULT_ROLE_PERMISSIONS[role]) {
       const permissionId = idByKey.get(key);
       if (!permissionId) continue;
-      rows.push({ salonId, role, permissionId, granted: true });
+      desired.push({ role, permissionId });
     }
   }
 
-  if (rows.length > 0) {
-    await prisma.salonRolePermission.createMany({ data: rows, skipDuplicates: true });
+  if (desired.length === 0) {
+    salonAccessSeededIds.add(salonId);
+    return;
+  }
+
+  const existing = await prisma.salonRolePermission.findMany({
+    where: { salonId },
+    select: { role: true, permissionId: true },
+  });
+  const existingKey = new Set(existing.map((row) => `${row.role}::${row.permissionId}`));
+
+  const missing = desired.filter((item) => !existingKey.has(`${item.role}::${item.permissionId}`));
+  if (missing.length > 0) {
+    await prisma.salonRolePermission.createMany({
+      data: missing.map((item) => ({
+        salonId,
+        role: item.role,
+        permissionId: item.permissionId,
+        granted: true,
+      })),
+      skipDuplicates: true,
+    });
   }
   salonAccessSeededIds.add(salonId);
 }
