@@ -221,6 +221,15 @@ export async function getPermissionCatalogWithGrants(salonId: number): Promise<{
     rolePermissions[role] = Array.from(new Set(rolePermissions[role])).sort();
   }
 
+  // OWNER bypasses permission checks at runtime (see
+  // effectivePermissionsForRoles) and the role template must
+  // reflect that — otherwise newer catalog keys that pre-date a
+  // salon's seed row look "off by default" in the UI even though
+  // an OWNER actually has access to them. Force OWNER to mirror
+  // the full catalog every time so the API response stays in
+  // lockstep with the runtime guard.
+  rolePermissions['OWNER'] = permissions.map((p) => p.key).slice().sort();
+
   return { permissions, rolePermissions };
 }
 

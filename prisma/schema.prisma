@@ -165,6 +165,10 @@ model Salon {
   waitlistEntries             WaitlistEntry[]
   waitlistOffers              WaitlistOffer[]
   journeyTasks                SalonJourneyTask[]
+  commissionRules             CommissionRule[]
+  commissionBonusRules        CommissionBonusRule[]
+  commissionEntries           CommissionEntry[]
+  commissionPayouts           CommissionPayout[]
 
   @@index([citySlug, districtSlug], map: "idx_salon_city_district_slug")
 }
@@ -249,25 +253,25 @@ model SalonUser {
 }
 
 model UserIdentity {
-  id                Int                 @id @default(autoincrement())
-  phone             String?             @unique(map: "uq_user_identity_phone")
-  email             String?             @unique(map: "uq_user_identity_email")
-  passwordHash      String
-  firstName         String?
-  lastName          String?
-  displayName       String?
-  isActive          Boolean             @default(true)
-  phoneVerifiedAt   DateTime?
-  emailVerifiedAt   DateTime?
+  id                  Int                 @id @default(autoincrement())
+  phone               String?             @unique(map: "uq_user_identity_phone")
+  email               String?             @unique(map: "uq_user_identity_email")
+  passwordHash        String
+  firstName           String?
+  lastName            String?
+  displayName         String?
+  isActive            Boolean             @default(true)
+  phoneVerifiedAt     DateTime?
+  emailVerifiedAt     DateTime?
   // When set, this identity is scheduled for hard-delete + PII anonymisation
   // at the stored timestamp. NULL = not scheduled. The daily cron in
   // jobs/scheduledDeletions sweeps rows whose deletionScheduledAt has passed.
-  deletionScheduledAt DateTime?         @db.Timestamp(6)
-  createdAt         DateTime?           @default(now()) @db.Timestamp(6)
-  updatedAt         DateTime?           @default(now()) @updatedAt @db.Timestamp(6)
-  memberships       SalonMembership[]
-  authSessions      MobileAuthSession[]
-  verificationLinks VerificationLink[]
+  deletionScheduledAt DateTime?           @db.Timestamp(6)
+  createdAt           DateTime?           @default(now()) @db.Timestamp(6)
+  updatedAt           DateTime?           @default(now()) @updatedAt @db.Timestamp(6)
+  memberships         SalonMembership[]
+  authSessions        MobileAuthSession[]
+  verificationLinks   VerificationLink[]
 }
 
 model SalonMembership {
@@ -444,31 +448,39 @@ model ReferralReward {
 }
 
 model Staff {
-  id                Int                 @id @default(autoincrement())
-  name              String
-  firstName         String
-  lastName          String?
-  gender            CustomerGender
-  phone             String?
-  createdAt         DateTime?           @default(now()) @db.Timestamp(6)
-  updatedAt         DateTime?           @default(now()) @updatedAt @db.Timestamp(6)
-  salonId           Int
-  userId            Int?
-  membershipId      Int?
-  title             String?
-  bio               String?
-  profileImageUrl   String?
-  themeColor        String?
-  monthlyGoal       Int                 @default(0)
-  appointments      Appointment[]
-  appointmentLines  AppointmentLine[]
-  leaves            Leave[]
-  testimonials      SalonTestimonial[]
-  salon             Salon               @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  membership        SalonMembership?    @relation(fields: [membershipId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  StaffService      StaffService[]
-  timeOffs          StaffTimeOff[]
-  StaffWorkingHours StaffWorkingHours[]
+  id                   Int                   @id @default(autoincrement())
+  name                 String
+  firstName            String
+  lastName             String?
+  gender               CustomerGender
+  phone                String?
+  createdAt            DateTime?             @default(now()) @db.Timestamp(6)
+  updatedAt            DateTime?             @default(now()) @updatedAt @db.Timestamp(6)
+  salonId              Int
+  userId               Int?
+  membershipId         Int?
+  title                String?
+  bio                  String?
+  profileImageUrl      String?
+  themeColor           String?
+  monthlyGoal          Int                   @default(0)
+  // Varsayılan komisyon oranı (% 0-100). null = oran tanımsız, hiç prim
+  // hesaplanmaz (CommissionRule veya Service.defaultCommissionRate ile
+  // override edilebilir).
+  commissionRate       Float?
+  appointments         Appointment[]
+  appointmentLines     AppointmentLine[]
+  leaves               Leave[]
+  testimonials         SalonTestimonial[]
+  salon                Salon                 @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  membership           SalonMembership?      @relation(fields: [membershipId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  StaffService         StaffService[]
+  timeOffs             StaffTimeOff[]
+  StaffWorkingHours    StaffWorkingHours[]
+  commissionRules      CommissionRule[]
+  commissionBonusRules CommissionBonusRule[]
+  commissionEntries    CommissionEntry[]
+  commissionPayouts    CommissionPayout[]
 }
 
 model Leave {
@@ -510,39 +522,44 @@ model StaffTimeOff {
 }
 
 model Service {
-  id                   Int                              @id @default(autoincrement())
-  name                 String
-  description          String?
-  price                Float
-  duration             Int
-  createdAt            DateTime?                        @default(now()) @db.Timestamp(6)
-  updatedAt            DateTime?                        @default(now()) @updatedAt @db.Timestamp(6)
-  salonId              Int
-  category             String?
-  requiresSpecialist   Boolean?                         @default(false)
-  categoryId           Int?
-  capacityOverride     Int?
-  sequentialOverride   Boolean?
-  bufferOverride       Int?
-  serviceGroupId       Int?
-  isActive             Boolean?                         @default(true)
-  regionId             Int?
-  displayOrder         Int                              @default(0)
-  appointments         Appointment[]
-  campaignApplications AppointmentCampaignApplication[]
-  appointmentLines     AppointmentLine[]
-  packageConsumptions  AppointmentPackageConsumption[]
-  packageBalances      CustomerPackageServiceBalance[]
-  packageLedgers       PackageLedger[]
-  templateServices     PackageTemplateService[]
-  ServiceCategory      ServiceCategory?                 @relation(fields: [categoryId], references: [id], onUpdate: NoAction)
-  ServiceRegion        ServiceRegion?                   @relation(fields: [regionId], references: [id], onUpdate: NoAction)
-  salon                Salon                            @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  serviceGroup         ServiceGroup?                    @relation(fields: [serviceGroupId], references: [id], onUpdate: NoAction)
-  ServiceGender        ServiceGender[]
-  ServiceStats         ServiceStats[]
-  translations         ServiceTranslation[]
-  StaffService         StaffService[]
+  id                    Int                              @id @default(autoincrement())
+  name                  String
+  description           String?
+  price                 Float
+  duration              Int
+  createdAt             DateTime?                        @default(now()) @db.Timestamp(6)
+  updatedAt             DateTime?                        @default(now()) @updatedAt @db.Timestamp(6)
+  salonId               Int
+  category              String?
+  requiresSpecialist    Boolean?                         @default(false)
+  categoryId            Int?
+  capacityOverride      Int?
+  sequentialOverride    Boolean?
+  bufferOverride        Int?
+  serviceGroupId        Int?
+  isActive              Boolean?                         @default(true)
+  regionId              Int?
+  displayOrder          Int                              @default(0)
+  // Bu hizmet için varsayılan komisyon oranı (% 0-100). Staff bazlı
+  // CommissionRule yoksa ve Staff.commissionRate de tanımlı değilse
+  // bu kullanılır. null = oran yok.
+  defaultCommissionRate Float?
+  appointments          Appointment[]
+  campaignApplications  AppointmentCampaignApplication[]
+  appointmentLines      AppointmentLine[]
+  packageConsumptions   AppointmentPackageConsumption[]
+  packageBalances       CustomerPackageServiceBalance[]
+  packageLedgers        PackageLedger[]
+  templateServices      PackageTemplateService[]
+  ServiceCategory       ServiceCategory?                 @relation(fields: [categoryId], references: [id], onUpdate: NoAction)
+  ServiceRegion         ServiceRegion?                   @relation(fields: [regionId], references: [id], onUpdate: NoAction)
+  salon                 Salon                            @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  serviceGroup          ServiceGroup?                    @relation(fields: [serviceGroupId], references: [id], onUpdate: NoAction)
+  ServiceGender         ServiceGender[]
+  ServiceStats          ServiceStats[]
+  translations          ServiceTranslation[]
+  StaffService          StaffService[]
+  commissionRules       CommissionRule[]
 
   @@unique([name, salonId])
   @@index([salonId, categoryId, displayOrder], map: "idx_service_salon_category_display")
@@ -608,6 +625,7 @@ model Appointment {
   packageConsumptions          AppointmentPackageConsumption[]
   campaignAttributions         CampaignAttribution[]            @relation("CampaignAttributionFirstAppointment")
   notificationLogs             NotificationLog[]
+  commissionEntries            CommissionEntry[]
 
   @@index([salonId, startTime], map: "idx_appointment_salon_start")
   @@index([salonId, status, startTime], map: "idx_appointment_salon_status_start")
@@ -644,6 +662,7 @@ model AppointmentLine {
   specialist          Staff?                          @relation(fields: [specialistId], references: [id], onUpdate: NoAction)
   packageConsumptions AppointmentPackageConsumption[]
   packageLedgers      PackageLedger[]
+  commissionEntries   CommissionEntry[]
 
   @@index([appointmentId, orderIndex], map: "idx_appointment_line_appointment_order")
   @@index([salonId, status], map: "idx_appointment_line_salon_status")
@@ -991,20 +1010,23 @@ model SalonTestimonial {
 }
 
 model InventoryItem {
-  id           Int                 @id @default(autoincrement())
-  salonId      Int
-  name         String
-  category     String?
-  unit         String              @default("adet")
-  currentStock Int                 @default(0)
-  minStock     Int                 @default(0)
-  price        Float?
-  supplier     String?
-  isActive     Boolean             @default(true)
-  createdAt    DateTime?           @default(now()) @db.Timestamp(6)
-  updatedAt    DateTime?           @default(now()) @updatedAt @db.Timestamp(6)
-  salon        Salon               @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  movements    InventoryMovement[]
+  id            Int                 @id @default(autoincrement())
+  salonId       Int
+  name          String
+  category      String?
+  unit          String              @default("adet")
+  currentStock  Int                 @default(0)
+  minStock      Int                 @default(0)
+  // `price` geriye dönük uyumluluk için satış fiyatı olarak tutuluyor.
+  // `purchasePrice` ise opsiyonel alış fiyatı (COGS / marj hesabı için).
+  price         Float?
+  purchasePrice Float?
+  supplier      String?
+  isActive      Boolean             @default(true)
+  createdAt     DateTime?           @default(now()) @db.Timestamp(6)
+  updatedAt     DateTime?           @default(now()) @updatedAt @db.Timestamp(6)
+  salon         Salon               @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  movements     InventoryMovement[]
 
   @@index([salonId, isActive], map: "idx_inventory_item_salon_active")
 }
@@ -1021,6 +1043,142 @@ model InventoryMovement {
   inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([salonId, inventoryItemId, createdAt], map: "idx_inventory_movement_salon_item_created")
+}
+
+// Prim/komisyon sistemi
+//
+// Hiyerarşi (en spesifik kazanır):
+//   1. CommissionRule (staff×service)  — bu çiftte rate/fixed override
+//   2. Staff.commissionRate            — çalışanın genel oranı
+//   3. Service.defaultCommissionRate   — hizmetin default oranı
+//   4. 0                                — hiçbir kural yoksa prim yok
+//
+// `isExcluded` = true ise: bu staff×service çifti için prim ASLA
+// hesaplanmaz (yukarı katmanlara düşmez). "Bu çalışan X hizmetinden
+// prim almıyor" senaryosu.
+model CommissionRule {
+  id          Int       @id @default(autoincrement())
+  salonId     Int
+  staffId     Int
+  // null = bu staff için tüm hizmetleri kapsar (staff genel override).
+  // Bu durumda Staff.commissionRate'ten önceliklidir.
+  serviceId   Int?
+  // Yüzde oran (% 0-100). `fixedAmount` set ise rate yok sayılır.
+  rate        Float?
+  // Hizmet/işlem başına sabit miktar (₺). Set ise oran yerine bu kullanılır.
+  fixedAmount Float?
+  // Bu çift için prim hesaplama tamamen iptal — entry oluşturma.
+  isExcluded  Boolean   @default(false)
+  isActive    Boolean   @default(true)
+  createdAt   DateTime? @default(now()) @db.Timestamp(6)
+  updatedAt   DateTime? @default(now()) @updatedAt @db.Timestamp(6)
+  salon       Salon     @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  staff       Staff     @relation(fields: [staffId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  service     Service?  @relation(fields: [serviceId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([salonId, staffId, serviceId], map: "commission_rule_unique")
+  @@index([salonId, staffId, isActive], map: "idx_commission_rule_salon_staff_active")
+}
+
+// Eşik bazlı bonus kuralları
+// type = APPOINTMENT_COUNT  : dönem içindeki tamamlanan randevu sayısı
+// type = REVENUE_THRESHOLD  : dönem içindeki staff cirosu (₺)
+// type = COMMISSION_THRESHOLD: dönem içindeki birikmiş prim toplamı (₺)
+//
+// `threshold` aşıldığında `bonusAmount` (sabit ₺) BONUS tipi bir
+// CommissionEntry olarak otomatik eklenir. Aynı eşik dönem başına
+// sadece bir kez tetiklenir (idempotent — kontrol sourceRuleId+periodKey
+// üzerinden).
+model CommissionBonusRule {
+  id               Int               @id @default(autoincrement())
+  salonId          Int
+  // null = tüm staff'lara uygulanır
+  staffId          Int?
+  // 'APPOINTMENT_COUNT' | 'REVENUE_THRESHOLD' | 'COMMISSION_THRESHOLD'
+  type             String
+  threshold        Float
+  bonusAmount      Float
+  name             String?
+  isActive         Boolean           @default(true)
+  createdAt        DateTime?         @default(now()) @db.Timestamp(6)
+  updatedAt        DateTime?         @default(now()) @updatedAt @db.Timestamp(6)
+  salon            Salon             @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  staff            Staff?            @relation(fields: [staffId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  triggeredEntries CommissionEntry[]
+
+  @@index([salonId, isActive], map: "idx_commission_bonus_rule_salon_active")
+}
+
+// Tek bir hesaplama/kayıt — randevu tamamlandığında her uygun
+// appointment line için bir tane oluşturulur. Manuel düzeltmeler
+// (bonus, kesinti) da bu tabloda type ile ayrışır.
+//
+// periodKey = 'YYYY-MM' (createdAt veya appointment start time'a göre).
+// Payout açıldığında o döneme ait PENDING entry'ler PAID'e geçer ve
+// payoutId set edilir.
+//
+// status:
+//   PENDING   — hesaplandı, ödenmedi
+//   PAID      — payout ile mahsup edildi
+//   CANCELLED — randevu iptal/no-show, prim geri alındı
+model CommissionEntry {
+  id                Int                  @id @default(autoincrement())
+  salonId           Int
+  staffId           Int
+  appointmentId     Int?
+  appointmentLineId Int?
+  periodKey         String // 'YYYY-MM'
+  baseAmount        Float // hesaplama bazı (genelde finalPrice)
+  rate              Float? // uygulanan oran (%); null ise fixedAmount kullanıldı
+  fixedAmount       Float?
+  amount            Float // sonuç ₺ (bonus için + , kesinti için - )
+  // 'SERVICE' | 'BONUS' | 'MANUAL_ADJUST' | 'DEDUCTION'
+  type              String               @default("SERVICE")
+  // 'PENDING' | 'PAID' | 'CANCELLED'
+  status            String               @default("PENDING")
+  notes             String?
+  sourceRuleId      Int?
+  sourceBonusRuleId Int?
+  payoutId          Int?
+  paidAt            DateTime?            @db.Timestamp(6)
+  paidByUserId      Int?
+  createdAt         DateTime?            @default(now()) @db.Timestamp(6)
+  updatedAt         DateTime?            @default(now()) @updatedAt @db.Timestamp(6)
+  salon             Salon                @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  staff             Staff                @relation(fields: [staffId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  appointment       Appointment?         @relation(fields: [appointmentId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  appointmentLine   AppointmentLine?     @relation(fields: [appointmentLineId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  payout            CommissionPayout?    @relation(fields: [payoutId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  bonusRule         CommissionBonusRule? @relation(fields: [sourceBonusRuleId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([salonId, staffId, periodKey, status], map: "idx_commission_entry_salon_staff_period_status")
+  @@index([salonId, periodKey, status], map: "idx_commission_entry_salon_period_status")
+  @@index([appointmentLineId], map: "idx_commission_entry_appointment_line")
+}
+
+// Dönem kapatma + ödeme kaydı.
+// Bir payout açılırken: o staff×period için PENDING entry'lerin toplamı
+// totalAmount'a yazılır, ilgili entry'lerin status'u PAID + payoutId =
+// payout.id olur. Audit-friendly: payout silinmedikçe entry'ler
+// statünü korur.
+model CommissionPayout {
+  id            Int               @id @default(autoincrement())
+  salonId       Int
+  staffId       Int
+  periodKey     String // 'YYYY-MM'
+  totalAmount   Float
+  paidAt        DateTime          @default(now()) @db.Timestamp(6)
+  paidByUserId  Int?
+  paymentMethod String? // 'CASH' | 'BANK_TRANSFER' | 'OTHER'
+  notes         String?
+  createdAt     DateTime?         @default(now()) @db.Timestamp(6)
+  updatedAt     DateTime?         @default(now()) @updatedAt @db.Timestamp(6)
+  salon         Salon             @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  staff         Staff             @relation(fields: [staffId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  entries       CommissionEntry[]
+
+  @@unique([salonId, staffId, periodKey], map: "commission_payout_unique")
+  @@index([salonId, periodKey], map: "idx_commission_payout_salon_period")
 }
 
 model Campaign {
@@ -1506,13 +1664,13 @@ model ConversationMessageEvent {
 }
 
 model ConversationReadState {
-  id                      Int       @id @default(autoincrement())
-  salonId                 Int
-  userId                  Int
-  channel                 ChannelType
-  conversationKey         String
-  lastReadEventTimestamp  DateTime  @db.Timestamp(6)
-  updatedAt               DateTime? @default(now()) @updatedAt @db.Timestamp(6)
+  id                     Int         @id @default(autoincrement())
+  salonId                Int
+  userId                 Int
+  channel                ChannelType
+  conversationKey        String
+  lastReadEventTimestamp DateTime    @db.Timestamp(6)
+  updatedAt              DateTime?   @default(now()) @updatedAt @db.Timestamp(6)
 
   @@unique([salonId, userId, channel, conversationKey], map: "uq_conv_read_state_salon_user_channel_key")
   @@index([salonId, userId], map: "idx_conv_read_state_salon_user")
@@ -2897,8 +3055,8 @@ enum LeadStatus {
 }
 
 model Lead {
-  id                      Int        @id @default(autoincrement())
-  status                  LeadStatus @default(NEW)
+  id                      Int            @id @default(autoincrement())
+  status                  LeadStatus     @default(NEW)
   contactName             String
   phone                   String
   phoneNormalized         String
@@ -2915,21 +3073,21 @@ model Lead {
   landingPath             String?
   ipAddress               String?
   userAgent               String?
-  kvkkConsentAt           DateTime   @default(now()) @db.Timestamp(6)
-  acceptMarketing         Boolean    @default(false)
-  activationTokenHash     String     @unique
-  activationLinkSentAt    DateTime?  @db.Timestamp(6)
-  activationLinkSendCount Int        @default(0)
+  kvkkConsentAt           DateTime       @default(now()) @db.Timestamp(6)
+  acceptMarketing         Boolean        @default(false)
+  activationTokenHash     String         @unique
+  activationLinkSentAt    DateTime?      @db.Timestamp(6)
+  activationLinkSendCount Int            @default(0)
   activationLastError     String?
-  expiresAt               DateTime   @db.Timestamp(6)
-  activatedAt             DateTime?  @db.Timestamp(6)
+  expiresAt               DateTime       @db.Timestamp(6)
+  activatedAt             DateTime?      @db.Timestamp(6)
   activatedSalonId        Int?
-  webhookSentAt           DateTime?  @db.Timestamp(6)
+  webhookSentAt           DateTime?      @db.Timestamp(6)
   webhookLastError        String?
   internalNotes           String?
-  createdAt               DateTime   @default(now()) @db.Timestamp(6)
-  updatedAt               DateTime   @default(now()) @updatedAt @db.Timestamp(6)
-  activatedSalon          Salon?     @relation("LeadActivatedSalon", fields: [activatedSalonId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  createdAt               DateTime       @default(now()) @db.Timestamp(6)
+  updatedAt               DateTime       @default(now()) @updatedAt @db.Timestamp(6)
+  activatedSalon          Salon?         @relation("LeadActivatedSalon", fields: [activatedSalonId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([emailNormalized])
   @@index([phoneNormalized])
@@ -2943,9 +3101,9 @@ model Lead {
 model SalonOnboardingEvent {
   id        Int      @id @default(autoincrement())
   salonId   Int
-  eventType String   // 'period_started' | 'bonus_granted' | 'bonus_revoked' | 'grace_started' | 'paid_activated' | 'access_status_changed' | 'channel_status_updated' | 'booking_link_tested' | 'import_decision' | 'period_extended'
+  eventType String // 'period_started' | 'bonus_granted' | 'bonus_revoked' | 'grace_started' | 'paid_activated' | 'access_status_changed' | 'channel_status_updated' | 'booking_link_tested' | 'import_decision' | 'period_extended'
   payload   Json?
-  actorType String   // 'system' | 'salon' | 'admin'
+  actorType String // 'system' | 'salon' | 'admin'
   actorId   String?
   createdAt DateTime @default(now()) @db.Timestamp(6)
   salon     Salon    @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)

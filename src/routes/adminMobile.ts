@@ -64,6 +64,17 @@ import {
 } from '../services/campaignDomain.js';
 import { hasPermission } from '../services/accessControl.js';
 import {
+  COMMISSION_BONUS_TYPES,
+  COMMISSION_ENTRY_TYPES,
+  addManualEntry,
+  applyCommissionForAppointment,
+  cancelCommissionForAppointment,
+  createPayout,
+  getCommissionSummary,
+  periodKeyFor,
+  resolveCommissionRate,
+} from '../services/commission.js';
+import {
   assertBookingAllowed,
   isIdentityBanned,
   maybeAutoBanCustomerByNoShow,
@@ -4301,16 +4312,37 @@ router.patch('/appointments/:id/status', authenticateToken, validate({ body: Upd
         appointmentId: result._notify.appointmentId,
         customerId: result.customerId || null,
       });
+      // Prim hesaplaması — randevu yeni tamamlandı, entry'leri oluştur.
+      // Idempotent (services/commission.ts) — tekrar çağrılırsa aynı
+      // line için yeni entry açılmaz.
+      try {
+        await applyCommissionForAppointment(prisma, result._notify.appointmentId);
+      } catch (commissionError) {
+        console.error('Commission apply error on COMPLETED:', commissionError);
+      }
     } else if (result._notify.nextStatus === 'CANCELLED' || result._notify.nextStatus === 'NO_SHOW') {
       await releaseAppointmentCampaignApplications({
         salonId,
         appointmentId: result._notify.appointmentId,
       });
+      // Prim iptal — sadece PENDING SERVICE entry'leri CANCELLED'a düşer.
+      // PAID olanlara dokunulmuyor; o döneme ait payout zaten ödendi.
+      try {
+        await cancelCommissionForAppointment(prisma, result._notify.appointmentId);
+      } catch (commissionError) {
+        console.error('Commission cancel error on CANCELLED/NO_SHOW:', commissionError);
+      }
     } else if (result._notify.previousStatus === 'COMPLETED' && result._notify.nextStatus !== 'COMPLETED') {
       await releaseAppointmentCampaignApplications({
         salonId,
         appointmentId: result._notify.appointmentId,
       });
+      // COMPLETED'tan geri çekildi → primi de geri al (PENDING ise).
+      try {
+        await cancelCommissionForAppointment(prisma, result._notify.appointmentId);
+      } catch (commissionError) {
+        console.error('Commission cancel error on revert-from-COMPLETED:', commissionError);
+      }
     }
 
     if (result._notify.nextStatus === 'NO_SHOW' && Number.isInteger(Number(result.customerId)) && Number(result.customerId) > 0) {
@@ -6422,6 +6454,7 @@ router.get('/services', authenticateToken, async (req: any, res: any) => {
         capacityOverride: true,
         sequentialOverride: true,
         bufferOverride: true,
+        defaultCommissionRate: true,
         ServiceCategory: {
           select: {
             id: true,
@@ -6812,6 +6845,17 @@ router.put('/services/:id', authenticateToken, async (req: any, res: any) => {
   if (req.body?.isActive !== undefined) {
     updates.isActive = Boolean(req.body.isActive);
   }
+  if (req.body?.defaultCommissionRate !== undefined) {
+    if (req.body.defaultCommissionRate === null || req.body.defaultCommissionRate === '') {
+      updates.defaultCommissionRate = null;
+    } else {
+      const r = Number(req.body.defaultCommissionRate);
+      if (!Number.isFinite(r) || r < 0 || r > 100) {
+        throw new BusinessError('VALIDATION_FAILED', 'defaultCommissionRate must be 0-100.', 400);
+      }
+      updates.defaultCommissionRate = r;
+    }
+  }
   if (req.body?.categoryId !== undefined) {
     if (req.body.categoryId === null || req.body.categoryId === '') {
       throw new BusinessError('VALIDATION_FAILED', 'categoryId cannot be empty.', 400);
@@ -7061,6 +7105,7 @@ router.get('/staff', authenticateToken, async (req: any, res: any) => {
         themeColor: true,
         profileImageUrl: true,
         monthlyGoal: true,
+        commissionRate: true,
         StaffService: {
           where: {
             Service: { salonId },
@@ -7290,6 +7335,17 @@ router.put('/staff/:id', authenticateToken, async (req: any, res: any) => {
     }
     updates.monthlyGoal = Math.floor(parsed);
   }
+  if (req.body?.commissionRate !== undefined) {
+    if (req.body.commissionRate === null || req.body.commissionRate === '') {
+      updates.commissionRate = null;
+    } else {
+      const r = Number(req.body.commissionRate);
+      if (!Number.isFinite(r) || r < 0 || r > 100) {
+        throw new BusinessError('VALIDATION_FAILED', 'commissionRate must be 0-100.', 400);
+      }
+      updates.commissionRate = r;
+    }
+  }
 
   const hasAssignments = req.body?.serviceAssignments !== undefined;
   const assignments = hasAssignments ? parseStaffServiceAssignments(req.body?.serviceAssignments) : [];
@@ -7302,7 +7358,7 @@ router.put('/staff/:id', authenticateToken, async (req: any, res: any) => {
     await prisma.$transaction(async (tx) => {
       const existing = await tx.staff.findFirst({
         where: { id: staffId, salonId },
-        select: { id: true },
+        select: { id: true, membershipId: true },
       });
       if (!existing) {
         throw new Error('STAFF_NOT_FOUND');
@@ -7313,6 +7369,49 @@ router.put('/staff/:id', authenticateToken, async (req: any, res: any) => {
           where: { id: staffId },
           data: updates,
         });
+
+        // Mirror identity-bound fields onto UserIdentity for any staff
+        // row that is linked to a SalonMembership (most notably the
+        // salon owner). The team-management list and access-control
+        // screens read displayName/firstName/lastName from
+        // UserIdentity, so without this sync those screens keep
+        // showing the pre-edit name even after Staff was updated.
+        if (existing.membershipId) {
+          const identityPatch: Record<string, unknown> = {};
+          if (updates.firstName !== undefined) identityPatch.firstName = updates.firstName;
+          if (updates.lastName !== undefined) identityPatch.lastName = updates.lastName;
+          if (updates.name !== undefined) identityPatch.displayName = updates.name;
+          if (updates.phone !== undefined) identityPatch.phone = updates.phone;
+          if (Object.keys(identityPatch).length > 0) {
+            const membership = await tx.salonMembership.findUnique({
+              where: { id: existing.membershipId },
+              select: { identityId: true },
+            });
+            if (membership?.identityId) {
+              try {
+                await tx.userIdentity.update({
+                  where: { id: membership.identityId },
+                  data: identityPatch,
+                });
+              } catch (identityError: any) {
+                // Phone has a global unique index; if the new value
+                // collides with another identity we keep the Staff
+                // update but skip the identity mirror for phone only.
+                if (identityError?.code === 'P2002' && identityPatch.phone !== undefined) {
+                  const { phone: _phone, ...rest } = identityPatch;
+                  if (Object.keys(rest).length > 0) {
+                    await tx.userIdentity.update({
+                      where: { id: membership.identityId },
+                      data: rest,
+                    });
+                  }
+                } else {
+                  throw identityError;
+                }
+              }
+            }
+          }
+        }
       }
 
       if (hasAssignments) {
@@ -7756,6 +7855,44 @@ router.get('/inventory/items', authenticateToken, async (req: any, res: any) => 
   }
 });
 
+// Stok hareketinde kullanılan nedenler — frontend dropdown'unda
+// listeleniyor, raporlamada da filtre olarak kullanılabiliyor. String
+// olarak DB'ye yazıyoruz (Prisma enum migration ağırlığını şimdi
+// üstlenmek istemiyoruz), ama dışarıya akış sözleşmesi sabit.
+const INVENTORY_MOVEMENT_REASONS = new Set([
+  'PURCHASE',
+  'USAGE',
+  'WASTE',
+  'COUNT_ADJUST',
+  'RETURN',
+  'TRANSFER',
+  'MANUAL',
+]);
+
+function parseInventoryReason(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const upper = trimmed.toUpperCase();
+  return INVENTORY_MOVEMENT_REASONS.has(upper) ? upper : trimmed;
+}
+
+function sanitizeOptionalFloat(raw: unknown): number | null | undefined {
+  // undefined → field gönderilmemiş, dokunma. null/'' → temizle. sayı → set.
+  if (raw === undefined) return undefined;
+  if (raw === null || raw === '') return null;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+function sanitizeOptionalString(raw: unknown): string | null | undefined {
+  if (raw === undefined) return undefined;
+  if (raw === null) return null;
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  return trimmed || null;
+}
+
 router.post('/inventory/items', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
   const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
@@ -7772,8 +7909,13 @@ router.post('/inventory/items', authenticateToken, async (req: any, res: any) =>
         unit: typeof req.body?.unit === 'string' && req.body.unit.trim() ? req.body.unit.trim() : 'adet',
         currentStock: Math.max(0, Number(req.body?.currentStock) || 0),
         minStock: Math.max(0, Number(req.body?.minStock) || 0),
-        price: req.body?.price !== undefined ? Number(req.body.price) : null,
-        supplier: typeof req.body?.supplier === 'string' ? req.body.supplier.trim() : null,
+        price: req.body?.price !== undefined && req.body.price !== null && req.body.price !== ''
+          ? Number(req.body.price)
+          : null,
+        purchasePrice: req.body?.purchasePrice !== undefined && req.body.purchasePrice !== null && req.body.purchasePrice !== ''
+          ? Number(req.body.purchasePrice)
+          : null,
+        supplier: typeof req.body?.supplier === 'string' ? req.body.supplier.trim() || null : null,
       },
     });
 
@@ -7784,12 +7926,94 @@ router.post('/inventory/items', authenticateToken, async (req: any, res: any) =>
   }
 });
 
+router.put('/inventory/items/:id', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  const itemId = Number(req.params.id);
+  if (!Number.isInteger(itemId) || itemId <= 0) {
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid item id.', 400);
+  }
+
+  // Sadece body'de açıkça gönderilen alanları güncelle — `undefined`
+  // alanlar atlanır, böylece kısmi update (PATCH-like) davranışı sağlanır.
+  const data: any = {};
+  if (typeof req.body?.name === 'string') {
+    const next = req.body.name.trim();
+    if (!next) throw new BusinessError('VALIDATION_FAILED', 'name cannot be empty.', 400);
+    data.name = next;
+  }
+  if (req.body?.category !== undefined) {
+    data.category = sanitizeOptionalString(req.body.category);
+  }
+  if (typeof req.body?.unit === 'string') {
+    const next = req.body.unit.trim();
+    if (next) data.unit = next;
+  }
+  if (req.body?.minStock !== undefined) {
+    data.minStock = Math.max(0, Number(req.body.minStock) || 0);
+  }
+  if (req.body?.price !== undefined) {
+    data.price = sanitizeOptionalFloat(req.body.price) ?? null;
+  }
+  if (req.body?.purchasePrice !== undefined) {
+    data.purchasePrice = sanitizeOptionalFloat(req.body.purchasePrice) ?? null;
+  }
+  if (req.body?.supplier !== undefined) {
+    data.supplier = sanitizeOptionalString(req.body.supplier);
+  }
+  // `currentStock` direkt PUT ile güncellenemiyor — sadece /adjust veya
+  // /recount endpoint'leri üzerinden hareket log'u ile değişir. Aksi
+  // halde audit trail boşa düşer.
+
+  try {
+    const existing = await prisma.inventoryItem.findFirst({ where: { id: itemId, salonId, isActive: true } });
+    if (!existing) {
+      throw new BusinessError('NOT_FOUND', 'Inventory item not found.', 404);
+    }
+
+    const item = await prisma.inventoryItem.update({
+      where: { id: itemId },
+      data,
+    });
+    return res.status(200).json({ item });
+  } catch (error) {
+    if (error instanceof BusinessError) throw error;
+    console.error('Admin inventory update error:', error);
+    throw error;
+  }
+});
+
+router.delete('/inventory/items/:id', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  const itemId = Number(req.params.id);
+  if (!Number.isInteger(itemId) || itemId <= 0) {
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid item id.', 400);
+  }
+
+  try {
+    // Soft delete — `isActive=false` ile arşivle. Geçmiş hareketler
+    // korunsun ki raporlar (örn. eski döneme ait kullanım) doğru kalsın.
+    const existing = await prisma.inventoryItem.findFirst({ where: { id: itemId, salonId, isActive: true } });
+    if (!existing) {
+      throw new BusinessError('NOT_FOUND', 'Inventory item not found.', 404);
+    }
+    await prisma.inventoryItem.update({ where: { id: itemId }, data: { isActive: false } });
+    return res.status(200).json({ ok: true });
+  } catch (error) {
+    if (error instanceof BusinessError) throw error;
+    console.error('Admin inventory delete error:', error);
+    throw error;
+  }
+});
+
 router.post('/inventory/items/:id/adjust', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
   const itemId = Number(req.params.id);
   const quantity = Math.abs(Number(req.body?.quantity));
   const type = String(req.body?.type || 'IN').toUpperCase() === 'OUT' ? 'OUT' : 'IN';
-  const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : null;
+  // Reason artık enum-benzeri bir set ile doğrulanıyor; geriye dönük
+  // uyumluluk için tanınmayan değerler trimmed string olarak yine
+  // kabul ediliyor.
+  const reason = parseInventoryReason(req.body?.reason);
 
   if (!Number.isInteger(itemId) || itemId <= 0 || !Number.isFinite(quantity) || quantity <= 0) {
     throw new BusinessError('VALIDATION_FAILED', 'Invalid item id or quantity.', 400);
@@ -7839,6 +8063,114 @@ router.post('/inventory/items/:id/adjust', authenticateToken, async (req: any, r
   }
 });
 
+// Fiziki sayım — kullanıcı raftaki sayıyı girer, sistem delta'yı
+// hesaplayıp COUNT_ADJUST tipi bir movement açar. Bu yol, "stok
+// gerçekte X imiş" senaryosunu audit trail'i bozmadan kayıt altına
+// alır (direct UPDATE yapsaydık fark görünmezdi).
+router.post('/inventory/items/:id/recount', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  const itemId = Number(req.params.id);
+  const actualStockRaw = Number(req.body?.actualStock);
+  const note = typeof req.body?.note === 'string' ? req.body.note.trim() : '';
+
+  if (!Number.isInteger(itemId) || itemId <= 0 || !Number.isFinite(actualStockRaw) || actualStockRaw < 0) {
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid item id or actualStock.', 400);
+  }
+  const actualStock = Math.floor(actualStockRaw);
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      const item = await tx.inventoryItem.findFirst({ where: { id: itemId, salonId, isActive: true } });
+      if (!item) {
+        throw new Error('ITEM_NOT_FOUND');
+      }
+
+      const delta = actualStock - item.currentStock;
+      if (delta === 0) {
+        return { item, movement: null };
+      }
+
+      const updatedItem = await tx.inventoryItem.update({
+        where: { id: item.id },
+        data: { currentStock: actualStock },
+      });
+
+      const movement = await tx.inventoryMovement.create({
+        data: {
+          salonId,
+          inventoryItemId: item.id,
+          type: delta > 0 ? 'IN' : 'OUT',
+          quantity: Math.abs(delta),
+          reason: 'COUNT_ADJUST',
+          createdByUserId: req.user.userId,
+        },
+      });
+
+      return { item: updatedItem, movement };
+    });
+
+    return res.status(200).json({
+      item: result.item,
+      movement: result.movement,
+      note: note || null,
+    });
+  } catch (error: any) {
+    if (error?.message === 'ITEM_NOT_FOUND') {
+      throw new BusinessError('NOT_FOUND', 'Inventory item not found.', 404);
+    }
+    console.error('Admin inventory recount error:', error);
+    throw error;
+  }
+});
+
+// Belirli bir ürünün hareket geçmişi — listeyi `inventoryItemId` filtresi
+// ile zaten /inventory/movements üzerinden sağlıyoruz ama bu shortcut
+// frontend item-detail sheet'in URL'i okurken işini kolaylaştırıyor.
+router.get('/inventory/items/:id/movements', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  const itemId = Number(req.params.id);
+  const limit = asPositiveInt(req.query.limit, 100, 1, 500);
+
+  if (!Number.isInteger(itemId) || itemId <= 0) {
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid item id.', 400);
+  }
+
+  try {
+    const movements = await prisma.inventoryMovement.findMany({
+      where: { salonId, inventoryItemId: itemId },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
+    return res.status(200).json({ items: movements });
+  } catch (error) {
+    console.error('Admin inventory item movements error:', error);
+    throw error;
+  }
+});
+
+// Düşük stok — UI'nin üst banner / dashboard widget'ı bunu çağırıyor.
+// Tüm aktif ürünlerden currentStock <= minStock olanları döndür.
+router.get('/inventory/low-stock', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  try {
+    // Prisma'da column-vs-column karşılaştırması doğrudan filterable değil;
+    // önce hepsini çekip in-memory filtreliyoruz. Salonun stok kalemi
+    // sayısı düşük (yüzlü mertebede) olduğu için bu hâlâ ucuz.
+    const items = await prisma.inventoryItem.findMany({
+      where: { salonId, isActive: true },
+      orderBy: [{ currentStock: 'asc' }, { name: 'asc' }],
+    });
+    const lowStock = items.filter((i) => i.currentStock <= i.minStock);
+    return res.status(200).json({
+      items: lowStock.map((item) => ({ ...item, lowStock: true })),
+      total: lowStock.length,
+    });
+  } catch (error) {
+    console.error('Admin inventory low-stock error:', error);
+    throw error;
+  }
+});
+
 router.get('/inventory/movements', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
   const itemId = typeof req.query.itemId === 'string' ? Number(req.query.itemId) : null;
@@ -7869,6 +8201,419 @@ router.get('/inventory/movements', authenticateToken, async (req: any, res: any)
     throw error;
   }
 });
+
+// =============================================================================
+// Commission / Prim endpoint'leri
+//
+// İş kuralları services/commission.ts'de — burası sadece HTTP yüzeyi.
+// Tüm endpoint'ler `commissions.manage` permission'ı altında olmalı; bu
+// repo'da `staff.manage` üst kümesi kullanılıyor (rol ve prim aynı
+// kategoride yönetiliyor) — kapsama gerekirse ayrı permission key
+// eklenebilir.
+// =============================================================================
+
+router.get('/commissions', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  const periodKey = typeof req.query.periodKey === 'string' ? req.query.periodKey : periodKeyFor(new Date());
+  const staffId = req.query.staffId ? Number(req.query.staffId) : null;
+  const status = typeof req.query.status === 'string' ? req.query.status.toUpperCase() : null;
+
+  try {
+    const entries = await prisma.commissionEntry.findMany({
+      where: {
+        salonId,
+        periodKey,
+        ...(staffId && Number.isInteger(staffId) ? { staffId } : {}),
+        ...(status && ['PENDING', 'PAID', 'CANCELLED'].includes(status) ? { status } : {}),
+      },
+      include: {
+        staff: { select: { id: true, name: true, profileImageUrl: true } },
+        appointmentLine: { select: { id: true, serviceId: true, finalPrice: true } },
+        appointment: { select: { id: true, startTime: true, customerName: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 500,
+    });
+    return res.status(200).json({ items: entries, periodKey });
+  } catch (error) {
+    console.error('Admin commissions list error:', error);
+    throw error;
+  }
+});
+
+router.get('/commissions/summary', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  const periodKey = typeof req.query.periodKey === 'string' ? req.query.periodKey : periodKeyFor(new Date());
+  const staffId = req.query.staffId ? Number(req.query.staffId) : undefined;
+  try {
+    const summary = await getCommissionSummary(prisma, { salonId, periodKey, staffId });
+    return res.status(200).json({ items: summary, periodKey });
+  } catch (error) {
+    console.error('Admin commissions summary error:', error);
+    throw error;
+  }
+});
+
+router.post('/commissions/manual', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  const staffId = Number(req.body?.staffId);
+  const amount = Number(req.body?.amount);
+  const periodKey = typeof req.body?.periodKey === 'string' ? req.body.periodKey : periodKeyFor(new Date());
+  const type = typeof req.body?.type === 'string' ? req.body.type.toUpperCase() : 'MANUAL_ADJUST';
+  const notes = typeof req.body?.notes === 'string' ? req.body.notes.trim() : null;
+
+  if (!Number.isInteger(staffId) || staffId <= 0) {
+    throw new BusinessError('VALIDATION_FAILED', 'staffId required.', 400);
+  }
+  if (!Number.isFinite(amount)) {
+    throw new BusinessError('VALIDATION_FAILED', 'amount required.', 400);
+  }
+  if (!COMMISSION_ENTRY_TYPES.includes(type as any) || type === 'SERVICE') {
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid entry type for manual entry.', 400);
+  }
+
+  try {
+    const { id } = await addManualEntry(prisma, {
+      salonId,
+      staffId,
+      periodKey,
+      amount,
+      type: type as any,
+      notes: notes || undefined,
+    });
+    return res.status(201).json({ id });
+  } catch (error) {
+    console.error('Admin commissions manual entry error:', error);
+    throw error;
+  }
+});
+
+router.put('/commissions/:id', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid id.', 400);
+  }
+  const existing = await prisma.commissionEntry.findFirst({ where: { id, salonId } });
+  if (!existing) {
+    throw new BusinessError('NOT_FOUND', 'Entry not found.', 404);
+  }
+  // PAID entry'ler üzerinde sadece notes güncellenebilir — amount/status
+  // değiştirilemez ki payout integrity bozulmasın.
+  const data: any = {};
+  if (req.body?.notes !== undefined) {
+    data.notes = typeof req.body.notes === 'string' ? req.body.notes.trim() || null : null;
+  }
+  if (existing.status === 'PENDING') {
+    if (req.body?.amount !== undefined && Number.isFinite(Number(req.body.amount))) {
+      data.amount = Number(req.body.amount);
+    }
+    if (req.body?.status !== undefined) {
+      const s = String(req.body.status).toUpperCase();
+      if (['PENDING', 'CANCELLED'].includes(s)) {
+        data.status = s;
+      }
+    }
+  }
+  const updated = await prisma.commissionEntry.update({ where: { id }, data });
+  return res.status(200).json({ item: updated });
+});
+
+router.delete('/commissions/:id', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid id.', 400);
+  }
+  const existing = await prisma.commissionEntry.findFirst({ where: { id, salonId } });
+  if (!existing) {
+    throw new BusinessError('NOT_FOUND', 'Entry not found.', 404);
+  }
+  if (existing.status === 'PAID') {
+    throw new BusinessError('VALIDATION_FAILED', 'Cannot delete a PAID entry. Revert payout first.', 400);
+  }
+  await prisma.commissionEntry.delete({ where: { id } });
+  return res.status(200).json({ ok: true });
+});
+
+// Manuel hesaplama tetikleyici — bir randevu için entry'leri yeniden
+// üretir (idempotent). UI'da "Bu randevunun primini yeniden hesapla"
+// için kullanılır; ana flow appointment status güncellemesi sırasında
+// otomatik tetiklenmeli (TODO: appointment update endpoint'inde çağrı).
+router.post('/commissions/recalculate/:appointmentId', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  const appointmentId = Number(req.params.appointmentId);
+  if (!Number.isInteger(appointmentId) || appointmentId <= 0) {
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid appointmentId.', 400);
+  }
+  const appt = await prisma.appointment.findFirst({ where: { id: appointmentId, salonId } });
+  if (!appt) {
+    throw new BusinessError('NOT_FOUND', 'Appointment not found.', 404);
+  }
+  const result = await applyCommissionForAppointment(prisma, appointmentId);
+  return res.status(200).json(result);
+});
+
+// --- Kurallar (CommissionRule) ---
+router.get('/commissions/rules', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  const rules = await prisma.commissionRule.findMany({
+    where: { salonId, isActive: true },
+    include: {
+      staff: { select: { id: true, name: true } },
+      service: { select: { id: true, name: true } },
+    },
+    orderBy: [{ staffId: 'asc' }, { serviceId: 'asc' }],
+  });
+  return res.status(200).json({ items: rules });
+});
+
+router.post('/commissions/rules', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  const staffId = Number(req.body?.staffId);
+  const serviceId = req.body?.serviceId ? Number(req.body.serviceId) : null;
+  const rate = req.body?.rate !== undefined && req.body.rate !== null && req.body.rate !== ''
+    ? Number(req.body.rate) : null;
+  const fixedAmount = req.body?.fixedAmount !== undefined && req.body.fixedAmount !== null && req.body.fixedAmount !== ''
+    ? Number(req.body.fixedAmount) : null;
+  const isExcluded = Boolean(req.body?.isExcluded);
+
+  if (!Number.isInteger(staffId) || staffId <= 0) {
+    throw new BusinessError('VALIDATION_FAILED', 'staffId required.', 400);
+  }
+  if (!isExcluded && rate == null && fixedAmount == null) {
+    throw new BusinessError('VALIDATION_FAILED', 'Either rate or fixedAmount must be set (or isExcluded=true).', 400);
+  }
+  if (rate != null && (rate < 0 || rate > 100)) {
+    throw new BusinessError('VALIDATION_FAILED', 'rate must be 0-100.', 400);
+  }
+  if (fixedAmount != null && fixedAmount < 0) {
+    throw new BusinessError('VALIDATION_FAILED', 'fixedAmount must be >= 0.', 400);
+  }
+
+  try {
+    // Upsert davranışı — aynı (staffId, serviceId) varsa güncelle.
+    const existing = await prisma.commissionRule.findFirst({
+      where: { salonId, staffId, serviceId: serviceId === null ? null : serviceId },
+    });
+    const data = {
+      salonId,
+      staffId,
+      serviceId,
+      rate,
+      fixedAmount,
+      isExcluded,
+      isActive: true,
+    };
+    const rule = existing
+      ? await prisma.commissionRule.update({ where: { id: existing.id }, data })
+      : await prisma.commissionRule.create({ data });
+    return res.status(existing ? 200 : 201).json({ item: rule });
+  } catch (error) {
+    console.error('Admin commission rule create error:', error);
+    throw error;
+  }
+});
+
+router.put('/commissions/rules/:id', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid id.', 400);
+  }
+  const existing = await prisma.commissionRule.findFirst({ where: { id, salonId } });
+  if (!existing) throw new BusinessError('NOT_FOUND', 'Rule not found.', 404);
+
+  const data: any = {};
+  if (req.body?.rate !== undefined) {
+    const n = req.body.rate === null || req.body.rate === '' ? null : Number(req.body.rate);
+    if (n != null && (!Number.isFinite(n) || n < 0 || n > 100)) {
+      throw new BusinessError('VALIDATION_FAILED', 'rate must be 0-100.', 400);
+    }
+    data.rate = n;
+  }
+  if (req.body?.fixedAmount !== undefined) {
+    const n = req.body.fixedAmount === null || req.body.fixedAmount === '' ? null : Number(req.body.fixedAmount);
+    if (n != null && (!Number.isFinite(n) || n < 0)) {
+      throw new BusinessError('VALIDATION_FAILED', 'fixedAmount must be >= 0.', 400);
+    }
+    data.fixedAmount = n;
+  }
+  if (req.body?.isExcluded !== undefined) data.isExcluded = Boolean(req.body.isExcluded);
+  if (req.body?.isActive !== undefined) data.isActive = Boolean(req.body.isActive);
+
+  const updated = await prisma.commissionRule.update({ where: { id }, data });
+  return res.status(200).json({ item: updated });
+});
+
+router.delete('/commissions/rules/:id', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid id.', 400);
+  }
+  const existing = await prisma.commissionRule.findFirst({ where: { id, salonId } });
+  if (!existing) throw new BusinessError('NOT_FOUND', 'Rule not found.', 404);
+  // Soft-delete — entry'ler `sourceRuleId` üzerinden referans tutuyor.
+  await prisma.commissionRule.update({ where: { id }, data: { isActive: false } });
+  return res.status(200).json({ ok: true });
+});
+
+// --- Bonus kuralları ---
+router.get('/commissions/bonus-rules', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  const rules = await prisma.commissionBonusRule.findMany({
+    where: { salonId, isActive: true },
+    include: { staff: { select: { id: true, name: true } } },
+    orderBy: [{ staffId: 'asc' }, { threshold: 'asc' }],
+  });
+  return res.status(200).json({ items: rules });
+});
+
+router.post('/commissions/bonus-rules', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  const staffId = req.body?.staffId ? Number(req.body.staffId) : null;
+  const type = typeof req.body?.type === 'string' ? req.body.type.toUpperCase() : '';
+  const threshold = Number(req.body?.threshold);
+  const bonusAmount = Number(req.body?.bonusAmount);
+  const name = typeof req.body?.name === 'string' ? req.body.name.trim() || null : null;
+
+  if (!COMMISSION_BONUS_TYPES.includes(type as any)) {
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid bonus type.', 400);
+  }
+  if (!Number.isFinite(threshold) || threshold <= 0) {
+    throw new BusinessError('VALIDATION_FAILED', 'threshold must be > 0.', 400);
+  }
+  if (!Number.isFinite(bonusAmount) || bonusAmount <= 0) {
+    throw new BusinessError('VALIDATION_FAILED', 'bonusAmount must be > 0.', 400);
+  }
+
+  const rule = await prisma.commissionBonusRule.create({
+    data: { salonId, staffId, type, threshold, bonusAmount, name, isActive: true },
+  });
+  return res.status(201).json({ item: rule });
+});
+
+router.put('/commissions/bonus-rules/:id', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid id.', 400);
+  }
+  const existing = await prisma.commissionBonusRule.findFirst({ where: { id, salonId } });
+  if (!existing) throw new BusinessError('NOT_FOUND', 'Rule not found.', 404);
+  const data: any = {};
+  if (req.body?.threshold !== undefined) {
+    const n = Number(req.body.threshold);
+    if (Number.isFinite(n) && n > 0) data.threshold = n;
+  }
+  if (req.body?.bonusAmount !== undefined) {
+    const n = Number(req.body.bonusAmount);
+    if (Number.isFinite(n) && n > 0) data.bonusAmount = n;
+  }
+  if (req.body?.name !== undefined) {
+    data.name = typeof req.body.name === 'string' ? req.body.name.trim() || null : null;
+  }
+  if (req.body?.isActive !== undefined) data.isActive = Boolean(req.body.isActive);
+  const updated = await prisma.commissionBonusRule.update({ where: { id }, data });
+  return res.status(200).json({ item: updated });
+});
+
+router.delete('/commissions/bonus-rules/:id', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid id.', 400);
+  }
+  const existing = await prisma.commissionBonusRule.findFirst({ where: { id, salonId } });
+  if (!existing) throw new BusinessError('NOT_FOUND', 'Rule not found.', 404);
+  await prisma.commissionBonusRule.update({ where: { id }, data: { isActive: false } });
+  return res.status(200).json({ ok: true });
+});
+
+// --- Payouts ---
+router.get('/commissions/payouts', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  const periodKey = typeof req.query.periodKey === 'string' ? req.query.periodKey : undefined;
+  const staffId = req.query.staffId ? Number(req.query.staffId) : undefined;
+  const payouts = await prisma.commissionPayout.findMany({
+    where: {
+      salonId,
+      ...(periodKey ? { periodKey } : {}),
+      ...(staffId && Number.isInteger(staffId) ? { staffId } : {}),
+    },
+    include: { staff: { select: { id: true, name: true } } },
+    orderBy: [{ paidAt: 'desc' }],
+    take: 200,
+  });
+  return res.status(200).json({ items: payouts });
+});
+
+router.post('/commissions/payout', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  const staffId = Number(req.body?.staffId);
+  const periodKey = typeof req.body?.periodKey === 'string' ? req.body.periodKey : periodKeyFor(new Date());
+  const paymentMethod = typeof req.body?.paymentMethod === 'string' ? req.body.paymentMethod : undefined;
+  const notes = typeof req.body?.notes === 'string' ? req.body.notes.trim() || undefined : undefined;
+
+  if (!Number.isInteger(staffId) || staffId <= 0) {
+    throw new BusinessError('VALIDATION_FAILED', 'staffId required.', 400);
+  }
+
+  try {
+    const result = await createPayout(prisma, {
+      salonId,
+      staffId,
+      periodKey,
+      paidByUserId: req.user?.userId,
+      paymentMethod,
+      notes,
+    });
+    return res.status(201).json(result);
+  } catch (error: any) {
+    if (error?.message === 'PAYOUT_ALREADY_EXISTS') {
+      throw new BusinessError('VALIDATION_FAILED', 'Bu dönem için zaten ödeme kaydı var.', 409);
+    }
+    if (error?.message === 'NO_PENDING_ENTRIES') {
+      throw new BusinessError('VALIDATION_FAILED', 'Bu dönem için ödenecek bekleyen prim yok.', 400);
+    }
+    console.error('Admin commission payout error:', error);
+    throw error;
+  }
+});
+
+router.delete('/commissions/payouts/:id', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid id.', 400);
+  }
+  const payout = await prisma.commissionPayout.findFirst({ where: { id, salonId } });
+  if (!payout) throw new BusinessError('NOT_FOUND', 'Payout not found.', 404);
+  // Geri al — entry'leri PENDING'e döndür, sonra payout'u sil.
+  await prisma.$transaction([
+    prisma.commissionEntry.updateMany({
+      where: { payoutId: id },
+      data: { status: 'PENDING', payoutId: null, paidAt: null, paidByUserId: null },
+    }),
+    prisma.commissionPayout.delete({ where: { id } }),
+  ]);
+  return res.status(200).json({ ok: true });
+});
+
+// --- Effective rate kontrol (UI'da preview için) ---
+router.get('/commissions/effective-rate', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  const staffId = Number(req.query.staffId);
+  const serviceId = Number(req.query.serviceId);
+  if (!Number.isInteger(staffId) || staffId <= 0 || !Number.isInteger(serviceId) || serviceId <= 0) {
+    throw new BusinessError('VALIDATION_FAILED', 'staffId and serviceId required.', 400);
+  }
+  const resolved = await resolveCommissionRate(prisma, { salonId, staffId, serviceId });
+  return res.status(200).json(resolved);
+});
+
+// =============================================================================
 
 router.get('/campaigns', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
