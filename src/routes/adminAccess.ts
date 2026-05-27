@@ -218,21 +218,21 @@ router.get('/users', authenticateToken, requirePermissionKey('access.users.manag
         // the email's local part. The raw fields are also exposed so
         // the client can render initials and richer cards.
         //
-        // Source-of-truth precedence: when this membership is linked
-        // to a Staff row (owners + any team member who was promoted
-        // into the salon's staff list) the Staff record is what the
-        // salon owner edits day-to-day. Treat Staff.name as the
-        // authoritative label so the team list never lags behind the
-        // staff-edit form, even if a future code path forgets to
-        // mirror onto UserIdentity.
+        // Source-of-truth precedence (post-Phase-3): UserIdentity
+        // is now where profile edits land, so the team list
+        // prefers identity.displayName / first+last. Staff.name
+        // is the legacy fallback for orphan staff that aren't
+        // linked to a membership at all — they're rare in this
+        // endpoint (we filter by membership) but we keep the
+        // hop for safety.
         const linkedStaff = staffByMembershipId.get(membership.id) || null;
-        const staffName = (linkedStaff?.name || '').trim();
         const first = (membership.identity.firstName || '').trim();
         const last = (membership.identity.lastName || '').trim();
         const composed = `${first} ${last}`.trim();
         const identityDisplayName = (membership.identity.displayName || '').trim();
+        const staffName = (linkedStaff?.name || '').trim();
         const resolvedDisplayName =
-          staffName || identityDisplayName || composed || null;
+          identityDisplayName || composed || staffName || null;
         return {
           id: membership.id,
           identityId: membership.identity.id,

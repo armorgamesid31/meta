@@ -18,6 +18,7 @@
 // `isExcluded = true` ise hesaplama tamamen iptal — entry oluşturma.
 
 import type { Prisma, PrismaClient } from '@prisma/client';
+import { resolveStaffProfile } from './staffProfileResolver.js';
 
 type TxClient = Prisma.TransactionClient | PrismaClient;
 
@@ -316,16 +317,39 @@ export async function getCommissionSummary(
       periodKey,
       ...(staffId ? { staffId } : {}),
     },
-    include: { staff: { select: { id: true, name: true } } },
+    include: {
+      staff: {
+        select: {
+          id: true,
+          name: true,
+          firstName: true,
+          lastName: true,
+          membership: {
+            select: {
+              identity: {
+                select: { firstName: true, lastName: true, displayName: true },
+              },
+            },
+          },
+        },
+      },
+    },
   });
 
   const map = new Map<number, SummaryRow>();
   for (const entry of entries) {
     const key = entry.staffId;
     if (!map.has(key)) {
+      // Commission summary surfaces in the salon-app finance
+      // screen. Use the resolver so the row header matches the
+      // staff member's current cross-salon display name.
+      const resolved = resolveStaffProfile(
+        entry.staff as any,
+        (entry.staff as any)?.membership?.identity ?? null,
+      );
       map.set(key, {
         staffId: entry.staffId,
-        staffName: entry.staff?.name || `Çalışan #${entry.staffId}`,
+        staffName: resolved.name || `Çalışan #${entry.staffId}`,
         periodKey,
         pendingTotal: 0,
         paidTotal: 0,

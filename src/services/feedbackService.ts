@@ -14,6 +14,7 @@
 import { randomBytes } from 'crypto';
 import { ChannelType, MagicLinkType, Prisma } from '@prisma/client';
 import { prisma } from '../prisma.js';
+import { resolveStaffProfile } from './staffProfileResolver.js';
 
 const TOKEN_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
 // 50 years — effectively no expiry, but the column requires a value.
@@ -188,17 +189,38 @@ export async function getFeedbackContext(token: string): Promise<FeedbackContext
     where: { id: appointmentId },
     include: {
       service: { select: { name: true } },
-      staff: { select: { firstName: true, lastName: true } },
+      staff: {
+        select: {
+          firstName: true,
+          lastName: true,
+          name: true,
+          membership: {
+            select: {
+              identity: {
+                select: { firstName: true, lastName: true, displayName: true },
+              },
+            },
+          },
+        },
+      },
     },
   });
   if (!appointment) throw new Error('feedback_appointment_not_found');
+
+  // Customer-facing feedback page header — prefer the identity
+  // name so a renamed staff member is shown correctly across all
+  // salons. Fallback to legacy Staff columns for orphan rows.
+  const staffResolved = resolveStaffProfile(
+    appointment.staff,
+    appointment.staff?.membership?.identity ?? null,
+  );
 
   return {
     appointmentId: appointment.id,
     salonId: appointment.salonId,
     salonName: link.salon.name,
     serviceName: appointment.service?.name || '',
-    staffName: [appointment.staff?.firstName, appointment.staff?.lastName].filter(Boolean).join(' ').trim(),
+    staffName: staffResolved.name || '',
     appointmentDate: appointment.startTime,
     customerName: appointment.customerName,
     alreadySubmitted: Boolean(link.usedAt),

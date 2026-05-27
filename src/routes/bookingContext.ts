@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { getCampaignTeasersForCustomer } from '../services/campaignPricing.js';
 import { BusinessError } from '../lib/errors.js';
+import { resolveStaffProfile } from '../services/staffProfileResolver.js';
 
 const router = Router();
 
@@ -455,7 +456,14 @@ router.get('/context', async (req: any, res: any) => {
       service?: { id?: number; name: string; price?: number } | null;
       serviceId?: number;
       servicePrice?: number;
-      staff?: { name: string } | null;
+      staff?:
+        | {
+            name: string | null;
+            firstName?: string | null;
+            lastName?: string | null;
+            membership?: { identity?: { firstName?: string | null; lastName?: string | null; displayName?: string | null } | null } | null;
+          }
+        | null;
     }> = [];
 
     try {
@@ -487,6 +495,15 @@ router.get('/context', async (req: any, res: any) => {
           staff: {
             select: {
               name: true,
+              firstName: true,
+              lastName: true,
+              membership: {
+                select: {
+                  identity: {
+                    select: { firstName: true, lastName: true, displayName: true },
+                  },
+                },
+              },
             },
           },
         },
@@ -525,6 +542,15 @@ router.get('/context', async (req: any, res: any) => {
           staff: {
             select: {
               name: true,
+              firstName: true,
+              lastName: true,
+              membership: {
+                select: {
+                  identity: {
+                    select: { firstName: true, lastName: true, displayName: true },
+                  },
+                },
+              },
             },
           },
         },
@@ -561,7 +587,11 @@ router.get('/context', async (req: any, res: any) => {
         listPrice: typeof item.listPrice === 'number' ? item.listPrice : null,
         discountTotal: typeof item.discountTotal === 'number' ? item.discountTotal : null,
         finalPrice: typeof item.finalPrice === 'number' ? item.finalPrice : null,
-        staffName: item.staff?.name || null,
+        staffName:
+          resolveStaffProfile(
+            item.staff as any,
+            (item.staff as any)?.membership?.identity ?? null,
+          ).name || null,
         canUpdate: isFuture && ['BOOKED', 'CONFIRMED'].includes(String(item.status || '').toUpperCase()),
         canCancel: isFuture && ['BOOKED', 'CONFIRMED', 'UPDATED'].includes(String(item.status || '').toUpperCase()),
         canEvaluate: !isFuture && String(item.status || '').toUpperCase() === 'COMPLETED',

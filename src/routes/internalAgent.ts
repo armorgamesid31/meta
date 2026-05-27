@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { loadSalonAgentContext } from '../services/salonAgentContext.js';
+import { resolveStaffProfile } from '../services/staffProfileResolver.js';
 import {
   findBoundCustomer,
   normalizeInstagramIdentity,
@@ -118,7 +119,20 @@ router.post('/customer-lookup', async (req: any, res: any) => {
         startTime: true,
         status: true,
         service: { select: { name: true } },
-        staff: { select: { name: true } },
+        staff: {
+          select: {
+            name: true,
+            firstName: true,
+            lastName: true,
+            membership: {
+              select: {
+                identity: {
+                  select: { firstName: true, lastName: true, displayName: true },
+                },
+              },
+            },
+          },
+        },
       },
     });
 
@@ -136,7 +150,11 @@ router.post('/customer-lookup', async (req: any, res: any) => {
         startTime: a.startTime.toISOString(),
         status: a.status,
         serviceName: a.service?.name || null,
-        staffName: a.staff?.name || null,
+        staffName:
+          resolveStaffProfile(
+            a.staff as any,
+            (a.staff as any)?.membership?.identity ?? null,
+          ).name || null,
       })),
     });
   } catch (err: any) {

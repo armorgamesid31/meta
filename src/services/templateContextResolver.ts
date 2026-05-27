@@ -11,6 +11,7 @@
 
 import { prisma } from '../prisma.js';
 import { getSalonCustomerRiskPolicy } from './customerRiskPolicy.js';
+import { resolveStaffProfile } from './staffProfileResolver.js';
 
 export interface ResolveInput {
   salonId: number;
@@ -108,7 +109,27 @@ export async function resolveTemplateContext(input: ResolveInput): Promise<Resol
           where: { id: input.appointmentId },
           include: {
             service: { select: { name: true } },
-            staff: { select: { firstName: true, lastName: true } },
+            // Resolver inputs: Identity is authoritative for the
+            // staff member's display name; Staff columns kept as a
+            // fallback for orphan staff with no membership.
+            staff: {
+              select: {
+                firstName: true,
+                lastName: true,
+                name: true,
+                membership: {
+                  select: {
+                    identity: {
+                      select: {
+                        firstName: true,
+                        lastName: true,
+                        displayName: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
           },
         })
       : Promise.resolve(null),
@@ -158,10 +179,14 @@ export async function resolveTemplateContext(input: ResolveInput): Promise<Resol
     params.appointment_date = formatTRDate(appointment.startTime);
     params.appointment_time = formatTRTime(appointment.startTime);
     params.service_name = appointment.service?.name || '';
-    params.staff_name = [appointment.staff?.firstName, appointment.staff?.lastName]
-      .filter(Boolean)
-      .join(' ')
-      .trim();
+    // Prefer the cross-salon identity name so a renamed user
+    // shows up correctly in every salon's templates. Falls back
+    // to legacy Staff columns for orphan staff.
+    const staffResolved = resolveStaffProfile(
+      appointment.staff,
+      appointment.staff?.membership?.identity ?? null,
+    );
+    params.staff_name = staffResolved.name || '';
   }
 
   // Caller-supplied extras win over computed defaults.

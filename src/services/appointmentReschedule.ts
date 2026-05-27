@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import type { AppointmentSource } from '@prisma/client';
 import { prisma } from '../prisma.js';
 import { assertBookingAllowed } from './blacklist.js';
+import { resolveStaffProfile } from './staffProfileResolver.js';
 
 type PreferenceMode = 'ANY' | 'SPECIFIC';
 
@@ -122,8 +123,29 @@ function uniquePositiveIds(values: unknown[]): number[] {
   return Array.from(dedup);
 }
 
+/**
+ * Mutates each appointment in place to surface the resolved
+ * cross-salon staff name in `appointment.staff.name`. After Phase 3
+ * the legacy `Staff.name` column can lag behind the identity
+ * (admin PUTs only write Staff for orphans), so callers that
+ * read `appointment.staff.name` would otherwise show a stale
+ * value. The mutation keeps AppointmentBase's shape untouched
+ * for downstream consumers (notification templates,
+ * reschedule UI candidate lists).
+ */
+function normalizeAppointmentStaffNames(rows: AppointmentBase[]): void {
+  for (const row of rows) {
+    const s = row.staff as any;
+    if (!s) continue;
+    const resolved = resolveStaffProfile(s, s.membership?.identity ?? null);
+    if (resolved.name) {
+      s.name = resolved.name;
+    }
+  }
+}
+
 async function loadAppointments(db: DbLike, salonId: number, appointmentIds: number[]): Promise<AppointmentBase[]> {
-  return db.appointment.findMany({
+  const rows = (await db.appointment.findMany({
     where: {
       salonId,
       id: { in: appointmentIds },
@@ -142,7 +164,16 @@ async function loadAppointments(db: DbLike, salonId: number, appointmentIds: num
         select: {
           id: true,
           name: true,
+          firstName: true,
+          lastName: true,
           title: true,
+          membership: {
+            select: {
+              identity: {
+                select: { firstName: true, lastName: true, displayName: true },
+              },
+            },
+          },
         },
       },
       customer: {
@@ -154,7 +185,9 @@ async function loadAppointments(db: DbLike, salonId: number, appointmentIds: num
       },
     },
     orderBy: [{ startTime: 'asc' }, { id: 'asc' }],
-  }) as Promise<AppointmentBase[]>;
+  })) as AppointmentBase[];
+  normalizeAppointmentStaffNames(rows);
+  return rows;
 }
 
 function ensureBookedOnly(appointments: AppointmentBase[]): { ok: boolean; message?: string } {
@@ -202,7 +235,19 @@ async function buildServiceStaffMap(db: DbLike, salonId: number, serviceIds: num
         select: {
           id: true,
           name: true,
+          firstName: true,
+          lastName: true,
           title: true,
+          // Cross-salon identity resolution: the user-facing
+          // reschedule preview lists candidate staff names and
+          // must use the identity row's name when present.
+          membership: {
+            select: {
+              identity: {
+                select: { firstName: true, lastName: true, displayName: true },
+              },
+            },
+          },
         },
       },
     },
@@ -214,9 +259,10 @@ async function buildServiceStaffMap(db: DbLike, salonId: number, serviceIds: num
       map[row.serviceId] = [];
     }
     if (!map[row.serviceId].some((item) => item.staffId === row.staffId)) {
+      const resolved = resolveStaffProfile(row.Staff, row.Staff?.membership?.identity ?? null);
       map[row.serviceId].push({
         staffId: row.staffId,
-        name: row.Staff?.name || `Staff #${row.staffId}`,
+        name: resolved.name || `Staff #${row.staffId}`,
         title: row.Staff?.title || null,
       });
     }
@@ -438,7 +484,20 @@ export async function commitAppointmentReschedule(params: RescheduleCommitParams
             select: { id: true, name: true, duration: true, price: true, requiresSpecialist: true },
           },
           staff: {
-            select: { id: true, name: true, title: true },
+            select: {
+              id: true,
+              name: true,
+              firstName: true,
+              lastName: true,
+              title: true,
+              membership: {
+                select: {
+                  identity: {
+                    select: { firstName: true, lastName: true, displayName: true },
+                  },
+                },
+              },
+            },
           },
           customer: {
             select: { id: true, name: true, phone: true },
@@ -448,6 +507,7 @@ export async function commitAppointmentReschedule(params: RescheduleCommitParams
       }) as AppointmentBase[];
 
       if (existingBatch.length) {
+        normalizeAppointmentStaffNames(existingBatch);
         return {
           batchId,
           previousAppointmentIds: uniquePositiveIds(existingBatch.map((row) => row.rescheduledFromAppointmentId || 0)),
@@ -565,6 +625,7 @@ export async function commitAppointmentReschedule(params: RescheduleCommitParams
       });
     }
 
+    normalizeAppointmentStaffNames(createdAppointments);
     return {
       batchId,
       previousAppointmentIds: oldAppointments.map((item) => item.id),
