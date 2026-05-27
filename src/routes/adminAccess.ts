@@ -217,11 +217,22 @@ router.get('/users', authenticateToken, requirePermissionKey('access.users.manag
         // are) still show a real name in the team list instead of
         // the email's local part. The raw fields are also exposed so
         // the client can render initials and richer cards.
+        //
+        // Source-of-truth precedence: when this membership is linked
+        // to a Staff row (owners + any team member who was promoted
+        // into the salon's staff list) the Staff record is what the
+        // salon owner edits day-to-day. Treat Staff.name as the
+        // authoritative label so the team list never lags behind the
+        // staff-edit form, even if a future code path forgets to
+        // mirror onto UserIdentity.
+        const linkedStaff = staffByMembershipId.get(membership.id) || null;
+        const staffName = (linkedStaff?.name || '').trim();
         const first = (membership.identity.firstName || '').trim();
         const last = (membership.identity.lastName || '').trim();
         const composed = `${first} ${last}`.trim();
+        const identityDisplayName = (membership.identity.displayName || '').trim();
         const resolvedDisplayName =
-          (membership.identity.displayName || '').trim() || composed || null;
+          staffName || identityDisplayName || composed || null;
         return {
           id: membership.id,
           identityId: membership.identity.id,
@@ -237,7 +248,7 @@ router.get('/users', authenticateToken, requirePermissionKey('access.users.manag
           lastLoginAt: membership.lastLoginAt,
           createdAt: membership.createdAt,
           updatedAt: membership.updatedAt,
-          linkedStaff: staffByMembershipId.get(membership.id) || null,
+          linkedStaff,
         };
       }),
     });

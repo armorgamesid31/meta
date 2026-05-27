@@ -260,24 +260,45 @@ router.put('/staff-profile', authenticateToken, async (req: any, res: any) => {
 
   const lastName = lastNameRaw || null;
   const name = [firstName, lastName].filter(Boolean).join(' ').trim();
-  const updated = await prisma.staff.update({
-    where: { id: staff.id },
-    data: {
-      firstName,
-      lastName,
-      gender: genderRaw as any,
-      name,
-    },
-    select: {
-      id: true,
-      name: true,
-      firstName: true,
-      lastName: true,
-      gender: true,
-      title: true,
-      bio: true,
-      profileImageUrl: true,
-    },
+  const membership = await prisma.salonMembership.findUnique({
+    where: { id: membershipId },
+    select: { identityId: true },
+  });
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const next = await tx.staff.update({
+      where: { id: staff.id },
+      data: {
+        firstName,
+        lastName,
+        gender: genderRaw as any,
+        name,
+      },
+      select: {
+        id: true,
+        name: true,
+        firstName: true,
+        lastName: true,
+        gender: true,
+        title: true,
+        bio: true,
+        profileImageUrl: true,
+      },
+    });
+
+    // Mirror name fields onto UserIdentity so the access-users list
+    // (team management screen) and any other consumer that reads from
+    // Identity show the same value the owner just saved on Staff.
+    // Without this, Staff is fresh but Identity.displayName stays
+    // stale, and the team list keeps the old name visible.
+    if (membership?.identityId) {
+      await tx.userIdentity.update({
+        where: { id: membership.identityId },
+        data: { firstName, lastName, displayName: name || null },
+      });
+    }
+
+    return next;
   });
 
   return res.status(200).json({ item: updated });
