@@ -7,6 +7,7 @@ import {
 } from '../services/availabilityService.js';
 import { BusinessError } from '../lib/errors.js';
 import { prisma } from '../prisma.js';
+import { invalidateAvailabilityForSalon } from '../services/availabilityCache.js';
 
 const SLOT_LOCK_TTL_SECONDS = 120;
 
@@ -167,6 +168,9 @@ router.post('/lock', async (req: any, res: any) => {
       return res.status(409).json({ code: result.error, message: result.message });
     }
 
+    // Lock motorun blocked listesine girer; cache stale olabilir.
+    invalidateAvailabilityForSalon(salonId).catch(() => undefined);
+
     return res.status(201).json({ id: result.id, expiresAt: result.expiresAt });
   } catch (error) {
     console.error('Error creating slot lock:', error);
@@ -189,6 +193,7 @@ router.delete('/lock/:id', async (req: any, res: any) => {
   }
 
   await prisma.slotLock.deleteMany({ where: { id, salonId } });
+  invalidateAvailabilityForSalon(salonId).catch(() => undefined);
   return res.status(200).json({ ok: true });
 });
 

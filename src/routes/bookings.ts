@@ -21,6 +21,7 @@ import {
   findCachedBookingByIdempotencyKey,
   cacheBookingForIdempotencyKey,
 } from '../services/bookingIdempotency.js';
+import { invalidateAvailabilityForSalon } from '../services/availabilityCache.js';
 import { buildRescheduleOptions } from '../services/appointmentRescheduleOptions.js';
 import { matchWaitlistForDate } from '../services/waitlist.js';
 import {
@@ -644,6 +645,9 @@ async function createExactSlotBooking(input: {
     });
   }
 
+  // Salon takvimi değişti — availability cache temizle. Fire-and-forget.
+  invalidateAvailabilityForSalon(input.salonId).catch(() => undefined);
+
   return {
     status: 201,
     body: {
@@ -919,6 +923,7 @@ router.post("/cancel", authenticateToken, async (req: any, res: any) => {
         startTime: result.notify.startTime,
       });
       await matchWaitlistForDate(salonId, result.notify.startTime.toISOString().slice(0, 10)).catch(() => undefined);
+      invalidateAvailabilityForSalon(salonId).catch(() => undefined);
     }
     return res.status(result.status).json(result.body);
 

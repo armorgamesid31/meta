@@ -1,5 +1,12 @@
 import { DatesEngine, SlotsEngine } from '../modules/availability/index.js';
 import type { AvailabilityRequest, DatesRequest, PersonGroup, SlotsResponse } from '../modules/availability/types.js';
+import type { DatesResponse } from '../modules/availability/types.js';
+import {
+  availabilityDatesCacheKey,
+  availabilitySlotsCacheKey,
+  getCachedAvailability,
+  setCachedAvailability,
+} from './availabilityCache.js';
 
 export type SelectedPersonSlotInput = {
   personId: string;
@@ -84,13 +91,48 @@ export async function generateAvailability(
   request: AvailabilityRequest,
   options: { persistSearchContext?: boolean } = {},
 ): Promise<SlotsResponse> {
+  // Cache yalnızca persistSearchContext === false durumunda devreye girer:
+  //  - persistSearchContext === true (varsayılan) DB'ye lock token yazar;
+  //    cache'lenmiş sonuç döndürürsek farklı arama için aynı token
+  //    paylaşılır → güvenlik riski.
+  //  - persistSearchContext === false (booking commit re-validation,
+  //    dates-engine inner loop, alternatives) saf okuma → cache güvenli.
+  //  - ignoreLockId varsa (booking commit) cache atla — kullanıcının
+  //    kendi lock'unu hariç tutmak isteyen taze sorgu lazım.
+  const canCache = options.persistSearchContext === false && !request.ignoreLockId;
+  if (canCache) {
+    const cacheKey = availabilitySlotsCacheKey({
+      salonId: request.salonId,
+      date: request.date,
+      groups: request.groups,
+    });
+    const cached = await getCachedAvailability<SlotsResponse>(cacheKey);
+    if (cached) return cached;
+
+    const engine = new SlotsEngine();
+    const result = await engine.generateSlots(request, options);
+    await setCachedAvailability(cacheKey, result);
+    return result;
+  }
+
   const engine = new SlotsEngine();
   return engine.generateSlots(request, options);
 }
 
-export async function generateAvailableDates(request: DatesRequest) {
+export async function generateAvailableDates(request: DatesRequest): Promise<DatesResponse> {
+  const cacheKey = availabilityDatesCacheKey({
+    salonId: request.salonId,
+    startDate: request.startDate,
+    endDate: request.endDate,
+    groups: request.groups,
+  });
+  const cached = await getCachedAvailability<DatesResponse>(cacheKey);
+  if (cached) return cached;
+
   const engine = new DatesEngine();
-  return engine.getAvailableDates(request);
+  const result = await engine.getAvailableDates(request);
+  await setCachedAvailability(cacheKey, result);
+  return result;
 }
 
 export function parseSelectedPersonSlots(input: unknown): SelectedPersonSlotInput[] {
