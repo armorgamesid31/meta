@@ -184,9 +184,12 @@ export async function ensureSalonServiceCategories(salonId: number) {
   // be physically prepped, so chained selections must NOT be interleaved
   // with another category's service during availability search. Same
   // reasoning as why people don't want a haircut squeezed between two
-  // bikini-laser slots. Salon owners can still toggle this off per salon
-  // from the category settings sheet.
-  const DEFAULT_SEQUENTIAL_KEYS = new Set<string>(['LASER', 'WAX']);
+  // bikini-laser slots. BODY covers full-body massages, pressotherapy,
+  // anti-cellulite, lipo, etc. — all of which require undress + oil/gel
+  // + lying down, so a hair appointment in between is a non-starter.
+  // Salon owners can still toggle this off per salon from the category
+  // settings sheet.
+  const DEFAULT_SEQUENTIAL_KEYS = new Set<string>(['LASER', 'WAX', 'BODY']);
 
   for (const category of categories) {
     const existingRow = byCategoryId.get(category.id);
