@@ -239,95 +239,65 @@ export class ChainBuilder {
     data: IndexedData,
     date: Date
   ): Promise<boolean> {
+    // Capacity semantics (2026-05-28 karar):
+    //   - service.capacityOverride explicitly set → enforce as per-service
+    //     concurrent cap across ALL staff (resource constraint, e.g. a
+    //     single lazer machine).
+    //   - else, category.capacity > 1 → enforce as per-category concurrent
+    //     cap. category.capacity = 1 is the schema default and treated as
+    //     "no explicit cap" (staff availability already enforced).
+    //   - else → no global capacity check; staff conflict guard is enough.
+    //
+    // Effect: salon doesn't need to know about capacity to get correct
+    // single-customer-per-staff behaviour; only an explicit number > 1
+    // (or a service-level override) opts into a global resource limit.
     const dateKey = date.toISOString().split('T')[0];
-    
+    const blockEnd = startTime + duration;
+
     for (const service of block.services) {
-        // Determine capacity limit
-        const category = service.categoryId ? data.categoriesById.get(service.categoryId) : undefined;
-        const limit = service.capacityOverride ?? category?.capacity ?? 1;
-        
-        // If limit is 1, standard staff availability (already checked) covers it?
-        // NO. If service capacity is 1, it means ONLY 1 customer can receive this service at a time (e.g. 1 machine).
-        // Even if 2 different staff are available, if they use the same limited machine, we must block.
-        // So we must check concurrent appointments for this SERVICE (or category?) across ALL staff.
-        
-        // Requirement: "Capacity = aynı anda kaç appointment olabilir."
-        // Usually capacity is per Service or Category.
-        
-        // Let's count overlapping appointments for this service/category across ALL staff.
-        let concurrentCount = 0;
-        
-        // We need to iterate ALL appointments for the day, not just the assigned staff's.
-        // data.appointmentsByStaffAndDate is grouped by staff. We need to iterate all staff.
-        
-        for (const [key, appointments] of data.appointmentsByStaffAndDate.entries()) {
-            if (!key.endsWith(dateKey)) continue; // Filter by date
-            
-            for (const apt of appointments) {
-                // Check if appointment matches the capacity scope (Service or Category)
-                // If capacity is defined on Service, we count Service overlaps.
-                // If on Category, we count Category overlaps.
-                // Priority: Service > Category > Default.
-                
-                let matchesScope = false;
-                if (service.capacityOverride !== null) {
-                    // Service-level capacity: count appointments for THIS service
-                    if (apt.serviceId === service.id) matchesScope = true;
-                } else if (category && category.capacity !== null) {
-                    // Category-level capacity: count appointments for ANY service in this category
-                    const aptService = data.servicesById.get(apt.serviceId);
-                    if (aptService && aptService.categoryId === category.id) matchesScope = true;
-                } else {
-                    // Default capacity 1. Usually implies per-staff (already checked) or global?
-                    // "default = 1". If capacity is 1, and we have staff check, do we need global check?
-                    // If "Lazer Room" is the bottleneck (Capacity=1), yes.
-                    // But if default means "1 per staff", then staff check is enough.
-                    // Requirement says: "Capacity = aynı anda kaç appointment olabilir. Staff çakışması ayrı kontrol."
-                    // This implies Capacity is a resource constraint independent of staff.
-                    // So we assume default 1 means "1 global slot". This seems too strict for default.
-                    // Usually default is "Unlimited" (constrained by staff).
-                    // BUT requirement says "default = 1".
-                    // Let's assume if no override/category capacity, we only rely on staff availability (effectively infinite global capacity).
-                    // Wait, user said "Capacity priority: service.capacityOverride, category.capacity, default = 1".
-                    // If default is 1 globally, that's very strict.
-                    // Maybe "default" meant "default logic" which is staff-based?
-                    // Or maybe it really means 1.
-                    
-                    // Let's be safe: If explicit capacity is set, check it.
-                    // If not, assume staff constraint is enough.
-                    // Actually, let's implement checking against `limit`.
-                    if (limit === 1 && !service.capacityOverride && !category?.capacity) {
-                        // If falling back to true default, assume it's per-staff (which we checked).
-                        // So skip global check.
-                        continue;
-                    }
-                    
-                    // If we are here, we have an explicit capacity to enforce.
-                    if (service.capacityOverride !== null) {
-                         if (apt.serviceId === service.id) matchesScope = true;
-                    } else if (category) {
-                         const aptService = data.servicesById.get(apt.serviceId);
-                         if (aptService && aptService.categoryId === category.id) matchesScope = true;
-                    }
-                }
-                
-                if (matchesScope) {
-                    const aptStart = (apt.startTime.getHours() * 60) + apt.startTime.getMinutes();
-                    const aptEnd = (apt.endTime.getHours() * 60) + apt.endTime.getMinutes();
-                    
-                    // Check overlap with current candidate slot [startTime, startTime + duration]
-                    if (startTime < aptEnd && (startTime + duration) > aptStart) {
-                        concurrentCount++;
-                    }
-                }
-            }
+      const category = service.categoryId ? data.categoriesById.get(service.categoryId) : undefined;
+
+      let limit: number | null = null;
+      let scope: 'service' | 'category' | null = null;
+      if (service.capacityOverride !== null && service.capacityOverride !== undefined) {
+        limit = service.capacityOverride;
+        scope = 'service';
+      } else if (category && category.capacity !== null && category.capacity > 1) {
+        limit = category.capacity;
+        scope = 'category';
+      }
+
+      if (limit === null || scope === null) {
+        continue; // No explicit cap → rely on staff availability.
+      }
+
+      let concurrentCount = 0;
+      for (const [key, appointments] of data.appointmentsByStaffAndDate.entries()) {
+        if (!key.endsWith(dateKey)) continue;
+
+        for (const apt of appointments) {
+          const matchesScope =
+            scope === 'service'
+              ? apt.serviceId === service.id
+              : (() => {
+                  const aptService = data.servicesById.get(apt.serviceId);
+                  return Boolean(aptService && aptService.categoryId === category!.id);
+                })();
+          if (!matchesScope) continue;
+
+          const aptStart = apt.startTime.getHours() * 60 + apt.startTime.getMinutes();
+          const aptEnd = apt.endTime.getHours() * 60 + apt.endTime.getMinutes();
+          if (startTime < aptEnd && blockEnd > aptStart) {
+            concurrentCount += 1;
+          }
         }
-        
-        if (concurrentCount >= limit) {
-            return false;
-        }
+      }
+
+      if (concurrentCount >= limit) {
+        return false;
+      }
     }
-    
+
     return true;
   }
 
