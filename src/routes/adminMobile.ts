@@ -9,6 +9,11 @@ import { BusinessError } from '../lib/errors.js';
 import { deriveTones, isBlockedPastel, isPresetId, normalizeHex } from '../lib/theme/derive.js';
 import { syncCustomerToGlobalIdentity } from '../services/globalCustomerIdentity.js';
 import {
+  findCachedBookingByIdempotencyKey,
+  cacheBookingForIdempotencyKey,
+} from '../services/bookingIdempotency.js';
+import { invalidateAvailabilityForSalon } from '../services/availabilityCache.js';
+import {
   CreateAdminCustomerInputSchema,
   type CreateAdminCustomerInput,
 } from '../schemas/customer.js';
@@ -2498,6 +2503,16 @@ router.post('/appointments', authenticateToken, validate({ body: CreateAppointme
     throw new BusinessError('VALIDATION_FAILED', 'customerId must be a positive integer.', 400);
   }
 
+  const idempotencyKey =
+    typeof req.body?.idempotencyKey === 'string' && req.body.idempotencyKey.trim()
+      ? req.body.idempotencyKey.trim()
+      : null;
+
+  if (idempotencyKey) {
+    const cached = await findCachedBookingByIdempotencyKey({ salonId, idempotencyKey });
+    if (cached) return res.status(cached.status).json(cached.body);
+  }
+
   try {
     const result = await prisma.$transaction(async (tx) => {
       const [existingCustomerById, existingCustomerByPhone] = await Promise.all([
@@ -2760,6 +2775,15 @@ router.post('/appointments', authenticateToken, validate({ body: CreateAppointme
     } catch (notifyError) {
       console.error('Appointment create notification error:', notifyError);
     }
+
+    if (idempotencyKey) {
+      await cacheBookingForIdempotencyKey({
+        salonId,
+        idempotencyKey,
+        appointmentIds: result.appointments.map((apt: any) => Number(apt.id)),
+      });
+    }
+    invalidateAvailabilityForSalon(salonId).catch(() => undefined);
 
     return res.status(201).json({
       item: result.appointments[0],

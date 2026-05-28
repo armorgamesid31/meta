@@ -705,6 +705,15 @@ router.post("/confirm", authenticateToken, async (req: any, res: any) => {
   }
 
   const salonId = req.user.salonId;
+  const idempotencyKey =
+    typeof req.body?.idempotencyKey === 'string' && req.body.idempotencyKey.trim()
+      ? req.body.idempotencyKey.trim()
+      : null;
+
+  if (idempotencyKey) {
+    const cached = await findCachedBookingByIdempotencyKey({ salonId, idempotencyKey });
+    if (cached) return res.status(cached.status).json(cached.body);
+  }
 
   try {
     await assertBookingAllowed({
@@ -808,6 +817,15 @@ router.post("/confirm", authenticateToken, async (req: any, res: any) => {
         }),
       ),
     );
+
+    if (idempotencyKey) {
+      await cacheBookingForIdempotencyKey({
+        salonId,
+        idempotencyKey,
+        appointmentIds: result.appointments.map((apt) => Number(apt.id)),
+      });
+    }
+    invalidateAvailabilityForSalon(salonId).catch(() => undefined);
 
     res.status(201).json({
       message: 'Booking confirmed successfully.',
