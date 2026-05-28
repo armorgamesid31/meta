@@ -2,9 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { syncCustomerToGlobalIdentity } from '../services/globalCustomerIdentity.js';
 import { authenticateToken } from '../middleware/auth.js';
-import { AvailabilityEngine } from '../modules/availability/engine.js';
 import { SlotsEngine } from '../modules/availability/slots-engine.js';
-import { DateNormalizer } from '../modules/availability/normalizer.js';
 import type { PersonGroup } from '../modules/availability/types.js';
 import { calculateSmartDuration, ServiceWithCategory } from '../utils/durationCalculator.js';
 import { normalizeInstagramIdentity } from '../services/identityService.js';
@@ -790,14 +788,18 @@ router.post("/cancel", authenticateToken, async (req: any, res: any) => {
 
   try {
     const result = await prisma.$transaction(async (tx) => {
-      const bookingRecord = await tx.$queryRaw`
-        SELECT * FROM randevular
-        WHERE id = ${bookingId}
-        AND salon_id = ${salonId}
-        FOR UPDATE
-      ` as any[];
+      const appointment = await tx.appointment.findFirst({
+        where: { id: bookingId, salonId },
+        select: {
+          id: true,
+          status: true,
+          startTime: true,
+          customerName: true,
+          service: { select: { name: true } },
+        },
+      });
 
-      if (bookingRecord.length === 0) {
+      if (!appointment) {
         return { status: 404, body: { message: 'Booking not found.' }, notify: null as null | {
           appointmentId: number;
           customerName: string;
@@ -806,9 +808,7 @@ router.post("/cancel", authenticateToken, async (req: any, res: any) => {
         } };
       }
 
-      const booking = bookingRecord[0];
-
-      if (booking.hizmet_durumu === 'iptal') {
+      if (String(appointment.status || '').toUpperCase() === 'CANCELLED') {
         return {
           status: 200,
           body: {
@@ -824,11 +824,7 @@ router.post("/cancel", authenticateToken, async (req: any, res: any) => {
         };
       }
 
-      const bookingDate = DateNormalizer.parseDate(booking.tarih);
-      const bookingTimeMinutes = DateNormalizer.parseTimeToMinutes(booking.saat);
-      const bookingStartTime = DateNormalizer.createDateTime(booking.tarih, bookingTimeMinutes);
-
-      if (bookingStartTime <= new Date()) {
+      if (new Date(appointment.startTime) <= new Date()) {
         return { status: 400, body: { message: 'Cannot cancel past bookings.' }, notify: null as null | {
           appointmentId: number;
           customerName: string;
@@ -837,43 +833,13 @@ router.post("/cancel", authenticateToken, async (req: any, res: any) => {
         } };
       }
 
-      await tx.$executeRaw`
-        UPDATE randevular
-        SET hizmet_durumu = 'iptal',
-            erteleme_iptal_zamani = NOW(),
-            updated_at = NOW()
-        WHERE id = ${bookingId}
-        AND salon_id = ${salonId}
-      `;
-
-      const appointment = await tx.appointment.findUnique({
+      await tx.appointment.update({
         where: { id: bookingId },
-        select: {
-          id: true,
-          salonId: true,
-          customerName: true,
-          startTime: true,
-          service: { select: { name: true } },
+        data: {
+          status: 'CANCELLED',
+          updatedAt: new Date(),
         },
       });
-
-      if (appointment && appointment.salonId === salonId) {
-        await tx.appointment.update({
-          where: { id: bookingId },
-          data: {
-            status: 'CANCELLED',
-            updatedAt: new Date()
-          }
-        });
-      }
-
-      await tx.$executeRaw`
-        DELETE FROM temporary_locks
-        WHERE salon_id = ${salonId}
-        AND tarih = ${booking.tarih}
-        AND saat = ${booking.saat}
-        AND sure = ${booking.sure}
-      `;
 
       return {
         status: 200,
@@ -881,14 +847,12 @@ router.post("/cancel", authenticateToken, async (req: any, res: any) => {
           message: 'Booking cancelled successfully.',
           bookingId,
         },
-        notify: appointment && appointment.salonId === salonId
-          ? {
-              appointmentId: Number(appointment.id),
-              customerName: appointment.customerName || booking.musteri_adi || 'Müşteri',
-              serviceName: appointment.service?.name || null,
-              startTime: appointment.startTime,
-            }
-          : null,
+        notify: {
+          appointmentId: Number(appointment.id),
+          customerName: appointment.customerName || 'Müşteri',
+          serviceName: appointment.service?.name || null,
+          startTime: appointment.startTime,
+        },
       };
     });
 
@@ -1317,7 +1281,7 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
   const salonId = req.user.salonId;
 
   try {
-    const modernAppointment = await prisma.appointment.findFirst({
+    const appointment = await prisma.appointment.findFirst({
       where: { id: bookingId, salonId },
       select: {
         id: true,
@@ -1329,308 +1293,57 @@ router.post("/reschedule", authenticateToken, async (req: any, res: any) => {
       },
     });
 
-    if (modernAppointment) {
-      await assertBookingAllowed({
-        salonId,
-        customerId: modernAppointment.customerId,
-        phone: modernAppointment.customerPhone,
-        channel: 'WHATSAPP',
-      });
-
-      const parsedStart = parseIsoDate(`${newSlot.date}T${newSlot.startTime}:00`);
-      if (!parsedStart) {
-        throw new BusinessError('VALIDATION_FAILED', 'Invalid newSlot date/time.', 400);
-      }
-
-      const preferredStaffId = Number(Array.isArray(newSlot.staffIds) ? newSlot.staffIds[0] : null);
-      const assignments =
-        Number.isInteger(preferredStaffId) && preferredStaffId > 0 ? { [bookingId]: preferredStaffId } : {};
-
-      const committed = await commitAppointmentReschedule({
-        salonId,
-        appointmentIds: [bookingId],
-        newStartTime: parsedStart,
-        assignments,
-        idempotencyKey: null,
-      });
-
-      if (committed.createdAppointments.length) {
-        const first = committed.createdAppointments[0];
-        await emitSameDayChangeBestEffort({
-          salonId,
-          event: 'UPDATED',
-          appointmentId: first.id,
-          customerName: first.customerName,
-          serviceName: first.service?.name || modernAppointment.service?.name || null,
-          startTime: new Date(first.startTime),
-        });
-      }
-
-      return res.status(200).json({
-        message: 'Booking rescheduled successfully.',
-        oldBookingId: bookingId,
-        newAppointments: committed.createdAppointments.map((apt) => ({
-          id: apt.id,
-          startTime: apt.startTime,
-          endTime: apt.endTime,
-          staffId: apt.staffId,
-          serviceId: apt.serviceId,
-        })),
-      });
+    if (!appointment) {
+      throw new BusinessError('NOT_FOUND', 'Booking not found.', 404);
     }
 
-    const result = await prisma.$transaction(async (tx) => {
-      const bookingRecord = await tx.$queryRaw`
-        SELECT * FROM randevular
-        WHERE id = ${bookingId}
-        AND salon_id = ${salonId}
-        FOR UPDATE
-      ` as any[];
-
-      if (bookingRecord.length === 0) {
-        return { status: 404, body: { message: 'Booking not found.' }, notify: null as null | {
-          appointmentId: number;
-          customerName: string;
-          serviceName: string | null;
-          startTime: Date;
-        } };
-      }
-
-      const booking = bookingRecord[0];
-
-      await assertBookingAllowed({
-        salonId,
-        phone: String(booking.musteri_telefonu || ''),
-        channel: 'WHATSAPP',
-      });
-
-      if (booking.hizmet_durumu === 'iptal') {
-        return { status: 400, body: { message: 'Cannot reschedule a cancelled booking.' }, notify: null as null | {
-          appointmentId: number;
-          customerName: string;
-          serviceName: string | null;
-          startTime: Date;
-        } };
-      }
-
-      if (booking.hizmet_durumu === 'rescheduling') {
-        return { status: 409, body: { message: 'Booking is currently being rescheduled.' }, notify: null as null | {
-          appointmentId: number;
-          customerName: string;
-          serviceName: string | null;
-          startTime: Date;
-        } };
-      }
-
-      const bookingDate = DateNormalizer.parseDate(booking.tarih);
-      const bookingTimeMinutes = DateNormalizer.parseTimeToMinutes(booking.saat);
-      const bookingStartTime = DateNormalizer.createDateTime(booking.tarih, bookingTimeMinutes);
-
-      if (bookingStartTime <= new Date()) {
-        return { status: 400, body: { message: 'Cannot reschedule past bookings.' }, notify: null as null | {
-          appointmentId: number;
-          customerName: string;
-          serviceName: string | null;
-          startTime: Date;
-        } };
-      }
-
-      await tx.$executeRaw`
-        UPDATE randevular
-        SET hizmet_durumu = 'rescheduling',
-            updated_at = NOW()
-        WHERE id = ${bookingId}
-        AND salon_id = ${salonId}
-      `;
-
-      const engine = new AvailabilityEngine();
-      const availabilityResult = await engine.calculateAvailability({
-        date: new Date(newSlot.date),
-        serviceId: newSlot.serviceId,
-        peopleCount: newSlot.peopleCount,
-        salonId
-      });
-
-      const newSlotStartMinutes = DateNormalizer.parseTimeToMinutes(newSlot.startTime);
-      const newSlotStart = DateNormalizer.createDateTime(newSlot.date, newSlotStartMinutes);
-
-      const slotAvailable = availabilityResult.slots.some(slot =>
-        slot.startTime.getTime() === newSlotStart.getTime() &&
-        slot.availableStaff.length >= newSlot.staffIds.length &&
-        newSlot.staffIds.every((staffId: number) => slot.availableStaff.includes(staffId))
-      );
-
-      if (!slotAvailable) {
-        await tx.$executeRaw`
-          UPDATE randevular
-          SET hizmet_durumu = 'aktif',
-              updated_at = NOW()
-          WHERE id = ${bookingId}
-          AND salon_id = ${salonId}
-        `;
-        return { status: 409, body: { message: 'New slot is not available.' }, notify: null as null | {
-          appointmentId: number;
-          customerName: string;
-          serviceName: string | null;
-          startTime: Date;
-        } };
-      }
-
-      const lockId = `reschedule-${bookingId}-${Date.now()}`;
-      const staffService = await tx.staffService.findFirst({
-        where: {
-          serviceId: newSlot.serviceId,
-          staffId: newSlot.staffIds[0],
-          Staff: { salonId }
-        }
-      });
-      const service = await tx.service.findFirst({
-        where: { id: newSlot.serviceId, salonId }
-      });
-      if (!service) {
-        await tx.$executeRaw`
-          UPDATE randevular
-          SET hizmet_durumu = 'aktif',
-              updated_at = NOW()
-          WHERE id = ${bookingId}
-          AND salon_id = ${salonId}
-        `;
-        return { status: 404, body: { message: 'Service not found.' }, notify: null as null | {
-          appointmentId: number;
-          customerName: string;
-          serviceName: string | null;
-          startTime: Date;
-        } };
-      }
-      const duration = staffService?.duration ?? service.duration;
-
-      await tx.$executeRaw`
-        INSERT INTO temporary_locks (id, salon_id, tarih, saat, sure, expires_at, created_at)
-        VALUES (${lockId}, ${salonId}, ${newSlot.date}, ${newSlot.startTime}, ${duration}, ${new Date(Date.now() + 5 * 60 * 1000)}, NOW())
-      `;
-
-      const validStaff = await tx.staff.findMany({
-        where: {
-          id: { in: newSlot.staffIds },
-          salonId
-        }
-      });
-
-      if (validStaff.length !== newSlot.staffIds.length) {
-        await tx.$executeRaw`
-          UPDATE randevular
-          SET hizmet_durumu = 'aktif',
-              updated_at = NOW()
-          WHERE id = ${bookingId}
-          AND salon_id = ${salonId}
-        `;
-        await tx.$executeRaw`
-          DELETE FROM temporary_locks WHERE id = ${lockId}
-        `;
-        return { status: 400, body: { message: 'Invalid staff selection for new slot.' }, notify: null as null | {
-          appointmentId: number;
-          customerName: string;
-          serviceName: string | null;
-          startTime: Date;
-        } };
-      }
-
-      const newSlotEnd = new Date(newSlotStart.getTime() + duration * 60 * 1000);
-      const newAppointments = [];
-
-      for (const staffId of newSlot.staffIds) {
-        const appointment = await tx.appointment.create({
-          data: {
-            salonId,
-            staffId,
-            serviceId: newSlot.serviceId,
-            customerName: booking.musteri_adi,
-            customerPhone: booking.musteri_telefonu,
-            startTime: newSlotStart,
-            endTime: newSlotEnd,
-            status: 'BOOKED',
-            source: 'ADMIN' 
-          }
-        });
-        newAppointments.push(appointment);
-      }
-
-      await tx.$executeRaw`
-        UPDATE randevular
-        SET hizmet_durumu = 'iptal',
-            erteleme_iptal_zamani = NOW(),
-            updated_at = NOW()
-        WHERE id = ${bookingId}
-        AND salon_id = ${salonId}
-      `;
-
-      const oldAppointment = await tx.appointment.findUnique({
-        where: { id: bookingId },
-        select: {
-          id: true,
-          salonId: true,
-          customerName: true,
-          startTime: true,
-        },
-      });
-
-      if (oldAppointment && oldAppointment.salonId === salonId) {
-        await tx.appointment.update({
-          where: { id: bookingId },
-          data: {
-            status: 'CANCELLED',
-            updatedAt: new Date()
-          }
-        });
-      }
-
-      await tx.$executeRaw`
-        DELETE FROM temporary_locks WHERE id = ${lockId}
-      `;
-
-      return {
-        status: 200,
-        body: {
-          message: 'Booking rescheduled successfully.',
-          oldBookingId: bookingId,
-          newAppointments: newAppointments.map(apt => ({
-            id: apt.id,
-            startTime: apt.startTime,
-            endTime: apt.endTime,
-            staffId: apt.staffId,
-            serviceId: apt.serviceId
-          })),
-        },
-        notify: newAppointments.length
-          ? {
-              appointmentId: Number(newAppointments[0].id),
-              customerName: oldAppointment?.customerName || booking.musteri_adi || 'Müşteri',
-              serviceName: service.name,
-              startTime: newSlotStart,
-            }
-          : null,
-        releasedAppointmentId: Number(bookingId),
-      };
+    await assertBookingAllowed({
+      salonId,
+      customerId: appointment.customerId,
+      phone: appointment.customerPhone,
+      channel: 'WHATSAPP',
     });
 
-    if (result.releasedAppointmentId) {
-      await releaseAppointmentCampaignApplications({
-        salonId,
-        appointmentId: result.releasedAppointmentId,
-      });
+    const parsedStart = parseIsoDate(`${newSlot.date}T${newSlot.startTime}:00`);
+    if (!parsedStart) {
+      throw new BusinessError('VALIDATION_FAILED', 'Invalid newSlot date/time.', 400);
     }
 
-    if (result.notify) {
+    const preferredStaffId = Number(Array.isArray(newSlot.staffIds) ? newSlot.staffIds[0] : null);
+    const assignments =
+      Number.isInteger(preferredStaffId) && preferredStaffId > 0 ? { [bookingId]: preferredStaffId } : {};
+
+    const committed = await commitAppointmentReschedule({
+      salonId,
+      appointmentIds: [bookingId],
+      newStartTime: parsedStart,
+      assignments,
+      idempotencyKey: null,
+    });
+
+    if (committed.createdAppointments.length) {
+      const first = committed.createdAppointments[0];
       await emitSameDayChangeBestEffort({
         salonId,
         event: 'UPDATED',
-        appointmentId: result.notify.appointmentId,
-        customerName: result.notify.customerName,
-        serviceName: result.notify.serviceName,
-        startTime: result.notify.startTime,
+        appointmentId: first.id,
+        customerName: first.customerName,
+        serviceName: first.service?.name || appointment.service?.name || null,
+        startTime: new Date(first.startTime),
       });
     }
-    return res.status(result.status).json(result.body);
+
+    return res.status(200).json({
+      message: 'Booking rescheduled successfully.',
+      oldBookingId: bookingId,
+      newAppointments: committed.createdAppointments.map((apt) => ({
+        id: apt.id,
+        startTime: apt.startTime,
+        endTime: apt.endTime,
+        staffId: apt.staffId,
+        serviceId: apt.serviceId,
+      })),
+    });
 
   } catch (error: any) {
     if (error?.code === 'CUSTOMER_BANNED' || error?.message === 'CUSTOMER_BANNED') {
