@@ -10936,12 +10936,29 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
           : null;
       const systemAction = isSystemRow ? row.messageType : null;
 
+      // System message text used to be snapshotted at write time
+      // (e.g. `${actorName} devraldı.`) — meaning if the staff member
+      // later renamed themselves in their profile, every old event
+      // kept showing the stale name. We now always re-template system
+      // messages at read time using the freshly-resolved actor display
+      // name (which itself is a live join against SalonUser /
+      // UserIdentity). DB row.text is kept as a fallback for legacy
+      // events whose actorUserId could not be resolved (deleted user,
+      // pre-migration rows, etc.).
+      const text = (() => {
+        if (!isSystemRow) return row.text;
+        const actor = systemActorDisplayName || 'Salon Ekibi';
+        if (systemAction === 'manual_takeover') return `${actor} devraldı.`;
+        if (systemAction === 'manual_resume') return `${actor} Kedy AI'ı devreye aldı.`;
+        return row.text;
+      })();
+
       return {
         id: row.id,
         providerMessageId: row.providerMessageId,
         customerName: row.customerName,
         messageType: row.messageType,
-        text: row.text,
+        text,
         status: row.processingStatus || 'DONE',
         direction,
         deliveryChannel: channel,
@@ -11505,27 +11522,11 @@ router.post('/conversations/:channel/:conversationKey/handover', authenticateTok
       const joined = `${first} ${last}`.trim();
       return joined || null;
     })();
-    // Fallback to UserIdentity (shared person record across multiple salons)
-    // when the per-salon SalonUser row has no name set.
-    let identityFullName: string | null = null;
-    let identityDisplayName: string | null = null;
-    if (!senderUserFullName && !senderUserDisplayName && senderUserEmail) {
-      const identity = await prisma.userIdentity.findUnique({
-        where: { email: senderUserEmail },
-        select: { firstName: true, lastName: true, displayName: true },
-      });
-      const iFirst = typeof identity?.firstName === 'string' ? identity.firstName.trim() : '';
-      const iLast = typeof identity?.lastName === 'string' ? identity.lastName.trim() : '';
-      identityFullName = `${iFirst} ${iLast}`.trim() || null;
-      identityDisplayName = typeof identity?.displayName === 'string' && identity.displayName.trim()
-        ? identity.displayName.trim()
-        : null;
-    }
-    // Display priority: SalonUser name → SalonUser displayName → UserIdentity name
-    // → UserIdentity displayName → generic. Email is intentionally hidden from
-    // the customer-facing system message — only show a friendly identifier.
-    const takeoverActorLabel =
-      senderUserFullName || senderUserDisplayName || identityFullName || identityDisplayName || 'Salon Ekibi';
+    // (Previously fetched UserIdentity here to build a denormalized
+    // `takeoverActorLabel` snapshot for row.text. The messages list
+    // endpoint now resolves the actor's current display name at read
+    // time — including the SalonUser → UserIdentity fallback chain —
+    // so we no longer need the extra lookup or the snapshot here.)
     const stateCandidates = Array.from(
       new Set([...keyCandidates, ...conversationKeyCandidates(channel, resolvedConversationKey)]),
     );
@@ -11589,7 +11590,12 @@ router.post('/conversations/:channel/:conversationKey/handover', authenticateTok
       externalAccountId: latestInbound.externalAccountId || '',
       customerName: latestInbound.customerName || null,
       messageType: 'manual_takeover',
-      text: `${takeoverActorLabel} devraldı.`,
+      // Text is intentionally null — the messages list endpoint renders
+      // a fresh `${actorDisplayName} devraldı.` string at read time so
+      // future renames of the staff member propagate everywhere instead
+      // of leaving stale snapshots in old rows. The actor identity
+      // travels via outboundSenderUserId (joined to SalonUser at read).
+      text: null,
       direction: 'SYSTEM',
       eventTimestamp: new Date(),
       processingStatus: InboundMessageStatus.DONE,
@@ -11714,25 +11720,8 @@ router.post('/conversations/:channel/:conversationKey/resume-auto', authenticate
       const joined = `${first} ${last}`.trim();
       return joined || null;
     })();
-    // Fallback to UserIdentity (shared person record across multiple salons)
-    // when the per-salon SalonUser row has no name set.
-    let identityFullName: string | null = null;
-    let identityDisplayName: string | null = null;
-    if (!senderUserFullName && !senderUserDisplayName && senderUserEmail) {
-      const identity = await prisma.userIdentity.findUnique({
-        where: { email: senderUserEmail },
-        select: { firstName: true, lastName: true, displayName: true },
-      });
-      const iFirst = typeof identity?.firstName === 'string' ? identity.firstName.trim() : '';
-      const iLast = typeof identity?.lastName === 'string' ? identity.lastName.trim() : '';
-      identityFullName = `${iFirst} ${iLast}`.trim() || null;
-      identityDisplayName = typeof identity?.displayName === 'string' && identity.displayName.trim()
-        ? identity.displayName.trim()
-        : null;
-    }
-    // Same priority as takeover — never show email in the system bubble.
-    const resumeActorLabel =
-      senderUserFullName || senderUserDisplayName || identityFullName || identityDisplayName || 'Salon Ekibi';
+    // (See manual_takeover above: actor display name is resolved at
+    // read time in the messages list endpoint, not snapshotted here.)
 
     const updatedState = await markConversationAuto({
       salonId,
@@ -11754,7 +11743,9 @@ router.post('/conversations/:channel/:conversationKey/resume-auto', authenticate
       externalAccountId: latestInbound.externalAccountId || '',
       customerName: latestInbound.customerName || null,
       messageType: 'manual_resume',
-      text: `${resumeActorLabel} Kedy AI'ı devreye aldı.`,
+      // See manual_takeover above: text is rendered live in the list
+      // endpoint so a later profile rename is reflected immediately.
+      text: null,
       direction: 'SYSTEM',
       eventTimestamp: new Date(),
       processingStatus: InboundMessageStatus.DONE,
