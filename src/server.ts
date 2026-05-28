@@ -1,3 +1,5 @@
+// Bootstrap pins server TZ — must be the very first import (see bootstrap.ts).
+import './bootstrap.js';
 import dotenv from 'dotenv';
 dotenv.config();
 // Sentry MUST be imported/initialized before any other modules that may throw
