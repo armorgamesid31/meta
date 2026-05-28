@@ -1469,6 +1469,45 @@ function parseServiceGenders(input: unknown) {
   return genders;
 }
 
+// Per-gender service overrides. The frontend sends an array of
+// `{ gender, price, duration, isActive?, displayOrder? }`. We dedupe on
+// gender (last write wins inside one request — UI never sends dupes
+// today but defensive is cheaper than a 500), normalise numerics and
+// reject anything that can't be applied as a row. Returns the parsed
+// list ready to feed into prisma.createMany.
+type ParsedServiceVariant = {
+  gender: 'female' | 'male' | 'other';
+  price: number;
+  duration: number;
+  isActive: boolean;
+  displayOrder: number;
+};
+function parseServiceVariants(input: unknown): ParsedServiceVariant[] {
+  if (!Array.isArray(input)) return [];
+  const byGender = new Map<string, ParsedServiceVariant>();
+  for (const raw of input) {
+    if (!raw || typeof raw !== 'object') continue;
+    const r = raw as Record<string, unknown>;
+    const genderRaw = typeof r.gender === 'string' ? r.gender.toLowerCase().trim() : '';
+    if (genderRaw !== 'female' && genderRaw !== 'male' && genderRaw !== 'other') continue;
+    const price = Number(r.price);
+    const duration = Number(r.duration);
+    if (!Number.isFinite(price) || price < 0) continue;
+    if (!Number.isFinite(duration) || duration <= 0) continue;
+    const isActive = r.isActive === undefined ? true : Boolean(r.isActive);
+    const displayOrderRaw = Number(r.displayOrder);
+    const displayOrder = Number.isInteger(displayOrderRaw) && displayOrderRaw >= 0 ? displayOrderRaw : 0;
+    byGender.set(genderRaw, {
+      gender: genderRaw,
+      price,
+      duration: Math.round(duration),
+      isActive,
+      displayOrder,
+    });
+  }
+  return Array.from(byGender.values());
+}
+
 type ParsedPackageServiceQuota = {
   serviceId: number;
   initialQuota: number;
@@ -6434,6 +6473,19 @@ function mapServiceForAdmin(item: any) {
   return {
     ...item,
     genders: (item?.ServiceGender || []).map((row: any) => row.gender),
+    // Per-gender price/duration overrides. Frontend uses them to render
+    // the edit form (toggle + per-row inputs) and the list card (two
+    // prices side-by-side when present). If empty, the service still
+    // uses base price/duration — booking flow is variant-unaware until
+    // Aşama 4 lands, but the data is already exposed for the admin UI.
+    variants: (item?.variants || []).map((variant: any) => ({
+      id: variant.id,
+      gender: variant.gender,
+      price: variant.price,
+      duration: variant.duration,
+      isActive: variant.isActive,
+      displayOrder: variant.displayOrder,
+    })),
     categoryKey: item?.ServiceCategory?.categoryRef?.key || item?.category || 'OTHER',
     categoryName:
       item?.ServiceCategory?.name || item?.ServiceCategory?.categoryRef?.defaultName || item?.category || 'Diğer',
@@ -6445,61 +6497,80 @@ function mapServiceForAdmin(item: any) {
   };
 }
 
+// Re-used select fragment for endpoints that return a Service item in
+// the admin shape. Kept inline (not extracted to its own file) so the
+// route reads top-to-bottom and the per-route SELECT is still the
+// source of truth. If you add a column to mapServiceForAdmin, you must
+// add it here too.
+const ADMIN_SERVICE_SELECT = {
+  id: true,
+  name: true,
+  description: true,
+  isActive: true,
+  duration: true,
+  price: true,
+  category: true,
+  requiresSpecialist: true,
+  categoryId: true,
+  regionId: true,
+  serviceGroupId: true,
+  displayOrder: true,
+  capacityOverride: true,
+  sequentialOverride: true,
+  bufferOverride: true,
+  defaultCommissionRate: true,
+  ServiceCategory: {
+    select: {
+      id: true,
+      name: true,
+      categoryRef: {
+        select: {
+          key: true,
+          defaultName: true,
+        },
+      },
+    },
+  },
+  ServiceRegion: {
+    select: {
+      id: true,
+      name: true,
+      categoryId: true,
+    },
+  },
+  ServiceGender: {
+    select: {
+      gender: true,
+    },
+  },
+  serviceGroup: {
+    select: {
+      id: true,
+      name: true,
+      capacity: true,
+      sequentialRequired: true,
+      preparationMinutes: true,
+    },
+  },
+  variants: {
+    select: {
+      id: true,
+      gender: true,
+      price: true,
+      duration: true,
+      isActive: true,
+      displayOrder: true,
+    },
+    orderBy: [{ displayOrder: 'asc' }, { id: 'asc' }],
+  },
+} satisfies Prisma.ServiceSelect;
+
 router.get('/services', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);
   try {
     const services = await prisma.service.findMany({
       where: { salonId },
-      select: {
-        id: true,
-        name: true,
-        description: true,
-        isActive: true,
-        duration: true,
-        price: true,
-        category: true,
-        requiresSpecialist: true,
-        categoryId: true,
-        regionId: true,
-        displayOrder: true,
-        capacityOverride: true,
-        sequentialOverride: true,
-        bufferOverride: true,
-        defaultCommissionRate: true,
-        ServiceCategory: {
-          select: {
-            id: true,
-            name: true,
-            categoryRef: {
-              select: {
-                key: true,
-                defaultName: true,
-              },
-            },
-          },
-        },
-        ServiceRegion: {
-          select: {
-            id: true,
-            name: true,
-            categoryId: true,
-          },
-        },
-        ServiceGender: {
-          select: {
-            gender: true,
-          },
-        },
-        serviceGroup: {
-          select: {
-            id: true,
-            name: true,
-            capacity: true,
-            sequentialRequired: true,
-            preparationMinutes: true,
-          },
-        },
-      },
+      select: ADMIN_SERVICE_SELECT,
       // Per-category ordering: services within a category honor
       // displayOrder, then fall back to name for stability when
       // displayOrder ties (e.g. all defaults at 0).
@@ -6649,6 +6720,7 @@ router.post('/services', authenticateToken, async (req: any, res: any) => {
       ? null
       : Number(req.body.regionId);
   const genders = parseServiceGenders(req.body?.genders);
+  const variants = parseServiceVariants(req.body?.variants);
   const serviceGroupId =
     req.body?.serviceGroupId === null || req.body?.serviceGroupId === undefined || req.body?.serviceGroupId === ''
       ? null
@@ -6755,61 +6827,25 @@ router.post('/services', authenticateToken, async (req: any, res: any) => {
         });
       }
 
+      if (variants.length > 0) {
+        await tx.serviceVariant.createMany({
+          data: variants.map((variant) => ({
+            serviceId: created.id,
+            gender: variant.gender,
+            price: variant.price,
+            duration: variant.duration,
+            isActive: variant.isActive,
+            displayOrder: variant.displayOrder,
+          })),
+        });
+      }
+
       return created.id;
     });
 
     const service = await prisma.service.findFirst({
       where: { id: serviceId, salonId },
-      select: {
-        id: true,
-        name: true,
-        description: true,
-        isActive: true,
-        duration: true,
-        price: true,
-        category: true,
-        requiresSpecialist: true,
-        categoryId: true,
-        regionId: true,
-        serviceGroupId: true,
-        displayOrder: true,
-        capacityOverride: true,
-        sequentialOverride: true,
-        bufferOverride: true,
-        ServiceCategory: {
-          select: {
-            id: true,
-            name: true,
-            categoryRef: {
-              select: {
-                key: true,
-                defaultName: true,
-              },
-            },
-          },
-        },
-        ServiceRegion: {
-          select: {
-            id: true,
-            name: true,
-            categoryId: true,
-          },
-        },
-        ServiceGender: {
-          select: {
-            gender: true,
-          },
-        },
-        serviceGroup: {
-          select: {
-            id: true,
-            name: true,
-            capacity: true,
-            sequentialRequired: true,
-            preparationMinutes: true,
-          },
-        },
-      },
+      select: ADMIN_SERVICE_SELECT,
     });
 
     return res.status(201).json({ item: mapServiceForAdmin(service) });
@@ -6940,7 +6976,15 @@ router.put('/services/:id', authenticateToken, async (req: any, res: any) => {
   const hasGenderUpdate = req.body?.genders !== undefined;
   const genders = hasGenderUpdate ? parseServiceGenders(req.body?.genders) : [];
 
-  if (!Object.keys(updates).length && !hasGenderUpdate) {
+  // Variant updates are all-or-nothing — when the client sends a
+  // `variants` array we treat it as the complete desired state and
+  // delete+recreate. The frontend always sends the full set when the
+  // user opens the editor, so this matches the mental model ("what I
+  // see is what stays") without needing a diff endpoint.
+  const hasVariantUpdate = req.body?.variants !== undefined;
+  const variants = hasVariantUpdate ? parseServiceVariants(req.body?.variants) : [];
+
+  if (!Object.keys(updates).length && !hasGenderUpdate && !hasVariantUpdate) {
     throw new BusinessError('VALIDATION_FAILED', 'No valid update field provided.', 400);
   }
 
@@ -7006,60 +7050,27 @@ router.put('/services/:id', authenticateToken, async (req: any, res: any) => {
           });
         }
       }
+
+      if (hasVariantUpdate) {
+        await tx.serviceVariant.deleteMany({ where: { serviceId } });
+        if (variants.length > 0) {
+          await tx.serviceVariant.createMany({
+            data: variants.map((variant) => ({
+              serviceId,
+              gender: variant.gender,
+              price: variant.price,
+              duration: variant.duration,
+              isActive: variant.isActive,
+              displayOrder: variant.displayOrder,
+            })),
+          });
+        }
+      }
     });
 
     const service = await prisma.service.findFirst({
       where: { id: serviceId, salonId },
-      select: {
-        id: true,
-        name: true,
-        description: true,
-        isActive: true,
-        duration: true,
-        price: true,
-        category: true,
-        requiresSpecialist: true,
-        categoryId: true,
-        regionId: true,
-        serviceGroupId: true,
-        displayOrder: true,
-        capacityOverride: true,
-        sequentialOverride: true,
-        bufferOverride: true,
-        ServiceCategory: {
-          select: {
-            id: true,
-            name: true,
-            categoryRef: {
-              select: {
-                key: true,
-                defaultName: true,
-              },
-            },
-          },
-        },
-        ServiceRegion: {
-          select: {
-            id: true,
-            name: true,
-            categoryId: true,
-          },
-        },
-        ServiceGender: {
-          select: {
-            gender: true,
-          },
-        },
-        serviceGroup: {
-          select: {
-            id: true,
-            name: true,
-            capacity: true,
-            sequentialRequired: true,
-            preparationMinutes: true,
-          },
-        },
-      },
+      select: ADMIN_SERVICE_SELECT,
     });
 
     return res.status(200).json({ item: mapServiceForAdmin(service) });

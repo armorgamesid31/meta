@@ -569,9 +569,37 @@ model Service {
   translations          ServiceTranslation[]
   StaffService          StaffService[]
   commissionRules       CommissionRule[]
+  variants              ServiceVariant[]
 
   @@unique([name, salonId])
   @@index([salonId, categoryId, displayOrder], map: "idx_service_salon_category_display")
+}
+
+// Gender-specific overrides for a Service. When a variant exists for a
+// (serviceId, gender) pair, the booking flow uses its price/duration
+// instead of Service.price/Service.duration. When no variant exists for
+// the requested gender, the base values on Service are used (backward
+// compatible — pre-existing services keep working unchanged).
+//
+// We intentionally keep this as a side table instead of denormalising
+// onto Service so the same Service id appears in reports/commission
+// aggregations regardless of which variant was booked. AppointmentLine
+// snapshots the variant id + finalPrice at booking time so historical
+// data stays correct even if the variant is later edited or removed.
+model ServiceVariant {
+  id           Int            @id @default(autoincrement())
+  serviceId    Int
+  gender       CustomerGender
+  price        Float
+  duration     Int
+  isActive     Boolean        @default(true)
+  displayOrder Int            @default(0)
+  createdAt    DateTime       @default(now()) @db.Timestamp(6)
+  updatedAt    DateTime       @default(now()) @updatedAt @db.Timestamp(6)
+  Service      Service        @relation(fields: [serviceId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([serviceId, gender], map: "service_variant_unique_per_gender")
+  @@index([serviceId, isActive], map: "idx_service_variant_service_active")
 }
 
 model ServiceGroup {
