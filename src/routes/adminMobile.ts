@@ -8692,6 +8692,82 @@ router.get('/commissions/effective-rate', authenticateToken, async (req: any, re
   return res.status(200).json(resolved);
 });
 
+// --- Self-view: staff'ın kendi prim kayıtları ---
+// Owner/Manager/Finance'in kullandığı /commissions ve /commissions/summary
+// salon genelinde her staff'ı listeler. Staff rolündeki kullanıcı kendi
+// hareketlerini görmek için bu endpoint'i çağırır. Sadece kendi
+// staffId'sine ait satırlar, kendi payout geçmişi ve kendi summary'si
+// döner; başka staff'a sızma yapısal olarak imkânsız (filtre auth
+// userId'den çözülen staff.id'ye sabitlenmiştir).
+//
+// Permission: me.commissions.view (STAFF rolünde default açık).
+router.get('/commissions/me', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  const userId = Number(req.user?.userId);
+  if (!Number.isInteger(userId) || userId <= 0) {
+    throw new BusinessError('AUTH_REQUIRED', 'Auth missing.', 401);
+  }
+
+  const allowed = await hasPermission({
+    salonId,
+    membershipId: Number(req.user?.membershipId || userId),
+    role: String(req.user?.role || ''),
+    permissionKey: 'me.commissions.view',
+  });
+  if (!allowed) {
+    throw new BusinessError('FORBIDDEN', 'me.commissions.view yetkisi gerekli.', 403);
+  }
+
+  const periodKey = typeof req.query.periodKey === 'string' && req.query.periodKey.trim()
+    ? req.query.periodKey.trim()
+    : periodKeyFor(new Date());
+
+  // SalonUser.id → Staff.id eşlemesi. Aynı SalonUser'a birden çok Staff
+  // bağlanmış olabilir (geçmiş test/data düzeltmeleri); en güncel aktif
+  // satırı seçiyoruz, yoksa null döner.
+  const staff = await prisma.staff.findFirst({
+    where: { salonId, userId },
+    select: { id: true, name: true, profileImageUrl: true, commissionRate: true },
+    orderBy: { id: 'desc' },
+  });
+
+  if (!staff) {
+    return res.status(200).json({
+      periodKey,
+      staff: null,
+      summary: null,
+      items: [],
+      payouts: [],
+    });
+  }
+
+  const [entries, summary, payouts] = await Promise.all([
+    prisma.commissionEntry.findMany({
+      where: { salonId, staffId: staff.id, periodKey },
+      include: {
+        appointmentLine: { select: { id: true, serviceId: true, finalPrice: true } },
+        appointment: { select: { id: true, startTime: true, customerName: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 500,
+    }),
+    getCommissionSummary(prisma, { salonId, periodKey, staffId: staff.id }),
+    prisma.commissionPayout.findMany({
+      where: { salonId, staffId: staff.id },
+      orderBy: { createdAt: 'desc' },
+      take: 24,
+    }),
+  ]);
+
+  return res.status(200).json({
+    periodKey,
+    staff,
+    summary: Array.isArray(summary) ? (summary[0] ?? null) : summary,
+    items: entries,
+    payouts,
+  });
+});
+
 // =============================================================================
 
 router.get('/campaigns', authenticateToken, async (req: any, res: any) => {

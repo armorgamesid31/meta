@@ -21,6 +21,8 @@ export const PERMISSION_CATALOG: PermissionSeed[] = [
   { key: 'customers.manage', module: 'customers', description: 'Musteri olustur ve guncelle' },
   { key: 'services.manage', module: 'services', description: 'Hizmet ve kategori yonetimi' },
   { key: 'staff.manage', module: 'staff', description: 'Uzman kayitlarini yonet' },
+  { key: 'commissions.manage', module: 'commissions', description: 'Prim kurallari, bonus kurallari ve odemeleri yonet', isCritical: true },
+  { key: 'me.commissions.view', module: 'commissions', description: 'Kendi prim kayitlarini ve odeme gecmisini goruntule' },
   { key: 'packages.manage', module: 'packages', description: 'Paket sablonlari ve bakiyeleri yonet' },
   { key: 'analytics.view', module: 'analytics', description: 'Analitik goruntule' },
   { key: 'inventory.manage', module: 'inventory', description: 'Envanteri yonet' },
@@ -76,6 +78,10 @@ const DEFAULT_ROLE_PERMISSIONS: Record<FixedRole, string[]> = {
     'conversations.manage',
     'notifications.inbox.view',
     'notifications.preferences.manage',
+    // Staff sees their own commission entries + payout history through
+    // a self-scoped /me/commissions endpoint — never the global
+    // commissions.manage surface used by Owner/Manager/Finance.
+    'me.commissions.view',
   ],
   FINANCE: [
     'analytics.view',
@@ -84,6 +90,8 @@ const DEFAULT_ROLE_PERMISSIONS: Record<FixedRole, string[]> = {
     'campaigns.view',
     'notifications.inbox.view',
     'notifications.preferences.manage',
+    // Finance owns commission policy and payouts.
+    'commissions.manage',
   ],
 };
 
