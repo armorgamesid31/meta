@@ -52,8 +52,21 @@ export function normalizePersonGroups(input: unknown): PersonGroup[] {
         ? (group as any).personId.trim()
         : `p${index + 1}`;
 
+      // Tolerant gender parse — accepts FEMALE/MALE/OTHER, female/male/other,
+      // and Turkish kadin/erkek so callers from web v2 and admin clients
+      // converge on the engine's lowercase enum without forcing the wire
+      // contract to know which side normalises.
+      const rawGender = String((group as any)?.gender || '').trim().toLowerCase();
+      const gender = (() => {
+        if (rawGender === 'female' || rawGender === 'kadin') return 'female' as const;
+        if (rawGender === 'male' || rawGender === 'erkek') return 'male' as const;
+        if (rawGender === 'other' || rawGender === 'belirtmek-istemiyorum') return 'other' as const;
+        return undefined;
+      })();
+
       return {
         personId,
+        ...(gender ? { gender } : {}),
         services,
       } satisfies PersonGroup;
     })
