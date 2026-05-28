@@ -180,6 +180,14 @@ export async function ensureSalonServiceCategories(salonId: number) {
 
   const renameIds: Array<{ id: number; name: string }> = [];
 
+  // Categories where the customer typically has to undress / lie down /
+  // be physically prepped, so chained selections must NOT be interleaved
+  // with another category's service during availability search. Same
+  // reasoning as why people don't want a haircut squeezed between two
+  // bikini-laser slots. Salon owners can still toggle this off per salon
+  // from the category settings sheet.
+  const DEFAULT_SEQUENTIAL_KEYS = new Set<string>(['LASER', 'WAX']);
+
   for (const category of categories) {
     const existingRow = byCategoryId.get(category.id);
     if (!existingRow) {
@@ -191,7 +199,7 @@ export async function ensureSalonServiceCategories(salonId: number) {
         isActive: true,
         displayOrder: category.displayOrder,
         capacity: 1,
-        sequentialRequired: false,
+        sequentialRequired: DEFAULT_SEQUENTIAL_KEYS.has(category.key),
         bufferMinutes: 0,
       });
       continue;
