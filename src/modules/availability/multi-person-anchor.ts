@@ -1,5 +1,5 @@
 import { ServiceChain } from './chain-builder.js';
-import { PersonGroup, IndexedData, AvailabilityRequest } from './types.js';
+import { PersonGroup, IndexedData, AvailabilityRequest, getGroupServiceIds } from './types.js';
 import { SlotsEngine } from './slots-engine.js';
 import { SynchronizedSlot } from './slot-scorer.js';
 
@@ -12,28 +12,41 @@ export class MultiPersonAnchor {
     data: IndexedData,
     maxCombinations: number
   ): Promise<SynchronizedSlot[]> {
-    const [firstGroup, ...otherGroups] = request.groups;
-    
-    // 1. Generate slots for the first person (anchor)
+    // Pick the group with the largest estimated total duration as the
+    // anchor — bigger blocks have fewer valid positions, so iterating
+    // them first prunes the combination space dramatically (bavula
+    // büyükleri önce yerleştir).
+    // We sort internally but restore the original groups order on output
+    // so slot-scorer (which keys on request.groups[i].personId) sees
+    // chains in the expected positions.
+    const sortedWithIndex = request.groups
+      .map((group, originalIndex) => ({
+        group,
+        originalIndex,
+        estimatedDuration: this.estimateGroupDuration(group, data),
+      }))
+      .sort((a, b) => b.estimatedDuration - a.estimatedDuration);
+    const sortedGroups = sortedWithIndex.map((entry) => entry.group);
+    const originalIndices = sortedWithIndex.map((entry) => entry.originalIndex);
+
+    const [firstGroup, ...otherGroups] = sortedGroups;
+
+    // 1. Generate slots for the anchor person.
     const firstPersonSlots = await this.slotsEngine.generateSlotsForGroup(firstGroup, date, data);
-    
+
     if (firstPersonSlots.length === 0) return [];
-    
-    // If only one person, return their slots wrapped as synchronized
+
+    // If only one person, return their slots wrapped as synchronized.
     if (otherGroups.length === 0) {
-      return firstPersonSlots.map(slot => ({
+      return firstPersonSlots.map((slot) => ({
         slots: [slot],
-        parallelScore: 0
+        parallelScore: 0,
       }));
     }
 
     const synchronized: SynchronizedSlot[] = [];
-    
-    // 2. Try to find compatible slots for other groups around each anchor slot
-    // Optimization: Sort anchors to try best times first? Not necessarily.
-    
+
     for (const anchorSlot of firstPersonSlots) {
-      // STRICT HARD LIMIT CHECK
       if (synchronized.length >= maxCombinations) break;
 
       const combinations = await this.tryOtherGroups(
@@ -43,16 +56,46 @@ export class MultiPersonAnchor {
         data,
         maxCombinations - synchronized.length
       );
-      
+
       synchronized.push(...combinations);
     }
 
-    // Post-generation pruning if we exceeded (though the checks above should prevent it)
     if (synchronized.length > maxCombinations) {
-        synchronized.length = maxCombinations;
+      synchronized.length = maxCombinations;
     }
-    
-    return synchronized;
+
+    // Restore original groups order so downstream code (slot-scorer)
+    // can index by request.groups[i].personId.
+    return synchronized.map((sync) => ({
+      ...sync,
+      slots: this.reorderSlotsToOriginal(sync.slots, originalIndices),
+    }));
+  }
+
+  private estimateGroupDuration(group: PersonGroup, data: IndexedData): number {
+    // Anchor-pick heuristic only — doesn't need to be exact. Uses
+    // gender variant when present, otherwise base service duration.
+    // Per-staff overrides are skipped here because we don't know yet
+    // which staff will be assigned.
+    let total = 0;
+    for (const serviceId of getGroupServiceIds(group)) {
+      const service = data.servicesById.get(serviceId);
+      if (!service) continue;
+      const variant = group.gender
+        ? data.serviceVariantsByServiceAndGender.get(`${serviceId}:${group.gender}`)
+        : undefined;
+      total += variant?.duration ?? service.duration;
+    }
+    return total;
+  }
+
+  private reorderSlotsToOriginal(slots: ServiceChain[], originalIndices: number[]): ServiceChain[] {
+    const result: ServiceChain[] = new Array(slots.length);
+    for (let sortedIdx = 0; sortedIdx < slots.length; sortedIdx += 1) {
+      const originalIdx = originalIndices[sortedIdx];
+      result[originalIdx] = slots[sortedIdx];
+    }
+    return result;
   }
   
   private async tryOtherGroups(
