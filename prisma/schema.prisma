@@ -721,6 +721,23 @@ model SearchContext {
   createdAt DateTime @default(now())
 }
 
+// Real slot reservation. Created when the customer explicitly picks a
+// displaySlot in the UI; the availability engine treats unexpired
+// entries as if they were BOOKED appointments so concurrent shoppers
+// don't see the same slot. Booking commit verifies + deletes the lock
+// (or it auto-expires after 120s).
+model SlotLock {
+  id        String   @id @default(uuid())
+  salonId   Int
+  // [{ staffId: number, startTime: ISO string, endTime: ISO string }]
+  // Multi-person displaySlots create one lock with N entries.
+  entries   Json
+  expiresAt DateTime @db.Timestamp(6)
+  createdAt DateTime @default(now()) @db.Timestamp(6)
+
+  @@index([salonId, expiresAt])
+}
+
 model MagicLink {
   id                Int                 @id @default(autoincrement())
   token             String              @unique

@@ -228,7 +228,7 @@ export class SlotsEngine {
 
     const relevantStaffIds = [...new Set(staffServices.map((row) => row.staffId))];
 
-    const [workingHours, salonClosures, staffTimeOffs, legacyLeaves] = await Promise.all([
+    const [workingHours, salonClosures, staffTimeOffs, legacyLeaves, slotLocks] = await Promise.all([
       prisma.staffWorkingHours.findMany({
         where: {
           staffId: { in: relevantStaffIds },
@@ -277,6 +277,16 @@ export class SlotsEngine {
           id: true,
           staffId: true,
         },
+      }),
+      // Active SlotLock'lar — 120sn'lik kullanıcı rezervasyonu. BOOKED
+      // randevular gibi blockedAppointment olarak ele alınır; başka
+      // müşteri o staff×saat'i boş göremez.
+      prisma.slotLock.findMany({
+        where: {
+          salonId: request.salonId,
+          expiresAt: { gt: new Date() },
+        },
+        select: { entries: true },
       }),
     ]);
 
@@ -363,6 +373,29 @@ export class SlotsEngine {
         endTime: endOfDay,
         status: 'BLOCKED',
       });
+    }
+
+    let lockEntryIndex = 0;
+    for (const lock of slotLocks) {
+      const lockEntries = Array.isArray(lock.entries) ? (lock.entries as Array<Record<string, unknown>>) : [];
+      for (const entry of lockEntries) {
+        const staffId = Number(entry?.staffId);
+        const lockStart = new Date(String(entry?.startTime || ''));
+        const lockEnd = new Date(String(entry?.endTime || ''));
+        if (!Number.isInteger(staffId) || staffId <= 0) continue;
+        if (Number.isNaN(lockStart.getTime()) || Number.isNaN(lockEnd.getTime())) continue;
+        // Sadece bugünü etkileyen lock'lar.
+        if (lockEnd <= startOfDay || lockStart >= endOfDay) continue;
+        blockedAppointments.push({
+          id: -4_000_000_000 - lockEntryIndex,
+          staffId,
+          serviceId: 0,
+          startTime: lockStart,
+          endTime: lockEnd,
+          status: 'LOCKED',
+        });
+        lockEntryIndex += 1;
+      }
     }
 
     for (const appointment of [...appointments, ...blockedAppointments]) {
