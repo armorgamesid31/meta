@@ -18,6 +18,12 @@ export type ServiceChain = {
     startTime: number;
     endTime: number;
     staffId: number;
+    /**
+     * Per-service durations after staff override + gender variant
+     * resolution, parallel to block.services. slot-scorer uses these to
+     * walk the service sequence with correct intra-block boundaries.
+     */
+    serviceDurations: number[];
   }[];
 };
 
@@ -36,6 +42,7 @@ export class ChainBuilder {
       startTime: number;
       endTime: number;
       staffId: number;
+      serviceDurations: number[];
     }[] = [];
 
     // The first block MUST use the anchor staff if it's a staff anchor
@@ -103,13 +110,15 @@ export class ChainBuilder {
         return null; // Cannot place this block
       }
 
-      const duration = this.calculateBlockDuration(block);
-      
+      const serviceDurations = this.calculateServiceDurations(block, assignedStaffId, data);
+      const duration = serviceDurations.reduce((sum, d) => sum + d, 0);
+
       chainBlocks.push({
         block,
         startTime: currentTime,
         endTime: currentTime + duration,
-        staffId: assignedStaffId
+        staffId: assignedStaffId,
+        serviceDurations,
       });
 
       currentTime += duration;
@@ -181,8 +190,8 @@ export class ChainBuilder {
     data: IndexedData,
     date: Date
   ): Promise<boolean> {
-    const duration = this.calculateBlockDuration(block);
-    
+    const duration = this.calculateBlockDuration(block, staffId, data);
+
     // 1. Check working hours
     const dayOfWeek = date.getDay();
     const workingHoursKey = `${staffId}-${dayOfWeek}`;
@@ -322,8 +331,20 @@ export class ChainBuilder {
     return true;
   }
 
-  private calculateBlockDuration(block: ChainBlock): number {
-    return block.services.reduce((sum, s) => sum + s.duration, 0);
+  private calculateServiceDurations(block: ChainBlock, staffId: number, data: IndexedData): number[] {
+    // Priority: StaffService.duration (per-staff speed) > s.duration
+    // (which permutation-pruner may have already rewritten with a
+    // gender ServiceVariant). Falling back to Service.duration is
+    // automatic because s.duration is the base when no variant applies.
+    return block.services.map((s) => {
+      const staffServices = data.staffServicesByService.get(s.id) || [];
+      const staffOverride = staffServices.find((ss) => ss.staffId === staffId);
+      return staffOverride?.duration ?? s.duration;
+    });
+  }
+
+  private calculateBlockDuration(block: ChainBlock, staffId: number, data: IndexedData): number {
+    return this.calculateServiceDurations(block, staffId, data).reduce((sum, d) => sum + d, 0);
   }
 
   private getBufferTime(block: ChainBlock, data: IndexedData): number {

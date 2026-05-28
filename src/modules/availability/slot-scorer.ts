@@ -144,9 +144,14 @@ export class SlotScorer {
 
     for (const block of chain.blocks) {
       let cursor = block.startTime;
-      for (const service of block.block.services) {
+      for (let i = 0; i < block.block.services.length; i += 1) {
+        const service = block.block.services[i];
+        // Use the staff-aware duration computed by ChainBuilder; falls
+        // back to the base service.duration only if the block didn't
+        // emit per-service durations (defensive — shouldn't happen).
+        const duration = block.serviceDurations?.[i] ?? service.duration;
         const start = cursor;
-        const end = cursor + service.duration;
+        const end = cursor + duration;
         serviceSequence.push({
           serviceId: service.id,
           start: this.minutesToTime(start),
