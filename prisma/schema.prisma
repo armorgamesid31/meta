@@ -738,6 +738,21 @@ model SlotLock {
   @@index([salonId, expiresAt])
 }
 
+// Çift tıklama / retry koruması. Booking commit endpoint'leri client'tan
+// UUID alır, ilk başarılı commit'in appointment id'lerini burada cache'ler.
+// Aynı key ile tekrar gelen request mevcut appointment'ları döndürür —
+// yeni randevu yaratmaz.
+model BookingIdempotencyKey {
+  key            String   @id
+  salonId        Int
+  // number[] — created appointment ids in commit order
+  appointmentIds Json
+  createdAt      DateTime @default(now()) @db.Timestamp(6)
+  expiresAt      DateTime @db.Timestamp(6)
+
+  @@index([expiresAt])
+}
+
 model MagicLink {
   id                Int                 @id @default(autoincrement())
   token             String              @unique

@@ -17,6 +17,10 @@ import {
   buildAppointmentReschedulePreview,
   commitAppointmentReschedule,
 } from '../services/appointmentReschedule.js';
+import {
+  findCachedBookingByIdempotencyKey,
+  cacheBookingForIdempotencyKey,
+} from '../services/bookingIdempotency.js';
 import { buildRescheduleOptions } from '../services/appointmentRescheduleOptions.js';
 import { matchWaitlistForDate } from '../services/waitlist.js';
 import {
@@ -290,7 +294,19 @@ async function createExactSlotBooking(input: {
   referralShareToken?: string | null;
   availabilityLockToken: string;
   selectedSlots: ReturnType<typeof parseSelectedPersonSlots>;
+  idempotencyKey?: string | null;
 }): Promise<{ status: number; body: any }> {
+  // Idempotency replay: client retry'sı veya çift tıklamada aynı key
+  // gelir; daha önce başarılı commit olmuşsa yeni randevu yaratmak
+  // yerine cache'lenen appointment id'lerini döneriz.
+  if (input.idempotencyKey) {
+    const cached = await findCachedBookingByIdempotencyKey({
+      salonId: input.salonId,
+      idempotencyKey: input.idempotencyKey,
+    });
+    if (cached) return cached;
+  }
+
   const searchContext = await prisma.searchContext.findUnique({
     where: { id: input.availabilityLockToken },
   });
@@ -590,6 +606,14 @@ async function createExactSlotBooking(input: {
       }),
     ),
   );
+
+  if (input.idempotencyKey) {
+    await cacheBookingForIdempotencyKey({
+      salonId: input.salonId,
+      idempotencyKey: input.idempotencyKey,
+      appointmentIds: txResult.map((appointment) => Number(appointment.id)),
+    });
+  }
 
   return {
     status: 201,
@@ -1582,6 +1606,10 @@ router.post('/', async (req: any, res: any, next: any) => {
           ? b.availabilityLockToken.trim()
           : '';
       const selectedSlots = parseSelectedPersonSlots(b.selectedSlots);
+      const idempotencyKey =
+        typeof b.idempotencyKey === 'string' && b.idempotencyKey.trim()
+          ? b.idempotencyKey.trim()
+          : null;
 
       if (availabilityLockToken && selectedSlots.length) {
         const exactResult = await createExactSlotBooking({
@@ -1596,6 +1624,7 @@ router.post('/', async (req: any, res: any, next: any) => {
           referralShareToken: typeof referralShareToken === 'string' ? referralShareToken : null,
           availabilityLockToken,
           selectedSlots,
+          idempotencyKey,
         });
         return res.status(exactResult.status).json(exactResult.body);
       }
