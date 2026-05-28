@@ -280,11 +280,15 @@ export class SlotsEngine {
       }),
       // Active SlotLock'lar — 120sn'lik kullanıcı rezervasyonu. BOOKED
       // randevular gibi blockedAppointment olarak ele alınır; başka
-      // müşteri o staff×saat'i boş göremez.
+      // müşteri o staff×saat'i boş göremez. Booking commit re-validation
+      // yaparken request.ignoreLockId verilirse kullanıcının kendi
+      // lock'unu hariç tutarız (aksi takdirde kendi rezervasyonu kendi
+      // slot'unu kapatır).
       prisma.slotLock.findMany({
         where: {
           salonId: request.salonId,
           expiresAt: { gt: new Date() },
+          ...(request.ignoreLockId ? { id: { not: request.ignoreLockId } } : {}),
         },
         select: { entries: true },
       }),

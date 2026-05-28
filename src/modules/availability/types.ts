@@ -20,6 +20,13 @@ export type AvailabilityRequest = {
   salonId: number;
   date: string; // YYYY-MM-DD
   groups: PersonGroup[];
+  /**
+   * Booking commit'te re-validation yaparken motor müşterinin kendi
+   * rezerve ettiği SlotLock'u "dolu" saymamalı — aksi takdirde kendi
+   * lock'u kendi slot'unu engeller. Set edilirse batchFetchData o
+   * lock'u çekmez.
+   */
+  ignoreLockId?: string;
 };
 
 export type DatesRequest = {

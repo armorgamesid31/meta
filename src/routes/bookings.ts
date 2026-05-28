@@ -295,6 +295,7 @@ async function createExactSlotBooking(input: {
   availabilityLockToken: string;
   selectedSlots: ReturnType<typeof parseSelectedPersonSlots>;
   idempotencyKey?: string | null;
+  slotLockId?: string | null;
 }): Promise<{ status: number; body: any }> {
   // Idempotency replay: client retry'sı veya çift tıklamada aynı key
   // gelir; daha önce başarılı commit olmuşsa yeni randevu yaratmak
@@ -305,6 +306,23 @@ async function createExactSlotBooking(input: {
       idempotencyKey: input.idempotencyKey,
     });
     if (cached) return cached;
+  }
+
+  // Real slot reservation guard: client UI tıkladığında SlotLock yarattıysa
+  // önce burada validate ederiz. Lock yoksa veya geçersizse 410/403 döneriz;
+  // motor lock'a saygı gösterdiği için lock yoksa zaten başka müşteri o
+  // slotu kapmış olabilir.
+  if (input.slotLockId) {
+    const lock = await prisma.slotLock.findUnique({ where: { id: input.slotLockId } });
+    if (!lock) {
+      return { status: 410, body: { message: 'Slot lock not found or expired.' } };
+    }
+    if (lock.salonId !== input.salonId) {
+      return { status: 403, body: { message: 'Slot lock salon mismatch.' } };
+    }
+    if (lock.expiresAt <= new Date()) {
+      return { status: 410, body: { message: 'Slot lock has expired.' } };
+    }
   }
 
   const searchContext = await prisma.searchContext.findUnique({
@@ -328,7 +346,12 @@ async function createExactSlotBooking(input: {
     channel: 'WHATSAPP',
   });
 
-  const availabilityRequest = searchContext.data as any;
+  const availabilityRequest = {
+    ...(searchContext.data as any),
+    // Re-validation kendi lock'umuzu görmemeli — yoksa motor kendi
+    // rezervasyonumuzu engeller.
+    ...(input.slotLockId ? { ignoreLockId: input.slotLockId } : {}),
+  };
   const availabilityResult = await generateAvailability(availabilityRequest, { persistSearchContext: false });
   const matchedDisplaySlot = matchSelectedDisplaySlots(availabilityResult, input.selectedSlots);
 
@@ -533,6 +556,12 @@ async function createExactSlotBooking(input: {
       await tx.searchContext.delete({
         where: { id: input.availabilityLockToken },
       });
+
+      if (input.slotLockId) {
+        await tx.slotLock.deleteMany({
+          where: { id: input.slotLockId, salonId: input.salonId },
+        });
+      }
 
       return createdAppointments;
       },
@@ -1610,6 +1639,10 @@ router.post('/', async (req: any, res: any, next: any) => {
         typeof b.idempotencyKey === 'string' && b.idempotencyKey.trim()
           ? b.idempotencyKey.trim()
           : null;
+      const slotLockId =
+        typeof b.slotLockId === 'string' && b.slotLockId.trim()
+          ? b.slotLockId.trim()
+          : null;
 
       if (availabilityLockToken && selectedSlots.length) {
         const exactResult = await createExactSlotBooking({
@@ -1625,6 +1658,7 @@ router.post('/', async (req: any, res: any, next: any) => {
           availabilityLockToken,
           selectedSlots,
           idempotencyKey,
+          slotLockId,
         });
         return res.status(exactResult.status).json(exactResult.body);
       }
