@@ -102,6 +102,7 @@ export class SlotsEngine {
     const permutationsGen = this.permutationPruner.generateValidPermutations(
       getGroupServiceIds(group),
       data,
+      group.gender,
     );
 
     const anchorsGen = this.anchorIterator.iterateAnchors(
@@ -147,7 +148,7 @@ export class SlotsEngine {
     const endOfDay = new Date(date);
     endOfDay.setHours(23, 59, 59, 999);
 
-    const [staffServices, appointments, services, categories, salonSettings] = await Promise.all([
+    const [staffServices, appointments, services, serviceVariants, categories, salonSettings] = await Promise.all([
       prisma.staffService.findMany({
         where: {
           serviceId: { in: serviceIds },
@@ -187,6 +188,20 @@ export class SlotsEngine {
           bufferOverride: true,
           categoryId: true,
           capacityOverride: true,
+        },
+      }),
+
+      // ServiceVariant rows for the requested services. We only fetch
+      // active rows — inactive variants behave like a missing row, so
+      // the engine falls back to Service.duration for that gender.
+      prisma.serviceVariant.findMany({
+        where: { serviceId: { in: serviceIds }, isActive: true },
+        select: {
+          id: true,
+          serviceId: true,
+          gender: true,
+          price: true,
+          duration: true,
         },
       }),
 
@@ -271,7 +286,19 @@ export class SlotsEngine {
       appointmentsByStaffAndDate: new Map<string, AppointmentRow[]>(),
       servicesById: new Map<number, ServiceInfo>(),
       categoriesById: new Map<number, CategoryInfo>(),
+      serviceVariantsByServiceAndGender: new Map(),
     };
+
+    for (const variant of serviceVariants) {
+      const key = `${variant.serviceId}:${variant.gender}`;
+      indexedData.serviceVariantsByServiceAndGender.set(key, {
+        id: variant.id,
+        serviceId: variant.serviceId,
+        gender: String(variant.gender),
+        price: variant.price,
+        duration: variant.duration,
+      });
+    }
 
     for (const staffService of staffServices) {
       if (!indexedData.staffServicesByService.has(staffService.serviceId)) {

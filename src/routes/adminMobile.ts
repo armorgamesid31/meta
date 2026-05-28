@@ -2129,7 +2129,21 @@ function mapAppointmentStatusToLineStatus(status: string | null | undefined): 'B
   return 'BOOKED';
 }
 
-async function ensureDefaultAppointmentLine(tx: any, appointment: any) {
+async function ensureDefaultAppointmentLine(
+  tx: any,
+  appointment: any,
+  // Optional snapshot fields the caller wants to bake into the line at
+  // creation time. Used by the booking commit path to attach the
+  // ServiceVariant id + a price snapshot (so commission and reporting
+  // get the variant price, not the base Service.price). Backward-
+  // compatible: callers that don't pass overrides keep the previous
+  // behaviour (NULL variant + appointment.listPrice/finalPrice fallback).
+  overrides?: {
+    serviceVariantId?: number | null;
+    listPrice?: number | null;
+    finalPrice?: number | null;
+  },
+) {
   const existing = await (tx as any).appointmentLine.findFirst({
     where: { appointmentId: Number(appointment.id) },
     orderBy: [{ orderIndex: 'asc' }, { id: 'asc' }],
@@ -2148,11 +2162,12 @@ async function ensureDefaultAppointmentLine(tx: any, appointment: any) {
       customerId: Number.isInteger(appointment.customerId) && appointment.customerId > 0 ? Number(appointment.customerId) : null,
       serviceId: Number(appointment.serviceId),
       specialistId: Number.isInteger(appointment.staffId) && appointment.staffId > 0 ? Number(appointment.staffId) : null,
+      serviceVariantId: overrides?.serviceVariantId ?? null,
       startTime: startTime || null,
       endTime: endTime || null,
       durationMinutes,
-      listPrice: appointment.listPrice ?? null,
-      finalPrice: appointment.finalPrice ?? null,
+      listPrice: overrides?.listPrice ?? appointment.listPrice ?? null,
+      finalPrice: overrides?.finalPrice ?? appointment.finalPrice ?? null,
       status: mapAppointmentStatusToLineStatus(appointment.status),
       paymentMethod: appointment.paymentMethod || null,
       paymentRecordedAt: appointment.paymentRecordedAt || null,
@@ -2542,12 +2557,24 @@ router.post('/appointments', authenticateToken, validate({ body: CreateAppointme
       );
       const services = await tx.service.findMany({
         where: { salonId, id: { in: serviceIds } },
-        select: { id: true, name: true, duration: true, requiresSpecialist: true },
+        select: { id: true, name: true, duration: true, price: true, requiresSpecialist: true },
       });
       const serviceMap = new Map(services.map((service) => [service.id, service]));
       if (services.length !== serviceIds.length) {
         return { error: { code: 404, message: 'One or more services were not found.' } };
       }
+
+      // Per-gender ServiceVariant overrides. The booking flow picks the
+      // variant that matches the appointment's resolved gender (customer
+      // gender wins, falls back to the request body's gender). If no
+      // variant exists for that pair, we use the base Service price +
+      // duration — the engine and AppointmentLine stay variant-agnostic.
+      const resolvedGender = String((customer.gender || gender || 'female')).toLowerCase();
+      const variantRows = await tx.serviceVariant.findMany({
+        where: { serviceId: { in: serviceIds }, gender: resolvedGender as any, isActive: true },
+        select: { id: true, serviceId: true, gender: true, price: true, duration: true },
+      });
+      const variantByServiceId = new Map(variantRows.map((row: any) => [row.serviceId, row]));
 
       const allStaffServiceRows = await tx.staffService.findMany({
         where: {
@@ -2577,6 +2604,8 @@ router.post('/appointments', authenticateToken, validate({ body: CreateAppointme
         staffId: number;
         startTime: Date;
         endTime: Date;
+        serviceVariantId: number | null;
+        unitPrice: number;
       }> = [];
 
       let cursor = new Date(startTime);
@@ -2600,7 +2629,19 @@ router.post('/appointments', authenticateToken, validate({ body: CreateAppointme
         }
 
         const staffService = staffServiceMap.get(`${block.serviceId}:${selectedStaffId}`);
-        const duration = Math.max(1, block.duration || staffService?.duration || service.duration || 30);
+        // Duration priority: explicit override (block.duration) > variant
+        // > staff-specific > base service > 30min last resort. Variant
+        // is checked here so the per-gender duration shows up on the
+        // calendar slot, not just on the commission line.
+        const variant: any = variantByServiceId.get(block.serviceId);
+        const duration = Math.max(
+          1,
+          block.duration ||
+            (variant ? variant.duration : null) ||
+            staffService?.duration ||
+            service.duration ||
+            30,
+        );
         const slotStart = new Date(cursor);
         const slotEnd = new Date(slotStart.getTime() + duration * 60 * 1000);
 
@@ -2630,6 +2671,8 @@ router.post('/appointments', authenticateToken, validate({ body: CreateAppointme
           staffId: selectedStaffId,
           startTime: slotStart,
           endTime: slotEnd,
+          serviceVariantId: variant ? variant.id : null,
+          unitPrice: variant ? variant.price : (service.price ?? 0),
         });
         cursor = new Date(slotEnd);
       }
@@ -2677,7 +2720,16 @@ router.post('/appointments', authenticateToken, validate({ body: CreateAppointme
             },
           },
         });
-        await ensureDefaultAppointmentLine(tx, appointment);
+        // Snapshot the variant + price onto the line so downstream
+        // consumers (commission, payout reports, refund flows) read the
+        // booking-time figure instead of recomputing from Service.price.
+        // listPrice/finalPrice are seeded equal — campaign discount logic
+        // will overwrite finalPrice if applicable on subsequent edits.
+        await ensureDefaultAppointmentLine(tx, appointment, {
+          serviceVariantId: block.serviceVariantId,
+          listPrice: block.unitPrice,
+          finalPrice: block.unitPrice,
+        });
         createdAppointments.push(appointment);
       }
 

@@ -7,6 +7,12 @@ export type GroupServiceSelection = {
 
 export type PersonGroup = {
   personId: string;
+  // Optional gender hint used to pick a ServiceVariant (per-gender
+  // price/duration override). Undefined = engine falls back to the
+  // Service.duration base value for every selected service. When set,
+  // we look up `ServiceVariant{ serviceId, gender }` and use its
+  // duration if a row exists & isActive.
+  gender?: 'female' | 'male' | 'other';
   services: Array<number | GroupServiceSelection>; // Service IDs in UI order
 };
 
@@ -91,6 +97,11 @@ export type ServiceInfo = {
   bufferOverride: number | null;
   categoryId: number | null;
   capacityOverride: number | null;
+  // When a ServiceVariant override was applied during permutation
+  // build, we remember its id here so the booking commit can snapshot
+  // it onto AppointmentLine.serviceVariantId. Undefined = no variant
+  // was applied (the engine ran with the base Service.duration).
+  serviceVariantId?: number;
 };
 
 export type CategoryInfo = {
@@ -107,6 +118,20 @@ export type IndexedData = {
   appointmentsByStaffAndDate: Map<string, AppointmentRow[]>;
   servicesById: Map<number, ServiceInfo>;
   categoriesById: Map<number, CategoryInfo>;
+  // Per-gender service overrides, keyed by `${serviceId}:${gender}`.
+  // Lookup is a hot path (every chain step), so we pre-flatten the rows
+  // into a Map here instead of scanning at evaluation time. Inactive
+  // variants are filtered out at fetch time — caller treats a miss as
+  // "fall back to Service.duration".
+  serviceVariantsByServiceAndGender: Map<string, ServiceVariantInfo>;
+};
+
+export type ServiceVariantInfo = {
+  id: number;
+  serviceId: number;
+  gender: string;
+  price: number;
+  duration: number;
 };
 
 export type StaffServiceRow = {

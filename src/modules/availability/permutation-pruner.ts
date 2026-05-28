@@ -7,10 +7,11 @@ export type ServicePermutation = {
 export class PermutationPruner {
   async *generateValidPermutations(
     serviceIds: number[],
-    data: IndexedData
+    data: IndexedData,
+    gender?: string,
   ): AsyncGenerator<ServicePermutation> {
     // 1. Build Sequential Blocks
-    const blocks = this.buildSequentialBlocks(serviceIds, data);
+    const blocks = this.buildSequentialBlocks(serviceIds, data, gender);
     
     // 2. Since we preserved UI order and handled sequential blocks deterministically,
     // we actually only have ONE permutation of blocks.
@@ -32,15 +33,27 @@ export class PermutationPruner {
     yield { blocks };
   }
 
-  private buildSequentialBlocks(serviceIds: number[], data: IndexedData): ChainBlock[] {
+  private buildSequentialBlocks(serviceIds: number[], data: IndexedData, gender?: string): ChainBlock[] {
     const blocks: ChainBlock[] = [];
     let currentSequentialBlock: ServiceInfo[] = [];
     let currentCategoryId: number | null = null;
-    
+
     // Iterate services in UI order
     for (const serviceId of serviceIds) {
-      const service = data.servicesById.get(serviceId);
-      if (!service) continue;
+      const baseService = data.servicesById.get(serviceId);
+      if (!baseService) continue;
+
+      // Apply per-gender override before the block is built. By
+      // rewriting the duration here we propagate it through every
+      // downstream consumer (chain-builder picks block totals,
+      // slot-scorer measures `service.duration` per cursor step)
+      // without each of them having to know variants exist.
+      const variant = gender
+        ? data.serviceVariantsByServiceAndGender.get(`${serviceId}:${gender}`)
+        : undefined;
+      const service: ServiceInfo = variant
+        ? { ...baseService, duration: variant.duration, serviceVariantId: variant.id }
+        : baseService;
 
       const category = service.categoryId ? data.categoriesById.get(service.categoryId) : undefined;
       const isSequential = category?.sequentialRequired === true;
