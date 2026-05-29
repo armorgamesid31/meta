@@ -256,7 +256,9 @@ model UserIdentity {
   id                  Int                 @id @default(autoincrement())
   phone               String?             @unique(map: "uq_user_identity_phone")
   email               String?             @unique(map: "uq_user_identity_email")
-  passwordHash        String
+  passwordHash        String?
+  googleSub           String?             @unique(map: "uq_user_identity_google_sub")
+  appleSub            String?             @unique(map: "uq_user_identity_apple_sub")
   firstName           String?
   lastName            String?
   displayName         String?

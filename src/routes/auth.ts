@@ -6,6 +6,13 @@ import { prisma } from '../prisma.js';
 import { authenticateToken, authenticateIdentity } from '../middleware/auth.js';
 import { InviteStatus, UserRole } from '@prisma/client';
 import { createAuthTokens, createIdentityTokens, revokeRefreshToken, rotateRefreshToken } from '../services/mobileAuth.js';
+import { verifyGoogleIdToken } from '../services/googleAuth.js';
+import { verifyAppleIdToken } from '../services/appleAuth.js';
+import {
+  buildIdentityLoginResponse,
+  findOrCreateIdentityForOAuth,
+  OAuthEmailCollisionError,
+} from '../services/oauthLogin.js';
 import { ensureSalonServiceCategories } from '../services/salonCategorySetup.js';
 import { ensureSalonAccessSeed } from '../services/accessControl.js';
 import { activateInvite, hashPlainToken, validateInvite, redeemInviteForIdentity } from '../services/inviteService.js';
@@ -222,6 +229,12 @@ router.post('/login', async (req: any, res: any) => {
     if (!identity.isActive) {
       throw new BusinessError('FORBIDDEN', 'User account is inactive.', 403);
     }
+    // OAuth-only identities have a null passwordHash. Return the same
+    // 401 as a wrong password so we don't leak which accounts are
+    // OAuth-only via the error message.
+    if (!identity.passwordHash) {
+      throw new BusinessError('UNAUTHORIZED', 'Hatali giris bilgileri.', 401);
+    }
     const passwordOk = await bcrypt.compare(password, identity.passwordHash);
     if (!passwordOk) {
       throw new BusinessError('UNAUTHORIZED', 'Hatali giris bilgileri.', 401);
@@ -336,6 +349,112 @@ router.post('/login', async (req: any, res: any) => {
     console.error('Login error:', error);
     throw new BusinessError('INTERNAL_ERROR', 'Sunucu hatasi.', 500);
   }
+});
+
+// ─────────────────────────────────────────────────────────────────
+// OAuth sign-in (Google / Apple)
+//
+// Both endpoints accept a provider-issued ID token from the client
+// (web, iOS, Android), verify it against the provider's JWKS, then
+// resolve to a UserIdentity (linking by email when the provider has
+// verified it). The response shape mirrors POST /auth/login exactly
+// so the existing salon-picker / identity-only / full-token branches
+// in AuthContext work unchanged.
+//
+// Body: { idToken: string, salonId?: number }
+// For Apple, the client may also pass { firstName, lastName } on the
+// very first sign-in — Apple only includes the name in its first auth
+// callback (not in the ID token), so the client forwards it once so
+// we can stamp it on the new identity.
+// ─────────────────────────────────────────────────────────────────
+router.post('/google', async (req: any, res: any) => {
+  const idToken = String(req.body?.idToken || '').trim();
+  if (!idToken) {
+    throw new BusinessError('VALIDATION_FAILED', 'idToken zorunlu.', 400);
+  }
+  const requestedSalonId = Number(req.body?.salonId || 0) || undefined;
+
+  let info;
+  try {
+    info = await verifyGoogleIdToken(idToken);
+  } catch (err: any) {
+    console.warn('[auth/google] verify failed:', err?.message);
+    throw new BusinessError('UNAUTHORIZED', 'Google girişi doğrulanamadı.', 401);
+  }
+
+  let identity;
+  try {
+    identity = await findOrCreateIdentityForOAuth({
+      provider: 'google',
+      sub: info.sub,
+      email: info.email,
+      emailVerified: info.emailVerified,
+      firstName: info.firstName,
+      lastName: info.lastName,
+    });
+  } catch (err) {
+    if (err instanceof OAuthEmailCollisionError) {
+      throw new BusinessError(
+        'CONFLICT',
+        'Bu e-posta zaten kayıtlı. Lütfen şifrenle giriş yap, sonra hesabını Google ile bağlayabilirsin.',
+        409,
+      );
+    }
+    throw err;
+  }
+
+  const result = await buildIdentityLoginResponse(identity.id, requestedSalonId);
+  if (result.kind === 'inactive') {
+    throw new BusinessError('FORBIDDEN', 'Hesap aktif değil.', 403);
+  }
+  return res.status(200).json(result.body);
+});
+
+router.post('/apple', async (req: any, res: any) => {
+  const idToken = String(req.body?.idToken || '').trim();
+  if (!idToken) {
+    throw new BusinessError('VALIDATION_FAILED', 'idToken zorunlu.', 400);
+  }
+  const requestedSalonId = Number(req.body?.salonId || 0) || undefined;
+  const firstName =
+    typeof req.body?.firstName === 'string' ? req.body.firstName.trim().slice(0, 80) || null : null;
+  const lastName =
+    typeof req.body?.lastName === 'string' ? req.body.lastName.trim().slice(0, 80) || null : null;
+
+  let info;
+  try {
+    info = await verifyAppleIdToken(idToken);
+  } catch (err: any) {
+    console.warn('[auth/apple] verify failed:', err?.message);
+    throw new BusinessError('UNAUTHORIZED', 'Apple girişi doğrulanamadı.', 401);
+  }
+
+  let identity;
+  try {
+    identity = await findOrCreateIdentityForOAuth({
+      provider: 'apple',
+      sub: info.sub,
+      email: info.email,
+      emailVerified: info.emailVerified,
+      firstName,
+      lastName,
+    });
+  } catch (err) {
+    if (err instanceof OAuthEmailCollisionError) {
+      throw new BusinessError(
+        'CONFLICT',
+        'Bu e-posta zaten kayıtlı. Lütfen şifrenle giriş yap, sonra hesabını Apple ile bağlayabilirsin.',
+        409,
+      );
+    }
+    throw err;
+  }
+
+  const result = await buildIdentityLoginResponse(identity.id, requestedSalonId);
+  if (result.kind === 'inactive') {
+    throw new BusinessError('FORBIDDEN', 'Hesap aktif değil.', 403);
+  }
+  return res.status(200).json(result.body);
 });
 
 router.post('/invites/validate', async (req: any, res: any) => {
@@ -742,6 +861,16 @@ router.post('/me/password', authenticateIdentity, async (req: any, res: any) => 
   }
   const identity = await prisma.userIdentity.findUnique({ where: { id: identityId } });
   if (!identity) throw new BusinessError('NOT_FOUND', 'Kimlik bulunamadı.', 404);
+  // OAuth-only identity: no existing password to compare against.
+  // Treat "set new password" as a separate flow (not implemented yet);
+  // for now bail with a clear message so the client can guide the user.
+  if (!identity.passwordHash) {
+    throw new BusinessError(
+      'CONFLICT',
+      'Bu hesap Google/Apple ile kuruldu; önce hesabına şifre eklemen gerek.',
+      409,
+    );
+  }
   const ok = await bcrypt.compare(currentPassword, identity.passwordHash);
   if (!ok) throw new BusinessError('UNAUTHORIZED', 'Mevcut şifre hatalı.', 401);
   const passwordHash = await bcrypt.hash(newPassword, 10);
@@ -782,6 +911,17 @@ router.post('/me/delete', authenticateIdentity, async (req: any, res: any) => {
   const identity = await prisma.userIdentity.findUnique({ where: { id: identityId } });
   if (!identity) throw new BusinessError('NOT_FOUND', 'Kimlik bulunamadı.', 404);
 
+  // OAuth-only identities have no password to confirm against. We
+  // still require a meaningful confirmation step before destroying
+  // data, so block here — the caller should fall back to whatever
+  // re-auth flow we add for OAuth deletion later.
+  if (!identity.passwordHash) {
+    throw new BusinessError(
+      'CONFLICT',
+      'Bu hesap Google/Apple ile kuruldu; silmek için önce hesabına şifre eklemen gerek.',
+      409,
+    );
+  }
   const ok = await bcrypt.compare(currentPassword, identity.passwordHash);
   if (!ok) throw new BusinessError('UNAUTHORIZED', 'Mevcut şifre hatalı.', 401);
   if (!identity.email || identity.email.toLowerCase() !== confirmEmail) {

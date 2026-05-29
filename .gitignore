@@ -6,3 +6,4 @@ dist
 .vscode/
 .nixpacks
 dist/
+.oauth-credentials.local
