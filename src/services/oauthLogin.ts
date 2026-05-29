@@ -22,6 +22,7 @@ type FindOrCreateInput = {
   emailVerified: boolean;
   firstName: string | null;
   lastName: string | null;
+  picture?: string | null;
 };
 
 export class OAuthEmailCollisionError extends Error {
@@ -49,13 +50,15 @@ export class OAuthEmailCollisionError extends Error {
  *  4. Otherwise, mint a fresh identity. emailVerifiedAt is stamped
  *     only when the provider asserted verification.
  */
-export async function findOrCreateIdentityForOAuth(input: FindOrCreateInput) {
+export async function findOrCreateIdentityForOAuth(
+  input: FindOrCreateInput,
+): Promise<{ identity: Awaited<ReturnType<typeof prisma.userIdentity.create>>; isNew: boolean }> {
   const subField = input.provider === 'google' ? 'googleSub' : 'appleSub';
 
   const bySub = await prisma.userIdentity.findFirst({
     where: { [subField]: input.sub },
   });
-  if (bySub) return bySub;
+  if (bySub) return { identity: bySub, isNew: false };
 
   if (input.email) {
     const byEmail = await prisma.userIdentity.findFirst({
@@ -65,7 +68,7 @@ export async function findOrCreateIdentityForOAuth(input: FindOrCreateInput) {
       if (!input.emailVerified) {
         throw new OAuthEmailCollisionError();
       }
-      return prisma.userIdentity.update({
+      const updated = await prisma.userIdentity.update({
         where: { id: byEmail.id },
         data: {
           [subField]: input.sub,
@@ -78,15 +81,22 @@ export async function findOrCreateIdentityForOAuth(input: FindOrCreateInput) {
             byEmail.displayName ||
             [input.firstName, input.lastName].filter(Boolean).join(' ').trim() ||
             null,
+          // Same rule for the avatar — keep whatever the user already
+          // picked, only fill in if empty.
+          profileImageUrl: byEmail.profileImageUrl || input.picture || null,
         },
       });
+      // Link-up is not a brand-new account: the user already onboarded
+      // with a password and is now adding an OAuth method. Don't push
+      // them through the profile-completion flow again.
+      return { identity: updated, isNew: false };
     }
   }
 
   const displayName =
     [input.firstName, input.lastName].filter(Boolean).join(' ').trim() || null;
 
-  return prisma.userIdentity.create({
+  const created = await prisma.userIdentity.create({
     data: {
       email: input.email,
       [subField]: input.sub,
@@ -94,10 +104,12 @@ export async function findOrCreateIdentityForOAuth(input: FindOrCreateInput) {
       firstName: input.firstName,
       lastName: input.lastName,
       displayName,
+      profileImageUrl: input.picture || null,
       isActive: true,
       emailVerifiedAt: input.emailVerified ? new Date() : null,
     },
   });
+  return { identity: created, isNew: true };
 }
 
 type LoginResult =

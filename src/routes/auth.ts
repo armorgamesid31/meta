@@ -383,15 +383,19 @@ router.post('/google', async (req: any, res: any) => {
   }
 
   let identity;
+  let isNew = false;
   try {
-    identity = await findOrCreateIdentityForOAuth({
+    const out = await findOrCreateIdentityForOAuth({
       provider: 'google',
       sub: info.sub,
       email: info.email,
       emailVerified: info.emailVerified,
       firstName: info.firstName,
       lastName: info.lastName,
+      picture: info.picture,
     });
+    identity = out.identity;
+    isNew = out.isNew;
   } catch (err) {
     if (err instanceof OAuthEmailCollisionError) {
       throw new BusinessError(
@@ -407,7 +411,22 @@ router.post('/google', async (req: any, res: any) => {
   if (result.kind === 'inactive') {
     throw new BusinessError('FORBIDDEN', 'Hesap aktif değil.', 403);
   }
-  return res.status(200).json(result.body);
+  // Tag brand-new identities so the client can route them into the
+  // OAuth profile-completion screen (prefilled with whatever the
+  // provider gave us) before dropping them on the empty dashboard.
+  // We never block the response — the tokens are still issued so
+  // /auth/me works during the completion step.
+  const body: any = result.body;
+  if (isNew && result.kind === 'identity_only') {
+    body.isNewProfile = true;
+    body.prefill = {
+      firstName: info.firstName,
+      lastName: info.lastName,
+      photoUrl: info.picture || null,
+      email: info.email,
+    };
+  }
+  return res.status(200).json(body);
 });
 
 router.post('/apple', async (req: any, res: any) => {
@@ -430,15 +449,19 @@ router.post('/apple', async (req: any, res: any) => {
   }
 
   let identity;
+  let isNew = false;
   try {
-    identity = await findOrCreateIdentityForOAuth({
+    const out = await findOrCreateIdentityForOAuth({
       provider: 'apple',
       sub: info.sub,
       email: info.email,
       emailVerified: info.emailVerified,
       firstName,
       lastName,
+      picture: null,
     });
+    identity = out.identity;
+    isNew = out.isNew;
   } catch (err) {
     if (err instanceof OAuthEmailCollisionError) {
       throw new BusinessError(
@@ -454,7 +477,17 @@ router.post('/apple', async (req: any, res: any) => {
   if (result.kind === 'inactive') {
     throw new BusinessError('FORBIDDEN', 'Hesap aktif değil.', 403);
   }
-  return res.status(200).json(result.body);
+  const body: any = result.body;
+  if (isNew && result.kind === 'identity_only') {
+    body.isNewProfile = true;
+    body.prefill = {
+      firstName,
+      lastName,
+      photoUrl: null,
+      email: info.email,
+    };
+  }
+  return res.status(200).json(body);
 });
 
 router.post('/invites/validate', async (req: any, res: any) => {
@@ -784,12 +817,37 @@ router.patch('/me/profile', authenticateIdentity, async (req: any, res: any) => 
     typeof req.body?.lastName === 'string' ? req.body.lastName.trim().slice(0, 80) : undefined;
   const rawEmail = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : undefined;
   const rawPhone = typeof req.body?.phone === 'string' ? normalizeDigitsOnly(req.body.phone) : undefined;
+  // Gender + avatar are part of the cross-salon identity profile
+  // (added when we lifted profile fields off Staff). The OAuth
+  // completion screen passes both — gender from a dropdown, avatar
+  // either as the provider-issued URL or a fresh upload from
+  // /auth/onboarding/:sessionId/photo.
+  const rawGender = typeof req.body?.gender === 'string' ? req.body.gender.toLowerCase() : undefined;
+  const gender =
+    rawGender === 'male' || rawGender === 'female' || rawGender === 'other'
+      ? rawGender
+      : rawGender === null || rawGender === ''
+        ? null
+        : undefined;
+  const profileImageUrl =
+    typeof req.body?.profileImageUrl === 'string'
+      ? req.body.profileImageUrl.trim() || null
+      : req.body?.profileImageUrl === null
+        ? null
+        : undefined;
 
   if (rawEmail !== undefined && rawEmail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(rawEmail)) {
     throw new BusinessError('VALIDATION_FAILED', 'Geçersiz e-posta.', 400);
   }
   if (rawPhone !== undefined && rawPhone && rawPhone.length < 8) {
     throw new BusinessError('VALIDATION_FAILED', 'Geçersiz telefon.', 400);
+  }
+  if (
+    profileImageUrl !== undefined &&
+    profileImageUrl !== null &&
+    !/^https?:\/\//i.test(profileImageUrl)
+  ) {
+    throw new BusinessError('VALIDATION_FAILED', 'Geçersiz profil görseli URL.', 400);
   }
 
   // Block trying to claim somebody else's email/phone.
@@ -827,6 +885,8 @@ router.patch('/me/profile', authenticateIdentity, async (req: any, res: any) => 
     data.phone = rawPhone || null;
     data.phoneVerifiedAt = null;
   }
+  if (gender !== undefined) data.gender = gender;
+  if (profileImageUrl !== undefined) data.profileImageUrl = profileImageUrl;
 
   const updated = await prisma.userIdentity.update({
     where: { id: identityId },
@@ -838,6 +898,8 @@ router.patch('/me/profile', authenticateIdentity, async (req: any, res: any) => 
       firstName: true,
       lastName: true,
       displayName: true,
+      gender: true,
+      profileImageUrl: true,
       emailVerifiedAt: true,
       phoneVerifiedAt: true,
     },
