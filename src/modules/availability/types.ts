@@ -39,6 +39,12 @@ export type DatesRequest = {
 export type DatesResponse = {
   availableDates: string[];
   unavailableDates: string[];
+  /**
+   * Salon o gün için kapalı (SalonSettings.workingDays listesinde
+   * dayOfWeek yok). UI bu günleri "Kapalı" diye etiketleyebilir,
+   * "Dolu" demek yanlış olur (zaten hiç açılmamış).
+   */
+  closedDates: string[];
 };
 
 export type SlotsResponse = {
