@@ -34,8 +34,25 @@ export class SlotsEngine {
     request: AvailabilityRequest,
     options: GenerateSlotsOptions = {},
   ): Promise<SlotsResponse> {
-    const data = await this.batchFetchData(request);
     const date = new Date(request.date);
+
+    // Geçmiş gün ise erken çıkış — motor çalıştırmaya gerek yok.
+    // Server TZ Europe/Istanbul'a pinned (bootstrap.ts) → local tarihler
+    // salon-local güne karşılık gelir. dün ve öncesi için boş döner;
+    // bugün için aşağıda saat filtresi ile şimdiki saatten önceki
+    // slot'ları çıkarırız.
+    const now = new Date();
+    const todayLocal = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const requestLocal = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+    if (requestLocal < todayLocal) {
+      return {
+        date: request.date,
+        groups: request.groups.map((g) => ({ personId: g.personId, slots: [] })),
+        displaySlots: [],
+      };
+    }
+
+    const data = await this.batchFetchData(request);
 
     const startSync = performance.now();
     const synchronized = await this.multiPersonAnchor.synchronizeGroups(
@@ -49,6 +66,24 @@ export class SlotsEngine {
       synchronized,
       request.groups.map((group) => group.personId),
     );
+
+    // Bugün için: now'dan önceki slot başlangıçlarını ele. Salon
+    // hâlâ 09:00-18:00 açık olsa bile saat 14:00'da müşteriye
+    // 09:00 slotu önermenin anlamı yok.
+    if (requestLocal === todayLocal) {
+      const minStartMinutes = now.getHours() * 60 + now.getMinutes();
+      const parseHHMM = (value: string): number => {
+        const [h, m] = value.split(':').map(Number);
+        return (h || 0) * 60 + (m || 0);
+      };
+      optimized.displaySlots = optimized.displaySlots.filter(
+        (ds) => parseHHMM(ds.startTime) >= minStartMinutes,
+      );
+      optimized.groups = optimized.groups.map((g) => ({
+        ...g,
+        slots: g.slots.filter((s) => parseHHMM(s.startTime) >= minStartMinutes),
+      }));
+    }
 
     const endSync = performance.now();
     const executionTime = endSync - startSync;
@@ -222,6 +257,11 @@ export class SlotsEngine {
         select: {
           workStartHour: true,
           workEndHour: true,
+          // Salon kapalı günleri (örn. ["MON","TUE",…,"SAT"] = Pazar
+          // kapalı). Fallback working hours koyarken o gün listede
+          // değilse staff için hiç working hour kaydı yazmayız —
+          // motor o günü "yok" sayar, slot dönmez.
+          workingDays: true,
         },
       }),
     ]);
@@ -330,15 +370,31 @@ export class SlotsEngine {
     }
 
     if (salonSettings) {
-      for (const staffId of relevantStaffIds) {
-        const key = `${staffId}-${dayOfWeek}`;
-        if (!indexedData.workingHoursByStaffAndDay.has(key)) {
-          indexedData.workingHoursByStaffAndDay.set(key, {
-            staffId,
-            dayOfWeek,
-            startHour: salonSettings.workStartHour,
-            endHour: salonSettings.workEndHour,
-          });
+      // workingDays: salon hangi günler açık ("MON","TUE",… "SUN").
+      // Tanımlıysa o gün listede yoksa fallback YAPMA — staff için
+      // working hour kaydı yazmazsak motor o günü kapalı sayar.
+      // workingDays null/boş → kontrol atla (legacy default davranış).
+      const DAY_KEYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'] as const;
+      const todayKey = DAY_KEYS[dayOfWeek];
+      const rawWorkingDays = salonSettings.workingDays;
+      const workingDays = Array.isArray(rawWorkingDays)
+        ? (rawWorkingDays as unknown[])
+            .map((d) => String(d).toUpperCase().trim())
+            .filter((d) => DAY_KEYS.includes(d as typeof DAY_KEYS[number]))
+        : null;
+      const salonOpenToday = workingDays === null || workingDays.includes(todayKey);
+
+      if (salonOpenToday) {
+        for (const staffId of relevantStaffIds) {
+          const key = `${staffId}-${dayOfWeek}`;
+          if (!indexedData.workingHoursByStaffAndDay.has(key)) {
+            indexedData.workingHoursByStaffAndDay.set(key, {
+              staffId,
+              dayOfWeek,
+              startHour: salonSettings.workStartHour,
+              endHour: salonSettings.workEndHour,
+            });
+          }
         }
       }
     }

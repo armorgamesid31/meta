@@ -74,10 +74,10 @@ router.post('/lock', async (req: any, res: any) => {
 
   try {
     const result = await createSlotLock(salonId, entries);
-    if (!result.ok) {
-      return res.status(409).json({ code: result.code, message: result.message });
+    if (result.ok === true) {
+      return res.status(201).json({ id: result.id, expiresAt: result.expiresAt });
     }
-    return res.status(201).json({ id: result.id, expiresAt: result.expiresAt });
+    return res.status(409).json({ code: result.code, message: result.message });
   } catch (error) {
     console.error('Error creating slot lock:', error);
     throw new BusinessError('INTERNAL_ERROR', 'Failed to create slot lock.', 500);

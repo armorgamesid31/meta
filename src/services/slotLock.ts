@@ -59,7 +59,7 @@ export async function createSlotLock(
   salonId: number,
   entries: SlotLockEntry[],
 ): Promise<CreateSlotLockResult> {
-  const result = await prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx): Promise<CreateSlotLockResult> => {
     const now = new Date();
 
     for (const entry of entries) {
