@@ -1533,11 +1533,13 @@ type ParsedCheckoutLine = {
   closeType: CheckoutCloseType;
   paymentMethod: 'CASH' | 'CARD' | 'TRANSFER' | 'OTHER' | null;
   customerPackageId: number | null;
-  // Yeni: SaaS panel checkout sheet'inden gelen indirim/ek ücret ₺ tutarları.
-  // Sadece SINGLE_PAYMENT akışında anlamlı; null/0 ise mevcut finalPrice
-  // korunur.
+  // Per-line discount/surcharge/reason. SaaS panel checkout sheet'inde
+  // her hizmetin kendi ayarlaması olabilir. Sadece SINGLE_PAYMENT akışında
+  // anlamlı; paket akışlarında atlanır. Reason AppointmentLine.notes'a
+  // yazılır (raporlama için).
   discountAmount: number | null;
   surchargeAmount: number | null;
+  adjustmentReason: string | null;
 };
 
 function parseCheckoutMode(value: unknown): CheckoutMode {
@@ -1583,6 +1585,9 @@ function parseCheckoutLines(input: unknown): ParsedCheckoutLine[] {
       const n = Number(raw);
       return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null;
     };
+    const reasonRaw = (row as any).adjustmentReason;
+    const adjustmentReason =
+      typeof reasonRaw === 'string' && reasonRaw.trim() ? reasonRaw.trim().slice(0, 200) : null;
     rows.push({
       appointmentId,
       appointmentLineId: normalizedLineId,
@@ -1591,6 +1596,7 @@ function parseCheckoutLines(input: unknown): ParsedCheckoutLine[] {
       customerPackageId: (typeof customerPackageId === 'number' && Number.isInteger(customerPackageId) && customerPackageId > 0) ? customerPackageId : null,
       discountAmount: parseNonNegMoney((row as any).discountAmount),
       surchargeAmount: parseNonNegMoney((row as any).surchargeAmount),
+      adjustmentReason,
     });
     seen.add(key);
   }
@@ -5047,9 +5053,11 @@ router.post('/appointments/checkout', authenticateToken, async (req: any, res: a
 
         // İndirim / ek ücret sadece SINGLE_PAYMENT akışında uygulanır.
         // listPrice korunur (görsel "yine de %X indirim alındı" hesabı
-        // için), finalPrice yeniden hesaplanır. Negatife düşmez.
-        let nextDiscountTotal: number | null | undefined = undefined;
+        // için), finalPrice yeniden hesaplanır. Negatife düşmez. Reason
+        // varsa notes alanına "[adjust] reason" formatında ekleriz —
+        // mevcut notları üzerine yazmayız.
         let nextFinalPrice: number | null | undefined = undefined;
+        let nextNotes: string | undefined = undefined;
         if (line.closeType === 'SINGLE_PAYMENT' &&
             ((line.discountAmount && line.discountAmount > 0) ||
              (line.surchargeAmount && line.surchargeAmount > 0))) {
@@ -5057,8 +5065,12 @@ router.post('/appointments/checkout', authenticateToken, async (req: any, res: a
             Number((targetLine as any).listPrice ?? (targetLine as any).finalPrice ?? 0) || 0;
           const discount = Math.max(0, Math.min(basePrice, Number(line.discountAmount ?? 0)));
           const surcharge = Math.max(0, Number(line.surchargeAmount ?? 0));
-          nextDiscountTotal = discount > 0 ? discount : null;
           nextFinalPrice = Math.max(0, basePrice - discount + surcharge);
+          if (line.adjustmentReason) {
+            const existingNotes = (targetLine as any).notes ? String((targetLine as any).notes).trim() : '';
+            const stamp = `[ayarlama${discount > 0 ? ` −₺${Math.round(discount)}` : ''}${surcharge > 0 ? ` +₺${Math.round(surcharge)}` : ''}] ${line.adjustmentReason}`;
+            nextNotes = existingNotes ? `${existingNotes}\n${stamp}` : stamp;
+          }
         }
 
         await (tx as any).appointmentLine.update({
@@ -5068,6 +5080,7 @@ router.post('/appointments/checkout', authenticateToken, async (req: any, res: a
             paymentMethod: shouldSetPayment || null,
             paymentRecordedAt: shouldSetPayment ? now : null,
             ...(nextFinalPrice !== undefined ? { finalPrice: nextFinalPrice } : {}),
+            ...(nextNotes !== undefined ? { notes: nextNotes } : {}),
           },
         });
         touchedAppointmentIds.add(Number(line.appointmentId));
