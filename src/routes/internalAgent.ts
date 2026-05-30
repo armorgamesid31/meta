@@ -8,9 +8,12 @@ import {
   normalizePhoneDigits,
 } from '../services/identityService.js';
 import {
-  buildSingleServiceGroups,
-  generateAvailability,
-} from '../services/availabilityService.js';
+  findHolidayOnDate,
+  resolveDateExpression,
+  todayInIstanbul,
+  ymdToWeekdayKey,
+  ymdToWeekdayLongTr,
+} from '../services/holidayCalendar.js';
 import type { ChannelType } from '@prisma/client';
 
 /**
@@ -21,7 +24,7 @@ import type { ChannelType } from '@prisma/client';
  * Endpoints:
  *   GET  /salon-context?salonId=...       → tek kaynak: salon info + tone_directive
  *   POST /customer-lookup                 → channel + subject → müşteri profili + son randevular
- *   GET  /availability                    → boş slot listesi (servis + tarih bazlı)
+ *   POST /check-day-open                  → "bayramda açık mısınız?" / "X günü açık mı?" çözümleyici
  */
 
 const router = Router();
@@ -164,39 +167,139 @@ router.post('/customer-lookup', async (req: any, res: any) => {
 });
 
 /**
- * GET /availability?salonId=...&serviceId=...&date=YYYY-MM-DD&peopleCount=1
+ * POST /check-day-open
+ * Body: { salonId, dateExpression: string }
+ *   dateExpression: "yarın" / "cumartesi" / "29 ekim" / "bayram" / "kurban bayramı" /
+ *                   "anneler günü" / "2026-12-31" — agent ne duyduysa ham geçirir.
  *
- * Tek-servis, tek-kişi varsayılan. Daha karmaşık durumlar için (çoklu hizmet,
- * grup randevusu) public /api/availability/slots zaten var; agent'a şimdilik
- * gerek yok — magic-link akışı koruyor.
+ * Dönüş: { interpretation, ambiguous, days: [{ date, dayName, isOpen, reason,
+ *          holidayName, isHalfDay, salonClosureNote, workHours }] }
+ *
+ * Karar mantığı (her gün için):
+ *   1. SalonClosure (salon manuel kapama) varsa → kapalı.
+ *   2. Haftalık çalışma günü değilse (workingDays) → kapalı.
+ *   3. closesByDefault=true olan tatil ise → kapalı (national/religious bayram).
+ *   4. closesByDefault='half' ise → yarım gün açık.
+ *   5. Aksi halde → açık.
+ *
+ * Saat bilgisi vermez, slot vermez. Spesifik saat sorusunda agent doğrudan
+ * tool_booking_link kullanmalı.
  */
-router.get('/availability', async (req: any, res: any) => {
-  const salonId = parseSalonId(req.query?.salonId);
-  const serviceId = parseSalonId(req.query?.serviceId);
-  const date = typeof req.query?.date === 'string' ? req.query.date : '';
-  const peopleCount = Number(req.query?.peopleCount) || 1;
+const VALID_DAYS: Array<'MON'|'TUE'|'WED'|'THU'|'FRI'|'SAT'|'SUN'> =
+  ['MON','TUE','WED','THU','FRI','SAT','SUN'];
 
+router.post('/check-day-open', async (req: any, res: any) => {
+  const salonId = parseSalonId(req.body?.salonId);
+  const expression = typeof req.body?.dateExpression === 'string' ? req.body.dateExpression : '';
   if (!salonId) return res.status(400).json({ ok: false, error: 'salonId_required' });
-  if (!serviceId) return res.status(400).json({ ok: false, error: 'serviceId_required' });
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    return res.status(400).json({ ok: false, error: 'date_must_be_yyyy_mm_dd' });
-  }
+  if (!expression.trim()) return res.status(400).json({ ok: false, error: 'dateExpression_required' });
 
   try {
-    const result = await generateAvailability({
-      salonId,
-      date,
-      groups: buildSingleServiceGroups(serviceId, peopleCount > 0 ? peopleCount : 1),
+    const today = todayInIstanbul();
+    const resolved = resolveDateExpression(expression, { today });
+
+    if (resolved.unresolved || resolved.dates.length === 0) {
+      return res.json({
+        ok: true,
+        interpretation: resolved.interpretation || 'çözümlenemedi',
+        ambiguous: false,
+        unresolved: true,
+        outOfRange: resolved.outOfRange,
+        days: [],
+      });
+    }
+
+    // Tek-sorguda salon ayarlarını + tüm tarih aralığını kapsayan kapamaları çek
+    const settings = await prisma.salonSettings.findUnique({
+      where: { salonId },
+      select: { workingDays: true, workStartHour: true, workEndHour: true, timezone: true },
+    });
+
+    const minDate = resolved.dates[0];
+    const maxDate = resolved.dates[resolved.dates.length - 1];
+    const rangeStart = new Date(`${minDate}T00:00:00+03:00`);
+    const rangeEnd = new Date(`${maxDate}T23:59:59+03:00`);
+
+    const closures = await prisma.salonClosure.findMany({
+      where: {
+        salonId,
+        startAt: { lte: rangeEnd },
+        endAt: { gte: rangeStart },
+      },
+      select: { startAt: true, endAt: true, reason: true },
+    });
+
+    const workingDaySet = new Set<string>(
+      Array.isArray(settings?.workingDays)
+        ? (settings!.workingDays as unknown[])
+            .filter((v): v is string => typeof v === 'string')
+            .map((v) => v.trim().toUpperCase())
+            .filter((v) => VALID_DAYS.includes(v as any))
+        : VALID_DAYS,
+    );
+    if (workingDaySet.size === 0) for (const d of VALID_DAYS) workingDaySet.add(d);
+
+    const workStart = settings?.workStartHour ?? 9;
+    const workEnd = settings?.workEndHour ?? 18;
+    const workHoursFull = `${String(workStart).padStart(2, '0')}:00–${String(workEnd).padStart(2, '0')}:00`;
+
+    const days = resolved.dates.map((date) => {
+      const dayName = ymdToWeekdayLongTr(date);
+      const weekKey = ymdToWeekdayKey(date);
+      const dayStart = new Date(`${date}T00:00:00+03:00`);
+      const dayEnd = new Date(`${date}T23:59:59+03:00`);
+      const overlappingClosure = closures.find((c) => c.startAt <= dayEnd && c.endAt >= dayStart);
+      const holiday = findHolidayOnDate(date);
+
+      let isOpen = true;
+      let reason: string | null = null;
+      let isHalfDay = false;
+      let workHours: string | null = workHoursFull;
+      let salonClosureNote: string | null = null;
+
+      if (overlappingClosure) {
+        isOpen = false;
+        reason = 'salon_closure';
+        salonClosureNote = overlappingClosure.reason || null;
+        workHours = null;
+      } else if (!workingDaySet.has(weekKey)) {
+        isOpen = false;
+        reason = 'weekly_off';
+        workHours = null;
+      } else if (holiday && holiday.closesByDefault === true) {
+        isOpen = false;
+        reason = holiday.type === 'religious' ? 'religious_holiday' : 'national_holiday';
+        workHours = null;
+      } else if (holiday && holiday.closesByDefault === 'half') {
+        isOpen = true;
+        isHalfDay = true;
+        // Yarım gün ifadesi → sabah açık varsayımı
+        workHours = `${String(workStart).padStart(2, '0')}:00–13:00`;
+      }
+
+      return {
+        date,
+        dayName,
+        isOpen,
+        reason,
+        isHalfDay,
+        holidayName: holiday?.name || null,
+        holidayType: holiday?.type || null,
+        salonClosureNote,
+        workHours,
+      };
     });
 
     return res.json({
       ok: true,
-      date,
-      slots: result.displaySlots.map((s) => s.label),
-      slotCount: result.displaySlots.length,
+      interpretation: resolved.interpretation,
+      ambiguous: resolved.ambiguous,
+      unresolved: false,
+      outOfRange: resolved.outOfRange,
+      days,
     });
   } catch (err: any) {
-    console.error('[internalAgent.availability] failed', err);
+    console.error('[internalAgent.check-day-open] failed', err);
     return res.status(500).json({ ok: false, error: 'internal_error' });
   }
 });

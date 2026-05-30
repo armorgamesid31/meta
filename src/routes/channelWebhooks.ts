@@ -25,7 +25,11 @@ import {
 import { upsertConversationMessageEvent } from '../services/conversationMessageEvents.js';
 import { storeConversationAvatarFromUrl } from '../services/conversationAvatarStorage.js';
 import { buildMediaItemsFromWebhook } from '../services/conversationMediaCache.js';
-import { loadSalonAgentContext } from '../services/salonAgentContext.js';
+import {
+  buildCustomerCalibration,
+  loadCustomerSnapshot,
+  loadSalonAgentContext,
+} from '../services/salonAgentContext.js';
 
 const router = Router();
 
@@ -1651,11 +1655,23 @@ async function processIncomingBatch(items: any[]) {
     const styleDirective = agentContext?.styleDirective || '';
     const salonOneLiner = agentContext?.salonOneLiner || '';
 
+    // Müşteri snapshot + ton kalibrasyonu — n8n agent prompt'ında
+    // "# MÜŞTERİ KİMLİK" bloğu için. Kayıtsız müşteride DB sorgusu yapmaz.
+    const customerSnapshot = await loadCustomerSnapshot({
+      salonId,
+      customerId: customer?.id || null,
+      channelProfileName,
+      registeredName: customerFullName,
+    });
+    const customerCalibration = buildCustomerCalibration(agentSettings.tone, customerSnapshot);
+
     processed.push({
       ...row,
       toneDirective,
       styleDirective,
       salonOneLiner,
+      customer: customerSnapshot,
+      customerCalibration,
       providerMessageId,
       originalProviderMessageId: incomingProviderMessageId !== providerMessageId ? incomingProviderMessageId : undefined,
       salonId,
