@@ -48,6 +48,12 @@ import {
 import { buildRescheduleOptions } from '../services/appointmentRescheduleOptions.js';
 import { generateAvailability, normalizePersonGroups } from '../services/availabilityService.js';
 import {
+  consumeSlotLockIfValid,
+  createSlotLock,
+  deleteSlotLock,
+  parseSlotLockEntries,
+} from '../services/slotLock.js';
+import {
   cancelWaitlistEntry,
   createManualWaitlistOffer,
   createWaitlistEntry,
@@ -2508,6 +2514,11 @@ router.post('/appointments', authenticateToken, validate({ body: CreateAppointme
       ? req.body.idempotencyKey.trim()
       : null;
 
+  const slotLockId =
+    typeof req.body?.slotLockId === 'string' && req.body.slotLockId.trim()
+      ? req.body.slotLockId.trim()
+      : null;
+
   if (idempotencyKey) {
     const cached = await findCachedBookingByIdempotencyKey({ salonId, idempotencyKey });
     if (cached) return res.status(cached.status).json(cached.body);
@@ -2634,9 +2645,9 @@ router.post('/appointments', authenticateToken, validate({ body: CreateAppointme
         }
 
         if (!selectedStaffId) {
-          if (service.requiresSpecialist && candidates.length > 1) {
-            return { error: { code: 400, message: `${service.name} için uzman seçimi zorunlu.` } };
-          }
+          // "Uzman fark etmez": requiresSpecialist olsa bile motor uygun
+          // ilk uzmana düşürür. UI'da kullanıcı isterse spesifik uzman
+          // seçer, istemezse buraya boş gelir.
           if (candidates.length === 0) {
             return { error: { code: 400, message: `${service.name} için uygun aktif uzman bulunamadı.` } };
           }
@@ -2679,6 +2690,34 @@ router.post('/appointments', authenticateToken, validate({ body: CreateAppointme
               conflict: overlap,
             },
           };
+        }
+
+        // Başka müşterinin aktif SlotLock'ı bu staff×zaman'ı tutmuş olabilir.
+        // Kendi lock'umuzu (slotLockId) hariç tut; o zaten bu slot için alındı.
+        const conflictingLocks = await tx.slotLock.findMany({
+          where: {
+            salonId,
+            expiresAt: { gt: new Date() },
+            ...(slotLockId ? { id: { not: slotLockId } } : {}),
+          },
+          select: { entries: true },
+        });
+        for (const lock of conflictingLocks) {
+          const entries = Array.isArray(lock.entries) ? (lock.entries as any[]) : [];
+          for (const entry of entries) {
+            if (Number(entry?.staffId) !== selectedStaffId) continue;
+            const lockStart = new Date(String(entry?.startTime || ''));
+            const lockEnd = new Date(String(entry?.endTime || ''));
+            if (Number.isNaN(lockStart.getTime()) || Number.isNaN(lockEnd.getTime())) continue;
+            if (slotStart.getTime() < lockEnd.getTime() && slotEnd.getTime() > lockStart.getTime()) {
+              return {
+                error: {
+                  code: 409,
+                  message: `${service.name} için ${slotStart.toISOString()} saatinde başka bir müşteri slotu tutuyor.`,
+                },
+              };
+            }
+          }
         }
 
         plannedBlocks.push({
@@ -2783,6 +2822,15 @@ router.post('/appointments', authenticateToken, validate({ body: CreateAppointme
         appointmentIds: result.appointments.map((apt: any) => Number(apt.id)),
       });
     }
+
+    if (slotLockId) {
+      // Best-effort: lock zaten 120sn sonra expire eder, başarısızlık
+      // büyük sorun değil. Yine de logla, anormal patternleri yakalayalım.
+      await consumeSlotLockIfValid(salonId, slotLockId).catch((lockError) => {
+        console.error('Failed to consume slot lock after admin appointment create:', lockError);
+      });
+    }
+
     invalidateAvailabilityForSalon(salonId).catch(() => undefined);
 
     return res.status(201).json({
@@ -5082,15 +5130,24 @@ router.post('/appointments/availability', authenticateToken, async (req: any, re
   // The composer sends one entry per service plus optional allowedStaffIds
   // (locked staff for that service). normalizePersonGroups handles
   // shape coercion + invariant checks; we always send as a single
-  // person group.
+  // person group. Müşteri cinsiyetini de yedirelim ki ServiceVariant
+  // (gender override) süresi/fiyatı motor doğru hesaplasın.
   const servicesRaw = Array.isArray(req.body?.services) ? req.body.services : [];
-  const groups = normalizePersonGroups([{ personId: 'p1', services: servicesRaw }]);
+  const gender = typeof req.body?.gender === 'string' ? req.body.gender : null;
+  const groups = normalizePersonGroups([
+    { personId: 'p1', gender, services: servicesRaw },
+  ]);
   if (!groups.length) {
     throw new BusinessError('VALIDATION_FAILED', 'services must include at least one valid serviceId.', 400);
   }
 
+  const ignoreLockId =
+    typeof req.body?.ignoreLockId === 'string' && req.body.ignoreLockId.trim()
+      ? req.body.ignoreLockId.trim()
+      : undefined;
+
   try {
-    const result = await generateAvailability({ salonId, date, groups });
+    const result = await generateAvailability({ salonId, date, groups, ignoreLockId });
     return res.status(200).json({
       date,
       displaySlots: result.displaySlots, // [{ slotKey, label, available, ... }]
@@ -5102,6 +5159,45 @@ router.post('/appointments/availability', authenticateToken, async (req: any, re
       reason: error?.message || 'unknown',
     });
   }
+});
+
+// POST /api/admin/appointments/lock — admin "yeni randevu" sheet'inde
+// kullanıcı bir slot tıkladığında, başka müşteri/admin'in aynı slotu
+// kapmasını engellemek için 120sn'lik SlotLock alır. Booking v2'deki
+// public /availability/lock'un admin auth'lı eşi.
+router.post('/appointments/lock', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  const entries = parseSlotLockEntries(req.body?.entries);
+  if (!entries) {
+    throw new BusinessError(
+      'VALIDATION_FAILED',
+      'entries must be a non-empty array of { staffId, startTime, endTime }.',
+      400,
+    );
+  }
+
+  try {
+    const result = await createSlotLock(salonId, entries);
+    if (!result.ok) {
+      return res.status(409).json({ code: result.code, message: result.message });
+    }
+    return res.status(201).json({ id: result.id, expiresAt: result.expiresAt });
+  } catch (error) {
+    console.error('Admin slot lock create error:', error);
+    throw new BusinessError('INTERNAL_ERROR', 'Failed to create slot lock.', 500);
+  }
+});
+
+// DELETE /api/admin/appointments/lock/:id — best-effort release. Sheet
+// kapanırken, tarih değişirken veya farklı slot seçilirken çağrılır.
+router.delete('/appointments/lock/:id', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  const id = String(req.params?.id || '').trim();
+  if (!id) {
+    throw new BusinessError('VALIDATION_FAILED', 'lock id is required.', 400);
+  }
+  await deleteSlotLock(salonId, id);
+  return res.status(200).json({ ok: true });
 });
 
 router.post('/appointments/reschedule-preview', authenticateToken, async (req: any, res: any) => {

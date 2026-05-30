@@ -17,7 +17,14 @@ export const CreateAppointmentInputSchema = z.object({
   customerPhone: z.string().trim().min(4, 'Telefon zorunludur.'),
   startTime: z.string().min(1, 'Başlangıç zamanı zorunludur.'),
   notes: z.string().nullable().optional(),
+  gender: z.enum(['male', 'female', 'other']).nullable().optional(),
   services: z.array(AppointmentServiceLineInputSchema).min(1, 'En az bir hizmet seçmelisiniz.'),
+  // Slot kilidi: admin "yeni randevu" sheet'inde bir slot tıkladığında
+  // POST /appointments/lock ile alınan id. Commit anında validate edilip
+  // başarılı insert'ten sonra silinir.
+  slotLockId: z.string().min(1).nullable().optional(),
+  // Çift tıklama / retry koruması.
+  idempotencyKey: z.string().min(1).nullable().optional(),
 });
 export type CreateAppointmentInput = z.infer<typeof CreateAppointmentInputSchema>;
 

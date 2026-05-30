@@ -6,54 +6,7 @@ import {
   normalizePersonGroups,
 } from '../services/availabilityService.js';
 import { BusinessError } from '../lib/errors.js';
-import { prisma } from '../prisma.js';
-import { invalidateAvailabilityForSalon } from '../services/availabilityCache.js';
-
-const SLOT_LOCK_TTL_SECONDS = 120;
-
-type SlotLockEntry = {
-  staffId: number;
-  startTime: string;
-  endTime: string;
-};
-
-function parseSlotLockEntries(input: unknown): SlotLockEntry[] | null {
-  if (!Array.isArray(input) || input.length === 0) return null;
-  const parsed: SlotLockEntry[] = [];
-  for (const raw of input) {
-    const staffId = Number((raw as any)?.staffId);
-    const startTimeIso = String((raw as any)?.startTime || '');
-    const endTimeIso = String((raw as any)?.endTime || '');
-    if (!Number.isInteger(staffId) || staffId <= 0) return null;
-    const start = new Date(startTimeIso);
-    const end = new Date(endTimeIso);
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
-    if (start >= end) return null;
-    parsed.push({ staffId, startTime: start.toISOString(), endTime: end.toISOString() });
-  }
-  return parsed;
-}
-
-function entriesCollideWithLock(
-  newEntries: SlotLockEntry[],
-  lockEntries: unknown,
-): boolean {
-  if (!Array.isArray(lockEntries)) return false;
-  for (const newEntry of newEntries) {
-    const newStart = new Date(newEntry.startTime).getTime();
-    const newEnd = new Date(newEntry.endTime).getTime();
-    for (const existing of lockEntries as Array<Record<string, unknown>>) {
-      if (Number(existing?.staffId) !== newEntry.staffId) continue;
-      const existingStart = new Date(String(existing?.startTime || '')).getTime();
-      const existingEnd = new Date(String(existing?.endTime || '')).getTime();
-      if (Number.isNaN(existingStart) || Number.isNaN(existingEnd)) continue;
-      if (newStart < existingEnd && newEnd > existingStart) {
-        return true;
-      }
-    }
-  }
-  return false;
-}
+import { createSlotLock, deleteSlotLock, parseSlotLockEntries } from '../services/slotLock.js';
 
 const router = Router();
 
@@ -120,57 +73,10 @@ router.post('/lock', async (req: any, res: any) => {
   }
 
   try {
-    const result = await prisma.$transaction(async (tx) => {
-      const now = new Date();
-
-      // 1. Çakışan BOOKED randevu var mı?
-      for (const entry of entries) {
-        const conflict = await tx.appointment.findFirst({
-          where: {
-            salonId,
-            staffId: entry.staffId,
-            status: 'BOOKED',
-            startTime: { lt: new Date(entry.endTime) },
-            endTime: { gt: new Date(entry.startTime) },
-          },
-          select: { id: true },
-        });
-        if (conflict) {
-          return { error: 'SLOT_TAKEN', message: 'Slot is already booked.' } as const;
-        }
-      }
-
-      // 2. Aktif başka bir SlotLock var mı?
-      const activeLocks = await tx.slotLock.findMany({
-        where: { salonId, expiresAt: { gt: now } },
-        select: { entries: true },
-      });
-      for (const lock of activeLocks) {
-        if (entriesCollideWithLock(entries, lock.entries)) {
-          return { error: 'SLOT_TAKEN', message: 'Slot is locked by another customer.' } as const;
-        }
-      }
-
-      const expiresAt = new Date(Date.now() + SLOT_LOCK_TTL_SECONDS * 1000);
-      const created = await tx.slotLock.create({
-        data: {
-          salonId,
-          entries: entries as any,
-          expiresAt,
-        },
-        select: { id: true, expiresAt: true },
-      });
-
-      return { id: created.id, expiresAt: created.expiresAt } as const;
-    }, { isolationLevel: 'Serializable' });
-
-    if ('error' in result) {
-      return res.status(409).json({ code: result.error, message: result.message });
+    const result = await createSlotLock(salonId, entries);
+    if (!result.ok) {
+      return res.status(409).json({ code: result.code, message: result.message });
     }
-
-    // Lock motorun blocked listesine girer; cache stale olabilir.
-    invalidateAvailabilityForSalon(salonId).catch(() => undefined);
-
     return res.status(201).json({ id: result.id, expiresAt: result.expiresAt });
   } catch (error) {
     console.error('Error creating slot lock:', error);
@@ -192,8 +98,7 @@ router.delete('/lock/:id', async (req: any, res: any) => {
     throw new BusinessError('VALIDATION_FAILED', 'lock id is required.', 400);
   }
 
-  await prisma.slotLock.deleteMany({ where: { id, salonId } });
-  invalidateAvailabilityForSalon(salonId).catch(() => undefined);
+  await deleteSlotLock(salonId, id);
   return res.status(200).json({ ok: true });
 });
 
