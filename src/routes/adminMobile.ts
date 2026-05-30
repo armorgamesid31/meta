@@ -1533,6 +1533,11 @@ type ParsedCheckoutLine = {
   closeType: CheckoutCloseType;
   paymentMethod: 'CASH' | 'CARD' | 'TRANSFER' | 'OTHER' | null;
   customerPackageId: number | null;
+  // Yeni: SaaS panel checkout sheet'inden gelen indirim/ek ücret ₺ tutarları.
+  // Sadece SINGLE_PAYMENT akışında anlamlı; null/0 ise mevcut finalPrice
+  // korunur.
+  discountAmount: number | null;
+  surchargeAmount: number | null;
 };
 
 function parseCheckoutMode(value: unknown): CheckoutMode {
@@ -1573,12 +1578,19 @@ function parseCheckoutLines(input: unknown): ParsedCheckoutLine[] {
       customerPackageIdRaw === null || customerPackageIdRaw === undefined || customerPackageIdRaw === ''
         ? null
         : Number(customerPackageIdRaw);
+    const parseNonNegMoney = (raw: unknown): number | null => {
+      if (raw === null || raw === undefined || raw === '') return null;
+      const n = Number(raw);
+      return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null;
+    };
     rows.push({
       appointmentId,
       appointmentLineId: normalizedLineId,
       closeType,
       paymentMethod,
       customerPackageId: (typeof customerPackageId === 'number' && Number.isInteger(customerPackageId) && customerPackageId > 0) ? customerPackageId : null,
+      discountAmount: parseNonNegMoney((row as any).discountAmount),
+      surchargeAmount: parseNonNegMoney((row as any).surchargeAmount),
     });
     seen.add(key);
   }
@@ -5032,12 +5044,30 @@ router.post('/appointments/checkout', authenticateToken, async (req: any, res: a
         const nextStatus = 'COMPLETED';
         const previousStatus = String(targetLine.status || 'BOOKED');
         const shouldSetPayment = line.closeType === 'SINGLE_PAYMENT' ? line.paymentMethod : null;
+
+        // İndirim / ek ücret sadece SINGLE_PAYMENT akışında uygulanır.
+        // listPrice korunur (görsel "yine de %X indirim alındı" hesabı
+        // için), finalPrice yeniden hesaplanır. Negatife düşmez.
+        let nextDiscountTotal: number | null | undefined = undefined;
+        let nextFinalPrice: number | null | undefined = undefined;
+        if (line.closeType === 'SINGLE_PAYMENT' &&
+            ((line.discountAmount && line.discountAmount > 0) ||
+             (line.surchargeAmount && line.surchargeAmount > 0))) {
+          const basePrice =
+            Number((targetLine as any).listPrice ?? (targetLine as any).finalPrice ?? 0) || 0;
+          const discount = Math.max(0, Math.min(basePrice, Number(line.discountAmount ?? 0)));
+          const surcharge = Math.max(0, Number(line.surchargeAmount ?? 0));
+          nextDiscountTotal = discount > 0 ? discount : null;
+          nextFinalPrice = Math.max(0, basePrice - discount + surcharge);
+        }
+
         await (tx as any).appointmentLine.update({
           where: { id: Number(targetLine.id) },
           data: {
             status: nextStatus,
             paymentMethod: shouldSetPayment || null,
             paymentRecordedAt: shouldSetPayment ? now : null,
+            ...(nextFinalPrice !== undefined ? { finalPrice: nextFinalPrice } : {}),
           },
         });
         touchedAppointmentIds.add(Number(line.appointmentId));
