@@ -2498,6 +2498,17 @@ router.post('/appointments', authenticateToken, validate({ body: CreateAppointme
     typeof req.body?.gender === 'string' && ['male', 'female', 'other'].includes(req.body.gender)
       ? req.body.gender
       : 'female';
+  // Yeni müşteri için ek profil alanları — customer.create data'sına
+  // doğrudan geçirilir (EXISTING müşteride göz ardı edilir).
+  const newCustomerBirthDate =
+    typeof req.body?.birthDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.body.birthDate)
+      ? new Date(`${req.body.birthDate}T00:00:00`)
+      : null;
+  const newCustomerInstagram =
+    typeof req.body?.instagram === 'string' && req.body.instagram.trim()
+      ? req.body.instagram.trim().replace(/^@+/, '') || null
+      : null;
+  const newCustomerAcceptMarketing = Boolean(req.body?.acceptMarketing);
 
   const normalizedServices = Array.isArray(req.body?.services) && req.body.services.length > 0
     ? req.body.services
@@ -2579,6 +2590,18 @@ router.post('/appointments', authenticateToken, validate({ body: CreateAppointme
             lastName: explicitCustomerLastName || null,
             phone: explicitCustomerPhone,
             gender,
+            // Opsiyonel profil alanları — admin yeni randevu sheet'inde
+            // dolduruluyorsa kayda eklenir, müşteri kartı baştan zengin
+            // olur. CustomersPage POST /api/admin/customers ile paritede.
+            ...(newCustomerBirthDate ? { birthDate: newCustomerBirthDate } : {}),
+            ...(newCustomerInstagram ? { instagram: newCustomerInstagram } : {}),
+            ...(newCustomerAcceptMarketing
+              ? {
+                  acceptMarketing: true,
+                  marketingConsentAt: new Date(),
+                  marketingConsentVersion: 'v1',
+                }
+              : {}),
           },
           select: { id: true, name: true, phone: true, gender: true },
         });

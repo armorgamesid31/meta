@@ -18,6 +18,11 @@ export const CreateAppointmentInputSchema = z.object({
   startTime: z.string().min(1, 'Başlangıç zamanı zorunludur.'),
   notes: z.string().nullable().optional(),
   gender: z.enum(['male', 'female', 'other']).nullable().optional(),
+  // Yeni müşteri kaydı için ek profil alanları — customerId boşsa create
+  // anında customer.create data'sına geçirilir; EXISTING müşteride yok sayılır.
+  birthDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Doğum tarihi YYYY-MM-DD formatında olmalı.').nullable().optional(),
+  instagram: z.string().trim().nullable().optional(),
+  acceptMarketing: z.boolean().nullable().optional(),
   services: z.array(AppointmentServiceLineInputSchema).min(1, 'En az bir hizmet seçmelisiniz.'),
   // Slot kilidi: admin "yeni randevu" sheet'inde bir slot tıkladığında
   // POST /appointments/lock ile alınan id. Commit anında validate edilip
