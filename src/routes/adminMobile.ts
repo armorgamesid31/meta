@@ -19,6 +19,7 @@ import {
 } from '../schemas/customer.js';
 import {
   CreateAppointmentInputSchema,
+  UpdateAppointmentServicesInputSchema,
   UpdateAppointmentStatusInputSchema,
   UpdateCustomerInputSchema,
 } from '../schemas/appointment-input.js';
@@ -4597,6 +4598,434 @@ router.patch('/appointments/:id/status', authenticateToken, validate({ body: Upd
     throw error;
   }
 });
+
+/**
+ * Mevcut bir randevuda hizmet ekle / çıkar.
+ *
+ * Body: { add: [{serviceId, staffId?, durationMinutes?, startTime?}], remove: [{appointmentLineId}], expectedUpdatedAt? }
+ *
+ * - Eklenen line'lar mevcut bitişin sonuna sırayla kuyruğa eklenir (FE
+ *   alternatif çakışma modalinden geliyorsa block.startTime explicit verilir).
+ * - Çakışma (staff + zaman overlap) varsa 409 + conflict detay döner.
+ * - Silinen line: paymentRecordedAt boşsa HARD DELETE; doluysa SOFT CANCEL
+ *   (status=CANCELLED) — muhasebe izi korunur.
+ * - Appointment.endTime + listPrice/finalPrice totalları yeniden hesaplanır.
+ * - Status appointmentLines'tan recompute edilir.
+ * - Commission: önce mevcut PENDING entry'ler iptal edilir, randevu hâlâ
+ *   COMPLETED ise applyCommissionForAppointment idempotent yeniden çağrılır.
+ * - Paket: silinen COMPLETED line için restore, eklenen COMPLETED line için
+ *   consume (status PATCH'i mantığıyla simetrik).
+ *
+ * CANCELLED ve NO_SHOW randevular düzenlenemez (409).
+ */
+router.patch(
+  '/appointments/:id/services',
+  authenticateToken,
+  validate({ body: UpdateAppointmentServicesInputSchema }),
+  async (req: any, res: any) => {
+    const salonId = getSalonId(req, res);
+    const appointmentId = Number(req.params.id);
+    if (!Number.isInteger(appointmentId) || appointmentId <= 0) {
+      throw new BusinessError('VALIDATION_FAILED', 'Invalid appointment id.', 400);
+    }
+    const addItems: Array<{
+      serviceId: number;
+      staffId?: number | null;
+      durationMinutes?: number;
+      startTime?: string;
+    }> = Array.isArray(req.body?.add) ? req.body.add : [];
+    const removeItems: Array<{ appointmentLineId: number }> = Array.isArray(req.body?.remove)
+      ? req.body.remove
+      : [];
+    const expectedUpdatedAt: string | undefined = req.body?.expectedUpdatedAt;
+
+    try {
+      const now = new Date();
+      const result = await prisma.$transaction(async (tx: any) => {
+        const appointment = await tx.appointment.findFirst({
+          where: { id: appointmentId, salonId },
+          select: {
+            id: true,
+            salonId: true,
+            customerId: true,
+            customerName: true,
+            staffId: true,
+            startTime: true,
+            endTime: true,
+            status: true,
+            updatedAt: true,
+            paymentMethod: true,
+            gender: true,
+            notes: true,
+            listPrice: true,
+            finalPrice: true,
+          },
+        });
+        if (!appointment) {
+          return { error: { code: 404, message: 'Appointment not found.' } };
+        }
+        if (expectedUpdatedAt && appointment.updatedAt) {
+          if (appointment.updatedAt.toISOString() !== expectedUpdatedAt) {
+            throw new BusinessError(
+              'STALE_RECORD',
+              'Bu kayıt başka biri tarafından güncellendi. Yenileyip tekrar deneyin.',
+              409,
+            );
+          }
+        }
+        const currentStatus = String(appointment.status || 'BOOKED').toUpperCase();
+        if (currentStatus === 'CANCELLED' || currentStatus === 'NO_SHOW') {
+          return {
+            error: {
+              code: 409,
+              message: 'İptal edilmiş veya gelinmemiş randevularda hizmet düzenlenemez.',
+            },
+          };
+        }
+
+        const existingLines = await tx.appointmentLine.findMany({
+          where: { appointmentId },
+          orderBy: [{ orderIndex: 'asc' }, { id: 'asc' }],
+        });
+
+        // --- 1) REMOVE ---
+        const removeIds = new Set(removeItems.map((r) => Number(r.appointmentLineId)));
+        const linesToRemove = existingLines.filter((line: any) => removeIds.has(Number(line.id)));
+        if (linesToRemove.length !== removeIds.size) {
+          return {
+            error: {
+              code: 404,
+              message: 'Silinmek istenen bir veya birden fazla hizmet bu randevuda bulunamadı.',
+            },
+          };
+        }
+        // En az bir line aktif kalmalı (silme sonrası + eklenen = 0 ise reddet)
+        const remainingAfter = existingLines.length - linesToRemove.length + addItems.length;
+        if (remainingAfter <= 0) {
+          return {
+            error: {
+              code: 400,
+              message: 'Randevuda en az bir hizmet kalmalıdır. Tümünü silmek için randevuyu iptal edin.',
+            },
+          };
+        }
+
+        const removedLineDetails: Array<{
+          lineId: number;
+          serviceId: number;
+          specialistId: number | null;
+          status: string;
+          customerId: number | null;
+          wasPaid: boolean;
+        }> = [];
+        for (const line of linesToRemove) {
+          const wasPaid = Boolean(line.paymentRecordedAt);
+          const previousLineStatus = String(line.status || 'BOOKED').toUpperCase();
+          removedLineDetails.push({
+            lineId: Number(line.id),
+            serviceId: Number(line.serviceId),
+            specialistId: line.specialistId ? Number(line.specialistId) : null,
+            status: previousLineStatus,
+            customerId: line.customerId ? Number(line.customerId) : null,
+            wasPaid,
+          });
+          // Paket geri-yükle (line COMPLETED idiyse)
+          if (
+            previousLineStatus === 'COMPLETED' &&
+            appointment.customerId &&
+            line.serviceId
+          ) {
+            await restorePackageForAppointmentService(tx, {
+              salonId,
+              customerId: appointment.customerId,
+              appointmentId,
+              appointmentLineId: Number(line.id),
+              serviceId: Number(line.serviceId),
+              now,
+              reason: 'service_removed',
+            });
+          }
+          if (wasPaid) {
+            // Muhasebe izi koru: hard delete yerine CANCELLED'a düşür.
+            await tx.appointmentLine.update({
+              where: { id: Number(line.id) },
+              data: { status: 'CANCELLED' },
+            });
+          } else {
+            await tx.appointmentLine.delete({ where: { id: Number(line.id) } });
+          }
+        }
+
+        // --- 2) ADD ---
+        const addedLineIds: number[] = [];
+        let totalPriceDelta = 0;
+        if (addItems.length > 0) {
+          const serviceIds = Array.from(
+            new Set(addItems.map((it) => Number(it.serviceId)).filter((id) => Number.isInteger(id) && id > 0)),
+          );
+          const services = await tx.service.findMany({
+            where: { salonId, id: { in: serviceIds } },
+            select: { id: true, name: true, duration: true, price: true, requiresSpecialist: true },
+          });
+          const serviceMap = new Map(services.map((s: any) => [s.id, s]));
+          if (services.length !== serviceIds.length) {
+            return { error: { code: 404, message: 'Eklenmek istenen bir veya birden fazla hizmet bulunamadı.' } };
+          }
+
+          const resolvedGender = String((appointment.gender || 'female')).toLowerCase();
+          const variantRows = await tx.serviceVariant.findMany({
+            where: { serviceId: { in: serviceIds }, gender: resolvedGender as any, isActive: true },
+            select: { id: true, serviceId: true, gender: true, price: true, duration: true },
+          });
+          const variantByServiceId = new Map(variantRows.map((row: any) => [row.serviceId, row]));
+
+          const allStaffServiceRows = await tx.staffService.findMany({
+            where: {
+              serviceId: { in: serviceIds },
+              isactive: true,
+              Staff: { salonId },
+            },
+            select: { staffId: true, serviceId: true, duration: true },
+          });
+          const staffServiceMap = new Map<string, { duration: number }>();
+          const availableStaffByService = new Map<number, number[]>();
+          for (const row of allStaffServiceRows) {
+            staffServiceMap.set(`${row.serviceId}:${row.staffId}`, { duration: row.duration });
+            const list = availableStaffByService.get(row.serviceId) || [];
+            if (!list.includes(row.staffId)) list.push(row.staffId);
+            availableStaffByService.set(row.serviceId, list);
+          }
+
+          // Mevcut "kalan" line'lardan en geç biten zamanı bul (yeni hizmet kuyruğa eklenecek).
+          const survivingLines = existingLines.filter((line: any) => !removeIds.has(Number(line.id)));
+          const latestEnd: Date = survivingLines.reduce((acc: Date, line: any) => {
+            if (line.endTime && new Date(line.endTime).getTime() > acc.getTime()) return new Date(line.endTime);
+            return acc;
+          }, new Date(appointment.startTime) as Date);
+          let cursor = latestEnd;
+
+          // Mevcut line'ların orderIndex max'i
+          const maxOrderIndex: number = survivingLines.reduce(
+            (acc: number, line: any) => Math.max(acc, Number(line.orderIndex || 0)),
+            -1 as number,
+          );
+
+          for (let i = 0; i < addItems.length; i++) {
+            const block = addItems[i];
+            const service: any = serviceMap.get(Number(block.serviceId));
+            const candidates = availableStaffByService.get(Number(block.serviceId)) || [];
+
+            let selectedStaffId = block.staffId ? Number(block.staffId) : null;
+            if (selectedStaffId && !candidates.includes(selectedStaffId)) {
+              return { error: { code: 400, message: `${service.name} için seçilen uzman uygun değil.` } };
+            }
+            if (!selectedStaffId) {
+              if (candidates.length === 0) {
+                return { error: { code: 400, message: `${service.name} için uygun aktif uzman bulunamadı.` } };
+              }
+              // Default: randevunun ana staff'ı uygun mu? Değilse ilk uygun.
+              selectedStaffId = candidates.includes(Number(appointment.staffId))
+                ? Number(appointment.staffId)
+                : candidates[0];
+            }
+
+            const variant: any = variantByServiceId.get(Number(block.serviceId));
+            const staffService = staffServiceMap.get(`${block.serviceId}:${selectedStaffId}`);
+            const duration = Math.max(
+              1,
+              block.durationMinutes ||
+                (variant ? variant.duration : null) ||
+                staffService?.duration ||
+                service.duration ||
+                30,
+            );
+
+            const slotStart = block.startTime ? new Date(block.startTime) : new Date(cursor);
+            if (Number.isNaN(slotStart.getTime())) {
+              return { error: { code: 400, message: `${service.name} için geçersiz başlangıç saati.` } };
+            }
+            const slotEnd = new Date(slotStart.getTime() + duration * 60 * 1000);
+
+            // Conflict: aynı staff'ta başka BOOKED appointment overlap
+            const overlap = await tx.appointment.findFirst({
+              where: {
+                salonId,
+                staffId: selectedStaffId,
+                status: { in: ['BOOKED'] },
+                id: { not: appointmentId },
+                startTime: { lt: slotEnd },
+                endTime: { gt: slotStart },
+              },
+              select: { id: true, startTime: true, endTime: true, customerName: true },
+            });
+            if (overlap) {
+              return {
+                error: {
+                  code: 409,
+                  message: `${service.name} için ${slotStart.toISOString()} saatinde uzman müsait değil.`,
+                  conflict: {
+                    serviceId: Number(block.serviceId),
+                    serviceName: service.name,
+                    staffId: selectedStaffId,
+                    requestedStart: slotStart.toISOString(),
+                    requestedEnd: slotEnd.toISOString(),
+                    blockedBy: overlap,
+                  },
+                },
+              };
+            }
+            // Aynı randevunun kendi line'larıyla da çakışmasın (kalan + bu turn'da eklenenler).
+            const liveLines = await tx.appointmentLine.findMany({
+              where: {
+                appointmentId,
+                NOT: { id: { in: linesToRemove.map((l: any) => Number(l.id)) } },
+                specialistId: selectedStaffId,
+                status: { in: ['BOOKED', 'COMPLETED'] },
+              },
+              select: { id: true, startTime: true, endTime: true },
+            });
+            const internalClash = liveLines.find((l: any) => {
+              if (!l.startTime || !l.endTime) return false;
+              return new Date(l.startTime) < slotEnd && new Date(l.endTime) > slotStart;
+            });
+            if (internalClash) {
+              return {
+                error: {
+                  code: 409,
+                  message: `${service.name} için ${slotStart.toISOString()} saatinde uzman bu randevuda zaten meşgul.`,
+                  conflict: {
+                    serviceId: Number(block.serviceId),
+                    serviceName: service.name,
+                    staffId: selectedStaffId,
+                    requestedStart: slotStart.toISOString(),
+                    requestedEnd: slotEnd.toISOString(),
+                    blockedByLine: internalClash,
+                  },
+                },
+              };
+            }
+
+            const unitPrice = variant ? Number(variant.price) : Number(service.price ?? 0);
+            const newLine = await tx.appointmentLine.create({
+              data: {
+                appointmentId,
+                salonId,
+                customerId: appointment.customerId || null,
+                serviceId: Number(block.serviceId),
+                specialistId: selectedStaffId,
+                serviceVariantId: variant ? Number(variant.id) : null,
+                startTime: slotStart,
+                endTime: slotEnd,
+                durationMinutes: duration,
+                listPrice: unitPrice,
+                finalPrice: unitPrice,
+                // Yeni line her zaman BOOKED başlar; randevu COMPLETED ise
+                // kullanıcı sonradan ayrı bir adımda (tamamla modali) line'ı
+                // COMPLETED'a alıp paymentMethod seçer.
+                status: 'BOOKED',
+                paymentMethod: null,
+                paymentRecordedAt: null,
+                orderIndex: maxOrderIndex + 1 + i,
+              },
+            });
+            addedLineIds.push(Number(newLine.id));
+            totalPriceDelta += unitPrice;
+            cursor = slotEnd;
+          }
+        }
+
+        // --- 3) Totalleri ve endTime'ı yeniden hesapla ---
+        const allLines = await tx.appointmentLine.findMany({
+          where: { appointmentId, status: { in: ['BOOKED', 'COMPLETED'] } },
+          select: { startTime: true, endTime: true, listPrice: true, finalPrice: true },
+        });
+        const newEndTime: Date = allLines.reduce((acc: Date, l: any) => {
+          if (l.endTime && new Date(l.endTime).getTime() > acc.getTime()) return new Date(l.endTime);
+          return acc;
+        }, new Date(appointment.startTime) as Date);
+        const totalListPrice = allLines.reduce((acc: number, l: any) => acc + Number(l.listPrice || 0), 0);
+        const totalFinalPrice = allLines.reduce((acc: number, l: any) => acc + Number(l.finalPrice || 0), 0);
+        const previousFinalPrice = Number(appointment.finalPrice || 0);
+        const priceDelta = totalFinalPrice - previousFinalPrice;
+
+        await tx.appointment.update({
+          where: { id: appointmentId },
+          data: {
+            endTime: newEndTime,
+            listPrice: totalListPrice,
+            finalPrice: totalFinalPrice,
+          },
+        });
+
+        const computedStatus = await recomputeAndPersistAppointmentStatusFromLines(tx, appointmentId);
+
+        const updated = await tx.appointment.findUnique({
+          where: { id: appointmentId },
+          include: {
+            service: { select: { id: true, name: true, duration: true, price: true, requiresSpecialist: true } },
+            staff: { select: { id: true, name: true, title: true } },
+            customer: { select: { id: true, name: true, phone: true } },
+            appointmentLines: {
+              include: {
+                service: { select: { id: true, name: true, duration: true, price: true, requiresSpecialist: true } },
+                specialist: { select: { id: true, name: true, title: true } },
+              },
+              orderBy: [{ orderIndex: 'asc' }, { id: 'asc' }],
+            },
+          },
+        });
+
+        return {
+          item: updated,
+          addedLineIds,
+          removedLines: removedLineDetails,
+          priceDelta,
+          totalFinalPrice,
+          newEndTime,
+          computedStatus,
+        };
+      });
+
+      if ('error' in result && result.error) {
+        return res.status(result.error.code).json({
+          message: result.error.message,
+          ...(result.error.conflict ? { conflict: result.error.conflict } : {}),
+        });
+      }
+
+      // Commission: önce iptal et, sonra randevu COMPLETED kalıyorsa yeniden uygula.
+      // applyCommissionForAppointment idempotent — line bazında existing kontrol var.
+      try {
+        await cancelCommissionForAppointment(prisma, appointmentId);
+        if (result.computedStatus === 'COMPLETED') {
+          await applyCommissionForAppointment(prisma, appointmentId);
+        }
+      } catch (commissionError) {
+        console.error('Commission refresh after service edit failed:', commissionError);
+      }
+
+      invalidateAvailabilityForSalon(salonId).catch(() => undefined);
+
+      return res.status(200).json({
+        item: result.item,
+        addedLineIds: result.addedLineIds,
+        removedLines: result.removedLines,
+        priceDelta: result.priceDelta,
+        totalFinalPrice: result.totalFinalPrice,
+      });
+    } catch (error: any) {
+      if (error instanceof BusinessError) throw error;
+      if (isPackageSchemaNotReadyError(error)) {
+        return res.status(503).json({
+          message: 'Package schema is not ready. Run database migrations.',
+          code: 'PACKAGE_SCHEMA_NOT_READY',
+        });
+      }
+      console.error('Admin appointment services update error:', error);
+      throw error;
+    }
+  },
+);
 
 router.patch('/appointment-lines/:id/status', authenticateToken, async (req: any, res: any) => {
   const salonId = getSalonId(req, res);

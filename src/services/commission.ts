@@ -175,9 +175,16 @@ export async function applyCommissionForAppointment(
         const serviceId = line.serviceId;
         const base = line.finalPrice ?? line.listPrice ?? 0;
 
-        // Idempotent kontrol — bu line için zaten bir entry varsa atla.
+        // Idempotent kontrol — bu line için AKTİF bir entry varsa atla.
+        // CANCELLED entry'ler "geçmişte iptal edildi" olarak duruyor; yeni
+        // entry yaratılmasına engel olmamalı (hizmet düzenleme akışında
+        // cancel + re-apply döngüsü kullanılıyor).
         const existing = await tx.commissionEntry.findFirst({
-          where: { appointmentLineId: line.id, type: 'SERVICE' },
+          where: {
+            appointmentLineId: line.id,
+            type: 'SERVICE',
+            status: { in: ['PENDING', 'PAID'] },
+          },
         });
         if (existing) {
           skipped += 1;
@@ -224,7 +231,12 @@ export async function applyCommissionForAppointment(
       const base = appt.finalPrice ?? appt.listPrice ?? 0;
 
       const existing = await tx.commissionEntry.findFirst({
-        where: { appointmentId: appt.id, appointmentLineId: null, type: 'SERVICE' },
+        where: {
+          appointmentId: appt.id,
+          appointmentLineId: null,
+          type: 'SERVICE',
+          status: { in: ['PENDING', 'PAID'] },
+        },
       });
       if (existing) {
         skipped += 1;

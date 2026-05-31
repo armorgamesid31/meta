@@ -28,6 +28,44 @@ export const CreateAppointmentInputSchema = z.object({
 });
 export type CreateAppointmentInput = z.infer<typeof CreateAppointmentInputSchema>;
 
+/**
+ * Mevcut bir randevuda hizmet ekle/çıkar. Tarih/saat değişimi reschedule
+ * endpoint'inde yapılır — burada SADECE line ekleme/silme. Eklenen line'lar
+ * randevunun mevcut bitişine sırayla "kuyruğa eklenir"; FE çakışma alırsa
+ * (409) alternatif staff/saat seçtirir ve yeni isteği gönderir.
+ */
+export const UpdateAppointmentServicesInputSchema = z
+  .object({
+    add: z
+      .array(
+        z.object({
+          serviceId: z.number().int().positive(),
+          staffId: z.number().int().positive().nullable().optional(),
+          // Manuel duration override (dakika). Verilmezse: variant >
+          // staffService > base service.
+          durationMinutes: z.number().int().positive().optional(),
+          // FE alternatif-modali açıldığında bu hizmet için seçilen
+          // başlangıç saati (ISO). Verilmezse mevcut bitişe eklenir.
+          startTime: z.string().min(1).optional(),
+        }),
+      )
+      .optional()
+      .default([]),
+    remove: z
+      .array(
+        z.object({
+          appointmentLineId: z.number().int().positive(),
+        }),
+      )
+      .optional()
+      .default([]),
+    expectedUpdatedAt: z.string().optional(),
+  })
+  .refine((data) => (data.add?.length ?? 0) + (data.remove?.length ?? 0) > 0, {
+    message: 'En az bir hizmet eklenmeli veya çıkarılmalıdır.',
+  });
+export type UpdateAppointmentServicesInput = z.infer<typeof UpdateAppointmentServicesInputSchema>;
+
 export const UpdateAppointmentStatusInputSchema = z.object({
   status: z.enum(['BOOKED', 'COMPLETED', 'CANCELLED', 'NO_SHOW', 'PENDING']),
   paymentMethod: z.enum(['CASH', 'CARD', 'TRANSFER', 'OTHER']).optional(),
