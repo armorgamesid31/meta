@@ -22,11 +22,16 @@ import {
   UpdateAppointmentServicesInputSchema,
   UpdateAppointmentStatusInputSchema,
   UpdateCustomerInputSchema,
+  RefundAppointmentsInputSchema,
   WalkInAppointmentInputSchema,
 } from '../schemas/appointment-input.js';
 import {
   createBatchForAppointments,
+  createRefundBatch,
+  findLatestPositiveBatchForAppointments,
   primaryMethod,
+  sumPaidForAppointments,
+  summarizePaymentsForAppointments,
   validatePaymentsTotal,
   type PaymentDraft,
 } from '../services/paymentBatchService.js';
@@ -4674,6 +4679,203 @@ router.get('/customers/:id/package-ledger', authenticateToken, async (req: any, 
     console.error('Admin customer package ledger error:', error);
     throw error;
   }
+});
+
+/**
+ * POST /api/admin/refunds — randevu(lar) için iade kaydı.
+ *
+ * - Body: { appointmentIds, refundPayments: [{method, amount}], parentBatchId?, notes? }
+ * - Validation:
+ *   - Tüm appointmentIds aynı salonda olmalı + COMPLETED durumda.
+ *   - refundPayments toplamı, appointment'ların net ödenmiş tutarından
+ *     büyük olamaz (kısmi iadelerde küçük olabilir).
+ *   - parentBatchId verilmezse otomatik bulunur (son pozitif batch).
+ * - Etki: yeni PaymentBatch (parentBatchId dolu, Payment.amount NEGATİF),
+ *   tüm bağlı AppointmentLine.status → REFUNDED, Appointment.status
+ *   recompute (genelde REFUNDED'a düşer). idempotencyKey opsiyonel.
+ */
+router.post(
+  '/refunds',
+  authenticateToken,
+  validate({ body: RefundAppointmentsInputSchema }),
+  async (req: any, res: any) => {
+    const salonId = getSalonId(req, res);
+    const appointmentIds: number[] = Array.from(new Set(req.body.appointmentIds.map((x: any) => Number(x))));
+    const refundPayments: PaymentDraft[] = req.body.refundPayments.map((p: any) => ({
+      method: p.method,
+      amount: Math.abs(Number(p.amount)),
+    }));
+    const explicitParentBatchId = req.body?.parentBatchId ? Number(req.body.parentBatchId) : null;
+    const notes = typeof req.body?.notes === 'string' ? req.body.notes.trim() : null;
+    const idempotencyKey =
+      typeof req.body?.idempotencyKey === 'string' && req.body.idempotencyKey.trim()
+        ? req.body.idempotencyKey.trim()
+        : null;
+    if (idempotencyKey) {
+      const cached = await findCachedBookingByIdempotencyKey({ salonId, idempotencyKey });
+      if (cached) return res.status(cached.status).json(cached.body);
+    }
+
+    const now = new Date();
+    try {
+      const result = await prisma.$transaction(async (tx) => {
+        // 1) Appointment'ları al + salon + status doğrula.
+        const appointments = await tx.appointment.findMany({
+          where: { id: { in: appointmentIds }, salonId },
+          select: { id: true, status: true, customerId: true },
+        });
+        if (appointments.length !== appointmentIds.length) {
+          return { error: { code: 404, message: 'Bir veya birden fazla randevu bulunamadı.' } };
+        }
+        const notCompleted = appointments.find(
+          (a) => String(a.status || '').toUpperCase() !== 'COMPLETED',
+        );
+        if (notCompleted) {
+          return {
+            error: {
+              code: 409,
+              message: 'Sadece tamamlanmış randevular iade edilebilir.',
+            },
+          };
+        }
+        const customerId = appointments[0]?.customerId ?? null;
+
+        // 2) Net ödenmiş tutar (pozitif batch'ler + önceki iadeler dahil).
+        const netPaid = await sumPaidForAppointments(tx, appointmentIds);
+        const refundTotal = refundPayments.reduce((s, p) => s + p.amount, 0);
+        if (refundTotal > netPaid + 0.005) {
+          return {
+            error: {
+              code: 400,
+              message: `İade tutarı (${refundTotal.toFixed(2)} TL) ödenmiş tutardan (${netPaid.toFixed(2)} TL) büyük olamaz.`,
+            },
+          };
+        }
+        if (refundTotal <= 0) {
+          return { error: { code: 400, message: 'İade tutarı 0\'dan büyük olmalı.' } };
+        }
+
+        // 3) parentBatchId çöz — explicit verildiyse onu doğrula, yoksa otomatik bul.
+        let parentBatchId = explicitParentBatchId;
+        if (parentBatchId) {
+          const parent = await tx.paymentBatch.findFirst({
+            where: { id: parentBatchId, salonId, parentBatchId: null },
+            select: { id: true },
+          });
+          if (!parent) {
+            return { error: { code: 404, message: 'Belirtilen tahsilat kaydı bulunamadı.' } };
+          }
+        } else {
+          parentBatchId = await findLatestPositiveBatchForAppointments(tx, appointmentIds);
+          if (!parentBatchId) {
+            return {
+              error: {
+                code: 409,
+                message: 'Bu randevuya bağlı tahsilat kaydı bulunamadı.',
+              },
+            };
+          }
+        }
+
+        // 4) Refund batch oluştur (negatif amount, parentBatchId).
+        const { batchId, refundedAmount } = await createRefundBatch(tx, {
+          salonId,
+          customerId,
+          appointmentIds,
+          refundPayments,
+          parentBatchId,
+          notes,
+          recordedAt: now,
+        });
+
+        // 5) Tüm bağlı line'ları REFUNDED'a al + recompute.
+        await tx.appointmentLine.updateMany({
+          where: { appointmentId: { in: appointmentIds } },
+          data: { status: 'REFUNDED' },
+        });
+        for (const aId of appointmentIds) {
+          await recomputeAndPersistAppointmentStatusFromLines(tx, aId);
+        }
+
+        return { batchId, refundedAmount, parentBatchId };
+      });
+
+      if ('error' in result && result.error) {
+        return res.status(result.error.code).json({ message: result.error.message });
+      }
+
+      if (idempotencyKey) {
+        await cacheBookingForIdempotencyKey({
+          salonId,
+          idempotencyKey,
+          appointmentIds,
+        });
+      }
+
+      invalidateAvailabilityForSalon(salonId).catch(() => undefined);
+
+      return res.status(201).json({
+        batchId: result.batchId,
+        refundedAmount: result.refundedAmount,
+        parentBatchId: result.parentBatchId,
+        appointmentIds,
+      });
+    } catch (error: any) {
+      if (error instanceof BusinessError) throw error;
+      console.error('Admin refund error:', error);
+      throw error;
+    }
+  },
+);
+
+/**
+ * GET /api/admin/appointments/:id/payments — bir randevuya ait tüm ödeme
+ * kayıtları (pozitif + iade). Detay modali "₺300 Kart + ₺2700 Nakit"
+ * formatında göstermek ve İade Et butonu için kullanır.
+ *
+ * Response:
+ *   {
+ *     netPaid: number,
+ *     summary: [{ method, amount }],
+ *     batches: [{ id, recordedAt, parentBatchId, totalAmount, payments: [...] }]
+ *   }
+ */
+router.get('/appointments/:id/payments', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  const appointmentId = Number(req.params.id);
+  if (!Number.isInteger(appointmentId) || appointmentId <= 0) {
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid appointment id.', 400);
+  }
+  const appt = await prisma.appointment.findFirst({
+    where: { id: appointmentId, salonId },
+    select: { id: true },
+  });
+  if (!appt) {
+    return res.status(404).json({ message: 'Appointment not found.' });
+  }
+  const rows = await prisma.appointmentPayment.findMany({
+    where: { appointmentId },
+    select: {
+      batch: {
+        select: {
+          id: true,
+          recordedAt: true,
+          parentBatchId: true,
+          totalAmount: true,
+          notes: true,
+          payments: { select: { id: true, method: true, amount: true } },
+        },
+      },
+    },
+    orderBy: { batch: { recordedAt: 'asc' } },
+  });
+  const summary = await summarizePaymentsForAppointments(prisma, [appointmentId]);
+  const netPaid = summary.reduce((s, x) => s + x.amount, 0);
+  return res.status(200).json({
+    netPaid,
+    summary,
+    batches: rows.map((r) => r.batch),
+  });
 });
 
 router.patch('/appointments/:id/status', authenticateToken, validate({ body: UpdateAppointmentStatusInputSchema }), async (req: any, res: any) => {

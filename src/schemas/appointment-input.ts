@@ -142,6 +142,34 @@ export const UpdateAppointmentStatusInputSchema = z.object({
 });
 export type UpdateAppointmentStatusInput = z.infer<typeof UpdateAppointmentStatusInputSchema>;
 
+/**
+ * İade (Refund) endpoint girdisi. Tam veya kısmi iade için kullanılır.
+ *
+ * - appointmentIds: iade edilecek randevu(lar). Tek bir randevu da olabilir.
+ * - refundPayments: hangi yöntemden ne kadar iade edileceği. Toplam, iade
+ *   edilen randevuların net ödenmiş tutarından büyük olamaz (kısmi
+ *   iadelerde küçük olabilir).
+ * - parentBatchId: opsiyonel — hangi pozitif batch'i refund ettiğimizi
+ *   açıkça belirtmek için. Verilmezse backend appointment'ların en son
+ *   pozitif batch'ini otomatik bulur.
+ * - notes: kullanıcı açıklaması.
+ */
+export const RefundAppointmentsInputSchema = z.object({
+  appointmentIds: z.array(z.number().int().positive()).min(1, 'En az 1 randevu seçmelisiniz.'),
+  refundPayments: z
+    .array(
+      z.object({
+        method: z.enum(['CASH', 'CARD', 'TRANSFER', 'OTHER']),
+        amount: z.number().positive('Tutar 0 üzerinde olmalı.'),
+      }),
+    )
+    .min(1, 'En az 1 iade kalemi gerekli.'),
+  parentBatchId: z.number().int().positive().optional(),
+  notes: z.string().nullable().optional(),
+  idempotencyKey: z.string().min(1).nullable().optional(),
+});
+export type RefundAppointmentsInput = z.infer<typeof RefundAppointmentsInputSchema>;
+
 export const UpdateCustomerInputSchema = z.object({
   firstName: z.string().trim().min(1).optional(),
   lastName: z.string().trim().min(1).optional(),

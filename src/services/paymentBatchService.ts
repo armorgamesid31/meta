@@ -167,3 +167,61 @@ export function primaryMethod(payments: PaymentDraft[]): PaymentMethod | null {
   }
   return payments[0]?.method ?? null;
 }
+
+/**
+ * Verilen appointment'ların en son pozitif (parentBatchId=NULL) tahsilat
+ * batch'ini bulur. Refund için "hangi batch'i iade ediyoruz" otomatik
+ * çözümünde kullanılır. Birden fazla varsa en son recordedAt seçilir.
+ */
+export async function findLatestPositiveBatchForAppointments(
+  tx: Tx,
+  appointmentIds: number[],
+): Promise<number | null> {
+  if (!appointmentIds.length) return null;
+  const rows = await tx.appointmentPayment.findMany({
+    where: {
+      appointmentId: { in: appointmentIds },
+      batch: { parentBatchId: null },
+    },
+    select: { batchId: true, batch: { select: { recordedAt: true } } },
+    orderBy: { batch: { recordedAt: 'desc' } },
+    take: 1,
+  });
+  return rows[0]?.batchId ?? null;
+}
+
+/**
+ * Refund için kolaylık: pozitif refundPayments al, negatif olarak yaz.
+ * createBatchForAppointments üzerinde ince bir sarmal — caller'ın amount
+ * işaretiyle uğraşmamasını sağlar.
+ */
+export async function createRefundBatch(
+  tx: Tx,
+  input: {
+    salonId: number;
+    customerId: number | null;
+    appointmentIds: number[];
+    refundPayments: PaymentDraft[];
+    parentBatchId: number;
+    notes?: string | null;
+    recordedAt?: Date;
+  },
+): Promise<{ batchId: number; refundedAmount: number }> {
+  let totalRefund = 0;
+  const negPayments: PaymentDraft[] = input.refundPayments.map((p) => {
+    const abs = Math.abs(Number(p.amount));
+    totalRefund += abs;
+    return { method: p.method, amount: -abs };
+  });
+  const { batchId } = await createBatchForAppointments(tx, {
+    salonId: input.salonId,
+    customerId: input.customerId,
+    appointmentIds: input.appointmentIds,
+    payments: negPayments,
+    totalAmount: -totalRefund,
+    notes: input.notes || null,
+    recordedAt: input.recordedAt,
+    parentBatchId: input.parentBatchId,
+  });
+  return { batchId, refundedAmount: totalRefund };
+}
