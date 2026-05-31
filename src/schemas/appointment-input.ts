@@ -71,6 +71,35 @@ export const UpdateAppointmentServicesInputSchema = z
   });
 export type UpdateAppointmentServicesInput = z.infer<typeof UpdateAppointmentServicesInputSchema>;
 
+/**
+ * Walk-in (ayak müşterisi) randevu — randevusuz gelen müşteri için anlık,
+ * tamamlanmış kayıt. Tarih/saat seçilmez (server = şu an), durum COMPLETED,
+ * ödeme yöntemi zorunlu. Müşteri kaydı opsiyonel; ad/telefon yoksa
+ * 'Misafir Müşteri' olarak kaydedilir.
+ */
+export const WalkInAppointmentInputSchema = z.object({
+  // Mevcut müşteri seçilmişse id; yoksa null.
+  customerId: z.number().int().positive().nullable().optional(),
+  // Yeni müşteri için ad/telefon — ikisi de opsiyonel. Telefon varsa
+  // backend upsert yapar (aynı numara varsa onu kullanır).
+  customerName: z.string().trim().nullable().optional(),
+  firstName: z.string().trim().nullable().optional(),
+  lastName: z.string().trim().nullable().optional(),
+  customerPhone: z.string().trim().nullable().optional(),
+  gender: z.enum(['male', 'female', 'other']).nullable().optional(),
+  // Ek profil alanları (yeni müşteride doldurulduysa kayda eklenir).
+  birthDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  instagram: z.string().trim().nullable().optional(),
+  acceptMarketing: z.boolean().nullable().optional(),
+  // Zorunlu: en az 1 hizmet.
+  services: z.array(AppointmentServiceLineInputSchema).min(1, 'En az bir hizmet seçmelisiniz.'),
+  // Zorunlu: ödeme yöntemi. Walk-in ödemesi anlık alındığı için boş geçilemez.
+  paymentMethod: z.enum(['CASH', 'CARD', 'TRANSFER', 'OTHER']),
+  notes: z.string().nullable().optional(),
+  idempotencyKey: z.string().min(1).nullable().optional(),
+});
+export type WalkInAppointmentInput = z.infer<typeof WalkInAppointmentInputSchema>;
+
 export const UpdateAppointmentStatusInputSchema = z.object({
   status: z.enum(['BOOKED', 'COMPLETED', 'CANCELLED', 'NO_SHOW', 'PENDING']),
   paymentMethod: z.enum(['CASH', 'CARD', 'TRANSFER', 'OTHER']).optional(),

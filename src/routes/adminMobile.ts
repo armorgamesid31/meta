@@ -22,6 +22,7 @@ import {
   UpdateAppointmentServicesInputSchema,
   UpdateAppointmentStatusInputSchema,
   UpdateCustomerInputSchema,
+  WalkInAppointmentInputSchema,
 } from '../schemas/appointment-input.js';
 import { ensureSalonServiceCategories } from '../services/salonCategorySetup.js';
 import { ensureSalonServiceRegions } from '../services/salonRegionSetup.js';
@@ -2891,6 +2892,268 @@ router.post('/appointments', authenticateToken, validate({ body: CreateAppointme
     throw error;
   }
 });
+
+/**
+ * Walk-in (ayak müşterisi) randevu — randevusuz gelen müşteri için anlık,
+ * tamamlanmış kayıt. Müşteri ops. (yoksa "Misafir Müşteri"), startTime=now,
+ * durum COMPLETED, paymentMethod + paymentRecordedAt damgalanır. Commission
+ * entries idempotent uygulanır. Çakışma kontrolü YOKTUR (kullanıcı bilerek
+ * "şu an" yaratıyor; aynı staff aynı anda başka randevuyla görünebilir).
+ */
+router.post(
+  '/appointments/walk-in',
+  authenticateToken,
+  validate({ body: WalkInAppointmentInputSchema }),
+  async (req: any, res: any) => {
+    const salonId = getSalonId(req, res);
+    const customerIdRaw = req.body?.customerId;
+    const customerId =
+      customerIdRaw === null || customerIdRaw === undefined || customerIdRaw === ''
+        ? null
+        : Number(customerIdRaw);
+    const explicitCustomerName = typeof req.body?.customerName === 'string' ? req.body.customerName.trim() : '';
+    const nameParts = resolveCustomerNameParts({
+      firstName: req.body?.firstName,
+      lastName: req.body?.lastName,
+      name: explicitCustomerName,
+    });
+    const explicitCustomerPhone =
+      typeof req.body?.customerPhone === 'string' ? req.body.customerPhone.trim() : '';
+    const notes = typeof req.body?.notes === 'string' ? req.body.notes.trim() : null;
+    const gender =
+      typeof req.body?.gender === 'string' && ['male', 'female', 'other'].includes(req.body.gender)
+        ? req.body.gender
+        : 'female';
+    const paymentMethod = asPaymentMethod(req.body?.paymentMethod);
+    if (!paymentMethod) {
+      throw new BusinessError('VALIDATION_FAILED', 'paymentMethod zorunlu.', 400);
+    }
+    // Yeni müşteri profil alanları (varsa kayda eklenir).
+    const newCustomerBirthDate =
+      typeof req.body?.birthDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.body.birthDate)
+        ? new Date(`${req.body.birthDate}T00:00:00`)
+        : null;
+    const newCustomerInstagram =
+      typeof req.body?.instagram === 'string' && req.body.instagram.trim()
+        ? req.body.instagram.trim().replace(/^@+/, '') || null
+        : null;
+    const newCustomerAcceptMarketing = Boolean(req.body?.acceptMarketing);
+
+    const normalizedServices: Array<{ serviceId: number; staffId: number | null }> =
+      Array.isArray(req.body?.services) && req.body.services.length > 0
+        ? req.body.services
+            .map((item: any) => ({
+              serviceId: Number(item?.serviceId),
+              staffId:
+                item?.staffId === null || item?.staffId === undefined || item?.staffId === ''
+                  ? null
+                  : Number(item.staffId),
+            }))
+            .filter((item: { serviceId: number }) => Number.isInteger(item.serviceId) && item.serviceId > 0)
+        : [];
+    if (!normalizedServices.length) {
+      throw new BusinessError('VALIDATION_FAILED', 'En az bir hizmet seçmelisiniz.', 400);
+    }
+
+    const idempotencyKey =
+      typeof req.body?.idempotencyKey === 'string' && req.body.idempotencyKey.trim()
+        ? req.body.idempotencyKey.trim()
+        : null;
+    if (idempotencyKey) {
+      const cached = await findCachedBookingByIdempotencyKey({ salonId, idempotencyKey });
+      if (cached) return res.status(cached.status).json(cached.body);
+    }
+
+    const now = new Date();
+    try {
+      const result = await prisma.$transaction(async (tx) => {
+        // --- 1) Müşteri çöz ---
+        let customer: { id: number; name: string | null; phone: string; gender: string | null } | null = null;
+        if (customerId) {
+          const existing = await tx.customer.findFirst({
+            where: { id: customerId, salonId },
+            select: { id: true, name: true, phone: true, gender: true },
+          });
+          if (!existing) {
+            return { error: { code: 404, message: 'Müşteri bulunamadı.' } };
+          }
+          customer = existing;
+        } else if (explicitCustomerPhone) {
+          // Telefon verildi → upsert (mevcut müşteri varsa onu kullan).
+          const byPhone = await tx.customer.findFirst({
+            where: { salonId, phone: explicitCustomerPhone },
+            select: { id: true, name: true, phone: true, gender: true },
+          });
+          if (byPhone) {
+            customer = byPhone;
+          } else {
+            customer = await tx.customer.create({
+              data: {
+                salonId,
+                name: nameParts.fullName || null,
+                firstName: nameParts.firstName || null,
+                lastName: nameParts.lastName || null,
+                phone: explicitCustomerPhone,
+                gender: gender as any,
+                ...(newCustomerBirthDate ? { birthDate: newCustomerBirthDate } : {}),
+                ...(newCustomerInstagram ? { instagram: newCustomerInstagram } : {}),
+                ...(newCustomerAcceptMarketing
+                  ? {
+                      acceptMarketing: true,
+                      marketingConsentAt: now,
+                      marketingConsentVersion: 'v1',
+                    }
+                  : {}),
+              },
+              select: { id: true, name: true, phone: true, gender: true },
+            });
+          }
+        }
+        // customer null kalabilir → "Misafir Müşteri" (kayıt yok, sadece appointment'ta isim string'i).
+
+        const finalCustomerName =
+          (explicitCustomerName || customer?.name || '').trim() || 'Misafir Müşteri';
+        const finalCustomerPhone = (explicitCustomerPhone || customer?.phone || 'Misafir').trim();
+
+        // --- 2) Hizmet, variant ve staff verilerini topla ---
+        const serviceIds: number[] = Array.from(
+          new Set<number>(normalizedServices.map((s) => Number(s.serviceId))),
+        );
+        const services = await tx.service.findMany({
+          where: { salonId, id: { in: serviceIds } },
+          select: { id: true, name: true, duration: true, price: true, requiresSpecialist: true },
+        });
+        const serviceMap = new Map(services.map((s) => [s.id, s]));
+        if (services.length !== serviceIds.length) {
+          return { error: { code: 404, message: 'Bir veya birden fazla hizmet bulunamadı.' } };
+        }
+
+        const resolvedGender = String((customer?.gender || gender || 'female')).toLowerCase();
+        const variantRows = await tx.serviceVariant.findMany({
+          where: { serviceId: { in: serviceIds }, gender: resolvedGender as any, isActive: true },
+          select: { id: true, serviceId: true, price: true, duration: true },
+        });
+        const variantByServiceId = new Map(variantRows.map((row: any) => [row.serviceId, row]));
+
+        const staffServiceRows = await tx.staffService.findMany({
+          where: { serviceId: { in: serviceIds }, isactive: true, Staff: { salonId } },
+          select: { staffId: true, serviceId: true, duration: true },
+        });
+        const staffServiceMap = new Map<string, { duration: number }>();
+        const availableStaffByService = new Map<number, number[]>();
+        for (const row of staffServiceRows) {
+          staffServiceMap.set(`${row.serviceId}:${row.staffId}`, { duration: row.duration });
+          const list = availableStaffByService.get(row.serviceId) || [];
+          if (!list.includes(row.staffId)) list.push(row.staffId);
+          availableStaffByService.set(row.serviceId, list);
+        }
+
+        // --- 3) Her hizmet için sırayla Appointment + Line oluştur (COMPLETED) ---
+        let cursor = new Date(now);
+        const createdAppointments: any[] = [];
+        for (const block of normalizedServices) {
+          const service = serviceMap.get(Number(block.serviceId))!;
+          const candidates = availableStaffByService.get(Number(block.serviceId)) || [];
+          let selectedStaffId = block.staffId;
+          if (selectedStaffId && !candidates.includes(selectedStaffId)) {
+            return { error: { code: 400, message: `${service.name} için seçilen uzman uygun değil.` } };
+          }
+          if (!selectedStaffId) {
+            if (!candidates.length) {
+              return { error: { code: 400, message: `${service.name} için uygun aktif uzman bulunamadı.` } };
+            }
+            selectedStaffId = candidates[0];
+          }
+
+          const variant: any = variantByServiceId.get(Number(block.serviceId));
+          const staffService = staffServiceMap.get(`${block.serviceId}:${selectedStaffId}`);
+          const duration = Math.max(
+            1,
+            (variant ? variant.duration : null) || staffService?.duration || service.duration || 30,
+          );
+          const slotStart = new Date(cursor);
+          const slotEnd = new Date(slotStart.getTime() + duration * 60 * 1000);
+          const unitPrice = variant ? Number(variant.price) : Number(service.price ?? 0);
+
+          const appointment = await tx.appointment.create({
+            data: {
+              salonId,
+              customerId: customer?.id ?? null,
+              customerName: finalCustomerName,
+              customerPhone: finalCustomerPhone,
+              serviceId: Number(block.serviceId),
+              staffId: selectedStaffId,
+              startTime: slotStart,
+              endTime: slotEnd,
+              status: 'COMPLETED',
+              source: 'ADMIN',
+              notes,
+              gender: (customer?.gender || gender) as any,
+              paymentMethod,
+              paymentRecordedAt: now,
+              listPrice: unitPrice,
+              finalPrice: unitPrice,
+            },
+            include: {
+              service: { select: { id: true, name: true, duration: true, price: true } },
+              staff: { select: { id: true, name: true, title: true } },
+            },
+          });
+          await ensureDefaultAppointmentLine(tx, appointment, {
+            serviceVariantId: variant ? variant.id : null,
+            listPrice: unitPrice,
+            finalPrice: unitPrice,
+          });
+          // Yeni oluşan line'ı da COMPLETED + paymentMethod ile damgala.
+          await tx.appointmentLine.updateMany({
+            where: { appointmentId: appointment.id },
+            data: {
+              status: 'COMPLETED',
+              paymentMethod,
+              paymentRecordedAt: now,
+            },
+          });
+          createdAppointments.push(appointment);
+          cursor = new Date(slotEnd);
+        }
+        return { appointments: createdAppointments };
+      });
+
+      if ('error' in result && result.error) {
+        return res.status(result.error.code).json({ message: result.error.message });
+      }
+
+      // Commission entries — her appointment için ayrı, idempotent.
+      for (const appt of result.appointments) {
+        try {
+          await applyCommissionForAppointment(prisma, appt.id);
+        } catch (e) {
+          console.error('Walk-in commission apply failed:', e);
+        }
+      }
+
+      if (idempotencyKey) {
+        await cacheBookingForIdempotencyKey({
+          salonId,
+          idempotencyKey,
+          appointmentIds: result.appointments.map((apt: any) => Number(apt.id)),
+        });
+      }
+
+      invalidateAvailabilityForSalon(salonId).catch(() => undefined);
+
+      return res.status(201).json({
+        item: result.appointments[0],
+        items: result.appointments,
+        count: result.appointments.length,
+      });
+    } catch (error: any) {
+      if (error instanceof BusinessError) throw error;
+      console.error('Admin walk-in appointment error:', error);
+      throw error;
+    }
+  },
+);
 
 function normalizeNamePart(value: unknown): string {
   if (typeof value !== 'string') return '';
