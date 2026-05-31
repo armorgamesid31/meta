@@ -24,6 +24,12 @@ import {
   UpdateCustomerInputSchema,
   WalkInAppointmentInputSchema,
 } from '../schemas/appointment-input.js';
+import {
+  createBatchForAppointments,
+  primaryMethod,
+  validatePaymentsTotal,
+  type PaymentDraft,
+} from '../services/paymentBatchService.js';
 import { ensureSalonServiceCategories } from '../services/salonCategorySetup.js';
 import { ensureSalonServiceRegions } from '../services/salonRegionSetup.js';
 import { normalizeInstagramIdentity, normalizePhoneDigits } from '../services/identityService.js';
@@ -2924,9 +2930,23 @@ router.post(
       typeof req.body?.gender === 'string' && ['male', 'female', 'other'].includes(req.body.gender)
         ? req.body.gender
         : 'female';
-    const paymentMethod = asPaymentMethod(req.body?.paymentMethod);
-    if (!paymentMethod) {
-      throw new BusinessError('VALIDATION_FAILED', 'paymentMethod zorunlu.', 400);
+    // Ödeme: payments[] (split) veya paymentMethod (tek-yöntem, geriye uyum).
+    // payments verildiyse onu kullan; aksi halde paymentMethod tek satırlı
+    // batch'e dönüştürülür. Sum doğrulaması transaction içinde fiyat bilindikten
+    // sonra yapılır.
+    const incomingPayments: Array<{ method: any; amount: number }> | null = Array.isArray(
+      req.body?.payments,
+    )
+      ? req.body.payments
+          .map((p: any) => ({
+            method: asPaymentMethod(p?.method),
+            amount: Number(p?.amount),
+          }))
+          .filter((p: any) => p.method && Number.isFinite(p.amount) && p.amount > 0)
+      : null;
+    const fallbackPaymentMethod = asPaymentMethod(req.body?.paymentMethod);
+    if ((!incomingPayments || incomingPayments.length === 0) && !fallbackPaymentMethod) {
+      throw new BusinessError('VALIDATION_FAILED', 'paymentMethod veya payments zorunlu.', 400);
     }
     // Yeni müşteri profil alanları (varsa kayda eklenir).
     const newCustomerBirthDate =
@@ -3048,9 +3068,18 @@ router.post(
           availableStaffByService.set(row.serviceId, list);
         }
 
-        // --- 3) Her hizmet için sırayla Appointment + Line oluştur (COMPLETED) ---
+        // --- 3) Hizmet planlama: önce loop'ta plan kur, fiyatları topla,
+        //         payments doğrula; sonra Appointment + Line oluştur ve PaymentBatch yaz. ---
         let cursor = new Date(now);
-        const createdAppointments: any[] = [];
+        const planned: Array<{
+          block: { serviceId: number; staffId: number | null };
+          selectedStaffId: number;
+          variantId: number | null;
+          slotStart: Date;
+          slotEnd: Date;
+          unitPrice: number;
+          serviceName: string;
+        }> = [];
         for (const block of normalizedServices) {
           const service = serviceMap.get(Number(block.serviceId))!;
           const candidates = availableStaffByService.get(Number(block.serviceId)) || [];
@@ -3064,7 +3093,6 @@ router.post(
             }
             selectedStaffId = candidates[0];
           }
-
           const variant: any = variantByServiceId.get(Number(block.serviceId));
           const staffService = staffServiceMap.get(`${block.serviceId}:${selectedStaffId}`);
           const duration = Math.max(
@@ -3074,25 +3102,61 @@ router.post(
           const slotStart = new Date(cursor);
           const slotEnd = new Date(slotStart.getTime() + duration * 60 * 1000);
           const unitPrice = variant ? Number(variant.price) : Number(service.price ?? 0);
+          planned.push({
+            block,
+            selectedStaffId,
+            variantId: variant ? Number(variant.id) : null,
+            slotStart,
+            slotEnd,
+            unitPrice,
+            serviceName: service.name,
+          });
+          cursor = new Date(slotEnd);
+        }
+        const totalAmount = planned.reduce((sum, p) => sum + p.unitPrice, 0);
 
+        // Payments draft kur: split varsa onu, yoksa fallback tek-yöntem.
+        const paymentDrafts: PaymentDraft[] = (incomingPayments && incomingPayments.length > 0)
+          ? incomingPayments.map((p: any) => ({ method: p.method, amount: p.amount }))
+          : [{ method: fallbackPaymentMethod!, amount: totalAmount }];
+
+        // Split modunda sum kontrolü zorunlu — eski tek-yöntem path zaten
+        // totalAmount ile eşleşir.
+        if (incomingPayments && incomingPayments.length > 0) {
+          const valid = validatePaymentsTotal(paymentDrafts, totalAmount);
+          if (!valid.ok) {
+            return {
+              error: {
+                code: 400,
+                message: `Ödeme toplamı ${valid.sum.toFixed(2)} TL, hizmet toplamı ${valid.expected.toFixed(2)} TL ile eşleşmiyor.`,
+              },
+            };
+          }
+        }
+        const primaryPayMethod = primaryMethod(paymentDrafts) || 'CASH';
+
+        // Appointment + Line yarat
+        const createdAppointments: any[] = [];
+        for (const p of planned) {
           const appointment = await tx.appointment.create({
             data: {
               salonId,
               customerId: customer?.id ?? null,
               customerName: finalCustomerName,
               customerPhone: finalCustomerPhone,
-              serviceId: Number(block.serviceId),
-              staffId: selectedStaffId,
-              startTime: slotStart,
-              endTime: slotEnd,
+              serviceId: Number(p.block.serviceId),
+              staffId: p.selectedStaffId,
+              startTime: p.slotStart,
+              endTime: p.slotEnd,
               status: 'COMPLETED',
               source: 'ADMIN',
               notes,
               gender: (customer?.gender || gender) as any,
-              paymentMethod,
+              // Geriye uyum: tek-yöntemde mevcut alan, split'te "primary" method.
+              paymentMethod: primaryPayMethod,
               paymentRecordedAt: now,
-              listPrice: unitPrice,
-              finalPrice: unitPrice,
+              listPrice: p.unitPrice,
+              finalPrice: p.unitPrice,
             },
             include: {
               service: { select: { id: true, name: true, duration: true, price: true } },
@@ -3100,23 +3164,33 @@ router.post(
             },
           });
           await ensureDefaultAppointmentLine(tx, appointment, {
-            serviceVariantId: variant ? variant.id : null,
-            listPrice: unitPrice,
-            finalPrice: unitPrice,
+            serviceVariantId: p.variantId,
+            listPrice: p.unitPrice,
+            finalPrice: p.unitPrice,
           });
-          // Yeni oluşan line'ı da COMPLETED + paymentMethod ile damgala.
           await tx.appointmentLine.updateMany({
             where: { appointmentId: appointment.id },
             data: {
               status: 'COMPLETED',
-              paymentMethod,
+              paymentMethod: primaryPayMethod,
               paymentRecordedAt: now,
             },
           });
           createdAppointments.push(appointment);
-          cursor = new Date(slotEnd);
         }
-        return { appointments: createdAppointments };
+
+        // --- 4) PaymentBatch oluştur (split veya tek-yöntem aynı path) ---
+        const batch = await createBatchForAppointments(tx, {
+          salonId,
+          customerId: customer?.id ?? null,
+          appointmentIds: createdAppointments.map((a) => Number(a.id)),
+          payments: paymentDrafts,
+          totalAmount,
+          notes,
+          recordedAt: now,
+        });
+
+        return { appointments: createdAppointments, batchId: batch.batchId };
       });
 
       if ('error' in result && result.error) {

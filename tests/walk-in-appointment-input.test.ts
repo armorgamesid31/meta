@@ -107,4 +107,55 @@ describe('WalkInAppointmentInputSchema', () => {
     });
     expect(r.success).toBe(true);
   });
+
+  it('split payments dizisi kabul edilir', () => {
+    const r = WalkInAppointmentInputSchema.safeParse({
+      services: [{ serviceId: 5, staffId: null }],
+      payments: [
+        { method: 'CARD', amount: 300 },
+        { method: 'CASH', amount: 2700 },
+      ],
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it('payments boş array reddedilir (min 1)', () => {
+    const r = WalkInAppointmentInputSchema.safeParse({
+      services: [{ serviceId: 5, staffId: null }],
+      payments: [],
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it('payments amount 0 veya negatif reddedilir', () => {
+    const r1 = WalkInAppointmentInputSchema.safeParse({
+      services: [{ serviceId: 5, staffId: null }],
+      payments: [{ method: 'CASH', amount: 0 }],
+    });
+    const r2 = WalkInAppointmentInputSchema.safeParse({
+      services: [{ serviceId: 5, staffId: null }],
+      payments: [{ method: 'CASH', amount: -50 }],
+    });
+    expect(r1.success).toBe(false);
+    expect(r2.success).toBe(false);
+  });
+
+  it('paymentMethod ve payments ikisi de yoksa reddedilir', () => {
+    const r = WalkInAppointmentInputSchema.safeParse({
+      services: [{ serviceId: 5, staffId: null }],
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it('hem paymentMethod hem payments verilirse kabul (backend payments\'i kullanır)', () => {
+    const r = WalkInAppointmentInputSchema.safeParse({
+      services: [{ serviceId: 5, staffId: null }],
+      paymentMethod: 'CASH',
+      payments: [
+        { method: 'CASH', amount: 100 },
+        { method: 'CARD', amount: 50 },
+      ],
+    });
+    expect(r.success).toBe(true);
+  });
 });

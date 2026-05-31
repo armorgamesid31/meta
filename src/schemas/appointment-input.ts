@@ -93,11 +93,27 @@ export const WalkInAppointmentInputSchema = z.object({
   acceptMarketing: z.boolean().nullable().optional(),
   // Zorunlu: en az 1 hizmet.
   services: z.array(AppointmentServiceLineInputSchema).min(1, 'En az bir hizmet seçmelisiniz.'),
-  // Zorunlu: ödeme yöntemi. Walk-in ödemesi anlık alındığı için boş geçilemez.
-  paymentMethod: z.enum(['CASH', 'CARD', 'TRANSFER', 'OTHER']),
+  // Split ödeme: çoklu yöntem + tutar. Sum = hizmetlerin finalPrice toplamı.
+  // payments verilirse paymentMethod yok sayılır. Eski client'lar için
+  // paymentMethod tek-değer kabul edilmeye devam eder (geriye uyumluluk:
+  // backend tek satırlı batch oluşturur).
+  payments: z
+    .array(
+      z.object({
+        method: z.enum(['CASH', 'CARD', 'TRANSFER', 'OTHER']),
+        amount: z.number().positive('Tutar 0 üzerinde olmalı.'),
+      }),
+    )
+    .min(1)
+    .optional(),
+  // Geriye uyum: payments boşsa zorunlu, doluysa görmezden gelinir.
+  paymentMethod: z.enum(['CASH', 'CARD', 'TRANSFER', 'OTHER']).optional(),
   notes: z.string().nullable().optional(),
   idempotencyKey: z.string().min(1).nullable().optional(),
-});
+}).refine(
+  (data) => Boolean(data.payments?.length) || Boolean(data.paymentMethod),
+  { message: 'paymentMethod veya payments alanlarından biri zorunlu.', path: ['paymentMethod'] },
+);
 export type WalkInAppointmentInput = z.infer<typeof WalkInAppointmentInputSchema>;
 
 export const UpdateAppointmentStatusInputSchema = z.object({
