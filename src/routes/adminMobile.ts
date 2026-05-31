@@ -974,7 +974,23 @@ async function markConversationHumanPending(input: {
   // shape here so handover / resume mutations target the same row.
   const canonicalConversationKey = ensureChannelPrefixedKey(input.channel, input.conversationKey);
   const now = new Date();
-  return prisma.conversationState.upsert({
+
+  // Önceki mode'u oku — bu çağrı YENİ bir transition mı yoksa zaten
+  // HUMAN_PENDING'de miydi anlamak için. Yalnızca yeni transition'da
+  // ThreadSummary'e explicit +1 yapacağız (idempotent).
+  const existing = await prisma.conversationState.findUnique({
+    where: {
+      salonId_channel_conversationKey: {
+        salonId: input.salonId,
+        channel: input.channel,
+        conversationKey: canonicalConversationKey,
+      },
+    },
+    select: { mode: true },
+  });
+  const isNewHumanPending = existing?.mode !== 'HUMAN_PENDING';
+
+  const result = await prisma.conversationState.upsert({
     where: {
       salonId_channel_conversationKey: {
         salonId: input.salonId,
@@ -1000,6 +1016,34 @@ async function markConversationHumanPending(input: {
       profileName: input.profileName || null,
     },
   });
+
+  // Handover ya da müşteri/AI insan talebi — staff dikkati gerekli.
+  // ThreadSummary'de explicit unreadCount += 1 ve hasHandoverRequest=true.
+  // Mode-guard (conversationThreadSummary.ts) AUTO'da inbound mesajları
+  // bypass ettiği için, transition anında bu garanti olmazsa staff'ın
+  // hiçbir kanaldan "insan istiyorum" sinyali alamadığı edge case var.
+  // ThreadSummary record yoksa update fail eder; sessizce yut (henüz
+  // hiç mesaj görülmemiş bir conversation için handover çağrısı pratikte
+  // imkansız ama defensive).
+  if (isNewHumanPending) {
+    await prisma.conversationThreadSummary
+      .update({
+        where: {
+          salonId_channel_conversationKey: {
+            salonId: input.salonId,
+            channel: input.channel,
+            conversationKey: canonicalConversationKey,
+          },
+        },
+        data: {
+          unreadCount: { increment: 1 },
+          hasHandoverRequest: true,
+        },
+      })
+      .catch(() => undefined);
+  }
+
+  return result;
 }
 
 async function markConversationAuto(input: {
@@ -5822,6 +5866,21 @@ router.post('/appointments/checkout', authenticateToken, async (req: any, res: a
     throw new BusinessError('VALIDATION_FAILED', 'lines must be a non-empty array.', 400);
   }
 
+  // Top-level split ödeme: tüm SINGLE_PAYMENT line'lar için tek bir
+  // PaymentBatch (yarı kart + yarı nakit). payments verilirse her
+  // SINGLE_PAYMENT line'ın per-line paymentMethod alanı yok sayılır;
+  // primaryMethod = ilk Payment'ın method'u olarak yazılır.
+  const checkoutPayments: PaymentDraft[] = Array.isArray(req.body?.payments)
+    ? req.body.payments
+        .map((p: any) => ({
+          method: asPaymentMethod(p?.method) as any,
+          amount: Number(p?.amount),
+        }))
+        .filter((p: any) => p.method && Number.isFinite(p.amount) && p.amount > 0)
+    : [];
+  const useCheckoutSplit = checkoutPayments.length > 0;
+  const checkoutPrimaryMethod = useCheckoutSplit ? primaryMethod(checkoutPayments) : null;
+
   const sellNewCount = lines.filter((line) => line.closeType === 'SELL_NEW_PACKAGE').length;
   const useExistingCount = lines.filter((line) => line.closeType === 'USE_EXISTING_PACKAGE').length;
   const singlePaymentCount = lines.filter((line) => line.closeType === 'SINGLE_PAYMENT').length;
@@ -6118,7 +6177,12 @@ router.post('/appointments/checkout', authenticateToken, async (req: any, res: a
 
         const nextStatus = 'COMPLETED';
         const previousStatus = String(targetLine.status || 'BOOKED');
-        const shouldSetPayment = line.closeType === 'SINGLE_PAYMENT' ? line.paymentMethod : null;
+        // Split modunda SINGLE_PAYMENT line'lar primaryMethod ile damgalanır;
+        // tek-yöntem modunda eski line.paymentMethod kullanılır.
+        const shouldSetPayment =
+          line.closeType === 'SINGLE_PAYMENT'
+            ? (useCheckoutSplit ? checkoutPrimaryMethod : line.paymentMethod)
+            : null;
 
         // İndirim / ek ücret sadece SINGLE_PAYMENT akışında uygulanır.
         // listPrice korunur (görsel "yine de %X indirim alındı" hesabı
@@ -6171,6 +6235,55 @@ router.post('/appointments/checkout', authenticateToken, async (req: any, res: a
 
       for (const appointmentId of touchedAppointmentIds) {
         await recomputeAndPersistAppointmentStatusFromLines(tx, appointmentId);
+      }
+
+      // Split ödeme: SINGLE_PAYMENT line'lar için tek bir PaymentBatch
+      // oluştur. Sum doğrulama: SINGLE_PAYMENT'a denk gelen line'ların
+      // (güncel finalPrice'larıyla) toplamı = checkoutPayments.sum.
+      if (useCheckoutSplit) {
+        const singlePayLineIds = lineResults
+          .filter((r) => r.closeType === 'SINGLE_PAYMENT')
+          .map((r) => r.appointmentLineId);
+        const singlePayAppointmentIds = Array.from(
+          new Set(
+            lineResults
+              .filter((r) => r.closeType === 'SINGLE_PAYMENT')
+              .map((r) => Number(r.appointmentId)),
+          ),
+        );
+        if (singlePayLineIds.length === 0 || singlePayAppointmentIds.length === 0) {
+          return {
+            error: {
+              code: 400,
+              message: 'Split ödeme yalnızca tek ödemeli hizmetler için geçerli.',
+            },
+          };
+        }
+        const freshLines = await tx.appointmentLine.findMany({
+          where: { id: { in: singlePayLineIds } },
+          select: { finalPrice: true, listPrice: true },
+        });
+        const splitTotal = freshLines.reduce(
+          (s: number, l: any) => s + Number(l.finalPrice ?? l.listPrice ?? 0),
+          0,
+        );
+        const validation = validatePaymentsTotal(checkoutPayments, splitTotal);
+        if (!validation.ok) {
+          return {
+            error: {
+              code: 400,
+              message: `Ödeme toplamı ${validation.sum.toFixed(2)} TL, hizmet toplamı ${validation.expected.toFixed(2)} TL ile eşleşmiyor.`,
+            },
+          };
+        }
+        await createBatchForAppointments(tx, {
+          salonId,
+          customerId,
+          appointmentIds: singlePayAppointmentIds,
+          payments: checkoutPayments,
+          totalAmount: splitTotal,
+          recordedAt: now,
+        });
       }
 
       return {
@@ -11716,43 +11829,47 @@ router.get('/conversations', authenticateToken, async (req: any, res: any) => {
     const hasMore = summaryRows.length > limit;
     const slicedSummaryRows = summaryRows.slice(0, limit);
 
-    // Layer the per-user read state on top of the salon-wide unread
-    // count. The summary row's unreadCount is the salon's pile; the
-    // user only cares about events newer than their last "I saw it"
-    // marker. If they've marked at-or-past the latest event, unread
-    // for them is 0 regardless of what the salon-wide counter says.
-    const userId = Number(req.user?.userId);
-    const userReadStateMap = new Map<string, Date>();
-    if (Number.isInteger(userId) && userId > 0 && slicedSummaryRows.length > 0) {
+    // Salon-wide read marker: hangi kullanıcı okuduysa farketmez —
+    // salondaki herhangi bir çalışanın en geç "okudum" timestamp'i
+    // referans alınır. Owner okursa receptionist'in ekranında da o
+    // konuşma okunmuş sayılır (önceki per-user davranıştan farklı).
+    // ConversationReadState'in (salonId, userId, channel, key) unique
+    // constraint'i bozulmuyor — sadece okuma sorgusu MAX agg ile salon
+    // bazına çıkıyor. POST /read tarafı kullanıcı bazlı satır yazmaya
+    // devam ediyor (audit + multi-user marker korunuyor).
+    const readStateMap = new Map<string, Date>();
+    if (slicedSummaryRows.length > 0) {
       const readRows = await prisma.$queryRawUnsafe<any[]>(
         `
-          SELECT "channel"::text AS "channel", "conversationKey", "lastReadEventTimestamp"
+          SELECT
+            "channel"::text AS "channel",
+            "conversationKey",
+            MAX("lastReadEventTimestamp") AS "lastReadEventTimestamp"
           FROM "ConversationReadState"
           WHERE "salonId" = $1
-            AND "userId" = $2
-            AND "channel" = ANY($3::"ChannelType"[])
-            AND "conversationKey" = ANY($4::text[])
+            AND "channel" = ANY($2::"ChannelType"[])
+            AND "conversationKey" = ANY($3::text[])
+          GROUP BY "channel", "conversationKey"
         `,
         salonId,
-        userId,
         Array.from(new Set(slicedSummaryRows.map((row) => row.channel))),
         Array.from(new Set(slicedSummaryRows.map((row) => row.conversationKey))),
       );
       for (const r of readRows) {
         const ts = r.lastReadEventTimestamp ? new Date(r.lastReadEventTimestamp) : null;
         if (ts && !Number.isNaN(ts.getTime())) {
-          userReadStateMap.set(`${r.channel}:${r.conversationKey}`, ts);
+          readStateMap.set(`${r.channel}:${r.conversationKey}`, ts);
         }
       }
     }
 
     const baseItems = slicedSummaryRows.map((row) => {
       const salonUnread = Math.max(0, row.unreadCount || 0);
-      const lastReadAt = userReadStateMap.get(`${row.channel}:${row.conversationKey}`);
+      const lastReadAt = readStateMap.get(`${row.channel}:${row.conversationKey}`);
       const lastEventAt = row.lastEventTimestamp instanceof Date
         ? row.lastEventTimestamp
         : new Date(row.lastEventTimestamp as any);
-      const userHasRead = lastReadAt && lastEventAt && lastReadAt.getTime() >= lastEventAt.getTime();
+      const salonHasRead = lastReadAt && lastEventAt && lastReadAt.getTime() >= lastEventAt.getTime();
       return {
         channel: row.channel as 'INSTAGRAM' | 'WHATSAPP',
         conversationKey: row.conversationKey,
@@ -11762,7 +11879,7 @@ router.get('/conversations', authenticateToken, async (req: any, res: any) => {
         lastMessageType: row.lastMessageType,
         lastMessageText: row.lastMessageText || null,
         lastEventTimestamp: row.lastEventTimestamp,
-        unreadCount: userHasRead ? 0 : salonUnread,
+        unreadCount: salonHasRead ? 0 : salonUnread,
         messageCount: Math.max(0, row.messageCount || 0),
         hasHandoverRequest: Boolean(row.hasHandoverRequest),
       };
@@ -13380,23 +13497,32 @@ router.get('/notifications/badge-counts', authenticateToken, async (req: any, re
         );
         unreadNotifications = Number(notifRows?.[0]?.count || 0);
 
-        // Per-user conversation unread = conversations whose lastEvent
-        // is newer than the user's read marker (or has no marker yet).
+        // Salon-wide conversation unread = salondaki herhangi bir kullanıcı
+        // okuduysa o konuşma 0 sayılır. MAX agg ile en yeni okuma timestamp'i
+        // baz alınır. Per-user filter (legacyUserId) artık burada kullanılmaz
+        // — badge'i her çalışan aynı görür.
         const convRows = await prisma.$queryRawUnsafe<any[]>(
           `
             SELECT COUNT(*)::int AS "count"
             FROM "ConversationThreadSummary" s
-            LEFT JOIN "ConversationReadState" r
+            LEFT JOIN (
+              SELECT
+                "salonId",
+                "channel",
+                "conversationKey",
+                MAX("lastReadEventTimestamp") AS "lastReadEventTimestamp"
+              FROM "ConversationReadState"
+              WHERE "salonId" = $1
+              GROUP BY "salonId", "channel", "conversationKey"
+            ) r
               ON r."salonId" = s."salonId"
               AND r."channel" = s."channel"
               AND r."conversationKey" = s."conversationKey"
-              AND r."userId" = $2
             WHERE s."salonId" = $1
               AND s."unreadCount" > 0
               AND (r."lastReadEventTimestamp" IS NULL OR r."lastReadEventTimestamp" < s."lastEventTimestamp")
           `,
           membership.salonId,
-          legacyUserId,
         );
         unreadConversations = Number(convRows?.[0]?.count || 0);
       }

@@ -169,7 +169,30 @@ export async function upsertConversationThreadSummaryInTx(
     : null;
   const incomingText = typeof input.text === 'string' && input.text.trim() ? input.text.trim() : null;
   const incomingProfile = input.channel === 'INSTAGRAM' ? extractInstagramProfile(input.rawPayload) : null;
-  const unreadDelta = input.incrementCounters && input.processingStatus !== 'DONE' ? 1 : 0;
+  let unreadDelta = input.incrementCounters && input.processingStatus !== 'DONE' ? 1 : 0;
+
+  // AI sohbeti yürütürken müşteri mesajları "okunmamış" sayılmaz —
+  // staff'ın dikkatine gerek yok, AI cevaplıyor. Mod HUMAN_PENDING,
+  // HUMAN_ACTIVE, MANUAL_ALWAYS veya AUTO_RESUME_PENDING ise sayılır.
+  // Handover (mode = HUMAN_PENDING) anında zaten state geçişi öncesinde
+  // hızlanmış sayım var; bu guard yalnızca AUTO modundaki inbound mesajları
+  // bypass eder.
+  if (unreadDelta > 0 && input.direction === 'INBOUND') {
+    const state = await tx.conversationState.findUnique({
+      where: {
+        salonId_channel_conversationKey: {
+          salonId: input.salonId,
+          channel: input.channel,
+          conversationKey: summaryKey,
+        },
+      },
+      select: { mode: true },
+    });
+    if (state?.mode === 'AUTO') {
+      unreadDelta = 0;
+    }
+  }
+
   const messageDelta = input.incrementCounters ? 1 : 0;
 
   const existing = await tx.conversationThreadSummary.findUnique({
