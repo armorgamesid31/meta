@@ -120,6 +120,20 @@ export const UpdateAppointmentStatusInputSchema = z.object({
   status: z.enum(['BOOKED', 'COMPLETED', 'CANCELLED', 'NO_SHOW', 'PENDING']),
   paymentMethod: z.enum(['CASH', 'CARD', 'TRANSFER', 'OTHER']).optional(),
   /**
+   * Split ödeme: status=COMPLETED + payments dizisi → PaymentBatch oluşur.
+   * payments verilirse paymentMethod yok sayılır. Eski client'lar tek-yöntem
+   * paymentMethod ile geriye uyumlu çalışmaya devam eder.
+   */
+  payments: z
+    .array(
+      z.object({
+        method: z.enum(['CASH', 'CARD', 'TRANSFER', 'OTHER']),
+        amount: z.number().positive(),
+      }),
+    )
+    .min(1)
+    .optional(),
+  /**
    * Optimistic concurrency control: client gönderirse, sunucu mevcut
    * appointment.updatedAt değeri ile karşılaştırır; eşleşmezse 409 (STALE_RECORD).
    * Geriye uyumluluk: gönderilmezse kontrol atlanır.

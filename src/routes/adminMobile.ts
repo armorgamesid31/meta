@@ -4751,6 +4751,21 @@ router.patch('/appointments/:id/status', authenticateToken, validate({ body: Upd
         return { error: { code: 404, message: 'No matching appointment line was found for the update request.' } };
       }
 
+      // Split ödeme: payments dizisi verildiyse COMPLETED + PaymentBatch
+      // oluşturulur. paymentMethod (tek-yöntem) geriye uyumlu kalır.
+      const incomingPayments: Array<{ method: any; amount: number }> = Array.isArray(req.body?.payments)
+        ? req.body.payments
+            .map((p: any) => ({
+              method: asPaymentMethod(p?.method),
+              amount: Number(p?.amount),
+            }))
+            .filter((p: any) => p.method && Number.isFinite(p.amount) && p.amount > 0)
+        : [];
+      const useSplitPayments = nextStatus === 'COMPLETED' && incomingPayments.length > 0;
+      const primaryPayMethod = useSplitPayments
+        ? primaryMethod(incomingPayments as PaymentDraft[])
+        : paymentMethod || null;
+
       const events: any[] = [];
       for (const line of targetLines) {
         const previousLineStatus = String(line.status || 'BOOKED').toUpperCase();
@@ -4760,8 +4775,8 @@ router.patch('/appointments/:id/status', authenticateToken, validate({ body: Upd
             status: nextStatus,
             ...(nextStatus === 'COMPLETED'
               ? {
-                  paymentMethod: paymentMethod || undefined,
-                  paymentRecordedAt: paymentMethod ? now : undefined,
+                  paymentMethod: primaryPayMethod || undefined,
+                  paymentRecordedAt: primaryPayMethod ? now : undefined,
                 }
               : {
                   paymentMethod: null,
@@ -4794,6 +4809,35 @@ router.patch('/appointments/:id/status', authenticateToken, validate({ body: Upd
             events.push(restoreResult);
           }
         }
+      }
+
+      // Split ödeme: payments verildiyse PaymentBatch oluştur. Sum doğrulaması:
+      // targetLines'ın finalPrice toplamı ile eşleşmeli.
+      if (useSplitPayments) {
+        const targetLinesTotal = targetLines.reduce(
+          (sum: number, l: any) => sum + Number(l.finalPrice ?? l.listPrice ?? 0),
+          0,
+        );
+        const validation = validatePaymentsTotal(
+          incomingPayments as PaymentDraft[],
+          targetLinesTotal,
+        );
+        if (!validation.ok) {
+          return {
+            error: {
+              code: 400,
+              message: `Ödeme toplamı ${validation.sum.toFixed(2)} TL, hizmet toplamı ${validation.expected.toFixed(2)} TL ile eşleşmiyor.`,
+            },
+          };
+        }
+        await createBatchForAppointments(tx, {
+          salonId,
+          customerId: appointment.customerId ?? null,
+          appointmentIds: [appointmentId],
+          payments: incomingPayments as PaymentDraft[],
+          totalAmount: targetLinesTotal,
+          recordedAt: now,
+        });
       }
 
       const computedStatus = await recomputeAndPersistAppointmentStatusFromLines(tx, appointmentId);
@@ -5392,6 +5436,16 @@ router.patch('/appointment-lines/:id/status', authenticateToken, async (req: any
   const appointmentLineId = Number(req.params.id);
   const nextStatus = asAppointmentStatus(req.body?.status);
   const paymentMethod = asPaymentMethod(req.body?.paymentMethod);
+  // Split ödeme dizisi (status=COMPLETED ile birlikte gönderilirse).
+  const incomingPayments: Array<{ method: any; amount: number }> = Array.isArray(req.body?.payments)
+    ? req.body.payments
+        .map((p: any) => ({ method: asPaymentMethod(p?.method), amount: Number(p?.amount) }))
+        .filter((p: any) => p.method && Number.isFinite(p.amount) && p.amount > 0)
+    : [];
+  const useSplitPayments = nextStatus === 'COMPLETED' && incomingPayments.length > 0;
+  const primaryPayMethod = useSplitPayments
+    ? primaryMethod(incomingPayments as PaymentDraft[])
+    : paymentMethod || null;
   if (!Number.isInteger(appointmentLineId) || appointmentLineId <= 0) {
     throw new BusinessError('VALIDATION_FAILED', 'Invalid appointment line id.', 400);
   }
@@ -5410,6 +5464,8 @@ router.patch('/appointment-lines/:id/status', authenticateToken, async (req: any
           serviceId: true,
           customerId: true,
           status: true,
+          finalPrice: true,
+          listPrice: true,
         },
       });
       if (!line) return { error: { code: 404, message: 'Appointment line not found.' } };
@@ -5421,8 +5477,8 @@ router.patch('/appointment-lines/:id/status', authenticateToken, async (req: any
           status: nextStatus,
           ...(nextStatus === 'COMPLETED'
             ? {
-                paymentMethod: paymentMethod || undefined,
-                paymentRecordedAt: paymentMethod ? now : undefined,
+                paymentMethod: primaryPayMethod || undefined,
+                paymentRecordedAt: primaryPayMethod ? now : undefined,
               }
             : {
                 paymentMethod: null,
@@ -5430,6 +5486,28 @@ router.patch('/appointment-lines/:id/status', authenticateToken, async (req: any
               }),
         },
       });
+
+      // Split ödeme: PaymentBatch oluştur. Sum line'ın finalPrice ile eşleşmeli.
+      if (useSplitPayments) {
+        const lineTotal = Number(line.finalPrice ?? line.listPrice ?? 0);
+        const validation = validatePaymentsTotal(incomingPayments as PaymentDraft[], lineTotal);
+        if (!validation.ok) {
+          return {
+            error: {
+              code: 400,
+              message: `Ödeme toplamı ${validation.sum.toFixed(2)} TL, hizmet toplamı ${validation.expected.toFixed(2)} TL ile eşleşmiyor.`,
+            },
+          };
+        }
+        await createBatchForAppointments(tx, {
+          salonId,
+          customerId: line.customerId ?? null,
+          appointmentIds: [Number(line.appointmentId)],
+          payments: incomingPayments as PaymentDraft[],
+          totalAmount: lineTotal,
+          recordedAt: now,
+        });
+      }
 
       const events: any[] = [];
       if (line.customerId) {
