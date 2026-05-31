@@ -12,6 +12,10 @@ type CampaignRow = {
   priority: number;
   maxGlobalUsage: number | null;
   maxPerCustomer: number | null;
+  // Yeni: MANUAL kampanyalar müşteri akışında otomatik tetiklenmez —
+  // salon kasiyeri checkout ekranından elle uygular. AUTO ise her
+  // rezervasyonda preview/commit'te değerlendirilir.
+  deliveryMode: 'AUTO' | 'MANUAL';
 };
 
 export type CampaignPricingLineInput = {
@@ -53,7 +57,9 @@ export type SkippedCampaignDetail = {
     | 'WALLET_EMPTY'
     | 'SERVICE_NOT_ELIGIBLE'
     | 'INVALID_DISCOUNT_CONFIG'
-    | 'COMPANION_LINE';
+    | 'COMPANION_LINE'
+    | 'BILL_THRESHOLD_NOT_REACHED'
+    | 'MANUAL_ONLY_NOT_TRIGGERED';
 };
 
 export type CampaignPricingLineResult = {
@@ -118,6 +124,23 @@ function getInTimezoneWeekdayKey(date: Date, timezone = 'Europe/Istanbul'): stri
   return map[short] || 'MON';
 }
 
+/**
+ * Salonun saat dilimine göre month/day döndürür. Eski isBirthdayEligible
+ * UTC tabanlıydı — bu yüzden lokal gece yarısı sonrası rezervasyonlar
+ * "değil" gibi görünüyordu. Bu helper Istanbul wall-clock'a göre çalışır.
+ */
+function getInTimezoneMonthDay(date: Date, timezone = 'Europe/Istanbul'): { month: number; day: number } {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const month = Number(parts.find((p) => p.type === 'month')?.value || '1');
+  const day = Number(parts.find((p) => p.type === 'day')?.value || '1');
+  return { month: month - 1, day };
+}
+
 function getInTimezoneMinuteOfDay(date: Date, timezone = 'Europe/Istanbul'): number {
   const parts = new Intl.DateTimeFormat('en-GB', {
     timeZone: timezone,
@@ -171,6 +194,7 @@ function normalizeUsageLimit(value: unknown): number | null {
 }
 
 function normalizeCampaignRow(row: any): CampaignRow {
+  const dmRaw = String(row.deliveryMode || row.delivery_mode || 'AUTO').trim().toUpperCase();
   return {
     id: Number(row.id),
     salonId: Number(row.salonId),
@@ -180,6 +204,7 @@ function normalizeCampaignRow(row: any): CampaignRow {
     priority: Number.isFinite(Number(row.priority)) ? Number(row.priority) : 100,
     maxGlobalUsage: normalizeUsageLimit(row.maxGlobalUsage),
     maxPerCustomer: normalizeUsageLimit(row.maxPerCustomer),
+    deliveryMode: dmRaw === 'MANUAL' ? 'MANUAL' : 'AUTO',
   };
 }
 
@@ -192,7 +217,8 @@ async function getActiveCampaigns(salonId: number, now: Date): Promise<CampaignR
   const rows = await prisma.$queryRawUnsafe<any[]>(
     `
       SELECT
-        c."id", c."salonId", c."name", c."type", c."config", c."priority", c."maxGlobalUsage", c."maxPerCustomer"
+        c."id", c."salonId", c."name", c."type", c."config", c."priority",
+        c."maxGlobalUsage", c."maxPerCustomer", c."deliveryMode"
       FROM "Campaign" c
       WHERE c."salonId" = $1
         AND c."isActive" = true
@@ -247,15 +273,23 @@ async function getUsageMap(salonId: number, customerId: number | null | undefine
 
 async function getCustomerStats(salonId: number, customerId: number | null | undefined): Promise<{
   completedCount: number;
+  /** WELCOME_FIRST_VISIT için: COMPLETED + BOOKED + UPDATED toplamı.
+   *  Eski sürüm sadece COMPLETED sayıyordu → müşteri 5 randevu rezerve
+   *  edip hiçbirini tamamlamadan her seferinde "ilk randevu" indirimi
+   *  alabiliyordu. Bookling/bekleyen rezervasyonları da say. */
+  activeOrCompletedCount: number;
   lastAppointmentAt: Date | null;
   birthDate: Date | null;
 }> {
   if (!customerId) {
-    return { completedCount: 0, lastAppointmentAt: null, birthDate: null };
+    return { completedCount: 0, activeOrCompletedCount: 0, lastAppointmentAt: null, birthDate: null };
   }
 
-  const [completedCount, lastAppointment, customer] = await Promise.all([
+  const [completedCount, activeOrCompletedCount, lastAppointment, customer] = await Promise.all([
     prisma.appointment.count({ where: { salonId, customerId, status: 'COMPLETED' } }),
+    prisma.appointment.count({
+      where: { salonId, customerId, status: { in: ['BOOKED', 'COMPLETED'] } },
+    }),
     prisma.appointment.findFirst({
       where: { salonId, customerId },
       orderBy: [{ endTime: 'desc' }],
@@ -266,6 +300,7 @@ async function getCustomerStats(salonId: number, customerId: number | null | und
 
   return {
     completedCount,
+    activeOrCompletedCount,
     lastAppointmentAt: lastAppointment?.endTime || null,
     birthDate: customer?.birthDate || null,
   };
@@ -312,16 +347,41 @@ function aggregateApplied(applied: AppliedCampaignDetail[]): AppliedCampaignDeta
   return Array.from(byId.values()).sort((a, b) => b.amount - a.amount);
 }
 
-function isBirthdayEligible(birthDate: Date | null, startTime: Date, validDaysAfterBirthday: number): boolean {
+function isBirthdayEligible(
+  birthDate: Date | null,
+  startTime: Date,
+  validDaysAfterBirthday: number,
+  validDaysBeforeBirthday: number,
+  timezone: string,
+): boolean {
   if (!birthDate) return false;
+  // Birthday'i salonun saat dilimine göre değerlendir — UTC kullanmak
+  // gece yarısı kayması bug'ı yaratıyordu (#9). Salon Istanbul, müşteri
+  // 23:30 lokal saatte doğum gününde rezerve ettiyse "evet" demeli.
   const bMonth = birthDate.getUTCMonth();
   const bDay = birthDate.getUTCDate();
-  const year = startTime.getUTCFullYear();
-  const birthdayThisYear = new Date(Date.UTC(year, bMonth, bDay, 0, 0, 0));
-  const diffMs = startTime.getTime() - birthdayThisYear.getTime();
-  if (diffMs < 0) return false;
-  const diffDays = Math.floor(diffMs / (24 * 60 * 60 * 1000));
-  return diffDays <= Math.max(1, validDaysAfterBirthday);
+  const today = getInTimezoneMonthDay(startTime, timezone);
+  // Yıl Istanbul TZ'sinde
+  const yearStr = new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric' }).format(startTime);
+  const year = Number(yearStr) || new Date().getFullYear();
+
+  // Bu yılki doğum günü — leap-year safe: Şubat 29 + non-leap → Mart 1
+  // SİLİNTİLİ değil, kullanıcının niyeti "bana yakın bir tarih"
+  let birthdayThisYear: Date;
+  if (bMonth === 1 && bDay === 29) {
+    // Yıl leap mi?
+    const isLeap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+    birthdayThisYear = new Date(year, isLeap ? 1 : 2, isLeap ? 29 : 1);
+  } else {
+    birthdayThisYear = new Date(year, bMonth, bDay);
+  }
+  const todayWall = new Date(year, today.month, today.day);
+  const diffDays = Math.round((todayWall.getTime() - birthdayThisYear.getTime()) / (24 * 60 * 60 * 1000));
+
+  const before = Math.max(0, validDaysBeforeBirthday);
+  const after = Math.max(1, validDaysAfterBirthday);
+  // diffDays negatif → doğum gününden ÖNCE; -before ≤ diffDays ≤ +after
+  return diffDays >= -before && diffDays <= after;
 }
 
 function buildCampaignComparator(rowA: CampaignRow, rowB: CampaignRow): number {
@@ -349,6 +409,18 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
   ]);
 
   const sortedCampaigns = [...campaigns].sort(buildCampaignComparator);
+  // Mid-loop usage tracking — DB'den okunan başlangıç sayılarına ek
+  // olarak, bu booking içinde uygulanan kampanyaları da say. Eski kod
+  // sadece DB snapshot'ına bakıyordu → maxPerCustomer=1 olan kampanya
+  // 3 hizmetli tek bookingde 3 kez uygulanabiliyordu (#3).
+  const runtimeGlobalUsage = new Map<number, number>(usage.global);
+  const runtimePerCustomerUsage = new Map<number, number>(usage.perCustomer);
+  const incrementRuntimeUsage = (campaignId: number) => {
+    runtimeGlobalUsage.set(campaignId, (runtimeGlobalUsage.get(campaignId) || 0) + 1);
+    if (input.customerId) {
+      runtimePerCustomerUsage.set(campaignId, (runtimePerCustomerUsage.get(campaignId) || 0) + 1);
+    }
+  };
   // Faz 42: campaigns scope to the booker (personIndex 1) only. Both
   // the eligibility count (how many qualifying services) and the
   // bill threshold below honor that scope — companion lines neither
@@ -411,15 +483,22 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
     };
 
     for (const campaign of sortedCampaigns) {
+      // MANUAL kampanyalar müşteri akışında otomatik tetiklenmez —
+      // salon checkout sheet'inde elle uygular (#11).
+      if (campaign.deliveryMode === 'MANUAL') {
+        skip(campaign, 'MANUAL_ONLY_NOT_TRIGGERED');
+        continue;
+      }
+
       if (campaign.maxGlobalUsage !== null) {
-        const used = usage.global.get(campaign.id) || 0;
+        const used = runtimeGlobalUsage.get(campaign.id) || 0;
         if (used >= campaign.maxGlobalUsage) {
           skip(campaign, 'GLOBAL_LIMIT_REACHED');
           continue;
         }
       }
       if (campaign.maxPerCustomer !== null && input.customerId) {
-        const usedByCustomer = usage.perCustomer.get(campaign.id) || 0;
+        const usedByCustomer = runtimePerCustomerUsage.get(campaign.id) || 0;
         if (usedByCustomer >= campaign.maxPerCustomer) {
           skip(campaign, 'CUSTOMER_LIMIT_REACHED');
           continue;
@@ -433,7 +512,7 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
       // depends on the aggregated bill, not the individual line. Skip
       // here so the generic discount fallback below doesn't accidentally
       // apply its rewardValue to every line.
-      if (type === 'BILL_THRESHOLD') {
+      if (String(type) === 'BILL_THRESHOLD') {
         continue;
       }
 
@@ -460,8 +539,11 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
       }
 
       if (type === 'BIRTHDAY') {
-        const validDays = Math.max(1, Number(cfg.validDaysAfterBirthday || 7));
-        if (!isBirthdayEligible(stats.birthDate, startTime, validDays)) {
+        const validDaysAfter = Math.max(1, Number(cfg.validDaysAfterBirthday || 7));
+        // Yeni: validDaysBeforeBirthday — eskiden sadece sonrası vardı,
+        // doğum gününden bir gün önce rezerve edilemiyordu (#10).
+        const validDaysBefore = Math.max(0, Number(cfg.validDaysBeforeBirthday || 0));
+        if (!isBirthdayEligible(stats.birthDate, startTime, validDaysAfter, validDaysBefore, timezone)) {
           skip(campaign, 'BIRTHDAY_NOT_ELIGIBLE');
           continue;
         }
@@ -481,7 +563,11 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
       }
 
       if (type === 'WELCOME_FIRST_VISIT') {
-        if (stats.completedCount > 0) {
+        // Müşteri zaten bir COMPLETED veya BOOKED randevuya sahipse "ilk
+        // ziyaret" değildir. CANCELLED/NO_SHOW sayılmaz (fairness). Eski
+        // sürüm sadece COMPLETED'a bakıyordu — müşteri 5 BOOKED rezerve
+        // edip hepsinde "ilk ziyaret" indirimi alıyordu (#11).
+        if (stats.activeOrCompletedCount > 0) {
           skip(campaign, 'FIRST_VISIT_NOT_ELIGIBLE');
           continue;
         }
@@ -536,6 +622,9 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
         campaignName: campaign.name,
         amount: Number(amount.toFixed(2)),
       });
+      // Runtime usage: aynı kampanya bu booking'in sonraki satırlarında
+      // tekrar tetiklenirse limit kontrolü doğru çalışsın (#3).
+      incrementRuntimeUsage(campaign.id);
 
       if (running <= 0) break;
     }
@@ -559,22 +648,47 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
   // the reward proportionally across non-package-covered lines so the
   // discount appears as a normal line-attached entry; downstream
   // aggregation + persistence keeps working unchanged.
-  const billThresholdCampaigns = sortedCampaigns.filter((c) => c.type === 'BILL_THRESHOLD');
+  const billThresholdCampaigns = sortedCampaigns.filter((c) => String(c.type) === 'BILL_THRESHOLD');
+  // BILL_THRESHOLD skip'lerini ilk eligible line'a yazıyoruz — eski sürüm
+  // sessizce continue'luyordu ve UI hiç skip mesajı görmüyordu (#7).
+  const firstMainLine = lines.find((l) => !l.packageCovered && (l.personIndex ?? 1) === 1);
+  const skipBillThreshold = (campaign: CampaignRow, reasonCode: SkippedCampaignDetail['reasonCode']) => {
+    if (!firstMainLine) return;
+    firstMainLine.skippedCampaigns.push({
+      campaignId: campaign.id,
+      campaignType: campaign.type,
+      campaignName: campaign.name,
+      reasonCode,
+    });
+  };
   for (const campaign of billThresholdCampaigns) {
+    if (campaign.deliveryMode === 'MANUAL') {
+      skipBillThreshold(campaign, 'MANUAL_ONLY_NOT_TRIGGERED');
+      continue;
+    }
     if (campaign.maxGlobalUsage !== null) {
-      const used = usage.global.get(campaign.id) || 0;
-      if (used >= campaign.maxGlobalUsage) continue;
+      const used = runtimeGlobalUsage.get(campaign.id) || 0;
+      if (used >= campaign.maxGlobalUsage) {
+        skipBillThreshold(campaign, 'GLOBAL_LIMIT_REACHED');
+        continue;
+      }
     }
     if (campaign.maxPerCustomer !== null && input.customerId) {
-      const usedByCustomer = usage.perCustomer.get(campaign.id) || 0;
-      if (usedByCustomer >= campaign.maxPerCustomer) continue;
+      const usedByCustomer = runtimePerCustomerUsage.get(campaign.id) || 0;
+      if (usedByCustomer >= campaign.maxPerCustomer) {
+        skipBillThreshold(campaign, 'CUSTOMER_LIMIT_REACHED');
+        continue;
+      }
     }
 
     const cfg = (campaign.config || {}) as Record<string, any>;
     const thresholdAmount = Math.max(0, Number(cfg.thresholdAmount || 0));
     const rewardType = String(cfg.rewardType || cfg.discountType || '').trim().toLowerCase();
     const rewardValue = Number(cfg.rewardValue || cfg.discountValue || 0);
-    if (thresholdAmount <= 0 || rewardValue <= 0) continue;
+    if (thresholdAmount <= 0 || rewardValue <= 0) {
+      skipBillThreshold(campaign, 'INVALID_DISCOUNT_CONFIG');
+      continue;
+    }
 
     // Only consider lines that aren't already fully covered (package
     // lines have finalPrice 0 and shouldn't count toward the threshold)
@@ -585,17 +699,29 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
       (l) => !l.packageCovered && l.finalPrice > 0 && (l.personIndex ?? 1) === 1,
     );
     const currentTotal = candidateLines.reduce((acc, l) => acc + l.finalPrice, 0);
-    if (currentTotal < thresholdAmount) continue;
-    if (!candidateLines.length) continue;
+    if (currentTotal < thresholdAmount) {
+      skipBillThreshold(campaign, 'BILL_THRESHOLD_NOT_REACHED');
+      continue;
+    }
+    if (!candidateLines.length) {
+      skipBillThreshold(campaign, 'BILL_THRESHOLD_NOT_REACHED');
+      continue;
+    }
 
     // Filter by service scope — if the campaign restricts to certain
     // services, only those count for both the threshold and the reward
     // distribution. This keeps the rule "%10 ekstra on Yüz & Cilt
     // appointments over 500₺" working as expected.
     const eligibleForScope = candidateLines.filter((l) => isServiceEligibleByScope(cfg, l.serviceId));
-    if (!eligibleForScope.length) continue;
+    if (!eligibleForScope.length) {
+      skipBillThreshold(campaign, 'SERVICE_NOT_ELIGIBLE');
+      continue;
+    }
     const eligibleTotal = eligibleForScope.reduce((acc, l) => acc + l.finalPrice, 0);
-    if (eligibleTotal < thresholdAmount) continue;
+    if (eligibleTotal < thresholdAmount) {
+      skipBillThreshold(campaign, 'BILL_THRESHOLD_NOT_REACHED');
+      continue;
+    }
 
     let totalRewardAmount = 0;
     if (rewardType === 'discount_percent') {
@@ -678,12 +804,17 @@ export async function persistAppointmentCampaignApplication(input: {
   const db = input.db ?? prisma;
 
   for (const campaign of input.line.appliedCampaigns) {
+    // Idempotency: aynı (salonId, appointmentId, campaignId, serviceId,
+    // status) için tek satır — migration unique constraint koyuyor.
+    // ON CONFLICT DO NOTHING ile double-submit/retry sessiz atlanır (#1).
     await db.$executeRawUnsafe(
       `
         INSERT INTO "AppointmentCampaignApplication"
           ("salonId", "appointmentId", "customerId", "campaignId", "serviceId", "status", "listPrice", "discountAmount", "finalPrice", "metadata", "appliedAt", "createdAt", "updatedAt")
         VALUES
           ($1, $2, $3, $4, $5, 'APPLIED'::"CampaignApplicationStatus", $6, $7, $8, $9::jsonb, NOW(), NOW(), NOW())
+        ON CONFLICT ON CONSTRAINT "uq_campaign_app_salon_appt_campaign_service"
+        DO NOTHING
       `,
       input.salonId,
       input.appointmentId,
@@ -702,15 +833,58 @@ export async function releaseAppointmentCampaignApplications(input: {
   salonId: number;
   appointmentId: number;
 }): Promise<void> {
-  await prisma.$executeRawUnsafe(
-    `
-      UPDATE "AppointmentCampaignApplication"
-      SET "status" = 'RELEASED'::"CampaignApplicationStatus", "releasedAt" = NOW(), "updatedAt" = NOW()
-      WHERE "salonId" = $1 AND "appointmentId" = $2 AND "status" = 'APPLIED'::"CampaignApplicationStatus"
-    `,
-    input.salonId,
-    input.appointmentId,
-  );
+  // İptal / no-show iptal akışında: önce wallet'tan düşülen tutarları
+  // geri ver (LOYALTY/REFERRAL puanı iade — #5), sonra application
+  // satırlarını RELEASED'a çek.
+  // Tek transaction'da yapıyoruz ki yarıda kalınırsa muhasebe bozulmasın.
+  await prisma.$transaction(async (tx) => {
+    // 1. Wallet refund — bu randevuda tüketilen LOYALTY/REFERRAL kredisini
+    //    consumedAmount'tan geri düş. Sadece henüz RELEASED edilmemiş
+    //    APPLIED satırlar üzerinden — idempotent.
+    const walletAffected = await tx.$queryRawUnsafe<any[]>(
+      `
+        SELECT a."campaignId", a."customerId", a."discountAmount", c."type"
+        FROM "AppointmentCampaignApplication" a
+        INNER JOIN "Campaign" c ON c."id" = a."campaignId"
+        WHERE a."salonId" = $1
+          AND a."appointmentId" = $2
+          AND a."status" = 'APPLIED'::"CampaignApplicationStatus"
+          AND c."type" IN ('LOYALTY', 'REFERRAL')
+      `,
+      input.salonId,
+      input.appointmentId,
+    );
+
+    for (const row of walletAffected) {
+      const customerId = Number(row.customerId || 0);
+      const campaignId = Number(row.campaignId || 0);
+      const amount = Number(row.discountAmount || 0);
+      if (!customerId || !campaignId || amount <= 0) continue;
+      await tx.$executeRawUnsafe(
+        `
+          UPDATE "CustomerCampaignWallet"
+          SET "consumedAmount" = GREATEST(COALESCE("consumedAmount", 0) - $1, 0),
+              "updatedAt" = NOW()
+          WHERE "salonId" = $2 AND "customerId" = $3 AND "campaignId" = $4
+        `,
+        amount,
+        input.salonId,
+        customerId,
+        campaignId,
+      );
+    }
+
+    // 2. Application satırlarını RELEASED'a çek (audit izi korunur).
+    await tx.$executeRawUnsafe(
+      `
+        UPDATE "AppointmentCampaignApplication"
+        SET "status" = 'RELEASED'::"CampaignApplicationStatus", "releasedAt" = NOW(), "updatedAt" = NOW()
+        WHERE "salonId" = $1 AND "appointmentId" = $2 AND "status" = 'APPLIED'::"CampaignApplicationStatus"
+      `,
+      input.salonId,
+      input.appointmentId,
+    );
+  });
 }
 
 export async function consumeWalletBalances(input: {

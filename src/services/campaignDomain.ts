@@ -8,6 +8,9 @@ export const CAMPAIGN_TYPES: CampaignType[] = [
   'MULTI_SERVICE_DISCOUNT',
   'OFF_PEAK',
   'REFERRAL',
+  // Sepet-bazlı kampanya — engine destekliyor ama type listede yoktu,
+  // admin formundan oluşturulamıyordu (#10).
+  'BILL_THRESHOLD' as CampaignType,
 ];
 
 function asObject(value: unknown): Record<string, unknown> {
@@ -74,6 +77,21 @@ export function validateCampaignConfig(type: CampaignType, rawConfig: unknown): 
     const inactiveDays = requirePositive('inactiveDaysThreshold');
     if (!inactiveDays) {
       return { ok: false, message: 'config.inactiveDaysThreshold must be a positive number.' };
+    }
+  }
+
+  if (String(type) === 'BILL_THRESHOLD') {
+    const thresholdAmount = requirePositive('thresholdAmount');
+    if (!thresholdAmount) {
+      return { ok: false, message: 'config.thresholdAmount must be a positive number (TRY).' };
+    }
+    const rewardType = str(config.rewardType) || str(config.discountType);
+    const rewardValue = requirePositive('rewardValue') || requirePositive('discountValue');
+    if (!rewardType || !['discount_percent', 'discount_fixed', 'fixed_amount'].includes(rewardType)) {
+      return { ok: false, message: 'config.rewardType BILL_THRESHOLD için discount_percent veya discount_fixed olmalı.' };
+    }
+    if (!rewardValue) {
+      return { ok: false, message: 'config.rewardValue must be a positive number.' };
     }
   }
 
