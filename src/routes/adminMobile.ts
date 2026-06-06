@@ -3175,10 +3175,11 @@ router.post(
         if (incomingPayments && incomingPayments.length > 0) {
           const valid = validatePaymentsTotal(paymentDrafts, totalAmount);
           if (!valid.ok) {
+            const { sum, expected } = valid as { ok: false; sum: number; expected: number };
             return {
               error: {
                 code: 400,
-                message: `Ödeme toplamı ${valid.sum.toFixed(2)} TL, hizmet toplamı ${valid.expected.toFixed(2)} TL ile eşleşmiyor.`,
+                message: `Ödeme toplamı ${sum.toFixed(2)} TL, hizmet toplamı ${expected.toFixed(2)} TL ile eşleşmiyor.`,
               },
             };
           }
@@ -5070,10 +5071,11 @@ router.patch('/appointments/:id/status', authenticateToken, validate({ body: Upd
           targetLinesTotal,
         );
         if (!validation.ok) {
+          const { sum, expected } = validation as { ok: false; sum: number; expected: number };
           return {
             error: {
               code: 400,
-              message: `Ödeme toplamı ${validation.sum.toFixed(2)} TL, hizmet toplamı ${validation.expected.toFixed(2)} TL ile eşleşmiyor.`,
+              message: `Ödeme toplamı ${sum.toFixed(2)} TL, hizmet toplamı ${expected.toFixed(2)} TL ile eşleşmiyor.`,
             },
           };
         }
@@ -5739,10 +5741,11 @@ router.patch('/appointment-lines/:id/status', authenticateToken, async (req: any
         const lineTotal = Number(line.finalPrice ?? line.listPrice ?? 0);
         const validation = validatePaymentsTotal(incomingPayments as PaymentDraft[], lineTotal);
         if (!validation.ok) {
+          const { sum, expected } = validation as { ok: false; sum: number; expected: number };
           return {
             error: {
               code: 400,
-              message: `Ödeme toplamı ${validation.sum.toFixed(2)} TL, hizmet toplamı ${validation.expected.toFixed(2)} TL ile eşleşmiyor.`,
+              message: `Ödeme toplamı ${sum.toFixed(2)} TL, hizmet toplamı ${expected.toFixed(2)} TL ile eşleşmiyor.`,
             },
           };
         }
@@ -6270,10 +6273,11 @@ router.post('/appointments/checkout', authenticateToken, async (req: any, res: a
         );
         const validation = validatePaymentsTotal(checkoutPayments, splitTotal);
         if (!validation.ok) {
+          const { sum, expected } = validation as { ok: false; sum: number; expected: number };
           return {
             error: {
               code: 400,
-              message: `Ödeme toplamı ${validation.sum.toFixed(2)} TL, hizmet toplamı ${validation.expected.toFixed(2)} TL ile eşleşmiyor.`,
+              message: `Ödeme toplamı ${sum.toFixed(2)} TL, hizmet toplamı ${expected.toFixed(2)} TL ile eşleşmiyor.`,
             },
           };
         }
