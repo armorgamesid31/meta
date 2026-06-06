@@ -52,6 +52,12 @@ export type SlotsResponse = {
   groups: GroupSlots[];
   displaySlots: DisplaySlot[];
   lockToken?: LockToken;
+  /**
+   * Engine MAX_COMBINATIONS sınırına ulaştı; daha fazla valid alternatif
+   * olabilir ama sessizce kesildi. Frontend kullanıcıya bildirebilir:
+   * "Daha fazla saat için tarihi daralt".
+   */
+  hasMoreAlternatives?: boolean;
 };
 
 export type GroupSlots = {

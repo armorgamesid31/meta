@@ -42,24 +42,48 @@ export type AppliedCampaignDetail = {
   amount: number;
 };
 
+export type CampaignSkipReasonCode =
+  | 'GLOBAL_LIMIT_REACHED'
+  | 'CUSTOMER_LIMIT_REACHED'
+  | 'MULTI_SERVICE_NOT_ELIGIBLE'
+  | 'BIRTHDAY_NOT_ELIGIBLE'
+  | 'WINBACK_NOT_ELIGIBLE'
+  | 'FIRST_VISIT_NOT_ELIGIBLE'
+  | 'OFF_PEAK_NOT_ELIGIBLE'
+  | 'WALLET_EMPTY'
+  | 'SERVICE_NOT_ELIGIBLE'
+  | 'INVALID_DISCOUNT_CONFIG'
+  | 'COMPANION_LINE'
+  | 'BILL_THRESHOLD_NOT_REACHED'
+  | 'MANUAL_ONLY_NOT_TRIGGERED';
+
 export type SkippedCampaignDetail = {
   campaignId: number;
   campaignType: CampaignType;
   campaignName: string;
-  reasonCode:
-    | 'GLOBAL_LIMIT_REACHED'
-    | 'CUSTOMER_LIMIT_REACHED'
-    | 'MULTI_SERVICE_NOT_ELIGIBLE'
-    | 'BIRTHDAY_NOT_ELIGIBLE'
-    | 'WINBACK_NOT_ELIGIBLE'
-    | 'FIRST_VISIT_NOT_ELIGIBLE'
-    | 'OFF_PEAK_NOT_ELIGIBLE'
-    | 'WALLET_EMPTY'
-    | 'SERVICE_NOT_ELIGIBLE'
-    | 'INVALID_DISCOUNT_CONFIG'
-    | 'COMPANION_LINE'
-    | 'BILL_THRESHOLD_NOT_REACHED'
-    | 'MANUAL_ONLY_NOT_TRIGGERED';
+  reasonCode: CampaignSkipReasonCode;
+  reasonLabel: string;
+};
+
+/**
+ * Türkçe okunabilir gerekçe etiketleri — backend cevabıyla birlikte gönderilir
+ * ki frontend "uygun değil" gibi muğlak fallback kullanmasın. Her yeni
+ * reasonCode eklendiğinde buraya da Türkçe karşılığı eklenmeli.
+ */
+export const SKIP_REASON_LABELS_TR: Record<CampaignSkipReasonCode, string> = {
+  GLOBAL_LIMIT_REACHED: 'Kampanya kullanım hakkı doldu',
+  CUSTOMER_LIMIT_REACHED: 'Bu kampanyayı zaten kullandınız',
+  MULTI_SERVICE_NOT_ELIGIBLE: 'En az 2 hizmet gerekli',
+  BIRTHDAY_NOT_ELIGIBLE: 'Doğum günü tarih aralığı dışı',
+  WINBACK_NOT_ELIGIBLE: 'Geri kazanım koşulu tutmuyor',
+  FIRST_VISIT_NOT_ELIGIBLE: 'İlk randevu indirimi geçmiş randevu varken kullanılamaz',
+  OFF_PEAK_NOT_ELIGIBLE: 'Uygun saat dışı',
+  WALLET_EMPTY: 'Cüzdan bakiyesi yok',
+  SERVICE_NOT_ELIGIBLE: 'Bu hizmet kampanyaya dahil değil',
+  INVALID_DISCOUNT_CONFIG: 'Kampanya ayarı geçersiz',
+  COMPANION_LINE: 'Yanınızdaki kişiye kampanya uygulanmaz',
+  BILL_THRESHOLD_NOT_REACHED: 'Minimum tutara ulaşılmadı',
+  MANUAL_ONLY_NOT_TRIGGERED: 'Bu kampanya salonda elden uygulanır',
 };
 
 export type CampaignPricingLineResult = {
@@ -85,7 +109,7 @@ export type CampaignPricingResult = {
   appliedCampaigns: AppliedCampaignDetail[];
   evaluationMeta: {
     snapshotVersion: number;
-    skippedReasons: Array<{ reasonCode: SkippedCampaignDetail['reasonCode']; count: number }>;
+    skippedReasons: Array<{ reasonCode: CampaignSkipReasonCode; count: number; reasonLabel: string }>;
   };
 };
 
@@ -287,8 +311,17 @@ async function getCustomerStats(salonId: number, customerId: number | null | und
 
   const [completedCount, activeOrCompletedCount, lastAppointment, customer] = await Promise.all([
     prisma.appointment.count({ where: { salonId, customerId, status: 'COMPLETED' } }),
+    // WELCOME_FIRST_VISIT istismarına karşı: CANCELLED ve NO_SHOW da
+    // saysın ki bir müşteri "iptal-iptal-iptal" yaparak "yeni müşteri"
+    // indirimini sürekli kullanamasın. activeOrCompletedCount artık
+    // "müşteri salonu daha önce tanıyor mu?" sorusunun cevabı —
+    // BOOKED + COMPLETED + CANCELLED + NO_SHOW + UPDATED dahil.
     prisma.appointment.count({
-      where: { salonId, customerId, status: { in: ['BOOKED', 'COMPLETED'] } },
+      where: {
+        salonId,
+        customerId,
+        status: { in: ['BOOKED', 'COMPLETED', 'CANCELLED', 'NO_SHOW', 'UPDATED'] },
+      },
     }),
     prisma.appointment.findFirst({
       where: { salonId, customerId },
@@ -464,6 +497,7 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
           campaignType: campaign.type,
           campaignName: campaign.name,
           reasonCode: 'COMPANION_LINE' as const,
+          reasonLabel: SKIP_REASON_LABELS_TR['COMPANION_LINE'],
         })),
         packageCovered,
         personIndex: line.personIndex,
@@ -473,16 +507,32 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
     let running = base;
     const appliedCampaigns: AppliedCampaignDetail[] = [];
     const skippedCampaigns: SkippedCampaignDetail[] = [];
-    const skip = (campaign: CampaignRow, reasonCode: SkippedCampaignDetail['reasonCode']) => {
+    // Same-CampaignType stacking guard: aynı tip kampanyadan (örn. 2 BIRTHDAY,
+    // 2 WELCOME_FIRST_VISIT) sadece İLK eligible olan uygulansın. Yoksa salon
+    // yanlışlıkla 2 BIRTHDAY açtıysa müşteri 2x indirim alır → finansal sızıntı.
+    // Sıra `sortedCampaigns` zaten priority ASC (l.411), yani en yüksek
+    // öncelikli kampanya (düşük number) "kazanır".
+    const appliedTypesForThisLine = new Set<string>();
+    const skip = (campaign: CampaignRow, reasonCode: CampaignSkipReasonCode) => {
       skippedCampaigns.push({
         campaignId: campaign.id,
         campaignType: campaign.type,
         campaignName: campaign.name,
         reasonCode,
+        reasonLabel: SKIP_REASON_LABELS_TR[reasonCode],
       });
     };
 
     for (const campaign of sortedCampaigns) {
+      // Same-type guard — aynı CampaignType'tan bir kampanya bu satıra
+      // zaten uygulandıysa diğerlerini sessizce CUSTOMER_LIMIT_REACHED
+      // olarak işaretle. Aynı tip 2+ aktif kampanyaya 'priority' (l.411)
+      // zaten karar verir; bu sadece kontrolsüz stacking'i kapatır.
+      if (appliedTypesForThisLine.has(String(campaign.type))) {
+        skip(campaign, 'CUSTOMER_LIMIT_REACHED');
+        continue;
+      }
+
       // MANUAL kampanyalar müşteri akışında otomatik tetiklenmez —
       // salon checkout sheet'inde elle uygular (#11).
       if (campaign.deliveryMode === 'MANUAL') {
@@ -622,6 +672,9 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
         campaignName: campaign.name,
         amount: Number(amount.toFixed(2)),
       });
+      // Aynı tipten 2. kampanyayı engelle — bu satıra zaten X tipi
+      // uygulandığını işaretle.
+      appliedTypesForThisLine.add(String(campaign.type));
       // Runtime usage: aynı kampanya bu booking'in sonraki satırlarında
       // tekrar tetiklenirse limit kontrolü doğru çalışsın (#3).
       incrementRuntimeUsage(campaign.id);
@@ -652,13 +705,14 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
   // BILL_THRESHOLD skip'lerini ilk eligible line'a yazıyoruz — eski sürüm
   // sessizce continue'luyordu ve UI hiç skip mesajı görmüyordu (#7).
   const firstMainLine = lines.find((l) => !l.packageCovered && (l.personIndex ?? 1) === 1);
-  const skipBillThreshold = (campaign: CampaignRow, reasonCode: SkippedCampaignDetail['reasonCode']) => {
+  const skipBillThreshold = (campaign: CampaignRow, reasonCode: CampaignSkipReasonCode) => {
     if (!firstMainLine) return;
     firstMainLine.skippedCampaigns.push({
       campaignId: campaign.id,
       campaignType: campaign.type,
       campaignName: campaign.name,
       reasonCode,
+      reasonLabel: SKIP_REASON_LABELS_TR[reasonCode],
     });
   };
   for (const campaign of billThresholdCampaigns) {
@@ -772,7 +826,11 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
       skippedReasonMap.set(skipped.reasonCode, (skippedReasonMap.get(skipped.reasonCode) || 0) + 1);
     }
   }
-  const skippedReasons = Array.from(skippedReasonMap.entries()).map(([reasonCode, count]) => ({ reasonCode, count }));
+  const skippedReasons = Array.from(skippedReasonMap.entries()).map(([reasonCode, count]) => ({
+    reasonCode,
+    count,
+    reasonLabel: SKIP_REASON_LABELS_TR[reasonCode as CampaignSkipReasonCode] || reasonCode,
+  }));
 
   return {
     currency: 'TRY',

@@ -1658,14 +1658,30 @@ router.post('/', async (req: any, res: any, next: any) => {
           ? b.availabilityLockToken.trim()
           : '';
       const selectedSlots = parseSelectedPersonSlots(b.selectedSlots);
-      const idempotencyKey =
-        typeof b.idempotencyKey === 'string' && b.idempotencyKey.trim()
-          ? b.idempotencyKey.trim()
-          : null;
+      // idempotencyKey ZORUNLU — public müşteri akışında çift tıklama
+      // veya hızlı retry durumunda 2 randevu yazılmasını engeller. Eski
+      // davranış (null) audit'te [HIGH] çıktı; üst middleware'ler kontrol
+      // etmediği için endpoint kendi kapısını kuruyor.
+      const rawIdem = typeof b.idempotencyKey === 'string' ? b.idempotencyKey.trim() : '';
+      if (!rawIdem || rawIdem.length < 8) {
+        throw new BusinessError(
+          'VALIDATION_FAILED',
+          'idempotencyKey is required (min 8 chars). Generate a UUID per booking attempt.',
+          400,
+        );
+      }
+      const idempotencyKey: string = rawIdem;
       const slotLockId =
         typeof b.slotLockId === 'string' && b.slotLockId.trim()
           ? b.slotLockId.trim()
           : null;
+
+      // Çift tıklama kalkanı (idempotency cache hit) — aynı key'le daha
+      // önce başarılı randevu oluştuysa onu döndür, yeniden işleme.
+      const cachedReply = await findCachedBookingByIdempotencyKey({ salonId, idempotencyKey });
+      if (cachedReply) {
+        return res.status(cachedReply.status).json(cachedReply.body);
+      }
 
       if (availabilityLockToken && selectedSlots.length) {
         const exactResult = await createExactSlotBooking({
@@ -2199,7 +2215,7 @@ router.post('/appointments-by-token', async (req: any, res: any) => {
       }
 
       return appointments;
-    });
+    }, { isolationLevel: 'Serializable' });
 
     if (magicLink.usedAt === null) {
       try {

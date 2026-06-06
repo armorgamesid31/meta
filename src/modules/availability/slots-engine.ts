@@ -28,6 +28,19 @@ export class SlotsEngine {
   private multiPersonAnchor = new MultiPersonAnchor(this);
   private slotScorer = new SlotScorer();
 
+  // Statik 200 sınırı, çok-hizmet + çok-uzman senaryolarında valid alternatifleri
+  // sessizce kesip atıyordu (audit [HIGH]). Sınırı dinamik hesaplıyoruz:
+  // person sayısı × ortalama 50 alternatif. 6 person için 300, 1 person için 100.
+  // Üst sınır 600 — sonsuz büyümeye karşı emniyet. Her durumda response'a
+  // `hasMoreAlternatives` ile silent truncation'ı işaretle.
+  private readonly MAX_COMBINATIONS_HARD_CAP = 600;
+  private getMaxCombinations(request: AvailabilityRequest): number {
+    const groupCount = Math.max(1, request.groups?.length || 1);
+    const base = 100;
+    const perPerson = 50;
+    return Math.min(this.MAX_COMBINATIONS_HARD_CAP, base + perPerson * groupCount);
+  }
+  // Geri uyumluluk için: eski referanslar için sabit hesap edilen alanı tutuyoruz.
   private readonly MAX_COMBINATIONS = 200;
 
   async generateSlots(
@@ -55,12 +68,17 @@ export class SlotsEngine {
     const data = await this.batchFetchData(request);
 
     const startSync = performance.now();
+    const maxCombinationsForRequest = this.getMaxCombinations(request);
     const synchronized = await this.multiPersonAnchor.synchronizeGroups(
       request,
       date,
       data,
-      this.MAX_COMBINATIONS,
+      maxCombinationsForRequest,
     );
+    // Silent UX loss kalkanı: cap'e ulaştıysak daha fazla alternatif var
+    // olabilir, frontend bunu kullanıcıya bildirebilir ("Daha fazla saat
+    // için tarihi daralt" tarzı).
+    const hitCombinationCap = synchronized.length >= maxCombinationsForRequest;
 
     const optimized = this.slotScorer.optimize(
       synchronized,
@@ -88,14 +106,15 @@ export class SlotsEngine {
     const endSync = performance.now();
     const executionTime = endSync - startSync;
 
-    if (executionTime > 1000 || synchronized.length >= this.MAX_COMBINATIONS) {
+    if (executionTime > 1000 || hitCombinationCap) {
       console.warn('AVAILABILITY_METRICS', {
         duration: executionTime,
         salonId: request.salonId,
         date: request.date,
         groupCount: request.groups.length,
         combinationsReturned: synchronized.length,
-        maxCombinations: this.MAX_COMBINATIONS,
+        maxCombinations: maxCombinationsForRequest,
+        hitCap: hitCombinationCap,
       });
     }
 
@@ -104,6 +123,7 @@ export class SlotsEngine {
         date: request.date,
         groups: optimized.groups,
         displaySlots: optimized.displaySlots,
+        hasMoreAlternatives: hitCombinationCap,
       };
     }
 
@@ -124,6 +144,7 @@ export class SlotsEngine {
         id: searchContext.id,
         expiresAt,
       },
+      hasMoreAlternatives: hitCombinationCap,
     };
   }
 
@@ -178,6 +199,12 @@ export class SlotsEngine {
   private async batchFetchData(request: AvailabilityRequest): Promise<IndexedData> {
     const serviceIds = [...new Set(request.groups.flatMap((group) => getGroupServiceIds(group)))];
     const date = new Date(request.date);
+    // Server TZ Europe/Istanbul'a pinned (bootstrap.ts). setHours(0,0,0,0)
+    // local midnight'i verir → Istanbul 00:00 = UTC 21:00 önceki gün.
+    // Tek-TZ topolojide doğru. AUDIT NOT: çoklu-salon TZ desteği gelirse
+    // burada salonSettings.timezone'a göre tz-aware midnight üretmemiz
+    // gerekir (Intl.DateTimeFormat veya date-fns-tz ile). Bayram/tatil
+    // günlerinin bir saatlik yanlış kayması o yapıda mümkün.
     const startOfDay = new Date(date);
     startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date(date);

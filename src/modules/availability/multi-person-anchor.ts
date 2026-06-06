@@ -74,17 +74,33 @@ export class MultiPersonAnchor {
 
   private estimateGroupDuration(group: PersonGroup, data: IndexedData): number {
     // Anchor-pick heuristic only — doesn't need to be exact. Uses
-    // gender variant when present, otherwise base service duration.
-    // Per-staff overrides are skipped here because we don't know yet
-    // which staff will be assigned.
+    // gender variant when present, otherwise WORST-CASE: all variants'in
+    // MAX duration'ı (audit [HIGH]) — gender undefined iken base duration
+    // kullanmak suboptimal anchor seçimine yol açıyordu, female 90dk +
+    // male 60dk varyant olan bir hizmette base 75dk anchor pencerelerini
+    // dar sayar. Worst-case alarak anchor over-allocates → güvenli.
+    // Per-staff overrides skipped here, staff assignment henüz belli değil.
     let total = 0;
     for (const serviceId of getGroupServiceIds(group)) {
       const service = data.servicesById.get(serviceId);
       if (!service) continue;
-      const variant = group.gender
-        ? data.serviceVariantsByServiceAndGender.get(`${serviceId}:${group.gender}`)
-        : undefined;
-      total += variant?.duration ?? service.duration;
+      let estimatedDuration: number;
+      if (group.gender) {
+        const variant = data.serviceVariantsByServiceAndGender.get(`${serviceId}:${group.gender}`);
+        estimatedDuration = variant?.duration ?? service.duration;
+      } else {
+        // Gender bilinmiyor — tüm variant'lar arasından MAX'ı al, base ile
+        // karşılaştır, hangisi büyükse onu kullan. Bu sayede anchor "yeterli
+        // pencere yok" diye yanlış elemez.
+        const femaleVariant = data.serviceVariantsByServiceAndGender.get(`${serviceId}:female`);
+        const maleVariant = data.serviceVariantsByServiceAndGender.get(`${serviceId}:male`);
+        estimatedDuration = Math.max(
+          service.duration,
+          femaleVariant?.duration ?? 0,
+          maleVariant?.duration ?? 0,
+        );
+      }
+      total += estimatedDuration;
     }
     return total;
   }
