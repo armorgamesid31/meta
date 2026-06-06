@@ -59,6 +59,9 @@ export function getBillingPlans(): BillingPlanConfig[] {
     readPlan('profesyonel_plus', 'STRIPE_PRICE_PROFESSIONAL_PLUS', 'Profesyonel+', {
       seatPriceEnvKey: 'STRIPE_PRICE_PROFESSIONAL_PLUS_SEAT_TIERED',
     }),
+    // Kurucu Salon Yıllık: aynı feature paketi, yıllık faturalama, ömür boyu kilit.
+    // Seat tiered yok (yıllık peşin = sabit fiyat). Frontend toggle ile seçilir.
+    readPlan('profesyonel_plus_annual', 'STRIPE_PRICE_PROFESSIONAL_PLUS_ANNUAL', 'Kedy Yıllık (Kurucu Salon)'),
   ].filter((item): item is BillingPlanConfig => Boolean(item));
 }
 
