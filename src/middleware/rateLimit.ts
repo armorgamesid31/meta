@@ -41,14 +41,22 @@ export const authRateLimiter = rateLimit({
  * Looser limiter for general /api traffic. Applied after multiTenant so
  * authenticated users with valid tokens still hit it but the budget is
  * generous enough that normal usage never sees it.
+ *
+ * Booking pricing-preview YUKARI bumped: kullanıcı hizmet ekle/çıkar
+ * yaptıkça frontend hem sepet hem catalog her hizmet için ayrı preview
+ * çağırıyor. 4 hizmetli katalog + hızlı tıklama = 100+/min normal.
+ * Önceki 240 limit 12 tıklamada 78 × 429 üretiyordu, "Kampanyalar
+ * hesaplanamadı" banner spamına yol açıyordu. Catalog preview frontend'de
+ * 3'erli batch + 300ms debounce'a alındı, server-side de daha gevşek bir
+ * tavan: 1200/min (20 req/sec ortalama, burst-friendly).
  */
 export const apiRateLimiter = rateLimit({
   windowMs: 60_000,
-  limit: 240,
+  limit: 1200,
   standardHeaders: true,
   legacyHeaders: false,
-  // Skip when a valid token is present + API is internal use; tune as
-  // we collect real telemetry. For now we apply broadly to be safe.
+  // Read-only "preview" endpoint'leri için ayrı bucket olabilir; şimdilik
+  // tek tavan yeterli. Telemetry topladıkça bölümlere ayır.
   handler: (_req: Request, _res: Response, next: NextFunction) => {
     next(
       new BusinessError(
