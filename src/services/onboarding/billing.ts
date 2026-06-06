@@ -29,7 +29,7 @@
 
 import Stripe from 'stripe';
 import { prisma } from '../../prisma.js';
-import { getPlanByKey } from '../billingCatalog.js';
+import { getPlanByKey, getEffectivePriceId } from '../billingCatalog.js';
 import { getOffer } from '../../onboarding/offers.js';
 
 let stripeClient: Stripe | null = null;
@@ -48,7 +48,7 @@ function getStripe(): Stripe {
  * - Otherwise use setupPeriodEndsAt.
  * - If neither is set, fall back to +14d from now (defensive).
  */
-function pickTrialEnd(salon: {
+export function pickTrialEnd(salon: {
   setupPeriodEndsAt: Date | null;
   setupBonusEndsAt: Date | null;
 }): Date {
@@ -133,6 +133,17 @@ export async function createTrialSubscriptionCheckout(input: {
   const customerId = await ensureStripeCustomer(input.salonId);
   const trialEnd = pickTrialEnd(salon);
 
+  // KURAL 4: when the plan is tiered (seat billing on), charge the tiered
+  // seat price with an initial quantity = billable seat count (raw staff
+  // count, floored at 1). Otherwise keep the flat price at quantity 1.
+  // computeBillableSeats is inlined here (prisma.staff.count) to avoid a
+  // module cycle with seatBilling.ts (which imports getStripe from here).
+  const effectivePriceId = getEffectivePriceId(plan);
+  const initialQuantity =
+    plan.pricingModel === 'tiered'
+      ? Math.max(1, await prisma.staff.count({ where: { salonId: input.salonId } }))
+      : 1;
+
   // Stripe rejects trial_end < now + 48h with status 400 — that should
   // only happen if grace already expired, in which case we shouldn't
   // offer trial at all. Detect and fall through to immediate-charge.
@@ -142,7 +153,7 @@ export async function createTrialSubscriptionCheckout(input: {
   const session = await stripe.checkout.sessions.create({
     mode: 'subscription',
     customer: customerId,
-    line_items: [{ price: plan.stripePriceId, quantity: 1 }],
+    line_items: [{ price: effectivePriceId, quantity: initialQuantity }],
     subscription_data: useTrial
       ? {
           trial_end: Math.floor(trialEnd.getTime() / 1000),
@@ -208,6 +219,97 @@ export async function createBillingPortalForSalon(input: {
     return_url: input.returnUrl,
   });
   return session.url;
+}
+
+/**
+ * KURAL 2 — "kurulum tamamlandı → Stripe trial_end uzat".
+ *
+ * When the bonus is granted (or any time the DB trial clock moves out),
+ * the salon's Stripe subscription trial_end may be stale: the trial
+ * subscription was created at card-attach time with trial_end =
+ * setupPeriodEndsAt, but the bonus pushes the real "no charge until"
+ * date out to setupBonusEndsAt. If we don't sync, Stripe charges the
+ * card while the salon still has free DB access — a live-money bug.
+ *
+ * IDEMPOTENT & SAFE-BY-CONSTRUCTION:
+ *   1. No trial subscription on Stripe yet  -> no-op (DB clock governs).
+ *   2. Subscription not in 'trialing' status -> no-op (never touch an
+ *      active / past_due / canceled subscription).
+ *   3. Read Stripe's REAL current trial_end. Only ever EXTEND it
+ *      (target > current). Never shorten — shortening could trigger an
+ *      early charge. Equal/smaller target -> no-op.
+ *   4. Floor the target at now + 49h (Stripe rejects trial_end < ~48h).
+ *   5. Idempotency-Key derived from (subscriptionId, target epoch) so a
+ *      retry with the same target is a guaranteed no-op on Stripe's side.
+ *
+ * Best-effort: callers invoke this as `void syncTrialEndToStripe(id).catch(...)`.
+ * Never throws into the caller's critical path.
+ */
+export async function syncTrialEndToStripe(salonId: number): Promise<{
+  synced: boolean;
+  reason:
+    | 'no_subscription'
+    | 'not_trialing'
+    | 'target_not_greater'
+    | 'below_min_floor'
+    | 'extended';
+  trialEnd?: Date;
+}> {
+  const sub = await prisma.salonSubscription.findFirst({
+    where: { salonId, stripeSubscriptionId: { not: null } },
+    select: { stripeSubscriptionId: true },
+    orderBy: { id: 'desc' },
+  });
+  if (!sub?.stripeSubscriptionId) {
+    return { synced: false, reason: 'no_subscription' };
+  }
+
+  const salon = await prisma.salon.findUnique({
+    where: { id: salonId },
+    select: { setupPeriodEndsAt: true, setupBonusEndsAt: true },
+  });
+  if (!salon) return { synced: false, reason: 'no_subscription' };
+
+  const stripe = getStripe();
+  const subscription = await stripe.subscriptions.retrieve(sub.stripeSubscriptionId);
+
+  // Only ever touch a subscription that Stripe still considers a trial.
+  if (subscription.status !== 'trialing') {
+    return { synced: false, reason: 'not_trialing' };
+  }
+
+  const target = pickTrialEnd(salon);
+  const targetEpoch = Math.floor(target.getTime() / 1000);
+
+  // Stripe rejects trial_end < now + 48h. Keep a 49h safety margin; if the
+  // computed target is already inside that window there is nothing useful to
+  // extend to (the salon is at/near paywall) — leave Stripe alone.
+  const minEpoch = Math.floor((Date.now() + 49 * 60 * 60 * 1000) / 1000);
+  if (targetEpoch < minEpoch) {
+    return { synced: false, reason: 'below_min_floor' };
+  }
+
+  // NEVER shorten. Only extend when the DB target is strictly later than
+  // what Stripe currently has. Equal target on a retry => no-op.
+  const currentTrialEnd = Number(subscription.trial_end || 0);
+  if (targetEpoch <= currentTrialEnd) {
+    return { synced: false, reason: 'target_not_greater' };
+  }
+
+  await stripe.subscriptions.update(
+    sub.stripeSubscriptionId,
+    {
+      trial_end: targetEpoch,
+      // Don't generate a proration invoice for the trial shift.
+      proration_behavior: 'none',
+    },
+    {
+      // Deterministic key: same (sub, target) => Stripe dedupes the retry.
+      idempotencyKey: `trialend:${sub.stripeSubscriptionId}:${targetEpoch}`,
+    },
+  );
+
+  return { synced: true, reason: 'extended', trialEnd: target };
 }
 
 export { getStripe };

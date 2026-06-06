@@ -3,6 +3,10 @@ import { prisma } from '../prisma.js';
 import { createOwnerPendingProvisioning } from './inviteService.js';
 import { getPlanByKey } from './billingCatalog.js';
 import { attachReferredSalon } from './referralService.js';
+import {
+  handleFirstPaidInvoice,
+  tryApplyPendingRewardsForReferrer,
+} from './referralRewardService.js';
 import { enqueueActivationDelivery } from './activationDeliveryQueue.js';
 import {
   setPaymentMethodOnFile,
@@ -364,6 +368,16 @@ export async function processStripeWebhook(rawBody: Buffer, signature: string) {
             stripeCustomerId: customerId,
           });
         }
+
+        // KURAL 3 (deferred apply): if THIS salon is a referrer whose
+        // referred salon already paid but the reward stayed PENDING (the
+        // referrer had no card at payment time), the referrer now has a
+        // subscription — retry the coupon apply. Idempotent + best-effort.
+        if (event.type === 'customer.subscription.created') {
+          await tryApplyPendingRewardsForReferrer(existing.salonId).catch((err) => {
+            console.error('[stripe-webhook] deferred referral apply failed', err);
+          });
+        }
       } else {
         // Legacy flow path: stripeBilling row doesn't exist yet (the
         // pay-first marketing checkout creates it inside
@@ -379,6 +393,39 @@ export async function processStripeWebhook(rawBody: Buffer, signature: string) {
           },
         });
       }
+    }
+  }
+
+  // KURAL 3 — referral reward fires on the REFERRED salon's first real
+  // payment. invoice.paid + amount_paid>0 + billing_reason create|cycle.
+  // The whole branch sits inside the StripeWebhookEvent idempotency gate
+  // (inserted at the top of this function), and handleFirstPaidInvoice is
+  // itself idempotent (firstPaymentAt / firstPaymentAppliedAt guards).
+  if (event.type === 'invoice.paid') {
+    const invoice = event.data.object as Stripe.Invoice;
+    const subscriptionValue = (invoice as any)?.subscription
+      ?? (invoice as any)?.parent?.subscription_details?.subscription;
+    const stripeSubscriptionId =
+      typeof subscriptionValue === 'string'
+        ? subscriptionValue
+        : (subscriptionValue?.id ?? null);
+    const stripeCustomerId =
+      typeof invoice.customer === 'string'
+        ? invoice.customer
+        : (invoice.customer?.id ?? null);
+    const amountPaid = Number((invoice as any)?.amount_paid || 0);
+    const billingReason = (invoice as any)?.billing_reason as string | null | undefined;
+
+    try {
+      const result = await handleFirstPaidInvoice({
+        stripeCustomerId,
+        stripeSubscriptionId,
+        amountPaid,
+        billingReason,
+      });
+      logCompletion({ referralReward: result });
+    } catch (err) {
+      console.error('[stripe-webhook] handleFirstPaidInvoice failed', err);
     }
   }
 

@@ -6,6 +6,7 @@ import { logCustomerBehavior, calculateCancellationSeverity, BehaviorType } from
 import { CATEGORIES, CATEGORY_ORDER } from '../constants/categories.js';
 import { normalizeLocale } from '../constants/locales.js';
 import { resolveServiceTranslations } from '../services/serviceTranslations.js';
+import { syncSubscriptionQuantity } from '../services/seatBilling.js';
 import { BusinessError } from '../lib/errors.js';
 import { slugify, withSlugCollision } from '../utils/slug.js';
 import { resolveStaffProfile } from '../services/staffProfileResolver.js';
@@ -938,6 +939,12 @@ router.post('/staff', authenticateToken, async (req: any, res: any) => {
       },
     });
 
+    // KURAL 4: seat count changed -> reconcile Stripe subscription quantity.
+    // Best-effort + idempotent + no-op when seat billing is disabled.
+    void syncSubscriptionQuantity(req.user.salonId).catch((err) => {
+      console.error('[salon:staff:create] syncSubscriptionQuantity failed', err);
+    });
+
     res.status(201).json({ staff });
   } catch (error) {
     console.error('Error creating staff:', error);
@@ -1010,6 +1017,11 @@ router.delete('/staff/:id', authenticateToken, async (req: any, res: any) => {
 
     await prisma.staff.delete({
       where: { id: parseInt(id) },
+    });
+
+    // KURAL 4: seat count changed -> reconcile Stripe subscription quantity.
+    void syncSubscriptionQuantity(req.user.salonId).catch((err) => {
+      console.error('[salon:staff:delete] syncSubscriptionQuantity failed', err);
     });
 
     res.json({ message: 'Staff member deleted successfully' });

@@ -27,6 +27,7 @@ import {
   type AcquisitionOffer,
 } from '../../onboarding/offers.js';
 import { computeSetupCenterSnapshot } from './progress.js';
+import { syncTrialEndToStripe } from './billing.js';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -225,6 +226,19 @@ async function doGrantBonus(
       offerKey: offer.key,
     });
   });
+
+  // KURAL 2: bonus just moved the DB trial clock out to setupBonusEndsAt.
+  // If this salon already attached a card (Stripe trial subscription),
+  // push its trial_end out so Stripe doesn't charge while the salon still
+  // has free access. Best-effort + idempotent (helper only ever EXTENDS,
+  // never shortens, and no-ops when there's no trialing subscription).
+  void syncTrialEndToStripe(salonId).catch((err) => {
+    console.error('[lifecycle] syncTrialEndToStripe after bonus failed', {
+      salonId,
+      error: err instanceof Error ? err.message : err,
+    });
+  });
+
   return { granted: true, reason: 'granted_now', bonusEndsAt };
 }
 

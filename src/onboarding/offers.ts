@@ -44,9 +44,25 @@ export interface AcquisitionOffer {
   readonly bonusCriteriaSet: CriteriaSetKey;
 }
 
-export const DEFAULT_OFFER_KEY = 'STANDARD_2026_05' as const;
+export const DEFAULT_OFFER_KEY = 'STANDARD_2026_06' as const;
 
 const OFFERS: Record<string, AcquisitionOffer> = {
+  // Aktif kampanya (2026-06): 15 gün kurulum + kurulum tamamlanınca +15 gün = toplam 30.
+  STANDARD_2026_06: {
+    key: 'STANDARD_2026_06',
+    label: '15 gün kurulum + 15 gün bonus + 7 gün grace',
+    heroCopy:
+      '15 gün ücretsiz. Kurulumu 15 gün içinde tamamlarsan +15 gün daha ücretsiz — toplam 30 gün. Kart sorulmaz.',
+    setupPeriodDays: 15,
+    bonusPeriodDays: 15,
+    gracePeriodDays: 7,
+    // Kurucu kararı (2026-06-06, "A"): bonus için KART ŞARTI YOK — kurulum
+    // tamamlanınca kart eklenmemiş olsa bile +15 gün verilir (agresif penetrasyon).
+    requiresPaymentMethodForBonus: false,
+    defaultPlanKey: 'profesyonel_plus',
+    bonusCriteriaSet: 'STANDARD_V1_BONUS',
+  },
+  // Eski kampanya — SİLME: bu offerKey ile damgalı mevcut salonlar 14+30 sözleşmesinde.
   STANDARD_2026_05: {
     key: 'STANDARD_2026_05',
     label: '14 gün kurulum + 30 gün bonus + 7 gün grace',

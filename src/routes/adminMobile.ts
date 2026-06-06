@@ -6,6 +6,7 @@ import { prisma } from '../prisma.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { BusinessError } from '../lib/errors.js';
+import { syncSubscriptionQuantity } from '../services/seatBilling.js';
 import { deriveTones, isBlockedPastel, isPresetId, normalizeHex } from '../lib/theme/derive.js';
 import { syncCustomerToGlobalIdentity } from '../services/globalCustomerIdentity.js';
 import {
@@ -8731,6 +8732,12 @@ router.post('/staff', authenticateToken, async (req: any, res: any) => {
       },
     });
 
+    // KURAL 4: seat count changed -> reconcile Stripe subscription quantity.
+    // Best-effort + idempotent + no-op when seat billing is disabled.
+    void syncSubscriptionQuantity(salonId).catch((err) => {
+      console.error('[adminMobile:staff:create] syncSubscriptionQuantity failed', err);
+    });
+
     return res.status(201).json({ item: mapStaffForMobile(staff) });
   } catch (error) {
     if ((error as Error)?.message === 'INVALID_SERVICE_ASSIGNMENT') {
@@ -9024,6 +9031,11 @@ router.delete('/staff/:id', authenticateToken, async (req: any, res: any) => {
 
     await prisma.staff.delete({
       where: { id: staffId },
+    });
+
+    // KURAL 4: seat count changed -> reconcile Stripe subscription quantity.
+    void syncSubscriptionQuantity(salonId).catch((err) => {
+      console.error('[adminMobile:staff:delete] syncSubscriptionQuantity failed', err);
     });
 
     return res.status(204).send();

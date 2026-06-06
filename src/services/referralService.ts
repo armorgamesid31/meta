@@ -59,6 +59,13 @@ export async function attachReferredSalon(input: {
     return { linked: false as const, reason: 'ALREADY_LINKED' };
   }
 
+  // Semantics (KURAL 3):
+  //   QUALIFIED = referred salon registered (now). The reward for the
+  //   REFERRER is created PENDING and only becomes REWARDED once the
+  //   referred salon pays its first real invoice (see referralRewardService
+  //   + invoice.paid webhook). Reward = 100%-off / 2-month coupon.
+  // The @@unique([referralInviteId, salonId]) on ReferralReward guarantees a
+  // single reward row per (invite, beneficiary) — no double bonus possible.
   const invite = await prisma.referralInvite.create({
     data: {
       referralCodeId: referral.id,
@@ -69,8 +76,8 @@ export async function attachReferredSalon(input: {
         create: {
           salonId: referral.salonId,
           status: 'PENDING',
-          rewardType: 'FREE_MONTH',
-          notes: 'Referral qualified after checkout completion.',
+          rewardType: 'FREE_2_MONTHS',
+          notes: 'Referral qualified at referee signup; pays out on referee first paid invoice.',
         },
       },
     },
