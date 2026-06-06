@@ -55,6 +55,7 @@ import internalLifecycleRoutes from './routes/internalLifecycle.js';
 import billingRoutes from './routes/billing.js';
 import checkoutRoutes from './routes/checkout.js';
 import publicRoutes from './routes/public.js';
+import publicCampaignRoutes from './routes/publicCampaign.js';
 import setupCenterRoutes from './routes/setupCenter.js';
 import internalSetupCenterRoutes from './routes/internalSetupCenter.js';
 import conversationActionsRoutes from './routes/conversationActions.js';
@@ -348,6 +349,8 @@ app.use('/api/feedback', feedbackRoutes);
 app.use('/api/booking', bookingContextRoutes);
 app.use('/api/waitlist', waitlistRoutes);
 app.use('/api/public', publicRoutes);
+// Kurucu Salon tier doluluk sayacı — public, 30 sn edge cache.
+app.use('/api/public', publicCampaignRoutes);
 app.use('/api/billing', billingRoutes);
 app.use('/api/checkout', checkoutRoutes);
 // Setup Center (salon-facing): progress dashboard + criterion mutations.

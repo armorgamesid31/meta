@@ -99,6 +99,22 @@ model Salon {
   // jobs/scheduledDeletions cascades-delete after the timestamp
   // passes.
   deletionScheduledAt         DateTime?                        @db.Timestamp(6)
+  // Kurucu Salon kampanyası tier kilidi.
+  // campaignSignupRank: atomik global sıra (PostgreSQL sequence
+  //   salon_campaign_signup_rank_seq tarafından doldurulur). null =
+  //   kampanya kapsamında olmayan eski salon (migration öncesi).
+  // campaignTier: 'tier1' (1-50), 'tier2' (51-100), 'tier3' (101-150),
+  //   'tier4' (151-500), 'after_campaign' (501+).
+  // campaignLockedMonthlyPriceId / campaignLockedAnnualPriceId:
+  //   salon kaydolurken o sıradaki tier'ın Stripe price id'si kilitlenir
+  //   ve checkout açılırken (env değişse bile) bu kullanılır. null =
+  //   fallback to STRIPE_PRICE_PROFESSIONAL_PLUS env'i (eski salonlar
+  //   ve "after_campaign" senaryosu için).
+  campaignSignupRank          Int?                             @unique(map: "uq_salon_campaign_signup_rank")
+  campaignTier                String?
+  campaignLockedMonthlyPriceId String?
+  campaignLockedAnnualPriceId String?
+  campaignLockedAt            DateTime?                        @db.Timestamp(6)
   setupEvents                 SalonOnboardingEvent[]
   activatedLeads              Lead[]                           @relation("LeadActivatedSalon")
   analyticsPresets            AnalyticsPreset[]

@@ -30,6 +30,13 @@ router.post('/trial-subscription/checkout', authenticateToken, async (req: any, 
   }
   const successUrl = String(req.body?.successUrl || '').trim();
   const cancelUrl = String(req.body?.cancelUrl || '').trim();
+  // Kurucu Salon: frontend Aylık/Yıllık toggle ile geçer. Sadece bilinen
+  // plan key'leri kabul edilir — diğerleri offer.defaultPlanKey'e düşer.
+  const rawPlanKey = String(req.body?.planKey || '').trim().toLowerCase();
+  const planKeyOverride =
+    rawPlanKey === 'profesyonel_plus' || rawPlanKey === 'profesyonel_plus_annual'
+      ? rawPlanKey
+      : undefined;
   if (!successUrl || !cancelUrl) {
     throw new BusinessError(
       'VALIDATION_FAILED',
@@ -42,6 +49,7 @@ router.post('/trial-subscription/checkout', authenticateToken, async (req: any, 
       salonId: Number(req.user.salonId),
       successUrl,
       cancelUrl,
+      planKeyOverride,
     });
     return res.json(result);
   } catch (error: any) {

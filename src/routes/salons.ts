@@ -10,6 +10,7 @@ import { ensureSalonServiceCategories } from '../services/salonCategorySetup.js'
 import { ensureSalonAccessSeed } from '../services/accessControl.js';
 import { startSetupPeriod } from '../services/onboarding/lifecycle.js';
 import { ensureSalonReferralCode, attachReferredSalon } from '../services/referralService.js';
+import { allocateCampaignRankAndLock } from '../services/campaignTier.js';
 import {
   PRESET_DEFAULT_BRAND,
   deriveTones,
@@ -186,6 +187,19 @@ router.post('/', authenticateIdentity, async (req: any, res: any) => {
     return { salon, legacyUser, membership };
   });
 
+  // Kurucu Salon tier kilidi: atomik global sıra al ve tier price'larını
+  // damgala. Bu salon kayıt anındaki sırayı sabitler — env'deki price
+  // id'leri sonradan değişse bile checkout açıldığında bu salon için
+  // damgalanan price kullanılır. Salon yaratma transaction'ı başarılı
+  // olduktan SONRA çağrıyoruz — burada bir hata olursa salon kampanya
+  // dışı kalır (campaignSignupRank null) ve manuel müdahale ile
+  // damgalanabilir. Salon zaten oluştuğu için kullanıcının akışı
+  // kesintiye uğramaz.
+  try {
+    await allocateCampaignRankAndLock(prisma, created.salon.id);
+  } catch (err) {
+    console.error('[salons:create] allocateCampaignRankAndLock failed', err);
+  }
   // Best-effort setup tasks — failures here shouldn't block the user.
   try {
     await ensureSalonServiceCategories(created.salon.id);

@@ -110,6 +110,12 @@ export async function createTrialSubscriptionCheckout(input: {
   salonId: number;
   successUrl: string;
   cancelUrl: string;
+  /**
+   * Opsiyonel: hangi plan key ile checkout açılacak ('profesyonel_plus'
+   * veya 'profesyonel_plus_annual'). Verilmezse offer.defaultPlanKey
+   * kullanılır. Kurucu Salon yıllık toggle'ı buradan akar.
+   */
+  planKeyOverride?: string;
 }): Promise<{ checkoutUrl: string; sessionId: string }> {
   const salon = await prisma.salon.findUnique({
     where: { id: input.salonId },
@@ -118,31 +124,80 @@ export async function createTrialSubscriptionCheckout(input: {
       offerKey: true,
       setupPeriodEndsAt: true,
       setupBonusEndsAt: true,
+      campaignTier: true,
+      campaignLockedMonthlyPriceId: true,
+      campaignLockedAnnualPriceId: true,
     },
   });
   if (!salon) throw new Error('BILLING_SALON_NOT_FOUND');
   const offer = getOffer(salon.offerKey);
   if (!offer) throw new Error('BILLING_OFFER_OUT_OF_SCOPE');
 
-  const plan = getPlanByKey(offer.defaultPlanKey);
+  const planKey = (input.planKeyOverride || offer.defaultPlanKey).trim().toLowerCase();
+  const plan = getPlanByKey(planKey);
   if (!plan) {
-    throw new Error(`BILLING_PLAN_NOT_CONFIGURED:${offer.defaultPlanKey}`);
+    throw new Error(`BILLING_PLAN_NOT_CONFIGURED:${planKey}`);
   }
 
   const stripe = getStripe();
   const customerId = await ensureStripeCustomer(input.salonId);
   const trialEnd = pickTrialEnd(salon);
 
+  // Kurucu Salon tier override: profesyonel_plus / profesyonel_plus_annual
+  // için, salonun damgalanmış tier price id'si varsa onu kullan. Aksi
+  // halde mevcut env (STRIPE_PRICE_PROFESSIONAL_PLUS / _ANNUAL) fallback.
+  // tier1-3 = flat fixed amount (seat billing yok), tier4 = mevcut
+  // profesyonel_plus (tiered seat billing açıksa tiered, yoksa flat).
+  const isAnnual = planKey === 'profesyonel_plus_annual';
+  const isMonthlyProfPlus = planKey === 'profesyonel_plus';
+  const lockedPriceId = isAnnual
+    ? salon.campaignLockedAnnualPriceId
+    : isMonthlyProfPlus
+      ? salon.campaignLockedMonthlyPriceId
+      : null;
+  // tier1-3 salonları seat billing'e KONULMAZ — flat quantity:1, sabit fiyat.
+  // tier4 ise mevcut profesyonel_plus davranışını korur (seat tiered olabilir).
+  const isCampaignFlatTier =
+    salon.campaignTier === 'tier1' ||
+    salon.campaignTier === 'tier2' ||
+    salon.campaignTier === 'tier3';
+
   // KURAL 4: when the plan is tiered (seat billing on), charge the tiered
   // seat price with an initial quantity = billable seat count (raw staff
   // count, floored at 1). Otherwise keep the flat price at quantity 1.
   // computeBillableSeats is inlined here (prisma.staff.count) to avoid a
   // module cycle with seatBilling.ts (which imports getStripe from here).
-  const effectivePriceId = getEffectivePriceId(plan);
-  const initialQuantity =
-    plan.pricingModel === 'tiered'
-      ? Math.max(1, await prisma.staff.count({ where: { salonId: input.salonId } }))
-      : 1;
+  //
+  // Kurucu Salon tier1-3 override: tier4'ten alt tier'larda flat fiyat —
+  // seat tiered kullanılmaz (lockedPriceId zaten flat price id'sidir).
+  let effectivePriceId: string;
+  let initialQuantity: number;
+  if (lockedPriceId) {
+    effectivePriceId = lockedPriceId;
+    if (isCampaignFlatTier) {
+      initialQuantity = 1;
+    } else {
+      // tier4: planın pricingModel'ine bak. Eğer tiered seat billing
+      // açıksa effectivePriceId'i seat price ile değiştir; yoksa flat.
+      // lockedPriceId tier4 için zaten STRIPE_PRICE_PROFESSIONAL_PLUS
+      // (flat) — seat tiered envaltında configure edildiyse onu seç.
+      if (plan.pricingModel === 'tiered' && plan.seatPriceId) {
+        effectivePriceId = plan.seatPriceId;
+        initialQuantity = Math.max(
+          1,
+          await prisma.staff.count({ where: { salonId: input.salonId } }),
+        );
+      } else {
+        initialQuantity = 1;
+      }
+    }
+  } else {
+    effectivePriceId = getEffectivePriceId(plan);
+    initialQuantity =
+      plan.pricingModel === 'tiered'
+        ? Math.max(1, await prisma.staff.count({ where: { salonId: input.salonId } }))
+        : 1;
+  }
 
   // Stripe rejects trial_end < now + 48h with status 400 — that should
   // only happen if grace already expired, in which case we shouldn't
