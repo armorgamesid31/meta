@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { __testing } from '../../src/services/salonAgentContext.js';
 
-const { TONE_DIRECTIVES, normalizeTone, buildStyleDirective, buildSalonOneLiner } = __testing;
+const { TONE_DIRECTIVES, normalizeTone, buildStyleDirective, buildSalonOneLiner, buildCustomerCalibration } =
+  __testing;
 
 describe('salonAgentContext — pure logic', () => {
   describe('normalizeTone (Salon.communicationTone enum ↔ agent lowercase)', () => {
@@ -27,7 +28,7 @@ describe('salonAgentContext — pure logic', () => {
   describe('TONE_DIRECTIVES — content guarantees', () => {
     it('friendly mentions "sen" diye hitap and contains "samimi"', () => {
       expect(TONE_DIRECTIVES.friendly).toMatch(/sen/i);
-      expect(TONE_DIRECTIVES.friendly).toMatch(/samimi/i);
+      expect(TONE_DIRECTIVES.friendly).toMatch(/SAMİMİ/);
     });
 
     it('balanced mentions Hanım/Bey (mesafeli ama davetkâr)', () => {
@@ -39,10 +40,10 @@ describe('salonAgentContext — pure logic', () => {
       expect(TONE_DIRECTIVES.professional).toMatch(/Emoji kullanma/i);
     });
 
-    it('all directives are single-line dense (no double newlines, < 350 chars)', () => {
+    it('all directives are non-empty, multi-section recipes (# HİTAP bölümlü)', () => {
       for (const key of Object.keys(TONE_DIRECTIVES) as Array<keyof typeof TONE_DIRECTIVES>) {
-        expect(TONE_DIRECTIVES[key]).not.toMatch(/\n\n/);
-        expect(TONE_DIRECTIVES[key].length).toBeLessThan(350);
+        expect(TONE_DIRECTIVES[key].length).toBeGreaterThan(200);
+        expect(TONE_DIRECTIVES[key]).toMatch(/# HİTAP/);
       }
     });
   });
@@ -133,6 +134,55 @@ describe('salonAgentContext — pure logic', () => {
       expect(out).toMatch(/Salon: X/);
       expect(out).toMatch(/10:00–22:00/);
       expect(out).not.toMatch(/Konum:/);
+    });
+  });
+
+  describe('buildCustomerCalibration — erkek müşteride yansıtma kapalı', () => {
+    const erkek = {
+      isRegistered: true,
+      nameSource: 'customer_record' as const,
+      displayName: 'Kerem Demir',
+      firstName: 'Kerem',
+      registeredName: 'Kerem Demir',
+      channelProfileName: null,
+      ageBracket: 'adult' as const,
+      honorific: 'Bey' as const,
+      totalAppointments: 3,
+      lastVisit: { daysAgo: 10, serviceName: 'saç kesimi', staffName: null },
+    };
+
+    it('friendly + erkek (Bey) → yansıtma yasağı eklenir', () => {
+      const out = buildCustomerCalibration('friendly', erkek);
+      expect(out).toMatch(/ERKEK MÜŞTERİ/);
+      expect(out).toMatch(/yansıtma yapma/i);
+    });
+
+    it('friendly + kadın (Hanım) → yansıtma yasağı YOK (eski davranış)', () => {
+      const out = buildCustomerCalibration('friendly', {
+        ...erkek,
+        honorific: 'Hanım',
+        firstName: 'Esin',
+        displayName: 'Esin Ak',
+        registeredName: 'Esin Ak',
+      });
+      expect(out).not.toMatch(/ERKEK MÜŞTERİ/);
+    });
+
+    it('friendly + cinsiyet bilinmiyor (null) → yansıtma yasağı YOK', () => {
+      const out = buildCustomerCalibration('friendly', { ...erkek, honorific: null });
+      expect(out).not.toMatch(/ERKEK MÜŞTERİ/);
+    });
+
+    it('erkek istisnası kayıtsız erkek dalında da geçerli', () => {
+      const out = buildCustomerCalibration('friendly', {
+        ...erkek,
+        isRegistered: false,
+        nameSource: 'channel_profile',
+        registeredName: null,
+        lastVisit: null,
+        totalAppointments: 0,
+      });
+      expect(out).toMatch(/ERKEK MÜŞTERİ/);
     });
   });
 });

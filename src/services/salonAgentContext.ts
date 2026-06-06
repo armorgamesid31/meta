@@ -146,6 +146,7 @@ const FRIENDLY_DIRECTIVE = [
   '',
   '# YANSITMA (mirror — izinli istisna)',
   '- Müşteri sana "canım", "tatlım", "abla", "abi", "hocam" gibi yakınlık eki kullanırsa → aynı tarzla bir kez karşılık verebilirsin ("Tabii canım", "Elbette hocam").',
+  '- ERKEK MÜŞTERİ İSTİSNASI (Cinsiyet: erkek): yansıtma YOK — müşteri "canım/aşkım/abi/kanka" dese bile yakınlık eki kullanma, sade isimle hitap et. Yansıtma yalnızca kadın/bilinmeyen müşteride; kalibrasyon satırı bağlayıcıdır.',
   '- Yansıtma sadece müşteri başlattığında, abartmadan, cevap başına 1 kez.',
   '- Agresif dil/küfür → yansıtma YOK, doğrudan tool_request_handover.',
   '',
@@ -515,30 +516,38 @@ export function buildCustomerCalibration(tone: AgentTone, c: CustomerSnapshot): 
     // Cinsiyet bilinmiyorsa default "Hanım" (Türkiye salon müşteri profili kadın ağırlıklı)
     const hon = c.honorific || 'Hanım';
     const firstHon = c.firstName ? `${c.firstName} ${hon}` : hon;
-    // 55+ override — yaş bilgisi her şeyin önüne geçer
-    if (c.ageBracket === 'senior') {
-      return `Müşteri 55+ yaşında. Samimi cümle yapısı kalır ama HER KOŞULDA "siz" + "${firstHon}". Yakınlık eki yok.`;
-    }
-    // Kayıtsız
-    if (!c.isRegistered) {
-      const unregNote = ' Kayıtsız: magic link ilk gönderiminde BİR KEZ "sadece 1 kez hızlı kayıt, sonraki randevularda gerek olmayacak" vurgusunu ekle.';
-      if (c.nameSource === 'channel_profile' && c.firstName) {
-        return `Müşteri kayıtsız, isim kanaldan ("${c.firstName}") — gerçek adı olmayabilir. "siz" + "${firstHon}" kullan, yakınlık eki yok.` + unregNote;
+    const base = ((): string => {
+      // 55+ override — yaş bilgisi her şeyin önüne geçer
+      if (c.ageBracket === 'senior') {
+        return `Müşteri 55+ yaşında. Samimi cümle yapısı kalır ama HER KOŞULDA "siz" + "${firstHon}". Yakınlık eki yok.`;
       }
-      return 'Müşterinin adı bilinmiyor. "Merhaba, hoş geldiniz" — uydurma isim kullanma, "siz" + nötr kal.' + unregNote;
+      // Kayıtsız
+      if (!c.isRegistered) {
+        const unregNote = ' Kayıtsız: magic link ilk gönderiminde BİR KEZ "sadece 1 kez hızlı kayıt, sonraki randevularda gerek olmayacak" vurgusunu ekle.';
+        if (c.nameSource === 'channel_profile' && c.firstName) {
+          return `Müşteri kayıtsız, isim kanaldan ("${c.firstName}") — gerçek adı olmayabilir. "siz" + "${firstHon}" kullan, yakınlık eki yok.` + unregNote;
+        }
+        return 'Müşterinin adı bilinmiyor. "Merhaba, hoş geldiniz" — uydurma isim kullanma, "siz" + nötr kal.' + unregNote;
+      }
+      // Kayıtlı + 55-/unknown
+      if (c.lastVisit && c.lastVisit.daysAgo <= 60) {
+        const visitNote = c.lastVisit.serviceName
+          ? ` (son: ${c.lastVisit.serviceName}${c.lastVisit.staffName ? ', ' + c.lastVisit.staffName : ''})`
+          : '';
+        return `Müşteri kayıtlı, son ziyaret ${c.lastVisit.daysAgo} gün önce${visitNote}. "sen" + sade isim ("${c.firstName || 'müşteri'}"). Geçmiş ziyarete referans verebilirsin.`;
+      }
+      if (c.lastVisit) {
+        const greeting = c.lastVisit.daysAgo >= 90 ? ' Selamlamada "uzun zaman olmuş" tonu uygun.' : '';
+        return `Müşteri kayıtlı, son ziyaret ${c.lastVisit.daysAgo} gün önce. "sen" + "${firstHon}".${greeting}`;
+      }
+      return `Müşteri kayıtlı ama henüz randevu geçmişi yok. "sen" + "${firstHon}". Geçmişe referans verme.`;
+    })();
+    // Erkek müşteri (cinsiyet kesin "Bey") → samimi tonda yansıtma KAPALI. Koşulu kod
+    // belirler (deterministik); modele "erkekse..." değerlendirmesi bırakılmaz.
+    if (c.honorific === 'Bey') {
+      return base + ' ERKEK MÜŞTERİ — KESİN KURAL: "canım/aşkım/cicim/birtanem/güzelim/tatlım/abi/kanka/hocam/dostum/olum" gibi HİÇBİR yakınlık eki ya da sevgi sözcüğü kullanma; müşteri sana böyle seslense BİLE yansıtma yapma, yalnızca sade ismiyle (ismi yoksa hitapsız) hitap et.';
     }
-    // Kayıtlı + 55-/unknown
-    if (c.lastVisit && c.lastVisit.daysAgo <= 60) {
-      const visitNote = c.lastVisit.serviceName
-        ? ` (son: ${c.lastVisit.serviceName}${c.lastVisit.staffName ? ', ' + c.lastVisit.staffName : ''})`
-        : '';
-      return `Müşteri kayıtlı, son ziyaret ${c.lastVisit.daysAgo} gün önce${visitNote}. "sen" + sade isim ("${c.firstName || 'müşteri'}"). Geçmiş ziyarete referans verebilirsin.`;
-    }
-    if (c.lastVisit) {
-      const greeting = c.lastVisit.daysAgo >= 90 ? ' Selamlamada "uzun zaman olmuş" tonu uygun.' : '';
-      return `Müşteri kayıtlı, son ziyaret ${c.lastVisit.daysAgo} gün önce. "sen" + "${firstHon}".${greeting}`;
-    }
-    return `Müşteri kayıtlı ama henüz randevu geçmişi yok. "sen" + "${firstHon}". Geçmişe referans verme.`;
+    return base;
   }
 
   // balanced — her durumda "siz" + "[İlk İsim] Hanım/Bey", yaş override yok
