@@ -34,6 +34,17 @@ type CampaignMeta = {
   referralStats?: { invitedCount: number; joinedCount: number; walletBalance: number };
   loyalty?: { progress: number; threshold: number; rewardLabel: string; rewardEligibleServiceNames: string[] };
   billThreshold?: { thresholdAmount: number; rewardLabel: string };
+  // UX2 Fix 5 — kampanya HİZMET KAPSAMI. Frontend bu bilgiyi okuyup hizmet
+  // kartında "X kampanyada geçerli" / "Bu hizmette kampanya yok" rozeti
+  // gösterebilir. Kural:
+  //  - eligibleServiceIds dolu → SADECE bu hizmetler dahil (whitelist)
+  //  - excludedServiceIds dolu → bu hizmetler hariç (blacklist)
+  //  - ikisi de boş → tüm hizmetler dahil
+  serviceScope?: {
+    kind: 'ALL' | 'WHITELIST' | 'BLACKLIST';
+    eligibleServiceIds?: number[];
+    excludedServiceIds?: number[];
+  };
 };
 
 const TR_DAY_NAMES = ['Paz', 'Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt'];
@@ -147,6 +158,23 @@ async function computeCampaignsMeta(input: {
     const cfg = (camp.config || {}) as Record<string, any>;
     const typeKey = String(camp.type || '').toUpperCase();
     const entry: CampaignMeta = { eligible: true };
+
+    // UX2 Fix 5 — serviceScope hesaplaması (her kampanya tipi için generic).
+    // campaignPricing.ts:isServiceEligibleByScope ile aynı mantık.
+    const toIdList = (v: unknown): number[] | undefined => {
+      if (!Array.isArray(v)) return undefined;
+      const ids = v.map((x) => Number(x)).filter((n) => Number.isInteger(n) && n > 0);
+      return ids.length > 0 ? ids : undefined;
+    };
+    const eligIds = toIdList(cfg.eligibleServiceIds);
+    const exclIds = toIdList(cfg.excludedServiceIds);
+    if (eligIds && eligIds.length > 0) {
+      entry.serviceScope = { kind: 'WHITELIST', eligibleServiceIds: eligIds };
+    } else if (exclIds && exclIds.length > 0) {
+      entry.serviceScope = { kind: 'BLACKLIST', excludedServiceIds: exclIds };
+    } else {
+      entry.serviceScope = { kind: 'ALL' };
+    }
 
     if (typeKey === 'WELCOME_FIRST_VISIT') {
       entry.welcomeUsed = hasAnyAppt;
