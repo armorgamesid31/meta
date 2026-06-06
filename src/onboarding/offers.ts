@@ -52,7 +52,7 @@ const OFFERS: Record<string, AcquisitionOffer> = {
     key: 'STANDARD_2026_06',
     label: '15 gün kurulum + 15 gün bonus + 7 gün grace',
     heroCopy:
-      '15 gün ücretsiz. Kurulumu 15 gün içinde tamamlarsan +15 gün daha ücretsiz — toplam 30 gün. Kart sorulmaz.',
+      '15 gün ücretsiz. Kurulumu 15 gün içinde tamamlarsan +15 gün daha ücretsiz — toplam 30 gün. Kart sorulmaz. Kurucu Salon kampanyası: ilk 500 salon 999 TL/ay (sonra 1.999 TL).',
     setupPeriodDays: 15,
     bonusPeriodDays: 15,
     gracePeriodDays: 7,
