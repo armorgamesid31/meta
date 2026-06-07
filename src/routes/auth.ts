@@ -5,7 +5,7 @@ import { randomBytes } from 'node:crypto';
 import { prisma } from '../prisma.js';
 import { authenticateToken, authenticateIdentity } from '../middleware/auth.js';
 import { InviteStatus, UserRole } from '@prisma/client';
-import { createAuthTokens, createIdentityTokens, revokeRefreshToken, rotateRefreshToken } from '../services/mobileAuth.js';
+import { createAuthTokens, createIdentityTokens, createPlatformAccessTokens, revokeRefreshToken, rotateRefreshToken } from '../services/mobileAuth.js';
 import { verifyGoogleIdToken } from '../services/googleAuth.js';
 import { verifyAppleIdToken } from '../services/appleAuth.js';
 import {
@@ -14,7 +14,14 @@ import {
   OAuthEmailCollisionError,
 } from '../services/oauthLogin.js';
 import { ensureSalonServiceCategories } from '../services/salonCategorySetup.js';
-import { ensureSalonAccessSeed } from '../services/accessControl.js';
+import { ensureSalonAccessSeed, writeAccessAudit } from '../services/accessControl.js';
+import {
+  getActivePlatformRole,
+  resolveEnterableSalon,
+  isPlatformRole,
+  PLATFORM_EFFECTIVE_ROLE,
+  PLATFORM_AUDIT_ACTION_ENTER,
+} from '../services/platformAccess.js';
 import { activateInvite, hashPlainToken, validateInvite, redeemInviteForIdentity } from '../services/inviteService.js';
 import { startSetupPeriod } from '../services/onboarding/lifecycle.js';
 import { createPhoneVerification, verifyPhoneCode } from '../services/phoneVerification.js';
@@ -247,15 +254,22 @@ router.post('/login', async (req: any, res: any) => {
     // invite). Mirrors what activateOnboarding returns for SELF_REGISTER.
     if (!memberships.length) {
       const tokens = await createIdentityTokens({ identityId: identity.id });
+      // A pure platform operator (admin / support) has no salon membership
+      // and lands here. Surface platformRole so the client routes them to the
+      // salon picker (GET /auth/platform/salons → POST /auth/platform/enter-salon)
+      // instead of the "open a salon" onboarding welcome screen.
       return res.json({
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
+        platformRole: identity.platformRole || null,
+        requiresPlatformSalonSelection: isPlatformRole(identity.platformRole),
         user: {
           id: identity.id,
           email: identity.email,
           salonId: null,
           membershipId: null,
           role: null,
+          platformRole: identity.platformRole || null,
         },
       });
     }
@@ -335,6 +349,9 @@ router.post('/login', async (req: any, res: any) => {
         role: membership.role,
         salonId: membership.salonId,
         passwordResetRequired: membership.passwordResetRequired === true,
+        // Non-null when this account is ALSO a platform operator — lets the
+        // client offer "enter any salon" alongside the normal salon switcher.
+        platformRole: identity.platformRole || null,
       },
       salons: memberships.map((m) => ({
         salonId: m.salonId,
@@ -1839,6 +1856,111 @@ router.get('/memberships', authenticateToken, async (req: any, res: any) => {
       logoUrl: m.salon.logoUrl,
       role: m.role,
     })),
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// Platform access (cross-tenant Kedy staff: admin / technical support)
+//
+// These two endpoints are the ONLY way a platform operator reaches a salon
+// it has no membership in. Both are guarded by authenticateIdentity (an
+// identity-only token is enough) AND re-verify the platform role LIVE from
+// the DB via getActivePlatformRole — the JWT claim alone never authorizes,
+// so revoking platformRole locks the operator out on the next call.
+// ─────────────────────────────────────────────────────────────────────
+
+// GET /platform/salons?q=&limit=  → list ACTIVE salons for the picker.
+router.get('/platform/salons', authenticateIdentity, async (req: any, res: any) => {
+  const identityId = Number(req.identity?.identityId || 0);
+  const platformRole = await getActivePlatformRole(identityId);
+  if (!platformRole) {
+    throw new BusinessError('FORBIDDEN', 'Bu islem icin platform yetkisi gerekli.', 403);
+  }
+
+  const q = String(req.query?.q || '').trim();
+  const limit = Math.min(Math.max(Number(req.query?.limit) || 50, 1), 200);
+
+  const salons = await prisma.salon.findMany({
+    where: {
+      status: 'ACTIVE',
+      deletionScheduledAt: null,
+      ...(q
+        ? {
+            OR: [
+              { name: { contains: q, mode: 'insensitive' } },
+              { slug: { contains: q, mode: 'insensitive' } },
+              { city: { contains: q, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    },
+    select: { id: true, name: true, slug: true, logoUrl: true, city: true, district: true },
+    orderBy: { name: 'asc' },
+    take: limit,
+  });
+
+  return res.status(200).json({ platformRole, salons });
+});
+
+// POST /platform/enter-salon { salonId }  → mint a membership-less salon token
+// for that salon and AUDIT the entry. This is the salon-picker's "enter" action.
+router.post('/platform/enter-salon', authenticateIdentity, async (req: any, res: any) => {
+  const identityId = Number(req.identity?.identityId || 0);
+  const platformRole = await getActivePlatformRole(identityId);
+  if (!platformRole) {
+    throw new BusinessError('FORBIDDEN', 'Bu islem icin platform yetkisi gerekli.', 403);
+  }
+
+  const requestedSalonId = Number(req.body?.salonId || 0);
+  if (!Number.isInteger(requestedSalonId) || requestedSalonId <= 0) {
+    throw new BusinessError('VALIDATION_FAILED', 'salonId pozitif tam sayi olmali.', 400);
+  }
+
+  const salon = await resolveEnterableSalon(requestedSalonId);
+  if (!salon) {
+    throw new BusinessError('NOT_FOUND', 'Salon bulunamadi veya erisime kapali.', 404);
+  }
+
+  const { accessToken, refreshToken } = await createPlatformAccessTokens({
+    identityId,
+    salonId: salon.id,
+    platformRole,
+  });
+  await ensureSalonAccessSeed(salon.id);
+
+  // Audit EVERY platform entry — who (identity), which salon, when, role,
+  // plus best-effort IP / user-agent. This is the KVKK + single-key-risk
+  // safeguard the design hinges on.
+  await writeAccessAudit({
+    salonId: salon.id,
+    actorIdentityId: identityId,
+    action: PLATFORM_AUDIT_ACTION_ENTER,
+    targetType: 'salon',
+    targetId: String(salon.id),
+    metadata: {
+      platformRole,
+      email: req.identity?.email || null,
+      ip:
+        (req.headers['x-forwarded-for'] as string) ||
+        req.socket?.remoteAddress ||
+        null,
+      userAgent: req.headers['user-agent'] || null,
+    },
+  });
+
+  return res.status(200).json({
+    accessToken,
+    refreshToken,
+    salon,
+    platformRole,
+    user: {
+      id: identityId,
+      email: req.identity?.email || null,
+      role: PLATFORM_EFFECTIVE_ROLE,
+      salonId: salon.id,
+      membershipId: null,
+      platformRole,
+    },
   });
 });
 

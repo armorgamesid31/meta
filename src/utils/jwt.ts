@@ -14,6 +14,10 @@ interface TokenPayload {
   role: 'OWNER' | 'MANAGER' | 'STAFF' | 'RECEPTION' | 'FINANCE'; // Updated for new roles
   roles?: string[]; // New RBAC roles
   permissions?: string[]; // User permissions
+  // Cross-tenant Kedy staff (admin / technical support). Present only on
+  // platform tokens, which carry a salonId but NO membershipId — the auth
+  // middleware recognises this shape. See services/platformAccess.ts.
+  platformRole?: string;
 }
 
 export const generateToken = (payload: TokenPayload): string => {

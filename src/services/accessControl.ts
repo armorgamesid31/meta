@@ -339,6 +339,11 @@ export async function hasPermission(input: {
 export async function writeAccessAudit(input: {
   salonId: number;
   actorUserId?: number | null;
+  // Platform operators have no legacy SalonUser and no membership in the
+  // target salon, so they are identified by actorIdentityId. Ordinary
+  // salon actions keep populating actorUserId (and optionally membership).
+  actorMembershipId?: number | null;
+  actorIdentityId?: number | null;
   action: string;
   targetType: string;
   targetId?: string | null;
@@ -347,7 +352,9 @@ export async function writeAccessAudit(input: {
   await prisma.accessAuditLog.create({
     data: {
       salonId: input.salonId,
-      actorUserId: input.actorUserId || null,
+      actorUserId: input.actorUserId ?? null,
+      actorMembershipId: input.actorMembershipId ?? null,
+      actorIdentityId: input.actorIdentityId ?? null,
       action: input.action,
       targetType: input.targetType,
       targetId: input.targetId || null,

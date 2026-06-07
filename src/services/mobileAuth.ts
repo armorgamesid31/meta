@@ -1,6 +1,7 @@
 import { randomBytes, createHash } from 'crypto';
 import { prisma } from '../prisma.js';
 import { generateToken } from '../utils/jwt.js';
+import { getActivePlatformRole, PLATFORM_EFFECTIVE_ROLE } from './platformAccess.js';
 
 const REFRESH_TOKEN_TTL_DAYS = Number(process.env.REFRESH_TOKEN_TTL_DAYS || 30);
 
@@ -63,6 +64,42 @@ export async function createAuthTokens(input: AuthMembershipInput) {
   };
 }
 
+// Mints a salon-scoped token for a PLATFORM operator (admin / support).
+// Unlike createAuthTokens this carries NO membershipId — neither the session
+// row nor the JWT references a SalonMembership. The JWT instead carries
+// platformRole + the OWNER effective role; the auth middleware recognises
+// this shape, skips the membership lookup, and re-verifies the platform role
+// from the DB on every request. The caller is responsible for confirming the
+// salon is enterable (see services/platformAccess.resolveEnterableSalon) and
+// for writing the AccessAuditLog entry.
+export async function createPlatformAccessTokens(input: {
+  identityId: number;
+  salonId: number;
+  platformRole: string;
+}) {
+  const accessToken = generateToken({
+    userId: 0,
+    identityId: input.identityId,
+    salonId: input.salonId,
+    role: PLATFORM_EFFECTIVE_ROLE as any,
+    platformRole: input.platformRole,
+  } as any);
+  const refreshToken = createRefreshToken();
+
+  await prisma.mobileAuthSession.create({
+    data: {
+      identityId: input.identityId,
+      salonId: input.salonId,
+      // userId + membershipId intentionally omitted (null): a platform
+      // session is not backed by a SalonMembership.
+      refreshTokenHash: hashToken(refreshToken),
+      expiresAt: getTokenExpiry(REFRESH_TOKEN_TTL_DAYS),
+    },
+  });
+
+  return { accessToken, refreshToken };
+}
+
 export async function rotateRefreshToken(refreshToken: string) {
   const refreshTokenHash = hashToken(refreshToken);
   const now = new Date();
@@ -82,6 +119,59 @@ export async function rotateRefreshToken(refreshToken: string) {
 
     if (!session || !session.identity || !session.identityId) {
       return null;
+    }
+
+    // Platform session (cross-tenant admin/support): carries a salonId but
+    // no membership/userId. Re-mint a platform salon token for the SAME salon
+    // as long as the identity still holds the platform role — revocation or
+    // deactivation takes effect on the next refresh because getActivePlatformRole
+    // re-reads the live DB value. If the role is gone, fall through to the
+    // identity-only path below (salonless), which effectively demotes them.
+    if (!session.membership && session.salonId) {
+      const platformRole = await getActivePlatformRole(session.identityId);
+      if (platformRole) {
+        const newRefreshToken = createRefreshToken();
+        const newRefreshTokenHash = hashToken(newRefreshToken);
+
+        await tx.mobileAuthSession.update({
+          where: { id: session.id },
+          data: { revokedAt: now },
+        });
+        await tx.mobileAuthSession.create({
+          data: {
+            identityId: session.identityId,
+            salonId: session.salonId,
+            refreshTokenHash: newRefreshTokenHash,
+            expiresAt: getTokenExpiry(REFRESH_TOKEN_TTL_DAYS),
+          },
+        });
+
+        const accessToken = generateToken({
+          userId: 0,
+          identityId: session.identityId,
+          salonId: session.salonId,
+          role: PLATFORM_EFFECTIVE_ROLE as any,
+          platformRole,
+        } as any);
+
+        return {
+          accessToken,
+          refreshToken: newRefreshToken,
+          user: {
+            id: session.identity.id,
+            email: session.identity.email,
+            role: PLATFORM_EFFECTIVE_ROLE,
+            salonId: session.salonId,
+            passwordResetRequired: false,
+            isActive: session.identity.isActive === true,
+            platformRole,
+          },
+          membershipId: null,
+          identityId: session.identityId,
+          legacyUserId: null,
+        };
+      }
+      // platform role revoked → fall through to identity-only demotion
     }
 
     // Identity-only session (registered via /kayit, no salon attached

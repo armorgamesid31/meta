@@ -3,6 +3,11 @@ import { verifyToken } from '../utils/jwt.js';
 import { UserRole } from '@prisma/client';
 import { prisma } from '../prisma.js';
 import { hasPermission, normalizeRole } from '../services/accessControl.js';
+import {
+  getActivePlatformRole,
+  resolveEnterableSalon,
+  PLATFORM_EFFECTIVE_ROLE,
+} from '../services/platformAccess.js';
 import { BusinessError } from '../lib/errors.js';
 
 interface AuthRequest extends Request {
@@ -12,6 +17,9 @@ interface AuthRequest extends Request {
     membershipId?: number;
     salonId: number;
     role: UserRole;
+    // Set only for cross-tenant platform operators (admin / support); their
+    // effective `role` is OWNER and `membershipId` is undefined.
+    platformRole?: string;
   };
 }
 
@@ -46,6 +54,50 @@ export const authenticateToken = async (req: AuthRequest, _res: Response, next: 
   try {
     const membershipId = Number(payload.membershipId || 0);
     const identityId = Number(payload.identityId || 0);
+
+    // ── Platform operator path (cross-tenant admin / support) ─────────────
+    // A platform token carries platformRole + salonId but NO membershipId.
+    // Authorization is NOT taken from the token claim: getActivePlatformRole
+    // re-reads the live UserIdentity, so revoking the flag (or deactivating
+    // the account) kills access on the very next request. The operator may
+    // retarget any ACTIVE salon via x-salon-id and assumes the OWNER
+    // effective role, which the existing RBAC already treats as all-access.
+    if (payload.platformRole && !membershipId) {
+      if (!identityId) {
+        return next(new BusinessError('UNAUTHORIZED', 'Oturum bilgisi eksik.', 401));
+      }
+      const platformRole = await getActivePlatformRole(identityId);
+      if (!platformRole) {
+        return next(new BusinessError('FORBIDDEN', 'Platform yetkisi bulunamadı veya kaldırılmış.', 403));
+      }
+
+      // Salon scope is FIXED to the token — it was chosen AND audited at
+      // /platform/enter-salon time. We deliberately do NOT let x-salon-id
+      // silently retarget another salon: otherwise an operator could read
+      // salon B using a token minted (and logged) for salon A with no audit
+      // trail. A mismatching header is rejected; switching salons means
+      // calling /platform/enter-salon again, which writes a fresh audit row.
+      const tokenSalonId = Number(payload.salonId || 0);
+      if (requestedSalonId !== null && requestedSalonId !== tokenSalonId) {
+        return next(new BusinessError('SALON_SCOPE_MISMATCH', 'x-salon-id token kapsamıyla eşleşmiyor.', 403));
+      }
+      const salon = await resolveEnterableSalon(tokenSalonId);
+      if (!salon) {
+        return next(new BusinessError('SALON_SCOPE_MISMATCH', 'Salon erişilebilir değil.', 403));
+      }
+
+      req.user = {
+        ...payload,
+        userId: 0,
+        identityId,
+        membershipId: undefined,
+        role: PLATFORM_EFFECTIVE_ROLE as UserRole,
+        salonId: salon.id,
+        platformRole,
+      } as any;
+      return next();
+    }
+
     if (!membershipId || !identityId) {
       return next(new BusinessError('UNAUTHORIZED', 'Oturum bilgisi eksik.', 401));
     }

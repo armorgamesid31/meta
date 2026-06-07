@@ -295,6 +295,15 @@ model UserIdentity {
   // at the stored timestamp. NULL = not scheduled. The daily cron in
   // jobs/scheduledDeletions sweeps rows whose deletionScheduledAt has passed.
   deletionScheduledAt DateTime?           @db.Timestamp(6)
+  // Platform-level role for cross-tenant Kedy staff (admin / technical support).
+  // NULL = ordinary salon user (today's behaviour, unchanged). When non-null the
+  // account may sign into ANY active salon WITHOUT a SalonMembership — the giriş
+  // (login) layer recognises it and mints a membership-less salon token whose
+  // effective role is OWNER. Every salon entry is written to AccessAuditLog.
+  // Allowed values live in services/platformAccess.ts (PLATFORM_ADMIN |
+  // PLATFORM_SUPPORT); kept as a string (not enum) so new tiers don't need a
+  // migration, mirroring how SalonMembership.role is stored.
+  platformRole        String?
   createdAt           DateTime?           @default(now()) @db.Timestamp(6)
   updatedAt           DateTime?           @default(now()) @updatedAt @db.Timestamp(6)
   memberships         SalonMembership[]

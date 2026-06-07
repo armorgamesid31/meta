@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { prisma } from '../prisma.js';
 import { createAuthTokens, createIdentityTokens } from './mobileAuth.js';
 import { ensureSalonAccessSeed } from './accessControl.js';
+import { isPlatformRole } from './platformAccess.js';
 
 // Legacy SalonUser.passwordHash is NOT NULL. OAuth-only identities
 // have identity.passwordHash = null, so when we backfill a legacy row
@@ -157,12 +158,17 @@ export async function buildIdentityLoginResponse(
       body: {
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
+        // Mirror the password-login path: a pure platform operator (admin /
+        // support) reaches a salon via the platform picker, not onboarding.
+        platformRole: identity.platformRole || null,
+        requiresPlatformSalonSelection: isPlatformRole(identity.platformRole),
         user: {
           id: identity.id,
           email: identity.email,
           salonId: null,
           membershipId: null,
           role: null,
+          platformRole: identity.platformRole || null,
         },
       },
     };
@@ -239,6 +245,7 @@ export async function buildIdentityLoginResponse(
         role: membership.role,
         salonId: membership.salonId,
         passwordResetRequired: membership.passwordResetRequired === true,
+        platformRole: identity.platformRole || null,
       },
       salons: memberships.map((m) => ({
         salonId: m.salonId,
