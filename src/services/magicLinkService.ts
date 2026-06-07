@@ -136,6 +136,10 @@ export async function ensureMagicLink(params: {
   let action: 'created' | 'renewed';
 
   if (reusable) {
+    // Yenileme süreyi UZATIR, asla KISALTMAZ. Mevcut expiresAt yeni TTL'den
+    // daha uzaksa (örn elle "sınırsız"/2099 yapılmış kalıcı test/demo linki)
+    // onu KORU — aksi halde her yeni gönderim kalıcı linki 60dk'ya düşürürdü.
+    const renewedExpiresAt = reusable.expiresAt > expiresAt ? reusable.expiresAt : expiresAt;
     record = await prisma.magicLink.update({
       where: { id: reusable.id },
       data: {
@@ -144,7 +148,7 @@ export async function ensureMagicLink(params: {
         subjectNormalized: identity.subjectNormalized,
         identitySessionId: session.id,
         context: mergedContext,
-        expiresAt,
+        expiresAt: renewedExpiresAt,
         status: 'ACTIVE',
       },
     });
