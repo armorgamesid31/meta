@@ -43,34 +43,56 @@ router.get('/bootstrap', authenticateToken, async (req: any, res: any) => {
   }
 
   try {
-    const user = await prisma.salonUser.findUnique({
-      where: { id: req.user.userId },
-      include: {
-        salon: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-            city: true,
-            countryCode: true,
-            bookingMode: true,
-            whatsappPhone: true,
-            address: true,
-            onboardingStep: true,
-            onboardingSkipped: true,
-            category: true,
-            logoUrl: true,
-            kurulumScore: true,
-            kurulumStage: true,
-            createdAt: true,
-            deletionScheduledAt: true,
-          },
-        },
-      },
-    });
+    const salonSelect = {
+      id: true,
+      name: true,
+      slug: true,
+      city: true,
+      countryCode: true,
+      bookingMode: true,
+      whatsappPhone: true,
+      address: true,
+      onboardingStep: true,
+      onboardingSkipped: true,
+      category: true,
+      logoUrl: true,
+      kurulumScore: true,
+      kurulumStage: true,
+      createdAt: true,
+      deletionScheduledAt: true,
+    } as const;
 
-    if (!user || !user.salon || user.salon.id !== req.user.salonId) {
-      throw new BusinessError('NOT_FOUND', 'User or salon not found.', 404);
+    // Platform operators (admin / technical support) have no legacy SalonUser
+    // and no membership in this salon, so the normal id-keyed lookup would
+    // 404. Synthesize an OWNER-shaped user bound to the target salon (taken
+    // from the platform token's salon scope) so the panel renders with full
+    // capability; the identity supplies the display email. Everything
+    // downstream is salon-scoped or role-driven (OWNER → all permissions,
+    // membershipId 0 → no linked staff), so no other branch is needed.
+    const isPlatform = Boolean(req.user.platformRole && !req.user.membershipId);
+
+    let user: any;
+    if (isPlatform) {
+      const [salon, identity] = await Promise.all([
+        prisma.salon.findUnique({ where: { id: req.user.salonId }, select: salonSelect }),
+        prisma.userIdentity.findUnique({
+          where: { id: Number(req.user.identityId || 0) },
+          select: { email: true },
+        }),
+      ]);
+      if (!salon) {
+        throw new BusinessError('NOT_FOUND', 'Salon not found.', 404);
+      }
+      user = { id: 0, email: identity?.email || 'platform@kedy.local', role: 'OWNER', salon };
+    } else {
+      user = await prisma.salonUser.findUnique({
+        where: { id: req.user.userId },
+        include: { salon: { select: salonSelect } },
+      });
+
+      if (!user || !user.salon || user.salon.id !== req.user.salonId) {
+        throw new BusinessError('NOT_FOUND', 'User or salon not found.', 404);
+      }
     }
 
     const normalizedWhatsapp = (user.salon.whatsappPhone || '').replace(/[^\d]/g, '');
