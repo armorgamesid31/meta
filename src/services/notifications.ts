@@ -51,7 +51,9 @@ const DEFAULT_RECIPIENTS: Record<NotificationEventType, string[]> = {
   // vermemişse staff'ın telefonu çalsın diye STAFF de listede.
   HANDOVER_REQUIRED: ['OWNER', 'MANAGER', 'RECEPTION', 'STAFF'],
   HANDOVER_REMINDER: ['OWNER', 'MANAGER', 'RECEPTION', 'STAFF'],
-  SAME_DAY_APPOINTMENT_CHANGE: ['OWNER', 'MANAGER', 'RECEPTION'],
+  // Yeni randevu + randevu değişikliği/iptali personele de gitsin (Berkay, 2026-06-07):
+  // owner/yönetici/resepsiyon dışında salon personeli de anlık görsün.
+  SAME_DAY_APPOINTMENT_CHANGE: ['OWNER', 'MANAGER', 'RECEPTION', 'STAFF'],
   END_OF_DAY_MISSING_DATA: ['OWNER', 'MANAGER', 'RECEPTION', 'STAFF'],
   DAILY_MANAGER_REPORT: ['OWNER', 'MANAGER'],
   CAMPAIGN_AUTO_TRIGGER: ['OWNER', 'MANAGER', 'RECEPTION'],
