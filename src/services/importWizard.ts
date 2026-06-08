@@ -8,7 +8,7 @@ import {
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { parse as csvParse } from 'csv-parse/sync';
 import XLSX from 'xlsx';
-import type { ImportConflictType, ImportRowStatus, ImportSourceType } from '@prisma/client';
+import type { CustomerGender, ImportConflictType, ImportRowStatus, ImportSourceType } from '@prisma/client';
 import { prisma } from '../prisma.js';
 import { normalizeDigitsOnly } from './phoneValidation.js';
 
@@ -1038,7 +1038,10 @@ function buildDateTime(dateKey: string | null, minute: number | null): Date | nu
   if (!dateKey || !Number.isInteger(minute)) return null;
   const h = Math.floor(Number(minute) / 60);
   const m = Number(minute) % 60;
-  const d = new Date(`${dateKey}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00.000Z`);
+  // Build in server-local TZ (pinned to Europe/Istanbul in bootstrap.ts), matching the booking
+  // path (bookings.ts: `new Date(`${date}T${HH:MM}:00`)`). A UTC `Z` here shifted every imported
+  // appointment by the TZ offset, so the availability engine blocked the wrong hours.
+  const d = new Date(`${dateKey}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`);
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
@@ -1100,6 +1103,73 @@ function hashRow(batchId: string, sourceType: ImportSourceType, rowIndex: number
     .digest('hex');
 }
 
+type NameCandidate = { id: number; name: string; key: string; fold: string; tokens: string[] };
+
+function buildNameCandidates(items: Array<{ id: number; name: string }>): NameCandidate[] {
+  const out: NameCandidate[] = [];
+  for (const item of items) {
+    const key = normalizeNameKey(item.name);
+    if (!key) continue;
+    const fold = foldTurkishText(item.name);
+    out.push({ id: item.id, name: item.name, key, fold, tokens: fold.split(' ').filter(Boolean) });
+  }
+  return out;
+}
+
+type NameMatch = { id: number | null; suggestionId: number | null; suggestionName: string | null };
+
+// Tolerant name matcher: exact normalized key -> diacritic-folded equality -> token containment
+// ("Zeynep" subset of "Zeynep Hanim") -> bounded Levenshtein for OCR typos (services only).
+// Staff stays conservative (allowFuzzy=false): a wrong staff = wrong occupancy, so a fuzzy
+// near-miss is surfaced as a suggestion for the review step instead of auto-applied.
+function matchName(
+  raw: string | null,
+  candidates: NameCandidate[],
+  options: { allowFuzzy: boolean },
+): NameMatch {
+  const none: NameMatch = { id: null, suggestionId: null, suggestionName: null };
+  if (!raw) return none;
+  const key = normalizeNameKey(raw);
+  if (key) {
+    const exact = candidates.find((candidate) => candidate.key === key);
+    if (exact) return { id: exact.id, suggestionId: null, suggestionName: null };
+  }
+  const fold = foldTurkishText(raw);
+  if (!fold) return none;
+  const rawTokens = fold.split(' ').filter(Boolean);
+
+  const foldExact = candidates.filter((candidate) => candidate.fold === fold);
+  if (foldExact.length === 1) return { id: foldExact[0]!.id, suggestionId: null, suggestionName: null };
+
+  const tokenHits = candidates.filter((candidate) => {
+    if (!candidate.tokens.length || !rawTokens.length) return false;
+    const shorter = rawTokens.length <= candidate.tokens.length ? rawTokens : candidate.tokens;
+    const longer = rawTokens.length <= candidate.tokens.length ? candidate.tokens : rawTokens;
+    return shorter.every((token) => longer.includes(token));
+  });
+  if (tokenHits.length === 1) return { id: tokenHits[0]!.id, suggestionId: null, suggestionName: null };
+
+  let best: NameCandidate | null = null;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  let tie = false;
+  for (const candidate of candidates) {
+    const distance = levenshteinDistance(fold, candidate.fold);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = candidate;
+      tie = false;
+    } else if (distance === bestDistance) {
+      tie = true;
+    }
+  }
+  const threshold = Math.max(1, Math.floor(fold.length * 0.25));
+  if (best && !tie && bestDistance <= threshold) {
+    if (options.allowFuzzy) return { id: best.id, suggestionId: null, suggestionName: null };
+    return { id: null, suggestionId: best.id, suggestionName: best.name };
+  }
+  return none;
+}
+
 async function buildAutoMaps(salonId: number, _parsedRows: ParsedInputRow[]) {
   const [services, staff] = await Promise.all([
     prisma.service.findMany({
@@ -1112,26 +1182,17 @@ async function buildAutoMaps(salonId: number, _parsedRows: ParsedInputRow[]) {
     }),
   ]);
 
-  const serviceMap = new Map<string, number>();
-  for (const item of services) {
-    const key = normalizeNameKey(item.name);
-    if (key && !serviceMap.has(key)) serviceMap.set(key, item.id);
-  }
-
-  const staffMap = new Map<string, number>();
-  for (const item of staff) {
-    const key = normalizeNameKey(item.name);
-    if (key && !staffMap.has(key)) staffMap.set(key, item.id);
-  }
-
-  return { serviceMap, staffMap };
+  return {
+    serviceCandidates: buildNameCandidates(services),
+    staffCandidates: buildNameCandidates(staff),
+  };
 }
 
 function normalizeRows(input: {
   batchId: string;
   parsedRows: ParsedInputRow[];
-  serviceMap: Map<string, number>;
-  staffMap: Map<string, number>;
+  serviceCandidates: NameCandidate[];
+  staffCandidates: NameCandidate[];
 }): NormalizedImportRow[] {
   const earliestAllowed = Date.now() - 365 * DAY_MS;
   return input.parsedRows.map((row) => {
@@ -1160,8 +1221,10 @@ function normalizeRows(input: {
     const priceRaw = Number.isFinite(priceNum) ? priceNum : null;
     const confidenceNum = Number(pickByAliases(row.raw, 'confidence'));
     const confidence = Number.isFinite(confidenceNum) ? confidenceNum : row.confidence;
-    const serviceId = serviceNameRaw ? input.serviceMap.get(normalizeNameKey(serviceNameRaw)) || null : null;
-    const staffId = staffNameRaw ? input.staffMap.get(normalizeNameKey(staffNameRaw)) || null : null;
+    const serviceMatch = matchName(serviceNameRaw, input.serviceCandidates, { allowFuzzy: true });
+    const staffMatch = matchName(staffNameRaw, input.staffCandidates, { allowFuzzy: false });
+    const serviceId = serviceMatch.id;
+    const staffId = staffMatch.id;
     const appointmentDate = dateKey ? new Date(`${dateKey}T00:00:00.000Z`) : null;
     const warnings: string[] = [];
 
@@ -1180,10 +1243,22 @@ function normalizeRows(input: {
       conflicts.push({ type: 'VALIDATION_ERROR', message: 'Appointment start time is required.' });
     }
     if (serviceNameRaw && !serviceId) {
-      conflicts.push({ type: 'SERVICE_UNMATCHED', message: `Service match not found: ${serviceNameRaw}` });
+      conflicts.push({
+        type: 'SERVICE_UNMATCHED',
+        message: `Service match not found: ${serviceNameRaw}`,
+        payload: serviceMatch.suggestionId
+          ? { suggestedServiceId: serviceMatch.suggestionId, suggestedServiceName: serviceMatch.suggestionName }
+          : undefined,
+      });
     }
     if (staffNameRaw && !staffId) {
-      conflicts.push({ type: 'STAFF_UNMATCHED', message: `Staff match not found: ${staffNameRaw}` });
+      conflicts.push({
+        type: 'STAFF_UNMATCHED',
+        message: `Staff match not found: ${staffNameRaw}`,
+        payload: staffMatch.suggestionId
+          ? { suggestedStaffId: staffMatch.suggestionId, suggestedStaffName: staffMatch.suggestionName }
+          : undefined,
+      });
     }
 
     const normalizedData = {
@@ -1600,8 +1675,8 @@ export async function completeImportSourceFile(input: {
   const normalized = normalizeRows({
     batchId: input.batchId,
     parsedRows: parsed.rows,
-    serviceMap: maps.serviceMap,
-    staffMap: maps.staffMap,
+    serviceCandidates: maps.serviceCandidates,
+    staffCandidates: maps.staffCandidates,
   });
 
   await replaceRowsForFile({
@@ -1898,8 +1973,8 @@ export async function processImportOcrCallback(input: {
     const normalized = normalizeRows({
       batchId: input.batchId,
       parsedRows,
-      serviceMap: maps.serviceMap,
-      staffMap: maps.staffMap,
+      serviceCandidates: maps.serviceCandidates,
+      staffCandidates: maps.staffCandidates,
     });
     await replaceRowsForFile({
       batchId: input.batchId,
@@ -2282,38 +2357,52 @@ async function ensureStaffForRow(salonId: number, row: {
   return existing?.id || null;
 }
 
-async function ensureStaffService(staffId: number, serviceId: number, duration: number, price: number) {
-  const normalizedDuration = Math.max(5, Math.min(600, duration || 30));
-  const normalizedPrice = Number.isFinite(price) ? price : 0;
+// Import must NOT mutate the salon's live staff–service config: StaffService.duration/price feed
+// the availability engine, so overwriting them from a single imported row would corrupt future
+// bookings for that staff+service. Only create the link if it is missing (using the service's own
+// defaults); never touch an existing one.
+async function ensureStaffService(
+  staffId: number,
+  serviceId: number,
+  defaultGender: CustomerGender,
+  duration: number,
+  price: number,
+): Promise<CustomerGender> {
+  // Match an existing link of ANY gender first — a female stylist may serve male clients, so the
+  // existing variant's gender is the source of truth. Only create (with the salon default) if none.
   const existing = await prisma.staffService.findFirst({
-    where: {
-      staffId,
-      serviceId,
-      gender: 'female',
-    },
-    select: { id: true },
+    where: { staffId, serviceId },
+    select: { id: true, gender: true },
   });
-  if (existing) {
-    await prisma.staffService.update({
-      where: { id: existing.id },
-      data: {
-        isactive: true,
-        duration: normalizedDuration,
-        price: normalizedPrice,
-      },
-    });
-    return;
-  }
+  if (existing) return existing.gender;
   await prisma.staffService.create({
     data: {
       staffId,
       serviceId,
-      gender: 'female',
+      gender: defaultGender,
       isactive: true,
-      duration: normalizedDuration,
-      price: normalizedPrice,
+      duration: Math.max(5, Math.min(600, duration || 30)),
+      price: Number.isFinite(price) ? price : 0,
     },
   });
+  return defaultGender;
+}
+
+// Salon's dominant customer-gender, inferred from existing StaffService variants — no extra
+// question for the owner. Used as the default gender for imported appointments and for any
+// staff-service link the import must create. Falls back to 'female'.
+async function resolveSalonDefaultGender(salonId: number): Promise<CustomerGender> {
+  const groups = await prisma.staffService.groupBy({
+    by: ['gender'],
+    where: { Staff: { salonId } },
+    _count: { _all: true },
+  });
+  let best: { gender: CustomerGender; count: number } | null = null;
+  for (const group of groups) {
+    const count = group._count._all;
+    if (!best || count > best.count) best = { gender: group.gender, count };
+  }
+  return best ? best.gender : 'female';
 }
 
 export async function commitImportBatch(input: {
@@ -2367,6 +2456,8 @@ export async function commitImportBatch(input: {
       where: { batchId: input.batchId, salonId: input.salonId, rowStatus: 'READY' },
       orderBy: [{ id: 'asc' }],
     });
+
+    const salonDefaultGender = await resolveSalonDefaultGender(input.salonId);
 
     let imported = 0;
     let conflicts = 0;
@@ -2430,7 +2521,15 @@ export async function commitImportBatch(input: {
           continue;
         }
 
-        await ensureStaffService(staffId, serviceId, duration, Number.isFinite(row.priceRaw || NaN) ? Number(row.priceRaw) : service.price);
+        // Pass the service's own defaults — never the imported row's values — so a newly created
+        // staff–service link does not bake import data into the salon's live config (see A2).
+        const appointmentGender = await ensureStaffService(
+          staffId,
+          serviceId,
+          salonDefaultGender,
+          service.duration,
+          service.price,
+        );
 
         const overlap = await prisma.appointment.findFirst({
           where: {
@@ -2479,7 +2578,7 @@ export async function commitImportBatch(input: {
             status: startTime.getTime() < Date.now() ? 'COMPLETED' : 'BOOKED',
             source: 'IMPORT' as any,
             notes: null,
-            gender: 'female',
+            gender: appointmentGender,
             listPrice: service.price,
             finalPrice: Number.isFinite(row.priceRaw || NaN) ? Number(row.priceRaw) : service.price,
           },
