@@ -620,7 +620,7 @@ router.post('/me/password', authenticateToken, async (req: any, res: any) => {
     throw new BusinessError('UNAUTHORIZED', 'Kullanıcı bulunamadı.', 401);
   }
 
-  const matches = await bcrypt.compare(currentPassword, identity.passwordHash);
+  const matches = await bcrypt.compare(currentPassword, identity.passwordHash ?? '');
   if (!matches) {
     throw new BusinessError('UNAUTHORIZED', 'Mevcut şifre hatalı.', 401);
   }

@@ -198,7 +198,7 @@ export async function ensureSalonServiceCategories(salonId: number) {
         salonId,
         categoryId: category.id,
         name: category.defaultName,
-        marketingDescription: category.defaultDescription,
+        marketingDescription: category.defaultDescription ?? '',
         isActive: true,
         displayOrder: category.displayOrder,
         capacity: 1,

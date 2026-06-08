@@ -97,7 +97,7 @@ export async function upsertConversationMessageEvent(
         ...(input.repliedToProviderMessageId !== undefined ? { repliedToProviderMessageId: input.repliedToProviderMessageId } : {}),
         ...(input.repliedToText !== undefined ? { repliedToText: input.repliedToText } : {}),
         updatedAt: new Date(),
-      },
+      } as any,
       create: {
         salonId: input.salonId,
         channel: input.channel,

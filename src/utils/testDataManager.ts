@@ -16,25 +16,21 @@ export class TestDataManager {
     try {
       console.log('🧹 Cleaning up test data...');
 
-      // Delete in correct order (respecting foreign keys)
+      // Delete in correct order (respecting foreign keys). These child tables
+      // key on customerId (no `customer` relation in their where input), so
+      // resolve the test customer ids first.
+      const testCustomerRows = await prisma.customer.findMany({
+        where: { phone: { startsWith: this.testPrefix } },
+        select: { id: true },
+      });
+      const testCustomerIds = testCustomerRows.map((c) => c.id);
+
       await prisma.customerBehaviorLog.deleteMany({
-        where: {
-          customer: {
-            phone: {
-              startsWith: this.testPrefix
-            }
-          }
-        }
+        where: { customerId: { in: testCustomerIds } },
       });
 
       await prisma.customerRiskProfile.deleteMany({
-        where: {
-          customer: {
-            phone: {
-              startsWith: this.testPrefix
-            }
-          }
-        }
+        where: { customerId: { in: testCustomerIds } },
       });
 
       await prisma.appointment.deleteMany({
@@ -111,11 +107,15 @@ export class TestDataManager {
           data: [
             {
               salonId,
-              name: 'Ayşe Yılmaz'
+              name: 'Ayşe Yılmaz',
+              firstName: 'Ayşe',
+              gender: 'female'
             },
             {
               salonId,
-              name: 'Mehmet Kaya'
+              name: 'Mehmet Kaya',
+              firstName: 'Mehmet',
+              gender: 'male'
             }
           ]
         });
@@ -161,7 +161,7 @@ export class TestDataManager {
 
       const customer = await prisma.customer.upsert({
         where: {
-          phone: this.testPhone
+          phone_salonId: { phone: this.testPhone, salonId }
         },
         update: {
           name: 'Test User'
@@ -206,7 +206,7 @@ export class TestDataManager {
         // Create appointment
         const appointment = await prisma.appointment.create({
           data: {
-            customerName: customer.name,
+            customerName: customer.name ?? '',
             customerPhone: customer.phone,
             startTime: appointmentDate,
             endTime: new Date(appointmentDate.getTime() + 30 * 60 * 1000), // 30 minutes
@@ -353,7 +353,7 @@ export class TestDataManager {
           });
 
           if (!riskProfile) throw new Error('Risk profile was not created');
-          if (riskProfile.lastMinuteCancellations < 3) throw new Error('Cancellations not properly tracked');
+          if ((riskProfile.lastMinuteCancellations ?? 0) < 3) throw new Error('Cancellations not properly tracked');
 
           console.log('✅ TEST 3 verification passed');
           break;
@@ -370,6 +370,12 @@ export class TestDataManager {
    */
   async getTestDataSummary() {
     try {
+      const summaryCustomerRows = await prisma.customer.findMany({
+        where: { phone: this.testPhone },
+        select: { id: true },
+      });
+      const summaryCustomerIds = summaryCustomerRows.map((c) => c.id);
+
       const [
         customers,
         appointments,
@@ -379,14 +385,10 @@ export class TestDataManager {
         prisma.customer.count({ where: { phone: this.testPhone } }),
         prisma.appointment.count({ where: { customerPhone: this.testPhone } }),
         prisma.customerBehaviorLog.count({
-          where: {
-            customer: { phone: this.testPhone }
-          }
+          where: { customerId: { in: summaryCustomerIds } }
         }),
         prisma.customerRiskProfile.count({
-          where: {
-            customer: { phone: this.testPhone }
-          }
+          where: { customerId: { in: summaryCustomerIds } }
         })
       ]);
 

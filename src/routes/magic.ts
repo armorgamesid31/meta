@@ -158,7 +158,7 @@ router.get('/:token', async (req: any, res: any) => {
           id: true,
           name: true,
           address: true,
-          bookingTheme: true
+          themeResolved: true
         }
       });
     } else {
@@ -170,7 +170,7 @@ router.get('/:token', async (req: any, res: any) => {
           id: true,
           name: true,
           address: true,
-          bookingTheme: true
+          themeResolved: true
         }
       });
 
@@ -275,7 +275,7 @@ router.get('/:token', async (req: any, res: any) => {
         id: salon.id,
         name: salon.name,
         address: salon.address,
-        theme: salon.bookingTheme || {
+        theme: salon.themeResolved || {
           primaryColor: '#10b981',
           secondaryColor: '#064e3b'
         }

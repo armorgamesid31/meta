@@ -805,7 +805,7 @@ router.post('/users/:id/invite', authenticateToken, requirePermissionKey('access
           email: fallbackEmail,
           phone: membership.identity.phone || null,
           role: membership.role,
-          secondaryRoles: membership.secondaryRoles || null,
+          secondaryRoles: (membership.secondaryRoles || null) as any,
           isActive: membership.isActive,
           passwordResetRequired: membership.passwordResetRequired,
           passwordHash: fallbackPasswordHash,

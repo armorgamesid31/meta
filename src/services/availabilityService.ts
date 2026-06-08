@@ -27,7 +27,7 @@ export function normalizePersonGroups(input: unknown): PersonGroup[] {
     .map((group, index) => {
       const servicesInput = Array.isArray((group as any)?.services) ? (group as any).services : [];
       const services = servicesInput
-        .map((service) => {
+        .map((service: any) => {
           if (typeof service === 'number' || typeof service === 'string') {
             const serviceId = Number(service);
             return Number.isInteger(serviceId) && serviceId > 0 ? serviceId : null;

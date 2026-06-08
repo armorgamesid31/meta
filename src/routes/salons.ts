@@ -167,7 +167,7 @@ router.post('/', authenticateIdentity, async (req: any, res: any) => {
         firstName: identityRow.firstName || null,
         lastName: identityRow.lastName || null,
         displayName: identityRow.displayName || null,
-        passwordHash: identityRow.passwordHash,
+        passwordHash: identityRow.passwordHash as string,
         role: UserRole.OWNER,
         isActive: true,
         activationCompletedAt: new Date(),

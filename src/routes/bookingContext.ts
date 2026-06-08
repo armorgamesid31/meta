@@ -473,7 +473,7 @@ router.get('/context', async (req: any, res: any) => {
       id: number;
       startTime: Date;
       endTime: Date;
-      status: string;
+      status: string | null;
       customerRating?: number | null;
       customerReview?: string | null;
       rescheduledFromAppointmentId?: number | null;
@@ -606,7 +606,7 @@ router.get('/context', async (req: any, res: any) => {
         id: item.id,
         startTime: item.startTime,
         endTime: item.endTime,
-        status: item.status,
+        status: item.status ?? '',
         customerRating: item.customerRating ?? null,
         customerReview: item.customerReview ?? null,
         serviceId: item.service?.id || null,

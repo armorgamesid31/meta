@@ -240,12 +240,12 @@ export async function activateInvite(input: {
             displayName: nextDisplayName,
             phone: nextPhone,
             email: nextEmail || undefined,
-            passwordHash,
+            passwordHash: passwordHash as string,
             isActive: true,
             passwordResetRequired: false,
             activationCompletedAt: new Date(),
             role: membership.role,
-            secondaryRoles: membership.secondaryRoles || null,
+            secondaryRoles: (membership.secondaryRoles || null) as any,
           },
         })
       : await tx.salonUser.create({
@@ -257,11 +257,11 @@ export async function activateInvite(input: {
             lastName: lastName || null,
             displayName: nextDisplayName,
             role: membership.role,
-            secondaryRoles: membership.secondaryRoles || null,
+            secondaryRoles: (membership.secondaryRoles || null) as any,
             isActive: true,
             passwordResetRequired: false,
             activationCompletedAt: new Date(),
-            passwordHash,
+            passwordHash: passwordHash as string,
           },
         });
 
@@ -392,7 +392,7 @@ export async function redeemInviteForIdentity(input: {
             firstName: identity.firstName || null,
             lastName: identity.lastName || null,
             displayName: identity.displayName || null,
-            passwordHash: identity.passwordHash,
+            passwordHash: identity.passwordHash as string,
             isActive: true,
             passwordResetRequired: false,
             activationCompletedAt: new Date(),
@@ -411,7 +411,7 @@ export async function redeemInviteForIdentity(input: {
             isActive: true,
             passwordResetRequired: false,
             activationCompletedAt: new Date(),
-            passwordHash: identity.passwordHash,
+            passwordHash: identity.passwordHash as string,
           },
         });
 
