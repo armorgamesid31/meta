@@ -8,57 +8,57 @@ datasource db {
 }
 
 model Salon {
-  id                          Int                              @id @default(autoincrement())
-  name                        String
-  logoUrl                     String?
-  createdAt                   DateTime?                        @default(now()) @db.Timestamp(6)
-  updatedAt                   DateTime?                        @default(now()) @updatedAt @db.Timestamp(6)
-  slug                        String?                          @unique(map: "salon_slug_unique")
-  chakraPluginId              String?
-  tagline                     String?
-  about                       String?
-  heroImageUrl                String?
-  instagramUrl                String?
-  whatsappPhone               String?
-  bookingMode                 BookingMode?                     @default(INTERNAL)
-  city                        String?
-  citySlug                    String?
-  district                    String?
-  districtSlug                String?
-  status                      SalonLifecycleStatus             @default(ACTIVE)
-  countryCode                 String?
-  address                     String?
-  googleMapsUrl               String?
-  chakraPhoneNumberId         String?
-  heroText                    String?
-  communicationTone           SalonCommunicationTone           @default(BALANCED)
+  id                           Int                              @id @default(autoincrement())
+  name                         String
+  logoUrl                      String?
+  createdAt                    DateTime?                        @default(now()) @db.Timestamp(6)
+  updatedAt                    DateTime?                        @default(now()) @updatedAt @db.Timestamp(6)
+  slug                         String?                          @unique(map: "salon_slug_unique")
+  chakraPluginId               String?
+  tagline                      String?
+  about                        String?
+  heroImageUrl                 String?
+  instagramUrl                 String?
+  whatsappPhone                String?
+  bookingMode                  BookingMode?                     @default(INTERNAL)
+  city                         String?
+  citySlug                     String?
+  district                     String?
+  districtSlug                 String?
+  status                       SalonLifecycleStatus             @default(ACTIVE)
+  countryCode                  String?
+  address                      String?
+  googleMapsUrl                String?
+  chakraPhoneNumberId          String?
+  heroText                     String?
+  communicationTone            SalonCommunicationTone           @default(BALANCED)
   // Birthday voucher (MARKETING template kedy_dogum_gunu_kutlamasi)
-  birthdayDiscountText        String?
-  birthdayValidityText        String?
+  birthdayDiscountText         String?
+  birthdayValidityText         String?
   // Winback voucher (MARKETING template kedy_geri_donus)
-  winbackDiscountText         String?
-  winbackValidityText         String?
+  winbackDiscountText          String?
+  winbackValidityText          String?
   // Business category (set during marketing checkout or onboarding; null for legacy salons)
-  category                    SalonCategory?
+  category                     SalonCategory?
   // Onboarding progress (wizard)
-  onboardingStatus            OnboardingStatus                 @default(NOT_STARTED)
-  onboardingStep              OnboardingStep                   @default(NOT_STARTED)
-  onboardingSkipped           String[]                         @default([])
-  onboardingCompletedAt       DateTime?
+  onboardingStatus             OnboardingStatus                 @default(NOT_STARTED)
+  onboardingStep               OnboardingStep                   @default(NOT_STARTED)
+  onboardingSkipped            String[]                         @default([])
+  onboardingCompletedAt        DateTime?
   // Post-onboarding gamification ("Kedy Kurulum Yolculuğu")
   // kurulumScore = sum of points across all completed SalonJourneyTask rows.
   // kurulumStage = derived from score by getStageForScore():
   //   ACILIS (0-30), MUSTERI_HAZIR (30-55), ILETISIM_ACIK (55-80), PROFESYONEL (80-100).
   // null until the salon has any completed journey tasks.
-  kurulumScore                Int                              @default(0)
-  kurulumStage                String?
+  kurulumScore                 Int                              @default(0)
+  kurulumStage                 String?
   // Per-salon theme config (mobile admin writes, public homepage reads).
   // themeResolved is derived at write time from brandColor so reads avoid
   // re-deriving. JSON shape: ResolvedThemeTokens in src/lib/theme/derive.ts.
-  themePreset                 String?
-  brandColor                  String?
-  themeUpdatedAt              DateTime?
-  themeResolved               Json?
+  themePreset                  String?
+  brandColor                   String?
+  themeUpdatedAt               DateTime?
+  themeResolved                Json?
   // Setup Center / free trial / bonus bookkeeping.
   //
   // The flow: signup -> SETUP_PERIOD (14d) -> meet bonus criteria + add
@@ -74,31 +74,31 @@ model Salon {
   // WhatsApp/Instagram when a real channel binding can't be created
   // yet (Meta business verification in flight, no WA Business account
   // yet, etc.). See src/onboarding/criteria.ts:channel_connected_or_blocked.
-  offerKey                    String?
-  setupPeriodStartedAt        DateTime?                        @db.Timestamp(6)
-  setupPeriodEndsAt           DateTime?                        @db.Timestamp(6)
-  setupBonusEligibleAt        DateTime?                        @db.Timestamp(6)
-  setupBonusGrantedAt         DateTime?                        @db.Timestamp(6)
-  setupBonusEndsAt            DateTime?                        @db.Timestamp(6)
-  setupBonusGrantedBy         String?
-  setupGracePeriodEndsAt      DateTime?                        @db.Timestamp(6)
-  setupAccessStatus           SalonAccessStatus                @default(SETUP_PERIOD)
-  channelOnboardingState      Json?
-  paymentMethodOnFile         Boolean                          @default(false)
-  paymentMethodAddedAt        DateTime?                        @db.Timestamp(6)
-  bookingLinkTestedAt         DateTime?                        @db.Timestamp(6)
-  appointmentImportDecision   String?
-  appointmentImportDecidedAt  DateTime?                        @db.Timestamp(6)
+  offerKey                     String?
+  setupPeriodStartedAt         DateTime?                        @db.Timestamp(6)
+  setupPeriodEndsAt            DateTime?                        @db.Timestamp(6)
+  setupBonusEligibleAt         DateTime?                        @db.Timestamp(6)
+  setupBonusGrantedAt          DateTime?                        @db.Timestamp(6)
+  setupBonusEndsAt             DateTime?                        @db.Timestamp(6)
+  setupBonusGrantedBy          String?
+  setupGracePeriodEndsAt       DateTime?                        @db.Timestamp(6)
+  setupAccessStatus            SalonAccessStatus                @default(SETUP_PERIOD)
+  channelOnboardingState       Json?
+  paymentMethodOnFile          Boolean                          @default(false)
+  paymentMethodAddedAt         DateTime?                        @db.Timestamp(6)
+  bookingLinkTestedAt          DateTime?                        @db.Timestamp(6)
+  appointmentImportDecision    String?
+  appointmentImportDecidedAt   DateTime?                        @db.Timestamp(6)
   // Map of reminder milestone code -> ISO timestamp it was last sent.
   // Used by lifecycleReminders cron to avoid double-sending. Keys are
   // 'setup_d7', 'setup_d11', 'setup_d13', 'grace_d17', 'grace_d20',
   // 'payment_required_d0', 'trial_ending_d7' — see services/lifecycleReminders.ts.
-  lifecycleReminderState      Json?
+  lifecycleReminderState       Json?
   // 30-day grace deletion. NULL = not scheduled; set to a future
   // timestamp to mark the salon for hard-delete. Daily cron in
   // jobs/scheduledDeletions cascades-delete after the timestamp
   // passes.
-  deletionScheduledAt         DateTime?                        @db.Timestamp(6)
+  deletionScheduledAt          DateTime?                        @db.Timestamp(6)
   // Kurucu Salon kampanyası tier kilidi.
   // campaignSignupRank: atomik global sıra (PostgreSQL sequence
   //   salon_campaign_signup_rank_seq tarafından doldurulur). null =
@@ -110,82 +110,82 @@ model Salon {
   //   ve checkout açılırken (env değişse bile) bu kullanılır. null =
   //   fallback to STRIPE_PRICE_PROFESSIONAL_PLUS env'i (eski salonlar
   //   ve "after_campaign" senaryosu için).
-  campaignSignupRank          Int?                             @unique(map: "uq_salon_campaign_signup_rank")
-  campaignTier                String?
+  campaignSignupRank           Int?                             @unique(map: "uq_salon_campaign_signup_rank")
+  campaignTier                 String?
   campaignLockedMonthlyPriceId String?
-  campaignLockedAnnualPriceId String?
-  campaignLockedAt            DateTime?                        @db.Timestamp(6)
-  setupEvents                 SalonOnboardingEvent[]
-  activatedLeads              Lead[]                           @relation("LeadActivatedSalon")
-  analyticsPresets            AnalyticsPreset[]
-  appointments                Appointment[]
-  campaignApplications        AppointmentCampaignApplication[]
-  appointmentLines            AppointmentLine[]
-  messageDispatches           AppointmentMessageDispatch[]
-  packageConsumptions         AppointmentPackageConsumption[]
-  automationRules             AutomationRule[]
-  blacklistEntries            BlacklistEntry[]
-  campaigns                   Campaign[]
-  campaignAttributions        CampaignAttribution[]
-  campaignShareLinks          CampaignShareLink[]
-  campaignSendExecutions      CampaignSendExecution[]
-  channelProfiles             ChannelProfileCache[]
-  contentItems                ContentItem[]
-  conversationEvents          ConversationMessageEvent[]
-  conversationRealtimeEvents  ConversationRealtimeEvent[]
-  conversationStates          ConversationState[]
-  conversationThreadSummaries ConversationThreadSummary[]
-  customers                   Customer[]
-  campaignEnrollments         CustomerCampaignEnrollment[]
-  campaignWallets             CustomerCampaignWallet[]
-  customerPackages            CustomerPackage[]
-  paymentBatches              PaymentBatch[]
-  phoneVerifications          CustomerPhoneVerification[]
-  identityBindings            IdentityBinding[]
-  identitySessions            IdentitySession[]
-  verificationLinks           VerificationLink[]               @relation("SalonVerificationLinks")
-  importBatches               ImportBatch[]
-  importCommitRuns            ImportCommitRun[]
-  importConflicts             ImportConflict[]
-  importExtractionRuns        ImportExtractionRun[]
-  importDecisions             ImportMappingDecision[]
-  importRows                  ImportRow[]
-  importSourceFiles           ImportSourceFile[]
-  inboundMessages             InboundMessageQueue[]
-  inventoryItems              InventoryItem[]
-  magicLinks                  MagicLink[]
-  authSessions                MobileAuthSession[]
-  outboundMessages            OutboundMessageTrace[]
-  packageLedgers              PackageLedger[]
-  packageTemplates            PackageTemplate[]
-  aiAgentSettings             SalonAiAgentSettings?
-  channelBindings             SalonChannelBinding[]
-  closures                    SalonClosure[]
-  galleryImages               SalonGalleryImage[]
-  messageTemplates            SalonMessageTemplate[]
-  settings                    SalonSettings?
-  testimonials                SalonTestimonial[]
-  users                       SalonUser[]
-  memberships                 SalonMembership[]
-  subscriptions               SalonSubscription[]
-  invites                     Invite[]
-  referralCodes               ReferralCode[]                   @relation("ReferrerSalon")
-  referralInvitesSent         ReferralInvite[]                 @relation("ReferrerSalonInvites")
-  referredInvites             ReferralInvite[]                 @relation("ReferredSalon")
-  referralRewards             ReferralReward[]
-  services                    Service[]
-  ServiceCategory             ServiceCategory[]
-  serviceGroups               ServiceGroup[]
-  serviceRegions              ServiceRegion[]
-  staff                       Staff[]
-  staffTimeOffs               StaffTimeOff[]
-  waitlistEntries             WaitlistEntry[]
-  waitlistOffers              WaitlistOffer[]
-  journeyTasks                SalonJourneyTask[]
-  commissionRules             CommissionRule[]
-  commissionBonusRules        CommissionBonusRule[]
-  commissionEntries           CommissionEntry[]
-  commissionPayouts           CommissionPayout[]
+  campaignLockedAnnualPriceId  String?
+  campaignLockedAt             DateTime?                        @db.Timestamp(6)
+  setupEvents                  SalonOnboardingEvent[]
+  activatedLeads               Lead[]                           @relation("LeadActivatedSalon")
+  analyticsPresets             AnalyticsPreset[]
+  appointments                 Appointment[]
+  campaignApplications         AppointmentCampaignApplication[]
+  appointmentLines             AppointmentLine[]
+  messageDispatches            AppointmentMessageDispatch[]
+  packageConsumptions          AppointmentPackageConsumption[]
+  automationRules              AutomationRule[]
+  blacklistEntries             BlacklistEntry[]
+  campaigns                    Campaign[]
+  campaignAttributions         CampaignAttribution[]
+  campaignShareLinks           CampaignShareLink[]
+  campaignSendExecutions       CampaignSendExecution[]
+  channelProfiles              ChannelProfileCache[]
+  contentItems                 ContentItem[]
+  conversationEvents           ConversationMessageEvent[]
+  conversationRealtimeEvents   ConversationRealtimeEvent[]
+  conversationStates           ConversationState[]
+  conversationThreadSummaries  ConversationThreadSummary[]
+  customers                    Customer[]
+  campaignEnrollments          CustomerCampaignEnrollment[]
+  campaignWallets              CustomerCampaignWallet[]
+  customerPackages             CustomerPackage[]
+  paymentBatches               PaymentBatch[]
+  phoneVerifications           CustomerPhoneVerification[]
+  identityBindings             IdentityBinding[]
+  identitySessions             IdentitySession[]
+  verificationLinks            VerificationLink[]               @relation("SalonVerificationLinks")
+  importBatches                ImportBatch[]
+  importCommitRuns             ImportCommitRun[]
+  importConflicts              ImportConflict[]
+  importExtractionRuns         ImportExtractionRun[]
+  importDecisions              ImportMappingDecision[]
+  importRows                   ImportRow[]
+  importSourceFiles            ImportSourceFile[]
+  inboundMessages              InboundMessageQueue[]
+  inventoryItems               InventoryItem[]
+  magicLinks                   MagicLink[]
+  authSessions                 MobileAuthSession[]
+  outboundMessages             OutboundMessageTrace[]
+  packageLedgers               PackageLedger[]
+  packageTemplates             PackageTemplate[]
+  aiAgentSettings              SalonAiAgentSettings?
+  channelBindings              SalonChannelBinding[]
+  closures                     SalonClosure[]
+  galleryImages                SalonGalleryImage[]
+  messageTemplates             SalonMessageTemplate[]
+  settings                     SalonSettings?
+  testimonials                 SalonTestimonial[]
+  users                        SalonUser[]
+  memberships                  SalonMembership[]
+  subscriptions                SalonSubscription[]
+  invites                      Invite[]
+  referralCodes                ReferralCode[]                   @relation("ReferrerSalon")
+  referralInvitesSent          ReferralInvite[]                 @relation("ReferrerSalonInvites")
+  referredInvites              ReferralInvite[]                 @relation("ReferredSalon")
+  referralRewards              ReferralReward[]
+  services                     Service[]
+  ServiceCategory              ServiceCategory[]
+  serviceGroups                ServiceGroup[]
+  serviceRegions               ServiceRegion[]
+  staff                        Staff[]
+  staffTimeOffs                StaffTimeOff[]
+  waitlistEntries              WaitlistEntry[]
+  waitlistOffers               WaitlistOffer[]
+  journeyTasks                 SalonJourneyTask[]
+  commissionRules              CommissionRule[]
+  commissionBonusRules         CommissionBonusRule[]
+  commissionEntries            CommissionEntry[]
+  commissionPayouts            CommissionPayout[]
 
   @@index([citySlug, districtSlug], map: "idx_salon_city_district_slug")
 }
@@ -453,25 +453,25 @@ model ReferralCode {
 }
 
 model ReferralInvite {
-  id              Int                  @id @default(autoincrement())
-  referralCodeId  Int
-  referrerSalonId Int
-  referredSalonId Int
-  status          ReferralInviteStatus @default(QUALIFIED)
+  id                    Int                  @id @default(autoincrement())
+  referralCodeId        Int
+  referrerSalonId       Int
+  referredSalonId       Int
+  status                ReferralInviteStatus @default(QUALIFIED)
   // KURAL 3: set when the REFERRED salon pays its first real invoice
   // (invoice.paid, amount_paid>0, billing_reason create|cycle). This is
   // the trigger that qualifies the referrer's reward.
-  firstPaymentAt  DateTime?            @db.Timestamp(6)
+  firstPaymentAt        DateTime?            @db.Timestamp(6)
   // Set once the reward has actually been applied to the referrer's
   // subscription (coupon attached). Idempotency guard: a non-null value
   // means "already paid out, never again".
-  firstPaymentAppliedAt DateTime?      @db.Timestamp(6)
-  createdAt       DateTime?            @default(now()) @db.Timestamp(6)
-  updatedAt       DateTime?            @default(now()) @updatedAt @db.Timestamp(6)
-  referralCode    ReferralCode         @relation(fields: [referralCodeId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  referrerSalon   Salon                @relation("ReferrerSalonInvites", fields: [referrerSalonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  referredSalon   Salon                @relation("ReferredSalon", fields: [referredSalonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  rewards         ReferralReward[]
+  firstPaymentAppliedAt DateTime?            @db.Timestamp(6)
+  createdAt             DateTime?            @default(now()) @db.Timestamp(6)
+  updatedAt             DateTime?            @default(now()) @updatedAt @db.Timestamp(6)
+  referralCode          ReferralCode         @relation(fields: [referralCodeId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  referrerSalon         Salon                @relation("ReferrerSalonInvites", fields: [referrerSalonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  referredSalon         Salon                @relation("ReferredSalon", fields: [referredSalonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  rewards               ReferralReward[]
 
   @@unique([referredSalonId], map: "uq_referral_invite_referred_salon")
   @@index([referrerSalonId, status], map: "idx_referral_invite_referrer_status")
@@ -764,22 +764,22 @@ model AppointmentLine {
 /// Örnek: 4 hizmetli 3000 TL randevu, 300 kart + 2700 nakit → 1 PaymentBatch,
 /// 2 Payment satırı, 4 AppointmentPayment bağlantısı.
 model PaymentBatch {
-  id                  Int                   @id @default(autoincrement())
+  id                  Int                  @id @default(autoincrement())
   salonId             Int
   customerId          Int?
   totalAmount         Float
-  recordedAt          DateTime              @default(now()) @db.Timestamp(6)
+  recordedAt          DateTime             @default(now()) @db.Timestamp(6)
   notes               String?
   /// Refund batch'i ise referans aldığı orijinal batch. Pozitif tahsilat
   /// batch'lerinde NULL; tam veya kısmi iade kayıtlarında orijinal batch'i
   /// işaret eder. Payment.amount NEGATIF olur.
   parentBatchId       Int?
-  createdAt           DateTime              @default(now()) @db.Timestamp(6)
-  updatedAt           DateTime              @default(now()) @updatedAt @db.Timestamp(6)
-  salon               Salon                 @relation(fields: [salonId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  customer            Customer?             @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  parentBatch         PaymentBatch?         @relation("PaymentBatchRefund", fields: [parentBatchId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  refundBatches       PaymentBatch[]        @relation("PaymentBatchRefund")
+  createdAt           DateTime             @default(now()) @db.Timestamp(6)
+  updatedAt           DateTime             @default(now()) @updatedAt @db.Timestamp(6)
+  salon               Salon                @relation(fields: [salonId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  customer            Customer?            @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  parentBatch         PaymentBatch?        @relation("PaymentBatchRefund", fields: [parentBatchId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  refundBatches       PaymentBatch[]       @relation("PaymentBatchRefund")
   payments            Payment[]
   appointmentPayments AppointmentPayment[]
 
@@ -792,12 +792,12 @@ model PaymentBatch {
 /// Tek-yöntem tahsilatta batch'in 1 Payment'ı olur; split tahsilatta 2+.
 /// İade batch'lerinde amount NEGATIF.
 model Payment {
-  id          Int           @id @default(autoincrement())
-  batchId     Int
-  method      PaymentMethod
-  amount      Float
-  recordedAt  DateTime      @default(now()) @db.Timestamp(6)
-  batch       PaymentBatch  @relation(fields: [batchId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id         Int           @id @default(autoincrement())
+  batchId    Int
+  method     PaymentMethod
+  amount     Float
+  recordedAt DateTime      @default(now()) @db.Timestamp(6)
+  batch      PaymentBatch  @relation(fields: [batchId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([batchId], map: "idx_payment_batch")
   @@index([method], map: "idx_payment_method")
@@ -806,11 +806,11 @@ model Payment {
 /// PaymentBatch ↔ Appointment çoka-çok bağlantı. Bir tahsilat birden fazla
 /// randevuya karşılık gelir (4 hizmet birlikte tahsil edildi senaryosu).
 model AppointmentPayment {
-  id            Int           @id @default(autoincrement())
+  id            Int          @id @default(autoincrement())
   batchId       Int
   appointmentId Int
-  batch         PaymentBatch  @relation(fields: [batchId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  appointment   Appointment   @relation(fields: [appointmentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  batch         PaymentBatch @relation(fields: [batchId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  appointment   Appointment  @relation(fields: [appointmentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([batchId, appointmentId], map: "uniq_appointment_payment_batch_appt")
   @@index([appointmentId], map: "idx_appointment_payment_appointment")
@@ -989,20 +989,48 @@ model Customer {
 // the salon-scoped Customer row linked to the existing global identity.
 // ─────────────────────────────────────────────────────────────────
 model GlobalCustomerIdentity {
-  id              String          @id @default(cuid())
-  phoneE164       String          @unique
-  email           String?         @unique
-  firstName       String?
-  lastName        String?
-  gender          CustomerGender?
-  birthDate       DateTime?       @db.Date
-  acceptMarketing Boolean         @default(false)
-  verifiedAt      DateTime?       @db.Timestamp(6)
-  createdAt       DateTime        @default(now()) @db.Timestamp(6)
-  updatedAt       DateTime        @default(now()) @updatedAt @db.Timestamp(6)
-  salonCustomers  Customer[]
+  id                       String                  @id @default(cuid())
+  phoneE164                String                  @unique
+  email                    String?                 @unique
+  firstName                String?
+  lastName                 String?
+  gender                   CustomerGender?
+  birthDate                DateTime?               @db.Date
+  acceptMarketing          Boolean                 @default(false)
+  // IG kullanıcı adı kayıtta talep edildi ama henüz IGSID'ye bağlanmadı (Mekanizma B,
+  // gecikmeli bağ). İlk IG mesajında username eşleşirse GlobalIdentityChannel satırı açılır.
+  pendingInstagramUsername String?
+  verifiedAt               DateTime?               @db.Timestamp(6)
+  createdAt                DateTime                @default(now()) @db.Timestamp(6)
+  updatedAt                DateTime                @default(now()) @updatedAt @db.Timestamp(6)
+  salonCustomers           Customer[]
+  channels                 GlobalIdentityChannel[]
 
   @@index([phoneE164], map: "idx_global_customer_phone")
+  @@index([pendingInstagramUsername], map: "idx_global_identity_pending_ig_username")
+}
+
+// Platform geneli (kanal, subject) -> global kişi indeksi. Kanal-bağımsız kimlik
+// birleştirmenin çekirdeği: telefon VE IGSID aynı GlobalCustomerIdentity'ye bağlanır.
+// Profil fotosu burada (kanal-bazlı, global) kalıcı yaşar → salonlar arası kalıcı,
+// tek salonun cache'i bayatlasa da durur; tazeleme buraya geri yazar.
+model GlobalIdentityChannel {
+  id                    String                 @id @default(cuid())
+  globalIdentityId      String
+  channel               ChannelType
+  subjectType           IdentitySubjectType
+  subjectNormalized     String
+  subjectRaw            String?
+  profileUsername       String?
+  profilePicUrl         String?
+  profilePicRefreshedAt DateTime?              @db.Timestamp(6)
+  verifiedAt            DateTime?              @db.Timestamp(6)
+  createdAt             DateTime               @default(now()) @db.Timestamp(6)
+  updatedAt             DateTime               @default(now()) @updatedAt @db.Timestamp(6)
+  globalIdentity        GlobalCustomerIdentity @relation(fields: [globalIdentityId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([channel, subjectNormalized], map: "uq_global_identity_channel_subject")
+  @@index([globalIdentityId], map: "idx_global_identity_channel_identity")
 }
 
 model CustomerBehaviorLog {

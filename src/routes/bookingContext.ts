@@ -3,6 +3,7 @@ import { prisma } from '../prisma.js';
 import { getCampaignTeasersForCustomer } from '../services/campaignPricing.js';
 import { BusinessError } from '../lib/errors.js';
 import { resolveStaffProfile } from '../services/staffProfileResolver.js';
+import { lookupGlobalIdentityByChannel, syncCustomerToGlobalIdentity } from '../services/globalCustomerIdentity.js';
 
 const router = Router();
 
@@ -427,6 +428,31 @@ router.get('/context', async (req: any, res: any) => {
 
   const isKnownCustomer = Boolean(customer);
 
+  // Cross-salon recognition: not registered at THIS salon, but the channel
+  // identity is known platform-wide (the person is a Kedy customer at another
+  // salon). Surface a prompt so they can carry their identity over with one
+  // tap — no re-typing. Past appointments / packages are NOT shared (those
+  // belong to the other salon); only the identity basics travel.
+  let crossSalonRecognition:
+    | { recognized: true; firstName: string | null; lastName: string | null; globalIdentityId: string }
+    | null = null;
+  if (!customer) {
+    let gi: Awaited<ReturnType<typeof lookupGlobalIdentityByChannel>> = null;
+    if (originPhone) {
+      gi = await prisma.globalCustomerIdentity.findUnique({ where: { phoneE164: originPhone } });
+    } else if (originInstagramId) {
+      gi = await lookupGlobalIdentityByChannel('INSTAGRAM', magicLink.subjectNormalized);
+    }
+    if (gi && (gi.firstName || gi.lastName)) {
+      crossSalonRecognition = {
+        recognized: true,
+        firstName: gi.firstName,
+        lastName: gi.lastName,
+        globalIdentityId: gi.id,
+      };
+    }
+  }
+
   let appointments: Array<{
     id: number;
     startTime: Date;
@@ -734,6 +760,7 @@ router.get('/context', async (req: any, res: any) => {
     salonId,
     salonName: salon.name,
     isKnownCustomer,
+    crossSalonRecognition,
     identityLinked,
     identitySessionId: magicLink.identitySessionId,
     appointments,
@@ -745,6 +772,108 @@ router.get('/context', async (req: any, res: any) => {
     campaignShareLinks: campaignContext.shareLinks,
     completedCount: campaignContext.completedCount,
   });
+});
+
+// Cross-salon recognition consent: provision a Customer at THIS salon from the
+// platform-wide global identity, so a returning Kedy customer doesn't re-enter
+// their details. Idempotent — if already provisioned (same phone+salon), returns
+// the existing id. Only fires when the magic link's channel identity resolves to
+// a known global identity; never copies the other salon's history.
+router.post('/context/cross-salon-accept', async (req: any, res: any) => {
+  const token =
+    (typeof req.body?.token === 'string' && req.body.token) ||
+    (typeof req.query?.token === 'string' && req.query.token) ||
+    '';
+  if (!token) {
+    throw new BusinessError('VALIDATION_FAILED', 'token required', 400);
+  }
+
+  const now = new Date();
+  const magicLink = await prisma.magicLink.findUnique({ where: { token } });
+  if (!magicLink) {
+    throw new BusinessError('NOT_FOUND', 'Invalid link', 404);
+  }
+  if (magicLink.expiresAt < now || magicLink.status === 'EXPIRED' || magicLink.status === 'REVOKED') {
+    throw new BusinessError('VALIDATION_FAILED', 'Link expired', 400);
+  }
+
+  const ctx = asObject(magicLink.context);
+  const salonId = Number.isInteger(magicLink.salonId) && magicLink.salonId > 0
+    ? magicLink.salonId
+    : Number(ctx.salonId || 0);
+  if (!Number.isInteger(salonId) || salonId <= 0) {
+    throw new BusinessError('VALIDATION_FAILED', 'salonId missing', 400);
+  }
+
+  const originPhone = magicLink.subjectType === 'PHONE' ? magicLink.phone : null;
+  const originInstagramId = magicLink.subjectType === 'INSTAGRAM_ID' ? magicLink.phone : null;
+
+  // Resolve the platform-wide identity (phone for WhatsApp, IGSID for Instagram).
+  let gi: Awaited<ReturnType<typeof lookupGlobalIdentityByChannel>> = null;
+  if (originPhone) {
+    gi = await prisma.globalCustomerIdentity.findUnique({ where: { phoneE164: originPhone } });
+  } else if (originInstagramId) {
+    gi = await lookupGlobalIdentityByChannel('INSTAGRAM', magicLink.subjectNormalized);
+  }
+  if (!gi) {
+    throw new BusinessError('NOT_FOUND', 'No Kedy identity to copy', 404);
+  }
+
+  // Idempotency: a Customer with this phone may already exist at this salon.
+  const existing = await prisma.customer.findFirst({
+    where: { salonId, phone: gi.phoneE164 },
+  });
+  let customerId: number;
+  if (existing) {
+    customerId = existing.id;
+    if (!existing.globalIdentityId) {
+      await prisma.customer.update({
+        where: { id: existing.id },
+        data: { globalIdentityId: gi.id },
+      });
+    }
+  } else {
+    const fullName = [gi.firstName, gi.lastName].filter(Boolean).join(' ').trim() || gi.phoneE164;
+    const created = await prisma.customer.create({
+      data: {
+        salonId,
+        phone: gi.phoneE164,
+        name: fullName,
+        firstName: gi.firstName,
+        lastName: gi.lastName,
+        gender: gi.gender,
+        birthDate: gi.birthDate,
+        globalIdentityId: gi.id,
+        registrationStatus: 'VERIFIED',
+      },
+    });
+    customerId = created.id;
+    // Keep the platform-wide channel index complete (phone -> WhatsApp row).
+    await syncCustomerToGlobalIdentity(created).catch(() => {});
+  }
+
+  // Bind the magic link's channel identity to this salon's customer so future
+  // resolutions on this channel land directly on the known customer.
+  await prisma.identityBinding.upsert({
+    where: {
+      salonId_channel_subjectNormalized: {
+        salonId,
+        channel: magicLink.channel,
+        subjectNormalized: magicLink.subjectNormalized,
+      },
+    },
+    update: { customerId, isActive: true },
+    create: {
+      salonId,
+      channel: magicLink.channel,
+      subjectNormalized: magicLink.subjectNormalized,
+      subjectRaw: magicLink.phone || magicLink.subjectNormalized,
+      customerId,
+      source: 'MAGIC_LINK_REGISTER',
+    },
+  });
+
+  res.status(existing ? 200 : 201).json({ ok: true, customerId, alreadyExisted: Boolean(existing) });
 });
 
 export default router;
