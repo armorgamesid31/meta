@@ -304,4 +304,77 @@ router.post('/check-day-open', async (req: any, res: any) => {
   }
 });
 
+/**
+ * POST /location-intent
+ * Body: { salonId, channel: 'WHATSAPP'|'INSTAGRAM', conversationKey, canonicalUserId?, customerId? }
+ *
+ * Müşteri konum/adres sorduğunda n8n tool_request_location bunu çağırır.
+ * Booking magic-link deseniyle aynı mantık: burada SADECE "pending location"
+ * işareti bırakılır; Google Maps butonunu AI'ın cevabına agent-outbound/send
+ * gömerek tek mesajda yollar (ve pendingLocationAt'ı temizler).
+ *
+ * Dönüş:
+ *   { ok:true, hasButton:true,  address }  → Maps URL kayıtlı, buton gömülecek
+ *   { ok:true, hasButton:false, address }  → Maps URL yok; AI adresi metinle söylesin
+ */
+router.post('/location-intent', async (req: any, res: any) => {
+  const salonId = parseSalonId(req.body?.salonId);
+  const channel = parseChannel(req.body?.channel);
+  const conversationKey =
+    typeof req.body?.conversationKey === 'string' ? req.body.conversationKey.trim() : '';
+
+  if (!salonId || !channel || !conversationKey) {
+    return res
+      .status(400)
+      .json({ ok: false, error: 'salonId_channel_conversationKey_required' });
+  }
+
+  const canonicalUserId =
+    typeof req.body?.canonicalUserId === 'string' && req.body.canonicalUserId.trim()
+      ? req.body.canonicalUserId.trim()
+      : null;
+  const customerId =
+    Number.isInteger(Number(req.body?.customerId)) && Number(req.body?.customerId) > 0
+      ? Number(req.body.customerId)
+      : null;
+
+  try {
+    const salon = await prisma.salon.findUnique({
+      where: { id: salonId },
+      select: { googleMapsUrl: true, address: true, district: true, city: true },
+    });
+
+    const mapsUrl =
+      typeof salon?.googleMapsUrl === 'string' ? salon.googleMapsUrl.trim() : '';
+    const addressText = [salon?.address, salon?.district, salon?.city]
+      .map((p) => (typeof p === 'string' ? p.trim() : ''))
+      .filter(Boolean)
+      .join(', ');
+
+    if (!mapsUrl) {
+      // Harita linki kayıtlı değil — buton gömülemez; AI adresi metinle söylesin.
+      return res.json({ ok: true, hasButton: false, address: addressText || null });
+    }
+
+    // Pending location işaretle — agent-outbound/send bunu görüp butonu cevaba gömecek.
+    await prisma.conversationState.upsert({
+      where: { salonId_channel_conversationKey: { salonId, channel, conversationKey } },
+      update: { pendingLocationAt: new Date() },
+      create: {
+        salonId,
+        channel,
+        conversationKey,
+        canonicalUserId,
+        customerId,
+        pendingLocationAt: new Date(),
+      },
+    });
+
+    return res.json({ ok: true, hasButton: true, address: addressText || null });
+  } catch (err: any) {
+    console.error('[internalAgent.location-intent] failed', err);
+    return res.status(500).json({ ok: false, error: 'internal_error' });
+  }
+});
+
 export default router;

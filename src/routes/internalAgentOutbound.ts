@@ -84,7 +84,7 @@ function extractRawConversationKey(channel: ChannelType, value: string): string 
   return trimmed;
 }
 
-type ActionKind = 'none' | 'cancel' | 'booking';
+type ActionKind = 'none' | 'cancel' | 'booking' | 'location';
 
 function pickMagicLinkUrl(body: any): string | null {
   const candidates = [
@@ -195,7 +195,7 @@ async function markMagicLinkSent(params: {
   });
 }
 
-async function resolveConversationStateMode(params: {
+async function resolveConversationState(params: {
   salonId: number;
   channel: ChannelType;
   conversationKey: string;
@@ -208,9 +208,9 @@ async function resolveConversationStateMode(params: {
       conversationKey: { in: candidates },
     },
     orderBy: { updatedAt: 'desc' },
-    select: { mode: true },
+    select: { id: true, mode: true, pendingLocationAt: true },
   });
-  return state?.mode || null;
+  return state;
 }
 
 async function resolveLatestInboundMeta(
@@ -240,6 +240,7 @@ async function sendInstagramMessage(params: {
   text: string;
   actionKind: ActionKind;
   magicLinkUrl?: string | null;
+  locationUrl?: string | null;
   externalAccountId?: string | null;
 }) {
   const settings = await prisma.salonAiAgentSettings.findUnique({
@@ -263,6 +264,7 @@ async function sendInstagramMessage(params: {
   const url = `https://graph.instagram.com/${META_GRAPH_VERSION}/${senderInstagramId}/messages`;
 
   const bookingUrl = params.magicLinkUrl && params.magicLinkUrl.trim() ? params.magicLinkUrl.trim() : null;
+  const locationUrl = params.locationUrl && params.locationUrl.trim() ? params.locationUrl.trim() : null;
   let payload: Record<string, any>;
 
   if (params.actionKind === 'booking' && bookingUrl) {
@@ -279,6 +281,26 @@ async function sendInstagramMessage(params: {
                 type: 'web_url',
                 title: 'Randevu Oluştur',
                 url: bookingUrl,
+              },
+            ],
+          },
+        },
+      },
+    };
+  } else if (params.actionKind === 'location' && locationUrl) {
+    payload = {
+      recipient: { id: rawRecipientId },
+      message: {
+        attachment: {
+          type: 'template',
+          payload: {
+            template_type: 'button',
+            text: params.text,
+            buttons: [
+              {
+                type: 'web_url',
+                title: 'Yol Tarifi',
+                url: locationUrl,
               },
             ],
           },
@@ -351,6 +373,7 @@ async function sendWhatsappViaChakra(params: {
   text: string;
   actionKind: ActionKind;
   magicLinkUrl?: string | null;
+  locationUrl?: string | null;
   externalAccountId?: string | null;
 }) {
   const salon = await prisma.salon.findUnique({
@@ -372,6 +395,7 @@ async function sendWhatsappViaChakra(params: {
 
   const to = extractRawConversationKey('WHATSAPP', params.conversationKey);
   const bookingUrl = params.magicLinkUrl && params.magicLinkUrl.trim() ? params.magicLinkUrl.trim() : null;
+  const locationUrl = params.locationUrl && params.locationUrl.trim() ? params.locationUrl.trim() : null;
 
   const payload: Record<string, any> = {
     messaging_product: 'whatsapp',
@@ -411,6 +435,21 @@ async function sendWhatsappViaChakra(params: {
         parameters: {
           display_text: 'Randevu Oluştur',
           url: bookingUrl,
+        },
+      },
+    };
+  } else if (params.actionKind === 'location' && locationUrl) {
+    payload.type = 'interactive';
+    payload.interactive = {
+      type: 'cta_url',
+      body: {
+        text: params.text,
+      },
+      action: {
+        name: 'cta_url',
+        parameters: {
+          display_text: 'Yol Tarifi',
+          url: locationUrl,
         },
       },
     };
@@ -486,9 +525,13 @@ router.post('/send', async (req: any, res: any) => {
   const bookingIntent = asBoolean(body?.bookingIntent) || asBoolean(body?.intentBooking) || asBoolean(body?.toolBookingIntent);
   const salonMeta = await prisma.salon.findUnique({
     where: { id: salonId },
-    select: { slug: true },
+    select: { slug: true, googleMapsUrl: true },
   });
   const salonSlug = typeof salonMeta?.slug === 'string' && salonMeta.slug.trim() ? salonMeta.slug.trim() : null;
+  const salonGoogleMapsUrl =
+    typeof salonMeta?.googleMapsUrl === 'string' && salonMeta.googleMapsUrl.trim()
+      ? salonMeta.googleMapsUrl.trim()
+      : null;
 
   let magicLinkUrl = pickMagicLinkUrl(body);
   let magicLinkAction: 'created' | 'renewed' | 'pending' | null = null;
@@ -548,15 +591,26 @@ router.post('/send', async (req: any, res: any) => {
       }
     }
 
-    const mode = await resolveConversationStateMode({
+    const convState = await resolveConversationState({
       salonId,
       channel,
       conversationKey: resolvedConversationKey,
     });
+    const mode = convState?.mode || null;
+
+    // Konum niyeti: tool_request_location, ConversationState.pendingLocationAt'a
+    // now() yazar. Booking magic-link'ten DÜŞÜK öncelikli (randevu > konum) ve
+    // sadece taze (5 dk) ise butona dönüşür; gönderim sonrası temizlenir.
+    const LOCATION_PENDING_TTL_MS = 5 * 60 * 1000;
+    const pendingLocationAt = convState?.pendingLocationAt ?? null;
+    const hasFreshLocationIntent =
+      !!pendingLocationAt &&
+      Date.now() - pendingLocationAt.getTime() < LOCATION_PENDING_TTL_MS;
 
     let outboundText = text;
     let pendingWaitEnforced = false;
     let actionKind: ActionKind = 'none';
+    let locationUrl: string | null = null;
     if (mode === 'HUMAN_PENDING') {
       actionKind = 'cancel';
       pendingWaitEnforced = true;
@@ -566,6 +620,9 @@ router.post('/send', async (req: any, res: any) => {
       actionKind = 'cancel';
     } else if (magicLinkUrl) {
       actionKind = 'booking';
+    } else if (hasFreshLocationIntent && salonGoogleMapsUrl) {
+      actionKind = 'location';
+      locationUrl = salonGoogleMapsUrl;
     }
 
     const sent =
@@ -576,6 +633,7 @@ router.post('/send', async (req: any, res: any) => {
             text: outboundText,
             actionKind,
             magicLinkUrl,
+            locationUrl,
             externalAccountId: externalAccountIdFromInbound,
           })
         : await sendWhatsappViaChakra({
@@ -584,6 +642,7 @@ router.post('/send', async (req: any, res: any) => {
             text: outboundText,
             actionKind,
             magicLinkUrl,
+            locationUrl,
             externalAccountId: externalAccountIdFromInbound,
           });
 
@@ -629,6 +688,13 @@ router.post('/send', async (req: any, res: any) => {
         conversationKey: resolvedConversationKey,
         providerMessageId: savedMessage.providerMessageId,
       });
+    }
+
+    // Konum butonu gönderildiyse pending işaretini temizle (tekrar gömülmesin).
+    if (actionKind === 'location' && convState?.id) {
+      await prisma.conversationState
+        .update({ where: { id: convState.id }, data: { pendingLocationAt: null } })
+        .catch((err) => console.error('[agent-outbound] clear pendingLocationAt failed', err));
     }
 
     await prisma.outboundMessageTrace.upsert({
