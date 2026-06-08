@@ -7203,6 +7203,42 @@ router.put('/whatsapp-agent/settings', authenticateToken, async (req: any, res: 
   }
 });
 
+// Kanal-bazı yapay zeka asistanı aç/kapa (SalonChannelBinding.aiEnabled).
+router.get('/ai-channels', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  try {
+    const channels = await prisma.salonChannelBinding.findMany({
+      where: { salonId },
+      select: { channel: true, isActive: true, aiEnabled: true },
+      orderBy: { channel: 'asc' },
+    });
+    return res.status(200).json({ channels });
+  } catch (error) {
+    console.error('Admin ai-channels read error:', error);
+    throw error;
+  }
+});
+
+router.put('/ai-channels', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  const channelRaw = typeof req.body?.channel === 'string' ? req.body.channel.trim().toUpperCase() : '';
+  const channel = channelRaw === 'WHATSAPP' || channelRaw === 'INSTAGRAM' ? channelRaw : null;
+  const aiEnabled = req.body?.aiEnabled === true;
+  if (!channel) {
+    return res.status(400).json({ message: 'Geçerli kanal gerekli (WHATSAPP/INSTAGRAM).' });
+  }
+  try {
+    const result = await prisma.salonChannelBinding.updateMany({
+      where: { salonId, channel: channel as any },
+      data: { aiEnabled },
+    });
+    return res.status(200).json({ ok: true, channel, aiEnabled, updated: result.count });
+  } catch (error) {
+    console.error('Admin ai-channels update error:', error);
+    throw error;
+  }
+});
+
 
 
 
