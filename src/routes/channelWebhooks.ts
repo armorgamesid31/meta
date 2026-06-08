@@ -27,6 +27,7 @@ import { storeConversationAvatarFromUrl } from '../services/conversationAvatarSt
 import { buildMediaItemsFromWebhook } from '../services/conversationMediaCache.js';
 import {
   buildCustomerCalibration,
+  buildSystemPrompt,
   loadCustomerSnapshot,
   loadSalonAgentContext,
 } from '../services/salonAgentContext.js';
@@ -1197,6 +1198,9 @@ async function processIncomingBatch(items: any[]) {
   const processed: any[] = [];
   const instagramCredentialsBySalon = new Map<number, { accessToken: string; externalAccountId: string | null } | null>();
   const instagramProfileBySubject = new Map<string, InstagramScopedProfile | null>();
+  // Kanal-bazı "AI Aktif" bayrağı (SalonChannelBinding.aiEnabled) — salon+kanal
+  // başına bir kez sorgula, batch içinde tekrar etme. Güvenli varsayılan: açık.
+  const channelAiCache = new Map<string, boolean>();
 
   for (const row of items) {
     const channel = row.channel as ChannelType;
@@ -1624,6 +1628,27 @@ async function processIncomingBatch(items: any[]) {
     });
 
     const statePolicy = computeStatePolicy(state.mode);
+
+    // Kanal-bazı "AI Aktif": salon bu kanalda otomatik yanıtı kapattıysa
+    // (panel toggle → SalonChannelBinding.aiEnabled=false) agent hiç çalışmasın.
+    // Mevcut n8n "If" gate'i zaten state.aiAllowed'a bakıyor → buraya AND'liyoruz,
+    // n8n grafiğine dokunmaya gerek yok. Güvenli varsayılan: bağlama yoksa açık.
+    const channelAiKey = `${salonId}:${channel}`;
+    let channelAiEnabled = channelAiCache.get(channelAiKey);
+    if (channelAiEnabled === undefined) {
+      try {
+        const aiBinding = await prisma.salonChannelBinding.findFirst({
+          where: { salonId, channel },
+          select: { aiEnabled: true },
+          orderBy: { id: 'desc' },
+        });
+        channelAiEnabled = aiBinding ? aiBinding.aiEnabled !== false : true;
+      } catch {
+        channelAiEnabled = true;
+      }
+      channelAiCache.set(channelAiKey, channelAiEnabled);
+    }
+
     const agentContext = await loadSalonAgentContext(salonId);
     const agentSettings = agentContext?.agentSettings ?? {
       tone: 'balanced',
@@ -1672,6 +1697,17 @@ async function processIncomingBatch(items: any[]) {
       salonOneLiner,
       customer: customerSnapshot,
       customerCalibration,
+      // Tam dinamik sistem prompt — salon ayarları + müşteri + ton/stil burada
+      // birleşir. n8n agent node'u sadece bunu enjekte eder ($json.body.systemPrompt).
+      systemPrompt: buildSystemPrompt({
+        toneDirective,
+        styleDirective,
+        salonOneLiner,
+        salonInfo,
+        customer: customerSnapshot,
+        customerCalibration,
+        repliedTo: repliedToContext,
+      }),
       providerMessageId,
       originalProviderMessageId: incomingProviderMessageId !== providerMessageId ? incomingProviderMessageId : undefined,
       salonId,
@@ -1704,7 +1740,8 @@ async function processIncomingBatch(items: any[]) {
       agentSettings,
       state: {
         mode: state.mode,
-        aiAllowed: statePolicy.aiAllowed,
+        // Konuşma modu izin veriyor VE kanal-bazı AI açıksa otomatik yanıt.
+        aiAllowed: statePolicy.aiAllowed && channelAiEnabled,
         responsePolicy: statePolicy.responsePolicy,
       },
       userAction: forceAutoByCancel ? 'HUMAN_CANCEL' : row.actionPayload || null,
