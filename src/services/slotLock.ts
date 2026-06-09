@@ -112,6 +112,27 @@ export async function deleteSlotLock(salonId: number, id: string): Promise<void>
   invalidateAvailabilityForSalon(salonId).catch(() => undefined);
 }
 
+/**
+ * Extend a still-valid lock's TTL by another window. Used to keep the slot
+ * reserved while the customer fills the (now multi-step) registration. Only
+ * extends a lock that is OURS and NOT yet expired — never resurrects an expired
+ * lock (the slot may already have been taken). Returns ok=false if the lock is
+ * gone/expired, so the caller can re-lock or surface "slot taken".
+ */
+export async function refreshSlotLock(
+  salonId: number,
+  id: string,
+): Promise<{ ok: boolean; expiresAt?: Date }> {
+  const now = new Date();
+  const expiresAt = new Date(Date.now() + SLOT_LOCK_TTL_SECONDS * 1000);
+  const updated = await prisma.slotLock.updateMany({
+    where: { id, salonId, expiresAt: { gt: now } },
+    data: { expiresAt },
+  });
+  if (updated.count === 0) return { ok: false };
+  return { ok: true, expiresAt };
+}
+
 // Commit anında kilidin hâlâ geçerli ve bu salona ait olduğunu doğrula.
 // Hatalı/eski lock'ları sessizce yok say: motor zaten BOOKED appointment
 // üzerinden re-check yapacak.

@@ -6,7 +6,7 @@ import {
   normalizePersonGroups,
 } from '../services/availabilityService.js';
 import { BusinessError } from '../lib/errors.js';
-import { createSlotLock, deleteSlotLock, parseSlotLockEntries } from '../services/slotLock.js';
+import { createSlotLock, deleteSlotLock, refreshSlotLock, parseSlotLockEntries } from '../services/slotLock.js';
 
 const router = Router();
 
@@ -100,6 +100,26 @@ router.delete('/lock/:id', async (req: any, res: any) => {
 
   await deleteSlotLock(salonId, id);
   return res.status(200).json({ ok: true });
+});
+
+// POST /availability/lock/:id/refresh — extend a still-valid lock's TTL.
+// The booking UI calls this on an interval while the (multi-step) registration
+// modal is open, so the customer doesn't lose the slot mid-form. Returns 409 if
+// the lock already expired/was taken so the UI can react.
+router.post('/lock/:id/refresh', async (req: any, res: any) => {
+  const salonId = req.salon?.id;
+  if (!salonId) {
+    throw new BusinessError('VALIDATION_FAILED', 'Salon context is required.', 400);
+  }
+  const id = String(req.params?.id || '').trim();
+  if (!id) {
+    throw new BusinessError('VALIDATION_FAILED', 'lock id is required.', 400);
+  }
+  const result = await refreshSlotLock(salonId, id);
+  if (result.ok) {
+    return res.status(200).json({ ok: true, expiresAt: result.expiresAt });
+  }
+  return res.status(409).json({ ok: false, code: 'LOCK_EXPIRED', message: 'Slot lock expired or taken.' });
 });
 
 router.get('/', async (req: any, res: any) => {
