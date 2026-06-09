@@ -25,6 +25,7 @@ import {
 import { upsertConversationMessageEvent } from '../services/conversationMessageEvents.js';
 import { storeConversationAvatarFromUrl } from '../services/conversationAvatarStorage.js';
 import { buildMediaItemsFromWebhook } from '../services/conversationMediaCache.js';
+import { bindPendingInstagramUsername } from '../services/globalCustomerIdentity.js';
 import {
   buildCustomerCalibration,
   buildSystemPrompt,
@@ -1284,6 +1285,22 @@ async function processIncomingBatch(items: any[]) {
               accessToken: credentials.accessToken,
             });
             instagramProfileBySubject.set(cacheKey, instagramProfile);
+          }
+        }
+
+        // Deferred IG bind (Mechanism B): if a customer claimed this IG username
+        // at registration (pendingInstagramUsername), link the now-known IGSID to
+        // their platform-wide identity so cross-salon recognition + the unified
+        // profile photo start working for this person on Instagram too.
+        if (instagramProfile?.username) {
+          try {
+            await bindPendingInstagramUsername({
+              igsid: scopedUserId,
+              username: instagramProfile.username,
+              profilePicUrl: instagramProfile.profilePic,
+            });
+          } catch (bindError) {
+            console.warn('IG deferred bind failed:', bindError);
           }
         }
       }
