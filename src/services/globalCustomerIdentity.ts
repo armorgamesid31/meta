@@ -113,11 +113,22 @@ export async function bindPendingInstagramUsername(input: {
   });
   if (alreadyBound) return alreadyBound.globalIdentityId;
 
-  const claimant = await prisma.globalCustomerIdentity.findFirst({
+  // Multi-claimant guard: if more than one identity claimed this exact IG
+  // username at registration (typo, recycled handle, or a claim attempt), DO
+  // NOT auto-bind to a guessed one — that would silently attach the real
+  // account to the wrong person. Leave it for manual review.
+  const claimants = await prisma.globalCustomerIdentity.findMany({
     where: { pendingInstagramUsername: username },
     select: { id: true },
   });
-  if (!claimant) return null;
+  if (claimants.length === 0) return null;
+  if (claimants.length > 1) {
+    console.warn(
+      `IG bind ambiguous: ${claimants.length} identities claim username "${username}" (IGSID ${igsid}) — skipping auto-bind, manual review needed.`,
+    );
+    return null;
+  }
+  const claimant = claimants[0];
 
   await upsertGlobalIdentityChannel({
     globalIdentityId: claimant.id,
