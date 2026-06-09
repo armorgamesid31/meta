@@ -898,6 +898,7 @@ async function getInstagramAccessTokenForSalon(salonId: number): Promise<string 
 async function tryResolveFreshInstagramProfilePicUrl(input: {
   conversationKeyRaw: string;
   accessToken: string;
+  salonId?: number;
 }): Promise<string | null> {
   const scopedId = normalizeInstagramIdentity(input.conversationKeyRaw);
   if (!scopedId) return null;
@@ -911,7 +912,24 @@ async function tryResolveFreshInstagramProfilePicUrl(input: {
       timeout: 12000,
     });
     const data = asObject(response.data);
-    return asOptionalString(data.profile_pic);
+    const freshUrl = asOptionalString(data.profile_pic);
+    // Persist the refreshed URL so it survives the next list render instead of
+    // dying when the previous IG URL expires (the cache/global previously kept a
+    // stale, 403-ing URL). Both the per-salon cache and the platform-wide global
+    // identity photo are updated.
+    if (freshUrl) {
+      if (input.salonId) {
+        await prisma.channelProfileCache.updateMany({
+          where: { salonId: input.salonId, channel: 'INSTAGRAM', subjectNormalized: scopedId },
+          data: { profilePicUrl: freshUrl, fetchedAt: new Date() },
+        }).catch(() => {});
+      }
+      await prisma.globalIdentityChannel.updateMany({
+        where: { channel: 'INSTAGRAM', subjectNormalized: scopedId },
+        data: { profilePicUrl: freshUrl, profilePicRefreshedAt: new Date() },
+      }).catch(() => {});
+    }
+    return freshUrl;
   } catch {
     return null;
   }
@@ -11768,6 +11786,7 @@ router.get('/conversations/profile-image', authenticateToken, async (req: any, r
         const freshUrl = await tryResolveFreshInstagramProfilePicUrl({
           conversationKeyRaw,
           accessToken,
+          salonId,
         });
         if (freshUrl) {
           parsed = new URL(freshUrl);
