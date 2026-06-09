@@ -16,10 +16,41 @@ const CODE_TTL_MINUTES = 15;
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const CODE_RE = /KEDY-([A-Z0-9]{5})/i;
 
-/** The IG @username the customer should DM the code to. Kedy-central account
- *  (set once Berkay connects it). Salon-specific targets can be added later —
- *  the webhook matches the code from ANY IG account regardless of target. */
-export function resolveInstagramVerifyTarget(): string | null {
+function extractIgHandle(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const s = url.trim();
+  if (!s) return null;
+  if (s.startsWith('@')) return s.slice(1).split(/[/?#\s]/)[0] || null;
+  const m = s.match(/instagram\.com\/([A-Za-z0-9._]+)/i);
+  if (m) return m[1];
+  if (/^[A-Za-z0-9._]+$/.test(s)) return s;
+  return null;
+}
+
+/** The IG @username the customer should DM the code to. Prefers the salon's OWN
+ *  connected IG (its DMs already webhook to us → works WITHOUT the Kedy-central
+ *  account); otherwise falls back to the Kedy-central account
+ *  (KEDY_INSTAGRAM_USERNAME). Either way the webhook capture is salon-agnostic,
+ *  so a code sent to ANY of these accounts is detected + bound. */
+export async function resolveInstagramVerifyTarget(salonId: number): Promise<string | null> {
+  try {
+    const settings = await prisma.salonAiAgentSettings.findUnique({
+      where: { salonId },
+      select: { faqAnswers: true },
+    });
+    const faq = (settings?.faqAnswers || {}) as any;
+    const connected = faq?.metaDirect?.instagram?.externalAccountId;
+    if (connected) {
+      const salon = await prisma.salon.findUnique({
+        where: { id: salonId },
+        select: { instagramUrl: true },
+      });
+      const handle = extractIgHandle(salon?.instagramUrl);
+      if (handle) return handle;
+    }
+  } catch {
+    // fall through to Kedy-central
+  }
   const env = (process.env.KEDY_INSTAGRAM_USERNAME || '').trim().replace(/^@/, '');
   return env || null;
 }
@@ -51,7 +82,7 @@ export async function startInstagramVerification(input: {
     code = generateCode();
   }
 
-  const targetUsername = resolveInstagramVerifyTarget();
+  const targetUsername = await resolveInstagramVerifyTarget(input.salonId);
   await prisma.instagramVerificationCode.create({
     data: {
       code,
