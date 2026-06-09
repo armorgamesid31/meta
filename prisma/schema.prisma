@@ -1033,6 +1033,28 @@ model GlobalIdentityChannel {
   @@index([globalIdentityId], map: "idx_global_identity_channel_identity")
 }
 
+// Instagram account verification by code-DM. At registration we show a short
+// code; the customer DMs it from their IG to the (Kedy-central or salon) IG
+// account; the webhook matches the code → captures that account's IGSID and
+// binds it to the person (by phoneE164). Proves IG-account ownership the moment
+// they message — the only synchronous IG verification the platform allows.
+model InstagramVerificationCode {
+  id             String    @id @default(cuid())
+  code           String    @unique
+  salonId        Int
+  phoneE164      String?
+  status         String    @default("PENDING") // PENDING | USED | EXPIRED
+  boundIgsid     String?
+  boundUsername  String?
+  targetUsername String?
+  expiresAt      DateTime  @db.Timestamp(6)
+  usedAt         DateTime? @db.Timestamp(6)
+  createdAt      DateTime  @default(now()) @db.Timestamp(6)
+
+  @@index([status, expiresAt], map: "idx_ig_verify_status")
+  @@index([salonId, phoneE164], map: "idx_ig_verify_salon_phone")
+}
+
 model CustomerBehaviorLog {
   id            Int       @id @default(autoincrement())
   customerId    Int

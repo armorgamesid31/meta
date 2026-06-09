@@ -26,6 +26,7 @@ import { upsertConversationMessageEvent } from '../services/conversationMessageE
 import { storeConversationAvatarFromUrl } from '../services/conversationAvatarStorage.js';
 import { buildMediaItemsFromWebhook } from '../services/conversationMediaCache.js';
 import { bindPendingInstagramUsername } from '../services/globalCustomerIdentity.js';
+import { tryConsumeInstagramVerifyCode } from '../services/instagramVerifyService.js';
 import {
   buildCustomerCalibration,
   buildSystemPrompt,
@@ -1225,6 +1226,23 @@ async function processIncomingBatch(items: any[]) {
     const conversationKey = String(row.channelConversationKey || '').trim();
     const externalAccountId = typeof row.externalAccountId === 'string' ? row.externalAccountId.trim() : null;
     const externalBusinessId = typeof row.externalBusinessId === 'string' ? row.externalBusinessId.trim() : null;
+
+    // Instagram account-verification code capture (salon-agnostic). If an inbound
+    // IG DM carries a pending KEDY-xxxxx code, bind that account's IGSID to the
+    // person who started the verification. Runs BEFORE salon resolution so it
+    // also works for the Kedy-central IG account (which has no salon binding).
+    // Wrapped so it can never break normal webhook processing.
+    if (channel === 'INSTAGRAM' && !row.isEcho && typeof row.text === 'string' && row.text.length > 0) {
+      try {
+        await tryConsumeInstagramVerifyCode({
+          igsid: normalizeInstagramScopedId(typeof row.channelUserId === 'string' ? row.channelUserId : ''),
+          username: null,
+          text: row.text,
+        });
+      } catch (e: any) {
+        console.warn('IG verify code capture failed:', e?.message || e);
+      }
+    }
 
     const salonId = await resolveSalonId(channel, externalAccountId, externalBusinessId);
     if (!salonId) {

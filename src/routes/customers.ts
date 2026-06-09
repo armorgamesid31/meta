@@ -31,6 +31,11 @@ import {
   markGlobalIdentityVerified,
 } from '../services/globalCustomerIdentity.js';
 import {
+  startInstagramVerification,
+  getInstagramVerifyStatus,
+  finalizeInstagramBindForPhone,
+} from '../services/instagramVerifyService.js';
+import {
   sendVerificationLinkTemplate,
 } from '../services/whatsappTemplateSender.js';
 import {
@@ -289,9 +294,15 @@ async function upsertRegisteredCustomer(input: {
   }
 
   // Mirror PII to the platform-wide GlobalCustomerIdentity (phone-keyed).
-  await syncCustomerToGlobalIdentity(customer.id).catch(err =>
-    console.error('GlobalCustomerIdentity sync failed:', err)
-  );
+  const syncResult = await syncCustomerToGlobalIdentity(customer.id).catch(err => {
+    console.error('GlobalCustomerIdentity sync failed:', err);
+    return { identityId: null as string | null, created: false };
+  });
+  // Finalize an IG account verification done (via code-DM) BEFORE registration
+  // completed: bind the captured IGSID to the just-created global identity.
+  if (syncResult?.identityId && customer.phone) {
+    await finalizeInstagramBindForPhone({ phoneE164: customer.phone, globalIdentityId: syncResult.identityId });
+  }
 
   if (input.identity) {
     const context = asObject(input.magicLink?.context);
@@ -889,6 +900,55 @@ router.post('/verify-phone/check-otp', async (req: any, res: any) => {
     }
     return res.status(status).json({ message });
   }
+});
+
+// ─────────────────────────────────────────────────────────────────
+// INSTAGRAM account verification by code-DM (wizard step 4).
+//
+// start: returns a short code + the IG account (@username) to DM it to. The
+// customer messages the code from their OWN Instagram; the IG webhook captures
+// the sending IGSID and binds it to this person. poll: frontend waits for it.
+// Synchronous IG-account ownership proof — the only one the platform allows.
+// ─────────────────────────────────────────────────────────────────
+router.post('/instagram-verify/start', async (req: any, res: any) => {
+  const salonId = req.salon?.id;
+  if (!salonId) {
+    throw new BusinessError('VALIDATION_FAILED', 'Salon context required.', 400);
+  }
+  // Tie the verification to the customer's phone (prefer a step-1 verified id).
+  let phoneE164: string | null = null;
+  const verificationId = typeof req.body?.verificationId === 'string' ? req.body.verificationId.trim() : '';
+  if (verificationId) {
+    const v = await prisma.customerPhoneVerification.findFirst({
+      where: { id: verificationId, salonId },
+      select: { phone: true },
+    });
+    if (v?.phone) phoneE164 = v.phone;
+  }
+  if (!phoneE164 && typeof req.body?.phone === 'string') {
+    const digits = req.body.phone.replace(/\D/g, '');
+    if (digits) phoneE164 = digits;
+  }
+
+  const result = await startInstagramVerification({ salonId, phoneE164 });
+  return res.status(201).json({
+    code: result.code,
+    targetUsername: result.targetUsername,
+    igmUrl: result.targetUsername ? `https://ig.me/m/${result.targetUsername}` : null,
+  });
+});
+
+router.get('/instagram-verify/poll', async (req: any, res: any) => {
+  const salonId = req.salon?.id;
+  if (!salonId) {
+    throw new BusinessError('VALIDATION_FAILED', 'Salon context required.', 400);
+  }
+  const code = typeof req.query?.code === 'string' ? req.query.code.trim() : '';
+  if (!code) {
+    throw new BusinessError('VALIDATION_FAILED', 'code is required.', 400);
+  }
+  const status = await getInstagramVerifyStatus(code);
+  return res.status(200).json(status);
 });
 
 // ─────────────────────────────────────────────────────────────────
