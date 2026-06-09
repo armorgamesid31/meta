@@ -158,6 +158,45 @@ export async function syncCustomerToGlobalIdentity(
   const phoneE164 = customer.phone;
   const isVerified = customer.registrationStatus === 'VERIFIED';
 
+  // Phone-change protocol: if this customer is already linked to a global
+  // identity whose phone differs from the (new) customer phone, MIGRATE that
+  // identity to the new phone instead of letting the dedupe-by-phone below
+  // split the person into a second identity. Migration preserves their IG
+  // bindings + cross-salon history. If the new phone already belongs to a
+  // DIFFERENT identity (collision), we don't auto-merge — fall through and
+  // re-link to the new phone's identity, leaving the old one for a manual
+  // merge decision (logged).
+  if (customer.globalIdentityId) {
+    try {
+      const current = await prisma.globalCustomerIdentity.findUnique({
+        where: { id: customer.globalIdentityId },
+        select: { id: true, phoneE164: true },
+      });
+      if (current && current.phoneE164 !== phoneE164) {
+        const collision = await prisma.globalCustomerIdentity.findUnique({
+          where: { phoneE164 },
+          select: { id: true },
+        });
+        if (!collision) {
+          await prisma.globalCustomerIdentity.update({
+            where: { id: current.id },
+            data: { phoneE164 },
+          });
+          await prisma.globalIdentityChannel.updateMany({
+            where: { globalIdentityId: current.id, channel: 'WHATSAPP', subjectType: 'PHONE' },
+            data: { subjectNormalized: phoneE164, subjectRaw: phoneE164 },
+          });
+        } else if (collision.id !== current.id) {
+          console.warn(
+            `Phone-change collision: customer ${customer.id} moved to a phone owned by global ${collision.id}; old global ${current.id} left intact for manual merge.`,
+          );
+        }
+      }
+    } catch (migrationError) {
+      console.warn('Phone-change migration failed:', migrationError);
+    }
+  }
+
   // Find by phone (unique). If none → create. Otherwise update missing fields.
   const existing = await prisma.globalCustomerIdentity.findUnique({
     where: { phoneE164 },
@@ -190,8 +229,13 @@ export async function syncCustomerToGlobalIdentity(
         gender: existing.gender ?? customer.gender ?? undefined,
         birthDate: existing.birthDate ?? customer.birthDate ?? undefined,
         verifiedAt: existing.verifiedAt ?? (isVerified ? new Date() : null),
+        // IG-change protocol: prefer the (possibly new) handle the customer
+        // carries so a changed username updates the pending claim; fall back to
+        // the existing claim. Once the real IGSID is bound, the GlobalIdentity-
+        // Channel row is the source of truth and the IGSID is stable across
+        // username changes, so this only matters pre-bind.
         pendingInstagramUsername:
-          existing.pendingInstagramUsername ?? normalizeIgUsername(customer.instagram) ?? undefined,
+          normalizeIgUsername(customer.instagram) || existing.pendingInstagramUsername || undefined,
       },
     });
   }

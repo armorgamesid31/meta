@@ -12122,6 +12122,7 @@ router.get('/conversations', authenticateToken, async (req: any, res: any) => {
           select: {
             id: true,
             name: true,
+            globalIdentityId: true,
           },
         })
       : [];
@@ -12225,6 +12226,40 @@ router.get('/conversations', authenticateToken, async (req: any, res: any) => {
       }
     }
 
+    // Cross-salon fallback: a linked customer may carry an IG photo on their
+    // platform-wide identity even when THIS salon has no IG binding for them
+    // (they're an IG customer at a different salon). Surface that photo too.
+    const linkedGlobalIdentityIds = Array.from(
+      new Set(
+        linkedCustomers
+          .map((c) => c.globalIdentityId)
+          .filter((v): v is string => typeof v === 'string' && v.length > 0),
+      ),
+    );
+    const globalIgPhotoByIdentity = new Map<string, string>();
+    if (linkedGlobalIdentityIds.length) {
+      const globalIgRows = await prisma.globalIdentityChannel.findMany({
+        where: {
+          channel: 'INSTAGRAM',
+          globalIdentityId: { in: linkedGlobalIdentityIds },
+          profilePicUrl: { not: null },
+        },
+        select: { globalIdentityId: true, profilePicUrl: true },
+      });
+      for (const r of globalIgRows) {
+        if (r.profilePicUrl && !globalIgPhotoByIdentity.has(r.globalIdentityId)) {
+          globalIgPhotoByIdentity.set(r.globalIdentityId, r.profilePicUrl);
+        }
+      }
+    }
+    const linkedCustomerGlobalIgPhotoById = new Map<number, string>();
+    for (const customer of linkedCustomers) {
+      const gid = customer.globalIdentityId;
+      if (gid && globalIgPhotoByIdentity.has(gid)) {
+        linkedCustomerGlobalIgPhotoById.set(customer.id, globalIgPhotoByIdentity.get(gid)!);
+      }
+    }
+
     const items = itemsWithLink.map((item) => {
       const { stateRow, ...baseItem } = item;
       const normalizedInstagramSubject =
@@ -12252,6 +12287,9 @@ router.get('/conversations', authenticateToken, async (req: any, res: any) => {
           baseItem.profilePicUrl ||
           cachedInstagramProfile?.profilePicUrl ||
           linkedCustomerInstagramProfile?.profilePicUrl ||
+          (baseItem.linkedCustomerId
+            ? linkedCustomerGlobalIgPhotoById.get(baseItem.linkedCustomerId) || null
+            : null) ||
           null,
         linkedCustomerName,
         identityLinked: Boolean(baseItem.linkedCustomerId),
