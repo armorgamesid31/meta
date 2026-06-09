@@ -56,6 +56,10 @@ interface RegisterRequest {
   instagramId?: string;
   magicToken?: string;
   confirmDifferentWhatsappNumber?: boolean;
+  // Step-1 verification: id of a CustomerPhoneVerification already proven
+  // VERIFIED at wizard step 1 (verify-phone/check-otp). When present + matching
+  // the submitted phone, /register skips all verification branches.
+  verifiedVerificationId?: string;
 }
 
 function normalizeNamePart(value: unknown): string {
@@ -453,6 +457,42 @@ router.post('/register', async (req: any, res: any) => {
             customerKey: originChannelTyped === 'INSTAGRAM' ? resolvedInstagramId : null,
           })) || null;
 
+    // STEP-1 verification bypass: if the wizard already proved ownership of this
+    // number at step 1 (verify-phone/check-otp → a VERIFIED record), skip ALL
+    // verification branches (IG OTP, verify-link, whatsapp-confirm) and register
+    // directly. Falls through to the normal flow if the record is missing / not
+    // matching (fail-safe; fully backward-compatible when the field is absent).
+    const verifiedVerificationId =
+      typeof body.verifiedVerificationId === 'string' ? body.verifiedVerificationId.trim() : '';
+    if (verifiedVerificationId) {
+      const step1 = await prisma.customerPhoneVerification.findFirst({
+        where: { id: verifiedVerificationId, salonId: salonIdNum },
+        select: { status: true, phone: true },
+      });
+      if (step1 && String(step1.status) === 'VERIFIED' && step1.phone === validatedPhone.digits) {
+        const registered = await upsertRegisteredCustomer({
+          salonId: salonIdNum,
+          firstName: normalizedName.firstName,
+          lastName: normalizedName.lastName,
+          fullName: normalizedName.fullName,
+          phoneDigits: validatedPhone.digits,
+          gender: body.gender,
+          birthDate: body.birthDate,
+          acceptMarketing: body.acceptMarketing,
+          registrationStatus: 'VERIFIED',
+          instagramId: resolvedInstagramId,
+          identity,
+          magicLink: magicLink ? { token: magicLink.token, context: magicLink.context } : null,
+        });
+        return res.status(registered.isNew ? 201 : 200).json({
+          status: 'registered',
+          customerId: registered.customer.id,
+          isNew: registered.isNew,
+          registrationStatus: registered.customer.registrationStatus,
+        });
+      }
+    }
+
     const normalizedOriginPhone = normalizeDigitsOnly(body.originPhone || magicLink?.phone || '');
     const isWhatsappOrigin = (magicLink?.channel || originChannelTyped) === ChannelType.WHATSAPP;
     const isInstagramOrigin = (magicLink?.channel || originChannelTyped) === ChannelType.INSTAGRAM;
@@ -768,6 +808,84 @@ router.post('/verify-phone/confirm', async (req: any, res: any) => {
         : 500;
     if (status === 500) {
       console.error('Phone verification confirm error:', error);
+    }
+    return res.status(status).json({ message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────
+// STEP-1 (wizard) standalone phone verification.
+//
+// request-otp: send a code to a phone WITHOUT any name/full form (used the
+// moment the customer types the phone in wizard step 1). check-otp: validate
+// the code and mark the record VERIFIED, WITHOUT creating a Customer. The final
+// /register call then creates the Customer once via verifiedVerificationId.
+// These are additive — the legacy /verify-phone/request|confirm are untouched.
+// ─────────────────────────────────────────────────────────────────
+router.post('/verify-phone/request-otp', async (req: any, res: any) => {
+  const salonId = req.salon?.id;
+  if (!salonId) {
+    throw new BusinessError('VALIDATION_FAILED', 'Salon context required.', 400);
+  }
+  const rawPhone = typeof req.body?.rawPhone === 'string' ? req.body.rawPhone : '';
+  const countryIso = typeof req.body?.countryIso === 'string' ? req.body.countryIso : '';
+  const normalizedPhone = typeof req.body?.normalizedPhone === 'string' ? req.body.normalizedPhone : undefined;
+
+  let validated;
+  try {
+    validated = validateMobilePhone({ rawPhone, countryIso, normalizedPhone });
+  } catch {
+    throw new BusinessError('VALIDATION_FAILED', 'Geçerli bir cep telefonu numarası girin.', 400);
+  }
+
+  try {
+    const verification = await createPhoneVerification({
+      salonId,
+      phone: validated.digits,
+      countryIso: validated.countryIso,
+      purpose: CustomerPhoneVerificationPurpose.BOOKING_REGISTER,
+      payload: {
+        step1: true,
+        originChannel: typeof req.body?.originChannel === 'string' ? req.body.originChannel : null,
+        originPhone: typeof req.body?.originPhone === 'string' ? req.body.originPhone : null,
+      },
+    });
+    return res.status(202).json({ status: 'verification_code_sent', verificationId: verification.id });
+  } catch (error: any) {
+    const message = error?.message || 'Internal server error';
+    if (/Chakra|connected|phone number/i.test(message)) {
+      throw new BusinessError(
+        'PRECONDITION_FAILED',
+        'Bu salon için WhatsApp doğrulama servisi henüz hazır değil. Lütfen salonla iletişime geçin.',
+        412,
+      );
+    }
+    console.error('verify-phone/request-otp error:', error);
+    return res.status(500).json({ message });
+  }
+});
+
+router.post('/verify-phone/check-otp', async (req: any, res: any) => {
+  const salonId = req.salon?.id;
+  const verificationId = typeof req.body?.verificationId === 'string' ? req.body.verificationId.trim() : '';
+  const code = typeof req.body?.code === 'string' ? req.body.code.trim() : '';
+  if (!salonId || !verificationId || !code) {
+    throw new BusinessError('VALIDATION_FAILED', 'verificationId and code are required.', 400);
+  }
+  try {
+    const verification = await verifyPhoneCode({ verificationId, salonId, code });
+    // Ownership proven. Do NOT create a Customer here — the final /register call
+    // creates it once (with the full form) via verifiedVerificationId.
+    return res.status(200).json({ ok: true, verificationId: verification.id, phone: verification.phone });
+  } catch (error: any) {
+    const message = error?.message || 'Internal server error';
+    const status = /not_found/.test(message)
+      ? 404
+      : /expired|attempt|invalid|not_pending/.test(message)
+        ? 409
+        : 500;
+    if (status === 500) {
+      console.error('verify-phone/check-otp error:', error);
     }
     return res.status(status).json({ message });
   }
