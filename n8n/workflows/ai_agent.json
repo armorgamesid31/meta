@@ -1078,6 +1078,34 @@
       ],
       "id": "tool-request-location-v1",
       "name": "tool_request_location"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.kedyapp.com/api/internal/agent/profile-edit-intent",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-internal-api-key",
+              "value": "4c4ec9dd02994c9fa27b2b316631f22fd1f04455a54351b8575a60d6a99756fd"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"salonId\": {{ Number($json.salonId || 0) }},\n  \"channel\": \"{{ $json.channel || 'INSTAGRAM' }}\",\n  \"conversationKey\": \"{{ $json.conversationKey || $json.channelConversationKey || '' }}\",\n  \"canonicalUserId\": \"{{ $json.canonicalUserId || '' }}\",\n  \"customerId\": {{ $json.customerId || null }}\n}",
+        "options": {},
+        "toolDescription": "Müşteri KENDİ KAYITLI BİLGİLERİNİ değiştirmek/güncellemek istediğinde ZORUNLU çağır. Tetikleyiciler: 'numaramı değiştirmek istiyorum', 'telefonum değişti', 'bilgilerimi güncelle', 'adımı/ismimi düzelt', 'instagram hesabımı ekle/değiştir', 'profilimi düzenle', 'kayıtlı numaram yanlış'. Tool, müşteriye kendi bilgilerini güncelleyebileceği güvenli tek-kullanımlık bir bağlantı hazırlar. {found:true} dönerse: linki/adresi METNE YAZMA, sadece 'Bilgilerinizi güncelleyebilmeniz için güvenli bir bağlantı hazırladım, butona dokunabilirsiniz' tarzı kısa yönlendirme yaz — backend butonu ekleyecek. {found:false} dönerse: müşteri henüz kayıtlı değil; nazikçe önce randevu alarak kaydolmasını öner."
+      },
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.3,
+      "position": [
+        -5300,
+        1656
+      ],
+      "id": "tool-request-profile-edit-v1",
+      "name": "tool_request_profile_edit"
     }
   ],
   "connections": {
@@ -1436,6 +1464,17 @@
       ]
     },
     "tool_request_location": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent Single",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "tool_request_profile_edit": {
       "ai_tool": [
         [
           {

@@ -14,6 +14,8 @@ import {
   ymdToWeekdayKey,
   ymdToWeekdayLongTr,
 } from '../services/holidayCalendar.js';
+import { mintPortalToken } from '../services/profilePortalService.js';
+import { lookupGlobalIdentityByChannel } from '../services/globalCustomerIdentity.js';
 import type { ChannelType } from '@prisma/client';
 
 /**
@@ -373,6 +375,89 @@ router.post('/location-intent', async (req: any, res: any) => {
     return res.json({ ok: true, hasButton: true, address: addressText || null });
   } catch (err: any) {
     console.error('[internalAgent.location-intent] failed', err);
+    return res.status(500).json({ ok: false, error: 'internal_error' });
+  }
+});
+
+/**
+ * POST /profile-edit-intent
+ * Body: { salonId, channel:'WHATSAPP'|'INSTAGRAM', conversationKey, canonicalUserId?, customerId? }
+ *
+ * Müşteri "bilgilerimi/numaramı değiştirmek istiyorum" dediğinde n8n
+ * tool_request_profile_edit bunu çağırır. Müşterinin GLOBAL kimliğini çözer,
+ * tek-kullanımlık salon-nötr portal linki mint'ler ve ConversationState.
+ * pendingProfileEditUrl'e yazar; "Bilgilerimi güncelle" butonunu AI'ın cevabına
+ * agent-outbound/send gömer (token modele tekrar ettirilmez → kopyalama hatası yok).
+ *
+ * Dönüş:
+ *   { ok:true, found:true,  hasButton:true }  → link hazır, buton gömülecek
+ *   { ok:true, found:false }                  → tanınan kayıt yok; AI önce kayıt önersin
+ */
+router.post('/profile-edit-intent', async (req: any, res: any) => {
+  const salonId = parseSalonId(req.body?.salonId);
+  const channel = parseChannel(req.body?.channel);
+  const conversationKey =
+    typeof req.body?.conversationKey === 'string' ? req.body.conversationKey.trim() : '';
+  if (!salonId || !channel || !conversationKey) {
+    return res.status(400).json({ ok: false, error: 'salonId_channel_conversationKey_required' });
+  }
+  const canonicalUserId =
+    typeof req.body?.canonicalUserId === 'string' && req.body.canonicalUserId.trim()
+      ? req.body.canonicalUserId.trim()
+      : null;
+  const customerId =
+    Number.isInteger(Number(req.body?.customerId)) && Number(req.body?.customerId) > 0
+      ? Number(req.body.customerId)
+      : null;
+
+  try {
+    // Global kimliği çöz: önce customerId (en güvenilir), sonra kanal subject'i.
+    let globalIdentityId: string | null = null;
+    let originSubject = canonicalUserId || conversationKey;
+    if (customerId) {
+      const customer = await prisma.customer.findUnique({
+        where: { id: customerId },
+        select: { globalIdentityId: true, phone: true },
+      });
+      globalIdentityId = customer?.globalIdentityId ?? null;
+      if (channel === 'WHATSAPP' && customer?.phone) originSubject = customer.phone;
+    }
+    if (!globalIdentityId && canonicalUserId) {
+      const identity = await lookupGlobalIdentityByChannel(channel, canonicalUserId);
+      globalIdentityId = identity?.id ?? null;
+    }
+    if (!globalIdentityId) {
+      // Tanınan müşteri yok → düzenlenecek bir şey yok; AI önce kayıt/randevu önersin.
+      return res.json({ ok: true, found: false });
+    }
+
+    const { token } = await mintPortalToken({
+      globalIdentityId,
+      originChannel: channel,
+      originSubject,
+    });
+    const base = (process.env.PROFILE_PORTAL_URL || 'https://kedyapp.com/hesabim')
+      .trim()
+      .replace(/\/+$/, '');
+    const url = `${base}?token=${token}`;
+
+    await prisma.conversationState.upsert({
+      where: { salonId_channel_conversationKey: { salonId, channel, conversationKey } },
+      update: { pendingProfileEditUrl: url, pendingProfileEditAt: new Date() },
+      create: {
+        salonId,
+        channel,
+        conversationKey,
+        canonicalUserId,
+        customerId,
+        pendingProfileEditUrl: url,
+        pendingProfileEditAt: new Date(),
+      },
+    });
+
+    return res.json({ ok: true, found: true, hasButton: true });
+  } catch (err: any) {
+    console.error('[internalAgent.profile-edit-intent] failed', err);
     return res.status(500).json({ ok: false, error: 'internal_error' });
   }
 });

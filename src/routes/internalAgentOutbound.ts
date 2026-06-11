@@ -84,7 +84,7 @@ function extractRawConversationKey(channel: ChannelType, value: string): string 
   return trimmed;
 }
 
-type ActionKind = 'none' | 'cancel' | 'booking' | 'location';
+type ActionKind = 'none' | 'cancel' | 'booking' | 'location' | 'profile_edit';
 
 function pickMagicLinkUrl(body: any): string | null {
   const candidates = [
@@ -208,7 +208,13 @@ async function resolveConversationState(params: {
       conversationKey: { in: candidates },
     },
     orderBy: { updatedAt: 'desc' },
-    select: { id: true, mode: true, pendingLocationAt: true },
+    select: {
+      id: true,
+      mode: true,
+      pendingLocationAt: true,
+      pendingProfileEditUrl: true,
+      pendingProfileEditAt: true,
+    },
   });
   return state;
 }
@@ -241,6 +247,7 @@ async function sendInstagramMessage(params: {
   actionKind: ActionKind;
   magicLinkUrl?: string | null;
   locationUrl?: string | null;
+  profileEditUrl?: string | null;
   externalAccountId?: string | null;
 }) {
   const settings = await prisma.salonAiAgentSettings.findUnique({
@@ -265,6 +272,8 @@ async function sendInstagramMessage(params: {
 
   const bookingUrl = params.magicLinkUrl && params.magicLinkUrl.trim() ? params.magicLinkUrl.trim() : null;
   const locationUrl = params.locationUrl && params.locationUrl.trim() ? params.locationUrl.trim() : null;
+  const profileEditUrl =
+    params.profileEditUrl && params.profileEditUrl.trim() ? params.profileEditUrl.trim() : null;
   let payload: Record<string, any>;
 
   if (params.actionKind === 'booking' && bookingUrl) {
@@ -301,6 +310,26 @@ async function sendInstagramMessage(params: {
                 type: 'web_url',
                 title: 'Yol Tarifi',
                 url: locationUrl,
+              },
+            ],
+          },
+        },
+      },
+    };
+  } else if (params.actionKind === 'profile_edit' && profileEditUrl) {
+    payload = {
+      recipient: { id: rawRecipientId },
+      message: {
+        attachment: {
+          type: 'template',
+          payload: {
+            template_type: 'button',
+            text: params.text,
+            buttons: [
+              {
+                type: 'web_url',
+                title: 'Bilgilerimi güncelle',
+                url: profileEditUrl,
               },
             ],
           },
@@ -374,6 +403,7 @@ async function sendWhatsappViaChakra(params: {
   actionKind: ActionKind;
   magicLinkUrl?: string | null;
   locationUrl?: string | null;
+  profileEditUrl?: string | null;
   externalAccountId?: string | null;
 }) {
   const salon = await prisma.salon.findUnique({
@@ -396,6 +426,8 @@ async function sendWhatsappViaChakra(params: {
   const to = extractRawConversationKey('WHATSAPP', params.conversationKey);
   const bookingUrl = params.magicLinkUrl && params.magicLinkUrl.trim() ? params.magicLinkUrl.trim() : null;
   const locationUrl = params.locationUrl && params.locationUrl.trim() ? params.locationUrl.trim() : null;
+  const profileEditUrl =
+    params.profileEditUrl && params.profileEditUrl.trim() ? params.profileEditUrl.trim() : null;
 
   const payload: Record<string, any> = {
     messaging_product: 'whatsapp',
@@ -450,6 +482,21 @@ async function sendWhatsappViaChakra(params: {
         parameters: {
           display_text: 'Yol Tarifi',
           url: locationUrl,
+        },
+      },
+    };
+  } else if (params.actionKind === 'profile_edit' && profileEditUrl) {
+    payload.type = 'interactive';
+    payload.interactive = {
+      type: 'cta_url',
+      body: {
+        text: params.text,
+      },
+      action: {
+        name: 'cta_url',
+        parameters: {
+          display_text: 'Bilgilerimi güncelle',
+          url: profileEditUrl,
         },
       },
     };
@@ -607,10 +654,21 @@ router.post('/send', async (req: any, res: any) => {
       !!pendingLocationAt &&
       Date.now() - pendingLocationAt.getTime() < LOCATION_PENDING_TTL_MS;
 
+    // Profil düzenleme niyeti: tool_request_profile_edit, mint'lenen tek-kullanım
+    // portal linkini pendingProfileEditUrl'e yazar; taze (5 dk) ise butona dönüşür
+    // ve gönderim sonrası temizlenir (konum deseniyle aynı).
+    const PROFILE_EDIT_PENDING_TTL_MS = 5 * 60 * 1000;
+    const pendingProfileEditAt = convState?.pendingProfileEditAt ?? null;
+    const hasFreshProfileEdit =
+      !!pendingProfileEditAt &&
+      !!convState?.pendingProfileEditUrl &&
+      Date.now() - pendingProfileEditAt.getTime() < PROFILE_EDIT_PENDING_TTL_MS;
+
     let outboundText = text;
     let pendingWaitEnforced = false;
     let actionKind: ActionKind = 'none';
     let locationUrl: string | null = null;
+    let profileEditUrl: string | null = null;
     if (mode === 'HUMAN_PENDING') {
       actionKind = 'cancel';
       pendingWaitEnforced = true;
@@ -623,6 +681,9 @@ router.post('/send', async (req: any, res: any) => {
     } else if (hasFreshLocationIntent && salonGoogleMapsUrl) {
       actionKind = 'location';
       locationUrl = salonGoogleMapsUrl;
+    } else if (hasFreshProfileEdit) {
+      actionKind = 'profile_edit';
+      profileEditUrl = convState?.pendingProfileEditUrl ?? null;
     }
 
     const sent =
@@ -634,6 +695,7 @@ router.post('/send', async (req: any, res: any) => {
             actionKind,
             magicLinkUrl,
             locationUrl,
+            profileEditUrl,
             externalAccountId: externalAccountIdFromInbound,
           })
         : await sendWhatsappViaChakra({
@@ -643,6 +705,7 @@ router.post('/send', async (req: any, res: any) => {
             actionKind,
             magicLinkUrl,
             locationUrl,
+            profileEditUrl,
             externalAccountId: externalAccountIdFromInbound,
           });
 
@@ -695,6 +758,16 @@ router.post('/send', async (req: any, res: any) => {
       await prisma.conversationState
         .update({ where: { id: convState.id }, data: { pendingLocationAt: null } })
         .catch((err) => console.error('[agent-outbound] clear pendingLocationAt failed', err));
+    }
+
+    // Profil düzenleme butonu gönderildiyse tek-kullanım linki temizle (tekrar gömülmesin).
+    if (actionKind === 'profile_edit' && convState?.id) {
+      await prisma.conversationState
+        .update({
+          where: { id: convState.id },
+          data: { pendingProfileEditUrl: null, pendingProfileEditAt: null },
+        })
+        .catch((err) => console.error('[agent-outbound] clear pendingProfileEdit failed', err));
     }
 
     await prisma.outboundMessageTrace.upsert({
