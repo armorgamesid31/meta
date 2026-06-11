@@ -15,6 +15,7 @@ import salonTemplateStatusRoutes from './routes/salonTemplateStatus.js';
 import redirectRoutes from './routes/redirects.js';
 import magicLinkLandingRoutes from './routes/magicLinkLanding.js';
 import customerVerifyLandingRoutes from './routes/customerVerifyLanding.js';
+import profilePortalRoutes from './routes/profilePortal.js';
 import salonsRoutes from './routes/salons.js';
 import categoriesRoutes from './routes/categories.js';
 import seoRoutes from './routes/seo.js';
@@ -280,6 +281,12 @@ app.use('/api/internal/lifecycle', internalLifecycleRoutes);
 // /api/internal. See routes/internalSetupCenter.ts.
 app.use('/api/internal/setup-center', internalSetupCenterRoutes);
 app.use('/api/webhooks', channelWebhooksRoutes);
+
+// Salon-NEUTRAL profile portal ("Bilgilerim"): platform-wide, authenticated by
+// its own session JWT (not a salon login) — mounted BEFORE the tenant
+// middleware so it is never salon-scoped. Token exchange is rate-limited.
+app.use('/api/portal/session', authRateLimiter);
+app.use('/api/portal', profilePortalRoutes);
 
 // Apply tenant middleware to ALL other API routes
 app.use(multiTenantMiddleware);

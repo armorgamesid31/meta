@@ -7,10 +7,14 @@
 
 import { ChannelType, CustomerGender, Prisma } from '@prisma/client';
 import { randomBytes } from 'crypto';
+import jwt from 'jsonwebtoken';
 import { prisma } from '../prisma.js';
 import { listIdentityChannels } from './globalCustomerIdentity.js';
 
 const PORTAL_TOKEN_TTL_MINUTES = 30;
+const PORTAL_SESSION_TTL_SECONDS = 30 * 60;
+const PORTAL_SESSION_TYP = 'profile_portal';
+const JWT_SECRET = process.env.JWT_SECRET || 'supersecretjwtkey';
 const BIRTHDAY_CHANGE_COOLDOWN_DAYS = 365;
 const TOKEN_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
 
@@ -173,4 +177,34 @@ export async function updatePortalProfile(
     await prisma.globalCustomerIdentity.update({ where: { id: globalIdentityId }, data });
   }
   return { status: 'ok' };
+}
+
+/**
+ * Issue a short-lived portal SESSION (JWT) for a global identity after a
+ * magic token was consumed. Distinct typ from the salon-staff TokenPayload so
+ * a portal session can never be mistaken for a salon login. The gid in the
+ * token is the ONLY identity the session may touch (no IDOR — routes never
+ * trust an identity id from the request body).
+ */
+export function signPortalSession(globalIdentityId: string): {
+  sessionToken: string;
+  expiresInSeconds: number;
+} {
+  const sessionToken = jwt.sign({ typ: PORTAL_SESSION_TYP, gid: globalIdentityId }, JWT_SECRET, {
+    expiresIn: PORTAL_SESSION_TTL_SECONDS,
+  });
+  return { sessionToken, expiresInSeconds: PORTAL_SESSION_TTL_SECONDS };
+}
+
+/** Verify a portal session JWT. Returns the bound globalIdentityId or null. */
+export function verifyPortalSession(token: string): { globalIdentityId: string } | null {
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as { typ?: string; gid?: string };
+    if (!decoded || decoded.typ !== PORTAL_SESSION_TYP || typeof decoded.gid !== 'string') {
+      return null;
+    }
+    return { globalIdentityId: decoded.gid };
+  } catch {
+    return null;
+  }
 }
