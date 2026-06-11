@@ -295,3 +295,116 @@ export async function markFirstAppointmentIfNeeded(customerId: number): Promise<
     data: { firstAppointmentAt: new Date() },
   });
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+// Multi-channel identity primitives (platform-extensible).
+//
+// One person can own MANY channels of MANY types: several phone numbers,
+// several Instagram accounts, and any future platform (TikTok, …) added to
+// ChannelType. These primitives are channel-agnostic — the same three calls
+// serve every platform, so the customer's "Bilgilerim" portal renders and
+// manages all linked channels generically.
+//
+// Primary phone (GlobalCustomerIdentity.phoneE164) stays the dedupe key;
+// EXTRA channels live purely as GlobalIdentityChannel rows, so cross-salon
+// recognition resolves any of them to the same person (lookupGlobalIdentity-
+// ByChannel) while the dedupe spine remains single-primary.
+//
+// MULTI-NUMBER FOLLOW-UP (spine, do carefully + with a test): the booking
+// dedupe entry-point syncCustomerToGlobalIdentity() still finds people by
+// phoneE164 only. For a SECONDARY number to resolve to the same person when
+// they book a brand-new salon with it, that path must first consult
+// lookupGlobalIdentityByChannel(WHATSAPP, phone) before creating a new
+// identity. Not changed here (hottest path); tracked in kayit-deneyimi-tasarim.
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * All channel rows attached to a global identity, for the customer's own
+ * portal (multiple phones / Instagram accounts / future platforms). The
+ * primary phone also appears here as its WHATSAPP/PHONE row.
+ */
+export async function listIdentityChannels(globalIdentityId: string) {
+  if (!globalIdentityId) return [];
+  return prisma.globalIdentityChannel.findMany({
+    where: { globalIdentityId },
+    orderBy: [{ channel: 'asc' }, { createdAt: 'asc' }],
+  });
+}
+
+/**
+ * Attach a SECONDARY channel (extra phone, extra Instagram, future platform)
+ * to an existing identity, AFTER ownership has been proven (phone → link,
+ * IG → code-DM). Does NOT touch identity.phoneE164 (the primary / dedupe key).
+ *
+ * No auto-merge: if the (channel, subject) already belongs to a DIFFERENT
+ * identity, returns { status: 'conflict' } for the caller's verify-then-merge
+ * flow — never silently steals or relinks.
+ */
+export async function addVerifiedChannelToIdentity(input: {
+  globalIdentityId: string;
+  channel: ChannelType;
+  subjectType: IdentitySubjectType;
+  subjectNormalized: string;
+  subjectRaw?: string | null;
+  profileUsername?: string | null;
+  profilePicUrl?: string | null;
+}): Promise<{ status: 'added' | 'already' | 'conflict'; conflictIdentityId?: string }> {
+  const subject = input.subjectNormalized?.trim();
+  if (!input.globalIdentityId || !subject) return { status: 'conflict' };
+
+  const existing = await prisma.globalIdentityChannel.findUnique({
+    where: { channel_subjectNormalized: { channel: input.channel, subjectNormalized: subject } },
+    select: { id: true, globalIdentityId: true },
+  });
+
+  if (existing) {
+    if (existing.globalIdentityId === input.globalIdentityId) {
+      // Idempotent: already attached to this person; fill any missing profile.
+      await upsertGlobalIdentityChannel({ ...input, subjectNormalized: subject, verified: true });
+      return { status: 'already' };
+    }
+    return { status: 'conflict', conflictIdentityId: existing.globalIdentityId };
+  }
+
+  await upsertGlobalIdentityChannel({ ...input, subjectNormalized: subject, verified: true });
+  return { status: 'added' };
+}
+
+/**
+ * Detach a channel the customer no longer wants linked (an old Instagram, a
+ * spare number). Only removes reach — never deletes salon-side data. Guards:
+ *  - is_primary: refuse to drop the row mirroring the primary phone
+ *    (identity.phoneE164); change the primary number first.
+ *  - last_channel: refuse to drop the only remaining channel.
+ */
+export async function removeIdentityChannel(input: {
+  globalIdentityId: string;
+  channelRowId: string;
+}): Promise<{ status: 'removed' | 'not_found' | 'is_primary' | 'last_channel' }> {
+  const row = await prisma.globalIdentityChannel.findUnique({
+    where: { id: input.channelRowId },
+    select: { id: true, globalIdentityId: true, channel: true, subjectNormalized: true },
+  });
+  if (!row || row.globalIdentityId !== input.globalIdentityId) return { status: 'not_found' };
+
+  const identity = await prisma.globalCustomerIdentity.findUnique({
+    where: { id: input.globalIdentityId },
+    select: { phoneE164: true },
+  });
+  if (
+    identity &&
+    row.channel === 'WHATSAPP' &&
+    identity.phoneE164 &&
+    row.subjectNormalized === identity.phoneE164
+  ) {
+    return { status: 'is_primary' };
+  }
+
+  const total = await prisma.globalIdentityChannel.count({
+    where: { globalIdentityId: input.globalIdentityId },
+  });
+  if (total <= 1) return { status: 'last_channel' };
+
+  await prisma.globalIdentityChannel.delete({ where: { id: row.id } });
+  return { status: 'removed' };
+}

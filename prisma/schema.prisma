@@ -3043,6 +3043,14 @@ enum ContentValueStatus {
 enum ChannelType {
   WHATSAPP
   INSTAGRAM
+  // Platform extension point. The identity layer (GlobalIdentityChannel +
+  // the multi-channel helpers in globalCustomerIdentity.ts) is channel-
+  // agnostic: one person already carries many channels of many types. Adding
+  // a new platform (e.g. TIKTOK) is: a value here + matching IdentitySubject-
+  // Type + a webhook/send adapter, AND widening the ~7 messaging call sites
+  // that currently narrow to "WHATSAPP" | "INSTAGRAM" (customers.ts,
+  // internalConversationState.ts). Do it as one coherent integration, not a
+  // dead enum value — adding it early only breaks typecheck with no payoff.
 }
 
 enum InboundMessageStatus {
