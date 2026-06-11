@@ -572,13 +572,26 @@ router.post('/send', async (req: any, res: any) => {
   const bookingIntent = asBoolean(body?.bookingIntent) || asBoolean(body?.intentBooking) || asBoolean(body?.toolBookingIntent);
   const salonMeta = await prisma.salon.findUnique({
     where: { id: salonId },
-    select: { slug: true, googleMapsUrl: true },
+    select: { slug: true, googleMapsUrl: true, address: true, district: true, city: true },
   });
   const salonSlug = typeof salonMeta?.slug === 'string' && salonMeta.slug.trim() ? salonMeta.slug.trim() : null;
-  const salonGoogleMapsUrl =
-    typeof salonMeta?.googleMapsUrl === 'string' && salonMeta.googleMapsUrl.trim()
-      ? salonMeta.googleMapsUrl.trim()
-      : null;
+  // "Yol Tarifi" butonu DÜZGÜN bir yön-tarifi deep-link'i ister. Kayıtlı URL bir
+  // paylaşım/kısa link ise (share.google / goo.gl / maps.app.goo.gl) yön tarifi
+  // AÇMAZ → adresten gerçek bir dir/ linki kur. Düzgün google.com/maps URL'i
+  // varsa onu koru.
+  const rawMapsUrl = typeof salonMeta?.googleMapsUrl === 'string' ? salonMeta.googleMapsUrl.trim() : '';
+  const salonDestination =
+    (typeof salonMeta?.address === 'string' && salonMeta.address.trim()) ||
+    [salonMeta?.district, salonMeta?.city]
+      .map((p) => (typeof p === 'string' ? p.trim() : ''))
+      .filter(Boolean)
+      .join(', ');
+  const isProperMapsUrl = /^https?:\/\/(www\.)?google\.[a-z.]+\/maps/i.test(rawMapsUrl);
+  const salonGoogleMapsUrl = isProperMapsUrl
+    ? rawMapsUrl
+    : salonDestination
+      ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(salonDestination)}`
+      : rawMapsUrl || null;
 
   let magicLinkUrl = pickMagicLinkUrl(body);
   let magicLinkAction: 'created' | 'renewed' | 'pending' | null = null;
