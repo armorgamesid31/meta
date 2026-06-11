@@ -996,6 +996,10 @@ model GlobalCustomerIdentity {
   lastName                 String?
   gender                   CustomerGender?
   birthDate                DateTime?               @db.Date
+  // Doğum tarihi yılda 1 kez değiştirilebilir → son değişim damgası (profil portalı guard).
+  birthDateChangedAt       DateTime?               @db.Timestamp(6)
+  // Müşterinin kendi yüklediği profil fotosu (kanal IG fotosundan ayrı; portalda öncelikli).
+  photoUrl                 String?
   acceptMarketing          Boolean                 @default(false)
   // IG kullanıcı adı kayıtta talep edildi ama henüz IGSID'ye bağlanmadı (Mekanizma B,
   // gecikmeli bağ). İlk IG mesajında username eşleşirse GlobalIdentityChannel satırı açılır.
@@ -1005,6 +1009,7 @@ model GlobalCustomerIdentity {
   updatedAt                DateTime                @default(now()) @updatedAt @db.Timestamp(6)
   salonCustomers           Customer[]
   channels                 GlobalIdentityChannel[]
+  portalTokens             ProfilePortalToken[]
 
   @@index([phoneE164], map: "idx_global_customer_phone")
   @@index([pendingInstagramUsername], map: "idx_global_identity_pending_ig_username")
@@ -1031,6 +1036,25 @@ model GlobalIdentityChannel {
 
   @@unique([channel, subjectNormalized], map: "uq_global_identity_channel_subject")
   @@index([globalIdentityId], map: "idx_global_identity_channel_identity")
+}
+
+// Salon-NÖTR profil portalı magic link'i. Salon-scoped MagicLink'ten AYRI
+// (MagicLink.salonId zorunlu + booking URL üretir). Bir AI tool, müşteri
+// "bilgilerimi değiştir" deyince mint'ler; landing tüketince (tek-kullanım,
+// kısa ömür) global kimliğe erişim açılır. originChannel/Subject = linkin
+// gönderildiği kanal-kanıtlı köken = mevcut kanal sahipliği kanıtı.
+model ProfilePortalToken {
+  id               String                 @id @default(cuid())
+  token            String                 @unique
+  globalIdentityId String
+  originChannel    ChannelType
+  originSubject    String
+  expiresAt        DateTime               @db.Timestamp(6)
+  usedAt           DateTime?              @db.Timestamp(6)
+  createdAt        DateTime               @default(now()) @db.Timestamp(6)
+  globalIdentity   GlobalCustomerIdentity @relation(fields: [globalIdentityId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([globalIdentityId], map: "idx_profile_portal_token_identity")
 }
 
 // Instagram account verification by code-DM. At registration we show a short
