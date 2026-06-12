@@ -299,7 +299,7 @@ async function getEligibleUserIdsByPreference(
 // stays consistent — every "Yeni randevu" looks the same regardless of
 // who triggers createNotification.
 const EVENT_TYPE_EMOJI: Record<NotificationEventType, string> = {
-  HANDOVER_REQUIRED: '🆘',
+  HANDOVER_REQUIRED: '🚨',
   HANDOVER_REMINDER: '⏰',
   SAME_DAY_APPOINTMENT_CHANGE: '📅',
   END_OF_DAY_MISSING_DATA: '📝',
