@@ -17,6 +17,7 @@ import {
 import { mintPortalToken } from '../services/profilePortalService.js';
 import { lookupGlobalIdentityByChannel } from '../services/globalCustomerIdentity.js';
 import { resolveMapsLink } from '../services/mapsResolver.js';
+import { createNotification, type NotificationEventType } from '../services/notifications.js';
 import type { ChannelType } from '@prisma/client';
 
 /**
@@ -479,6 +480,38 @@ router.post('/profile-edit-intent', async (req: any, res: any) => {
   } catch (err: any) {
     console.error('[internalAgent.profile-edit-intent] failed', err);
     return res.status(500).json({ ok: false, error: 'internal_error' });
+  }
+});
+
+/**
+ * POST /test-notification  (internal-key korumalı)
+ * Body: { salonId, eventType?, title?, body? }
+ * Gerçek push hattından (FCM) salon ekibine test bildirimi gönderir. createNotification
+ * eventType'a göre alıcıları (OWNER/MANAGER/...) çözer + uygulama-içi + push gönderir.
+ * Dönüş: alıcı sayısı + push teslim özeti (SENT/SKIPPED/FAILED) — push çalışıyor mu görülür.
+ */
+router.post('/test-notification', async (req: any, res: any) => {
+  const salonId = parseSalonId(req.body?.salonId);
+  if (!salonId) return res.status(400).json({ ok: false, error: 'salonId_required' });
+  const eventType = (typeof req.body?.eventType === 'string' ? req.body.eventType : 'HANDOVER_REQUIRED') as NotificationEventType;
+  const title = typeof req.body?.title === 'string' && req.body.title.trim() ? req.body.title.trim() : 'Test bildirimi';
+  const body =
+    typeof req.body?.body === 'string' && req.body.body.trim()
+      ? req.body.body.trim()
+      : 'Bu bir test bildirimidir. Telefonunda gördüysen push çalışıyor.';
+  try {
+    const r = await createNotification({ salonId, eventType, title, body });
+    return res.json({
+      ok: true,
+      eventType,
+      recipientCount: r.recipientUserIds.length,
+      inAppDeliveryCount: r.inAppDeliveryCount,
+      pushDeliveryCount: r.pushDeliveryCount,
+      pushDeliverySummary: r.pushDeliverySummary,
+    });
+  } catch (err: any) {
+    console.error('[internalAgent.test-notification] failed', err);
+    return res.status(500).json({ ok: false, error: 'internal_error', detail: String(err?.message || err) });
   }
 });
 
