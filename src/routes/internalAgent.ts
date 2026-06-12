@@ -16,6 +16,7 @@ import {
 } from '../services/holidayCalendar.js';
 import { mintPortalToken } from '../services/profilePortalService.js';
 import { lookupGlobalIdentityByChannel } from '../services/globalCustomerIdentity.js';
+import { resolveMapsLink } from '../services/mapsResolver.js';
 import type { ChannelType } from '@prisma/client';
 
 /**
@@ -343,7 +344,7 @@ router.post('/location-intent', async (req: any, res: any) => {
   try {
     const salon = await prisma.salon.findUnique({
       where: { id: salonId },
-      select: { googleMapsUrl: true, address: true, district: true, city: true },
+      select: { googleMapsUrl: true, mapsPlaceId: true, address: true, district: true, city: true },
     });
 
     const mapsUrl =
@@ -356,6 +357,25 @@ router.post('/location-intent', async (req: any, res: any) => {
     if (!mapsUrl) {
       // Harita linki kayıtlı değil — buton gömülemez; AI adresi metinle söylesin.
       return res.json({ ok: true, hasButton: false, address: addressText || null });
+    }
+
+    // Yer-profili butonu: googleMapsUrl bir paylaşım/kısa link ise (share.google /
+    // goo.gl / maps.app) resolver redirect+geocode ile place_id üretir; salon başına
+    // BİR KEZ cache'lenir. Buton outbound'da bu place_id'den "Maps yer-profili" linki
+    // kurar (coğrafi koordinat DEĞİL). Başarısızsa buton ham URL'e düşer (best-effort).
+    const isProperMapsUrl = /^https?:\/\/(www\.)?google\.[a-z.]+\/maps/i.test(mapsUrl);
+    if (!salon?.mapsPlaceId && !isProperMapsUrl) {
+      try {
+        const resolved = await resolveMapsLink(mapsUrl);
+        if (resolved.place_id) {
+          await prisma.salon.update({
+            where: { id: salonId },
+            data: { mapsPlaceId: resolved.place_id },
+          });
+        }
+      } catch (err: any) {
+        console.warn('[location-intent] maps resolve failed:', err?.message || err);
+      }
     }
 
     // Pending location işaretle — agent-outbound/send bunu görüp butonu cevaba gömecek.

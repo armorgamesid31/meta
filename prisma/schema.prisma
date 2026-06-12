@@ -29,6 +29,10 @@ model Salon {
   countryCode                  String?
   address                      String?
   googleMapsUrl                String?
+  // googleMapsUrl bir paylaşım/kısa link olabilir (share.google/...). Location
+  // butonunun salonun GERÇEK Maps yer-profilini açabilmesi için resolver'ın
+  // ürettiği place_id'yi burada cache'leriz (salon başına bir kez çözülür).
+  mapsPlaceId                  String?
   chakraPhoneNumberId          String?
   heroText                     String?
   communicationTone            SalonCommunicationTone           @default(BALANCED)

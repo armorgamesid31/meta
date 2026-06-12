@@ -572,25 +572,37 @@ router.post('/send', async (req: any, res: any) => {
   const bookingIntent = asBoolean(body?.bookingIntent) || asBoolean(body?.intentBooking) || asBoolean(body?.toolBookingIntent);
   const salonMeta = await prisma.salon.findUnique({
     where: { id: salonId },
-    select: { slug: true, googleMapsUrl: true, address: true, district: true, city: true },
+    select: {
+      slug: true,
+      name: true,
+      googleMapsUrl: true,
+      mapsPlaceId: true,
+      address: true,
+      district: true,
+      city: true,
+    },
   });
   const salonSlug = typeof salonMeta?.slug === 'string' && salonMeta.slug.trim() ? salonMeta.slug.trim() : null;
-  // Salonun kayıtlı konum linki OTORİTATİFTİR — sahibin haritada seçtiği gerçek
-  // pin (paylaşım/kısa link olsa bile doğru yeri gösterir). Adresten geocode
-  // ETME: adres tam-kapı vermeyebilir ve YAKIN/YANLIŞ bir yere düşer. Yalnızca
-  // kayıtlı link HİÇ yoksa son çare olarak adresten yön-tarifi linki kur.
+  // Konum butonu salonun GERÇEK Maps YER-PROFİLİNİ açmalı (coğrafi koordinat
+  // DEĞİL). Öncelik: cache'lenmiş place_id → "Maps yer-profili" linki (location-
+  // intent paylaşım/kısa linki çözüp place_id'yi yazar). place_id yoksa kayıtlı
+  // googleMapsUrl'i olduğu gibi kullan (otoritatif pin). Son çare: adresten link.
   const rawMapsUrl = typeof salonMeta?.googleMapsUrl === 'string' ? salonMeta.googleMapsUrl.trim() : '';
+  const mapsPlaceId = typeof salonMeta?.mapsPlaceId === 'string' ? salonMeta.mapsPlaceId.trim() : '';
   const salonDestination =
     (typeof salonMeta?.address === 'string' && salonMeta.address.trim()) ||
     [salonMeta?.district, salonMeta?.city]
       .map((p) => (typeof p === 'string' ? p.trim() : ''))
       .filter(Boolean)
       .join(', ');
-  const salonGoogleMapsUrl = rawMapsUrl
-    ? rawMapsUrl
-    : salonDestination
-      ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(salonDestination)}`
-      : null;
+  const placeQuery = salonDestination || (typeof salonMeta?.name === 'string' ? salonMeta.name.trim() : '');
+  const salonGoogleMapsUrl = mapsPlaceId
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(placeQuery || 'salon')}&query_place_id=${encodeURIComponent(mapsPlaceId)}`
+    : rawMapsUrl
+      ? rawMapsUrl
+      : salonDestination
+        ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(salonDestination)}`
+        : null;
 
   let magicLinkUrl = pickMagicLinkUrl(body);
   let magicLinkAction: 'created' | 'renewed' | 'pending' | null = null;
