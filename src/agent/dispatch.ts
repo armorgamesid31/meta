@@ -213,7 +213,10 @@ export async function dispatchAgentInbound(item: AgentInboundItem): Promise<void
         conversationKey: item.conversationKey,
         modelName: item.modelName,
       });
-      break;
+
+      // BREAK ETME — döngüye devam: kilit bizdeyken (re-check'ten sonra) düşen
+      // bir mesaj orphan kalmasın. Sıradaki tur 5sn bekleyip PENDING'i tarar;
+      // boşsa (tek-mesajlık konuşma) üstteki kontrol döngüyü bitirir.
     }
   } catch (err: any) {
     console.error('[agent-dispatch] failed', err?.message || err);
