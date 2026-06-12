@@ -8,8 +8,15 @@
 
 import { tool, type ToolSet } from 'ai';
 import { z } from 'zod';
-import { queryServicePrices, searchServices, getSalonFaq } from './queries.js';
+import type { ChannelType } from '@prisma/client';
+import { queryServicePrices, searchServices, getSalonFaq, lookupCustomer, checkDayOpen } from './queries.js';
 import { prisma } from '../../prisma.js';
+import {
+  prepareLocationButton,
+  prepareProfileEditButton,
+  prepareBookingButton,
+  doHandover,
+} from '../actions.js';
 import type { ToolContext } from '../types.js';
 
 export function buildToolSet(ctx: ToolContext): ToolSet {
@@ -83,9 +90,10 @@ export function buildToolSet(ctx: ToolContext): ToolSet {
     tool_customer_lookup: tool({
       description: "Müşterinin 5 randevudan eski geçmişine atıf varsa veya kayıtlı kimliğini doğrulamak için çağır (opsiyonel).",
       inputSchema: z.object({ subject: z.string().optional().describe('Kanal subject (telefon/IGSID); yoksa boş') }),
-      execute: async (_args) => {
-        // TODO(W2): internalAgent customer-lookup mantığını in-process çağır.
-        return { found: false, _todo: 'W2_port_customer_lookup' };
+      execute: async (args) => {
+        const subject = (args.subject || ctx.canonicalUserId || '').trim();
+        if (!subject) return { found: false };
+        return lookupCustomer(ctx.salonId, ctx.channel as ChannelType, subject);
       },
     }),
 
@@ -93,10 +101,7 @@ export function buildToolSet(ctx: ToolContext): ToolSet {
       description:
         "GÜN bazlı açık/kapalı sorusunda ZORUNLU çağır — açık mı kapalı mı bilgisini kendin söyleme. Tetikleyiciler: 'açık mısınız', 'yarın açık', 'X günü çalışıyor musunuz', 'bayramda', 'kurban bayramı', 'sevgililer günü', 'yılbaşı', 'tatil', 'pazar açık'. date_expression'a müşteri ne dediyse Türkçe yaz.",
       inputSchema: z.object({ date_expression: z.string().describe('Doğal-dil gün ifadesi') }),
-      execute: async (_args) => {
-        // TODO(W2): holidayCalendar + SalonClosure mantığını in-process çağır.
-        return { _todo: 'W2_port_check_day_open' };
-      },
+      execute: async (args) => checkDayOpen(ctx.salonId, args.date_expression || ''),
     }),
 
     // ─── SIDE-EFFECTING (taslakta ertelenir) ─────────────────────────────
@@ -105,8 +110,9 @@ export function buildToolSet(ctx: ToolContext): ToolSet {
       inputSchema: z.object({}),
       execute: async () =>
         sideEffect('tool_booking_link', {}, async () => {
-          // TODO(W2/W4): magicLinkService.ensureMagicLink (BOOKING) + buton gönder.
-          return { success: true, _todo: 'W2_port_booking_link' };
+          const btn = await prepareBookingButton(ctx);
+          if (btn) ctx.buttons.push(btn);
+          return { success: !!btn, hasButton: !!btn };
         }),
     }),
 
@@ -115,8 +121,9 @@ export function buildToolSet(ctx: ToolContext): ToolSet {
       inputSchema: z.object({}),
       execute: async () =>
         sideEffect('tool_request_location', {}, async () => {
-          // TODO(W2/W4): locationIntent — place_id cache + konum butonu gönder.
-          return { hasButton: true, _todo: 'W2_port_request_location' };
+          const btn = await prepareLocationButton(ctx.salonId);
+          if (btn) ctx.buttons.push(btn);
+          return { hasButton: !!btn };
         }),
     }),
 
@@ -125,8 +132,10 @@ export function buildToolSet(ctx: ToolContext): ToolSet {
       inputSchema: z.object({}),
       execute: async () =>
         sideEffect('tool_request_profile_edit', {}, async () => {
-          // TODO(W2/W4): profileEdit — global kimlik çöz + portal token mint + buton gönder.
-          return { found: true, _todo: 'W2_port_request_profile_edit' };
+          const btn = await prepareProfileEditButton(ctx);
+          if (btn) ctx.buttons.push(btn);
+          // found:false → müşteri kayıtlı değil; AI kayıt önersin (prompt rule 9).
+          return { found: !!btn };
         }),
     }),
 
@@ -135,8 +144,8 @@ export function buildToolSet(ctx: ToolContext): ToolSet {
       inputSchema: z.object({ note: z.string().optional().describe('Devir nedeni kısa not') }),
       execute: async (args) =>
         sideEffect('tool_request_handover', args as Record<string, unknown>, async () => {
-          // TODO(W2/W4): conversation-state mode=HUMAN_PENDING + handover alarmı.
-          return { handover: true, _todo: 'W2_port_request_handover' };
+          await doHandover(ctx, typeof args.note === 'string' ? args.note : undefined);
+          return { handover: true };
         }),
     }),
   };

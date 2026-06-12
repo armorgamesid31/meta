@@ -20,6 +20,14 @@ export interface ToolIntent {
   args: Record<string, unknown>;
 }
 
+/** Nihai cevaba iliştirilecek buton (n8n paritesi: tek mesaj = metin + buton).
+ *  Yan-etkili tool nihai turda butonu HAZIRLAR (mint/resolve), orkestratör
+ *  AI'ın metniyle birleştirip TEK mesaj gönderir. */
+export interface AgentButton {
+  kind: 'location' | 'profile_edit' | 'booking';
+  url: string;
+}
+
 /** Tool executor'larına geçen bağlam (her tur taze kurulur, ctx closure'lanır). */
 export interface ToolContext {
   salonId: number;
@@ -31,6 +39,8 @@ export interface ToolContext {
   draft: boolean;
   /** Taslak boyunca biriken yan-etki niyetleri (nihai turda işlenir). */
   intents: ToolIntent[];
+  /** NİHAİ turda hazırlanan butonlar (orkestratör cevaba iliştirir). */
+  buttons: AgentButton[];
 }
 
 export interface AgentTurnUsage {

@@ -240,7 +240,7 @@ async function resolveLatestInboundMeta(
   });
 }
 
-async function sendInstagramMessage(params: {
+export async function sendInstagramMessage(params: {
   salonId: number;
   conversationKey: string;
   text: string;
@@ -396,7 +396,7 @@ async function sendInstagramMessage(params: {
   return result;
 }
 
-async function sendWhatsappViaChakra(params: {
+export async function sendWhatsappViaChakra(params: {
   salonId: number;
   conversationKey: string;
   text: string;

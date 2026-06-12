@@ -25,6 +25,9 @@ export async function loadConversationMemory(params: {
   channel: ChannelType;
   conversationKey: string;
   maxMessages?: number;
+  /** Bu tur işlenmekte olan inbound event id'leri — geçmişe dahil edilmez
+   *  (yoksa son müşteri turu hem hafızada hem mergedUserMessage'da çiftlenir). */
+  excludeIds?: number[];
 }): Promise<AgentMessage[]> {
   const limit = params.maxMessages ?? DEFAULT_MAX_MESSAGES;
 
@@ -33,6 +36,7 @@ export async function loadConversationMemory(params: {
       salonId: params.salonId,
       channel: params.channel,
       conversationKey: params.conversationKey,
+      ...(params.excludeIds && params.excludeIds.length ? { id: { notIn: params.excludeIds } } : {}),
     },
     orderBy: { eventTimestamp: 'desc' },
     take: limit,

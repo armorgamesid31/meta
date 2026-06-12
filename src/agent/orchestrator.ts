@@ -10,7 +10,7 @@ import type { ChannelType } from '@prisma/client';
 import { runAgentTurn } from './llm.js';
 import { buildToolSet } from './tools/registry.js';
 import { loadConversationMemory } from './memory.js';
-import type { AgentMessage, ToolContext, ToolIntent } from './types.js';
+import type { AgentButton, AgentMessage, ToolContext, ToolIntent } from './types.js';
 
 export interface AgentDraftResult {
   reply: string;
@@ -34,11 +34,14 @@ export async function runAgentDraft(params: {
   systemPrompt: string;
   mergedUserMessage: string;
   modelName?: string;
+  /** Bu turda işlenen inbound event id'leri (hafıza çiftlemesini önler). */
+  excludeIds?: number[];
 }): Promise<AgentDraftResult> {
   const memory = await loadConversationMemory({
     salonId: params.salonId,
     channel: params.channel,
     conversationKey: params.conversationKey,
+    excludeIds: params.excludeIds,
   });
   const messages: AgentMessage[] = [...memory, { role: 'user', content: params.mergedUserMessage }];
 
@@ -50,6 +53,7 @@ export async function runAgentDraft(params: {
     customerId: params.customerId,
     draft: true,
     intents: [],
+    buttons: [],
   };
 
   const turn = await runAgentTurn({
@@ -70,8 +74,10 @@ export async function runAgentDraft(params: {
 
 /**
  * NİHAİ tur yan-etkilerini işle: re-check bittikten sonra, draft=false ile
- * biriken niyetleri GERÇEKTEN çalıştır (token mint / buton gönder / handover).
+ * biriken niyetleri GERÇEKTEN çalıştır (token mint / buton hazırla / handover).
  * Tool başına tekilleştirir (aynı turda iki kez location vb. olmasın).
+ * Hazırlanan butonları (ctx.buttons) döndürür — caller AI metniyle birleştirip
+ * TEK mesaj gönderir (n8n paritesi: ikinci "output mesajı" YOK).
  */
 export async function executeIntents(params: {
   salonId: number;
@@ -80,7 +86,7 @@ export async function executeIntents(params: {
   canonicalUserId: string | null;
   customerId: number | null;
   intents: ToolIntent[];
-}): Promise<{ executed: string[] }> {
+}): Promise<{ executed: string[]; buttons: AgentButton[] }> {
   const ctx: ToolContext = {
     salonId: params.salonId,
     channel: params.channel,
@@ -89,6 +95,7 @@ export async function executeIntents(params: {
     customerId: params.customerId,
     draft: false,
     intents: [],
+    buttons: [],
   };
   const tools = buildToolSet(ctx) as Record<string, { execute?: (a: unknown, o: unknown) => Promise<unknown> }>;
 
@@ -103,5 +110,6 @@ export async function executeIntents(params: {
       executed.push(intent.tool);
     }
   }
-  return { executed };
+  // Buton sırası: location < profile_edit < booking (booking en eylem-odaklı; tekil).
+  return { executed, buttons: ctx.buttons };
 }

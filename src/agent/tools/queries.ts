@@ -3,7 +3,21 @@
 // güvenli kaçışlar; n8n'in .replace(/'/g) hilesi gereksiz). gender/region
 // türetme + related_terms regexp_split + match_rank + faq jsonb birebir korundu.
 
+import type { ChannelType } from '@prisma/client';
 import { prisma } from '../../prisma.js';
+import { resolveStaffProfile } from '../../services/staffProfileResolver.js';
+import {
+  findBoundCustomer,
+  normalizeInstagramIdentity,
+  normalizePhoneDigits,
+} from '../../services/identityService.js';
+import {
+  findHolidayOnDate,
+  resolveDateExpression,
+  todayInIstanbul,
+  ymdToWeekdayKey,
+  ymdToWeekdayLongTr,
+} from '../../services/holidayCalendar.js';
 
 /** tool_get_prices portu: hizmet adına/eşanlamlılara göre fiyat (gender/region türetmeli). */
 export async function queryServicePrices(
@@ -90,4 +104,181 @@ export async function getSalonFaq(
     SELECT COALESCE((SELECT ss."commonQuestions" FROM "SalonSettings" ss WHERE ss."salonId" = ${salonId} LIMIT 1), '[]'::jsonb) AS salon_faq,
       COALESCE((SELECT faq FROM category_faq), '[]'::jsonb) AS category_faq`;
   return rows[0] ?? { salon_faq: [], category_faq: [] };
+}
+
+/** tool_customer_lookup portu (internalAgent /customer-lookup birebir): kanal+subject
+ *  → müşteri profili + son 5 randevu. IdentityBinding kanonik; yoksa Customer fallback. */
+export async function lookupCustomer(
+  salonId: number,
+  channel: ChannelType,
+  subjectRaw: string,
+): Promise<Record<string, unknown>> {
+  const subject = (subjectRaw || '').trim();
+  if (!subject) return { found: false };
+  const subjectNormalized =
+    channel === 'WHATSAPP' ? normalizePhoneDigits(subject) : normalizeInstagramIdentity(subject);
+
+  let customer = await findBoundCustomer({ salonId, channel, subjectNormalized });
+  if (!customer && subjectNormalized) {
+    if (channel === 'WHATSAPP') {
+      customer = await prisma.customer.findFirst({
+        where: { salonId, phone: { contains: subjectNormalized } },
+        select: { id: true, name: true, firstName: true, lastName: true, phone: true, instagram: true },
+      });
+    } else {
+      customer = await prisma.customer.findFirst({
+        where: { salonId, instagram: { equals: subjectNormalized, mode: 'insensitive' } },
+        select: { id: true, name: true, firstName: true, lastName: true, phone: true, instagram: true },
+      });
+    }
+  }
+  if (!customer) return { found: false };
+
+  const recentAppointments = await prisma.appointment.findMany({
+    where: { salonId, customerId: customer.id },
+    orderBy: { startTime: 'desc' },
+    take: 5,
+    select: {
+      id: true,
+      startTime: true,
+      status: true,
+      service: { select: { name: true } },
+      staff: {
+        select: {
+          name: true,
+          firstName: true,
+          lastName: true,
+          membership: { select: { identity: { select: { firstName: true, lastName: true, displayName: true } } } },
+        },
+      },
+    },
+  });
+
+  return {
+    found: true,
+    customer: {
+      id: customer.id,
+      name: customer.name || [customer.firstName, customer.lastName].filter(Boolean).join(' ') || null,
+      phone: customer.phone || null,
+      instagram: customer.instagram || null,
+    },
+    recentAppointments: recentAppointments.map((a) => ({
+      id: a.id,
+      startTime: a.startTime.toISOString(),
+      status: a.status,
+      serviceName: a.service?.name || null,
+      staffName:
+        resolveStaffProfile(a.staff as any, (a.staff as any)?.membership?.identity ?? null).name || null,
+    })),
+  };
+}
+
+const VALID_DAYS: Array<'MON' | 'TUE' | 'WED' | 'THU' | 'FRI' | 'SAT' | 'SUN'> = [
+  'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN',
+];
+
+/** tool_check_day_open portu (internalAgent /check-day-open birebir): doğal-dil gün
+ *  ifadesi → açık/kapalı (SalonClosure → haftalık → tatil → yarım gün karar zinciri). */
+export async function checkDayOpen(
+  salonId: number,
+  expression: string,
+): Promise<Record<string, unknown>> {
+  const expr = (expression || '').trim();
+  if (!expr) return { ok: false, error: 'dateExpression_required' };
+
+  const today = todayInIstanbul();
+  const resolved = resolveDateExpression(expr, { today });
+
+  if (resolved.unresolved || resolved.dates.length === 0) {
+    return {
+      interpretation: resolved.interpretation || 'çözümlenemedi',
+      ambiguous: false,
+      unresolved: true,
+      outOfRange: resolved.outOfRange,
+      days: [],
+    };
+  }
+
+  const settings = await prisma.salonSettings.findUnique({
+    where: { salonId },
+    select: { workingDays: true, workStartHour: true, workEndHour: true, timezone: true },
+  });
+
+  const minDate = resolved.dates[0];
+  const maxDate = resolved.dates[resolved.dates.length - 1];
+  const rangeStart = new Date(`${minDate}T00:00:00+03:00`);
+  const rangeEnd = new Date(`${maxDate}T23:59:59+03:00`);
+
+  const closures = await prisma.salonClosure.findMany({
+    where: { salonId, startAt: { lte: rangeEnd }, endAt: { gte: rangeStart } },
+    select: { startAt: true, endAt: true, reason: true },
+  });
+
+  const workingDaySet = new Set<string>(
+    Array.isArray(settings?.workingDays)
+      ? (settings!.workingDays as unknown[])
+          .filter((v): v is string => typeof v === 'string')
+          .map((v) => v.trim().toUpperCase())
+          .filter((v) => VALID_DAYS.includes(v as any))
+      : VALID_DAYS,
+  );
+  if (workingDaySet.size === 0) for (const d of VALID_DAYS) workingDaySet.add(d);
+
+  const workStart = settings?.workStartHour ?? 9;
+  const workEnd = settings?.workEndHour ?? 18;
+  const workHoursFull = `${String(workStart).padStart(2, '0')}:00–${String(workEnd).padStart(2, '0')}:00`;
+
+  const days = resolved.dates.map((date) => {
+    const dayName = ymdToWeekdayLongTr(date);
+    const weekKey = ymdToWeekdayKey(date);
+    const dayStart = new Date(`${date}T00:00:00+03:00`);
+    const dayEnd = new Date(`${date}T23:59:59+03:00`);
+    const overlappingClosure = closures.find((c) => c.startAt <= dayEnd && c.endAt >= dayStart);
+    const holiday = findHolidayOnDate(date);
+
+    let isOpen = true;
+    let reason: string | null = null;
+    let isHalfDay = false;
+    let workHours: string | null = workHoursFull;
+    let salonClosureNote: string | null = null;
+
+    if (overlappingClosure) {
+      isOpen = false;
+      reason = 'salon_closure';
+      salonClosureNote = overlappingClosure.reason || null;
+      workHours = null;
+    } else if (!workingDaySet.has(weekKey)) {
+      isOpen = false;
+      reason = 'weekly_off';
+      workHours = null;
+    } else if (holiday && holiday.closesByDefault === true) {
+      isOpen = false;
+      reason = holiday.type === 'religious' ? 'religious_holiday' : 'national_holiday';
+      workHours = null;
+    } else if (holiday && holiday.closesByDefault === 'half') {
+      isOpen = true;
+      isHalfDay = true;
+      workHours = `${String(workStart).padStart(2, '0')}:00–13:00`;
+    }
+
+    return {
+      date,
+      dayName,
+      isOpen,
+      reason,
+      isHalfDay,
+      holidayName: holiday?.name || null,
+      holidayType: holiday?.type || null,
+      salonClosureNote,
+      workHours,
+    };
+  });
+
+  return {
+    interpretation: resolved.interpretation,
+    ambiguous: resolved.ambiguous,
+    unresolved: false,
+    outOfRange: resolved.outOfRange,
+    days,
+  };
 }
