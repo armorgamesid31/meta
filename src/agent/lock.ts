@@ -66,6 +66,33 @@ export async function acquireConversationLock(
   return true;
 }
 
+/** Kilit ömrünü uzat (heartbeat). Aktif runner her turda çağırır → TTL,
+ *  maksimum çalışma süresinden bağımsız olarak runner yaşadıkça düşmez
+ *  (paralel-runner/deadlock riskini kapatır). Kilit kaybedildiyse false. */
+export async function renewConversationLock(
+  salonId: number,
+  channel: string,
+  conversationKey: string,
+  ttlMs = 120_000,
+): Promise<boolean> {
+  const key = lockKey(salonId, channel, conversationKey);
+  const redis = await getRedis();
+  if (redis) {
+    try {
+      // Sadece kilit hâlâ bizdeyse uzat (varsa yenile; yoksa kaybetmişiz).
+      // redis.expire → 1 (uzatıldı) / 0 (key yok).
+      const expired = await redis.expire(key, Math.ceil(ttlMs / 1000));
+      return Number(expired) === 1;
+    } catch (err) {
+      console.warn('[agent-lock] renew failed:', err);
+    }
+  }
+  const now = Date.now();
+  if (!localLocks.has(key)) return false;
+  localLocks.set(key, now + ttlMs);
+  return true;
+}
+
 /** Kilidi bırak. */
 export async function releaseConversationLock(
   salonId: number,

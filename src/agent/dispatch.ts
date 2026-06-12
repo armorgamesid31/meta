@@ -23,7 +23,7 @@ import { prisma } from '../prisma.js';
 import { buildAgentSystemPrompt } from './systemPrompt.js';
 import { runAgentDraft, executeIntents } from './orchestrator.js';
 import { sendAgentReply } from './outbound.js';
-import { acquireConversationLock, releaseConversationLock } from './lock.js';
+import { acquireConversationLock, renewConversationLock, releaseConversationLock } from './lock.js';
 import { resolveBatchMedia, type MediaSourceEvent } from './media.js';
 import { loadConversationSummary, summarizeIfNeeded } from './summarizer.js';
 
@@ -140,6 +140,12 @@ export async function dispatchAgentInbound(item: AgentInboundItem): Promise<void
     let rounds = 0;
     while (rounds < MAX_RECHECK_ROUNDS) {
       rounds += 1;
+      // Kilit heartbeat: TTL maksimum loop süresinden bağımsız → paralel-runner
+      // riski yok. Kilidi kaybettiysek (başka runner devraldı) çekil.
+      if (rounds > 1) {
+        const held = await renewConversationLock(item.salonId, item.channel, item.conversationKey);
+        if (!held) break;
+      }
       await sleep(DEBOUNCE_MS);
 
       const pending = await fetchPending(item);
