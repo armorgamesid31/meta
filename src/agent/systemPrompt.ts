@@ -19,6 +19,16 @@ const PROFILE_EDIT_RULE = [
 
 const TRIGGER_TAIL = 'Tetikleyici eşleşirse ve tool çağırmazsan: HATALI cevap üretmiş olursun.';
 
+// Veri-çekme tool'larını Gemini Flash sık atlıyor (doğrudan cevaplayıp uyduruyor).
+// "Ön bilgin yok" çerçevesi tool-çağırmayı güçlendiriyor.
+const NO_PRIOR_KNOWLEDGE = [
+  '',
+  '# KESİN KURAL — ÖN BİLGİN YOK',
+  'Salonun FİYATLARI, KAMPANYALARI, HİZMET LİSTESİ, AÇIK/KAPALI GÜNLERİ ve SSS hakkında HİÇBİR ön bilgin YOK.',
+  'Bu konularda tek kelime etmeden ÖNCE ilgili tool\'u çağırmak ZORUNDASIN (fiyat→tool_get_prices, hizmet→tool_get_services, kampanya→tool_get_campaigns, gün-açık→tool_check_day_open, sss→tool_get_faq).',
+  'Tool sonucu OLMADAN fiyat/kampanya/saat/hizmet/politika BİLGİSİ verme veya uydurma — kesinlikle yasak. Önce tool, sonra cevap.',
+].join('\n');
+
 export async function buildAgentSystemPrompt(input: {
   salonId: number;
   customerId: number | null;
@@ -52,7 +62,9 @@ export async function buildAgentSystemPrompt(input: {
   });
 
   // Profil-edit kuralını tetikleyici listesinin sonuna ekle (8 → 9).
-  return base.includes(TRIGGER_TAIL)
+  const withProfileEdit = base.includes(TRIGGER_TAIL)
     ? base.replace(TRIGGER_TAIL, `${PROFILE_EDIT_RULE}\n\n${TRIGGER_TAIL}`)
     : `${base}\n${PROFILE_EDIT_RULE}`;
+  // Veri-çekme tool-çağırmayı güçlendiren "ön bilgin yok" bloğu.
+  return `${withProfileEdit}\n${NO_PRIOR_KNOWLEDGE}`;
 }

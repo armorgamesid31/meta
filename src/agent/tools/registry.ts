@@ -29,7 +29,8 @@ export function buildToolSet(ctx: ToolContext): ToolSet {
   return {
     // ─── READ ─────────────────────────────────────────────────────────────
     tool_get_prices: tool({
-      description: 'Müşteri bir hizmetin FİYATINI sorduğunda çağır. service_name + varsa related_terms.',
+      description:
+        "Müşteri FİYAT sorduğunda ZORUNLU çağır — fiyatı ASLA kendin söyleme/uydurma. Tetikleyiciler: 'fiyat', 'ücret', 'kaç para', 'ne kadar', 'kaça', spesifik hizmet adı. service_name + varsa related_terms ver.",
       inputSchema: z.object({
         service_name: z.string().describe('Sorulan hizmet adı'),
         related_terms: z.string().optional().describe('Eşanlamlı/ilişkili terimler, virgülle'),
@@ -57,7 +58,8 @@ export function buildToolSet(ctx: ToolContext): ToolSet {
     }),
 
     tool_get_campaigns: tool({
-      description: 'Müşteri aktif KAMPANYA/fırsat/indirim sorduğunda çağır.',
+      description:
+        "Müşteri KAMPANYA/indirim sorduğunda ZORUNLU çağır — kampanya bilgisini ASLA kendin uydurma. Tetikleyiciler: 'indirim', 'kampanya', 'fırsat', 'promosyon', 'paket'.",
       inputSchema: z.object({}),
       execute: async () => {
         const now = new Date();
@@ -88,7 +90,8 @@ export function buildToolSet(ctx: ToolContext): ToolSet {
     }),
 
     tool_check_day_open: tool({
-      description: '"Bayramda/pazar açık mısınız" gibi GÜN-açık sorularında çağır. dateExpression ver.',
+      description:
+        "GÜN bazlı açık/kapalı sorusunda ZORUNLU çağır — açık mı kapalı mı bilgisini kendin söyleme. Tetikleyiciler: 'açık mısınız', 'yarın açık', 'X günü çalışıyor musunuz', 'bayramda', 'kurban bayramı', 'sevgililer günü', 'yılbaşı', 'tatil', 'pazar açık'. date_expression'a müşteri ne dediyse Türkçe yaz.",
       inputSchema: z.object({ date_expression: z.string().describe('Doğal-dil gün ifadesi') }),
       execute: async (_args) => {
         // TODO(W2): holidayCalendar + SalonClosure mantığını in-process çağır.
