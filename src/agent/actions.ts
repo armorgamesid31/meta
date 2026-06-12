@@ -8,6 +8,7 @@ import { resolveMapsLink } from '../services/mapsResolver.js';
 import { mintPortalToken } from '../services/profilePortalService.js';
 import { lookupGlobalIdentityByChannel } from '../services/globalCustomerIdentity.js';
 import { ensureMagicLink } from '../services/magicLinkService.js';
+import { markHandoverTriggered } from '../services/notifications.js';
 import type { AgentButton, ToolContext } from './types.js';
 
 /** KONUM: salonun Maps YER-PROFİLİ butonu (place_id cache; yoksa resolve+cache). */
@@ -87,14 +88,17 @@ export async function prepareBookingButton(ctx: ToolContext): Promise<AgentButto
   return r?.magicUrl ? { kind: 'booking', url: r.magicUrl } : null;
 }
 
-/** HANDOVER: konuşmayı insan moduna al (mode=HUMAN_PENDING). */
+/** HANDOVER: konuşmayı insan moduna al (mode=HUMAN_PENDING) + salonu BİLGİLENDİR.
+ *  Canlı internalConversationState `/set` ile paritede: state + markHandoverTriggered
+ *  (HandoverAlertState=ACTIVE → push/reminder makinesi). Eksik bildirim = sessiz
+ *  müşteri bekletme; bu yüzden state değişimi tek başına YETMEZ. */
 export async function doHandover(ctx: ToolContext, note?: string): Promise<void> {
   const data = {
     mode: 'HUMAN_PENDING' as const,
     humanPendingSince: new Date(),
     notes: (note && note.trim()) || 'agent_handover',
   };
-  await prisma.conversationState.upsert({
+  const state = await prisma.conversationState.upsert({
     where: {
       salonId_channel_conversationKey: {
         salonId: ctx.salonId,
@@ -111,5 +115,15 @@ export async function doHandover(ctx: ToolContext, note?: string): Promise<void>
       customerId: ctx.customerId,
       ...data,
     },
+    select: { profileName: true },
   });
+
+  // Salon ekibine handover alarmı (push + reminder sweep). Best-effort: bildirim
+  // patlarsa handover state'i yine de geçerli kalsın.
+  await markHandoverTriggered({
+    salonId: ctx.salonId,
+    channel: ctx.channel as ChannelType,
+    conversationKey: ctx.conversationKey,
+    customerName: state?.profileName || null,
+  }).catch((err) => console.error('[agent-handover] markHandoverTriggered failed', err?.message || err));
 }

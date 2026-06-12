@@ -534,7 +534,7 @@ export function buildCustomerCalibration(tone: AgentTone, c: CustomerSnapshot): 
         const visitNote = c.lastVisit.serviceName
           ? ` (son: ${c.lastVisit.serviceName}${c.lastVisit.staffName ? ', ' + c.lastVisit.staffName : ''})`
           : '';
-        return `Müşteri kayıtlı, son ziyaret ${c.lastVisit.daysAgo} gün önce${visitNote}. "sen" + sade isim ("${c.firstName || 'müşteri'}"). Geçmiş ziyarete referans verebilirsin.`;
+        return `Müşteri kayıtlı, son ziyaret ${c.lastVisit.daysAgo} gün önce${visitNote}. HİTAP KURALI (kesin): yalnızca "${c.firstName || 'müşteri'}" (sade ilk isim) + "sen". Bu müşteride "Hanım"/"Bey"/"siz" KULLANMA — "${c.firstName} Hanım" YANLIŞ, sadece "${c.firstName}". Geçmiş ziyarete referans verebilirsin.`;
       }
       if (c.lastVisit) {
         const greeting = c.lastVisit.daysAgo >= 90 ? ' Selamlamada "uzun zaman olmuş" tonu uygun.' : '';
