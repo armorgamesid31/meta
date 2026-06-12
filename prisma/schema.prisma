@@ -2015,6 +2015,13 @@ model ConversationState {
   // güncelle" butonu olarak gömüp temizler (konum deseniyle aynı).
   pendingProfileEditUrl String?
   pendingProfileEditAt  DateTime?                  @db.Timestamp(6)
+  // Rolling summary (backend-native agent "150%" hafıza): son N-mesaj penceresinin
+  // ÖTESİNDE kalan eski turlar buraya artımlı özetlenir. Uzun ilişkilerde context
+  // pencereden taşmadan korunur. summaryThroughEventId = özete dahil son event id
+  // (yüksek-su işareti; yeniden hesaplama yapmadan artımlı katlama için).
+  summaryText           String?
+  summaryUpdatedAt      DateTime?                  @db.Timestamp(6)
+  summaryThroughEventId Int?
   createdAt             DateTime?                  @default(now()) @db.Timestamp(6)
   updatedAt             DateTime?                  @default(now()) @updatedAt @db.Timestamp(6)
   salon                 Salon                      @relation(fields: [salonId], references: [id], onDelete: Cascade, onUpdate: NoAction)

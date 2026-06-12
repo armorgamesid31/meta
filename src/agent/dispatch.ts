@@ -25,6 +25,7 @@ import { runAgentDraft, executeIntents } from './orchestrator.js';
 import { sendAgentReply } from './outbound.js';
 import { acquireConversationLock, releaseConversationLock } from './lock.js';
 import { resolveBatchMedia, type MediaSourceEvent } from './media.js';
+import { loadConversationSummary, summarizeIfNeeded } from './summarizer.js';
 
 /** channelWebhooks'un ürettiği normalize item'dan ihtiyaç duyduğumuz alanlar. */
 export interface AgentInboundItem {
@@ -122,12 +123,18 @@ export async function dispatchAgentInbound(item: AgentInboundItem): Promise<void
   if (!got) return; // aktif runner re-check'te yakalar
 
   try {
+    const conversationSummary = await loadConversationSummary({
+      salonId: item.salonId,
+      channel: item.channel,
+      conversationKey: item.conversationKey,
+    });
     const systemPrompt = await buildAgentSystemPrompt({
       salonId: item.salonId,
       customerId: item.customerId,
       channelProfileName: item.channelProfileName,
       registeredName: item.registeredName,
       repliedTo: item.repliedTo,
+      conversationSummary,
     });
 
     let rounds = 0;
@@ -198,6 +205,14 @@ export async function dispatchAgentInbound(item: AgentInboundItem): Promise<void
       }
 
       await markDone(batchIds);
+
+      // Rolling summary güncelle (fire-and-forget; pencere dışı eski turları katlar).
+      void summarizeIfNeeded({
+        salonId: item.salonId,
+        channel: item.channel,
+        conversationKey: item.conversationKey,
+        modelName: item.modelName,
+      });
       break;
     }
   } catch (err: any) {

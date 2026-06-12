@@ -35,6 +35,8 @@ export async function buildAgentSystemPrompt(input: {
   channelProfileName: string | null;
   registeredName: string | null;
   repliedTo?: Parameters<typeof buildSystemPrompt>[0]['repliedTo'];
+  /** Rolling summary — pencere dışı eski turların kalıcı özeti (varsa). */
+  conversationSummary?: string | null;
 }): Promise<string> {
   const agentContext = await loadSalonAgentContext(input.salonId);
   const tone = agentContext?.agentSettings?.tone ?? 'balanced';
@@ -66,5 +68,19 @@ export async function buildAgentSystemPrompt(input: {
     ? base.replace(TRIGGER_TAIL, `${PROFILE_EDIT_RULE}\n\n${TRIGGER_TAIL}`)
     : `${base}\n${PROFILE_EDIT_RULE}`;
   // Veri-çekme tool-çağırmayı güçlendiren "ön bilgin yok" bloğu.
-  return `${withProfileEdit}\n${NO_PRIOR_KNOWLEDGE}`;
+  let out = `${withProfileEdit}\n${NO_PRIOR_KNOWLEDGE}`;
+
+  // Rolling summary — pencere dışında kalan eski turların kalıcı özeti.
+  const summary = (input.conversationSummary || '').trim();
+  if (summary) {
+    out += [
+      '',
+      '# ÖNCEKİ KONUŞMA ÖZETİ (kalıcı hafıza)',
+      'Bu müşteriyle daha önceki yazışmaların özeti aşağıda. Güncel mesajlar ayrıca',
+      'verilecek; bu özeti arka-plan bilgisi olarak kullan, müşteriye "özetime göre"',
+      'gibi atıf yapma. Çelişki olursa GÜNCEL mesajlar esastır.',
+      summary,
+    ].join('\n');
+  }
+  return out;
 }

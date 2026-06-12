@@ -82,3 +82,17 @@ export async function runAgentTurn(params: {
     steps: Array.isArray((result as any).steps) ? (result as any).steps.length : 1,
   };
 }
+
+/** Tool'suz düz metin üretimi (rolling summary gibi yardımcı işler için). */
+export async function generatePlainText(params: {
+  system: string;
+  prompt: string;
+  modelName?: string;
+}): Promise<string> {
+  const result = await generateText({
+    model: resolveModel(params.modelName),
+    system: params.system,
+    prompt: params.prompt,
+  });
+  return result.text ?? '';
+}
