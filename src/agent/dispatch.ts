@@ -123,6 +123,27 @@ export async function dispatchAgentInbound(item: AgentInboundItem): Promise<void
   if (!got) return; // aktif runner re-check'te yakalar
 
   try {
+    // customerId güvenliği: webhook'un per-mesaj çözümü bazen null veriyor
+    // (IdentityBinding yok + legacy fallback channelUserId formatına takılıyor).
+    // ConversationState konuşmanın bağlı müşterisini KALICI tutuyor → null ise
+    // oradan düş. Yoksa kayıtlı müşteri "kayıtsız" sanılıp resmi ("Hanım") konuşur.
+    let effectiveCustomerId = item.customerId;
+    if (effectiveCustomerId == null) {
+      const st = await prisma.conversationState
+        .findUnique({
+          where: {
+            salonId_channel_conversationKey: {
+              salonId: item.salonId,
+              channel: item.channel,
+              conversationKey: item.conversationKey,
+            },
+          },
+          select: { customerId: true },
+        })
+        .catch(() => null);
+      if (st?.customerId) effectiveCustomerId = st.customerId;
+    }
+
     const conversationSummary = await loadConversationSummary({
       salonId: item.salonId,
       channel: item.channel,
@@ -130,7 +151,7 @@ export async function dispatchAgentInbound(item: AgentInboundItem): Promise<void
     });
     const systemPrompt = await buildAgentSystemPrompt({
       salonId: item.salonId,
-      customerId: item.customerId,
+      customerId: effectiveCustomerId,
       channelProfileName: item.channelProfileName,
       registeredName: item.registeredName,
       repliedTo: item.repliedTo,
@@ -164,7 +185,7 @@ export async function dispatchAgentInbound(item: AgentInboundItem): Promise<void
         channel: item.channel,
         conversationKey: item.conversationKey,
         canonicalUserId: item.canonicalUserId,
-        customerId: item.customerId,
+        customerId: effectiveCustomerId,
         systemPrompt,
         mergedUserMessage: merged,
         modelName: item.modelName,
@@ -192,7 +213,7 @@ export async function dispatchAgentInbound(item: AgentInboundItem): Promise<void
         channel: item.channel,
         conversationKey: item.conversationKey,
         canonicalUserId: item.canonicalUserId,
-        customerId: item.customerId,
+        customerId: effectiveCustomerId,
         intents: draft.intents,
       });
 
@@ -202,7 +223,7 @@ export async function dispatchAgentInbound(item: AgentInboundItem): Promise<void
           channel: item.channel,
           conversationKey: item.conversationKey,
           canonicalUserId: item.canonicalUserId,
-          customerId: item.customerId,
+          customerId: effectiveCustomerId,
           customerName: item.customerName ?? item.registeredName ?? item.channelProfileName ?? null,
           text: reply,
           buttons,
