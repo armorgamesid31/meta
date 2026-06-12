@@ -23,6 +23,7 @@ import {
   processTemplateStatusPayload,
 } from '../services/templateStatusWebhook.js';
 import { upsertConversationMessageEvent } from '../services/conversationMessageEvents.js';
+import { resolveHandoverAlert } from '../services/notifications.js';
 import { storeConversationAvatarFromUrl } from '../services/conversationAvatarStorage.js';
 import { buildMediaItemsFromWebhook } from '../services/conversationMediaCache.js';
 import { bindPendingInstagramUsername } from '../services/globalCustomerIdentity.js';
@@ -495,7 +496,7 @@ async function evaluateConversationState(input: {
   });
 
   if (input.forceAutoByCancel && !input.isEcho && !state.manualAlways) {
-    return prisma.conversationState.update({
+    const updated = await prisma.conversationState.update({
       where: { id: state.id },
       data: {
         mode: ConversationAutomationMode.AUTO,
@@ -504,11 +505,17 @@ async function evaluateConversationState(input: {
         notes: 'human_cancelled_by_customer',
       },
     });
+    // Müşteri iptal etti → AUTO'ya döndü; bekleyen handover alarmını ANINDA durdur
+    // (sweep emniyet ağına bırakma; 5 dk'ya kadar gereksiz reminder atabilir).
+    await resolveHandoverAlert({ salonId: input.salonId, channel: input.channel, conversationKey: input.conversationKey }).catch(
+      (err) => console.error('[handover] resolve on cancel failed', err?.message || err),
+    );
+    return updated;
   }
 
   if (input.isEcho && outboundTrace?.source !== OutboundMessageSource.AI_AGENT && !state.manualAlways) {
     const until = new Date(now.getTime() + HUMAN_ACTIVE_MINUTES * 60 * 1000);
-    return prisma.conversationState.update({
+    const updated = await prisma.conversationState.update({
       where: { id: state.id },
       data: {
         mode: ConversationAutomationMode.HUMAN_ACTIVE,
@@ -522,6 +529,16 @@ async function evaluateConversationState(input: {
             : 'human_external_echo',
       },
     });
+    // Çalışan (panel VEYA telefondan/dış kanaldan) müşteriye cevap verdi → alarmı
+    // durdur. Eksikti: dış-kanal echo'da mode HUMAN_ACTIVE olduğu için sweep'in
+    // mode-guard'ı da çözmüyordu → çalışan cevap vermişken saatlerce reminder yağıyordu.
+    await resolveHandoverAlert({
+      salonId: input.salonId,
+      channel: input.channel,
+      conversationKey: input.conversationKey,
+      byHumanMessage: true,
+    }).catch((err) => console.error('[handover] resolve on echo failed', err?.message || err));
+    return updated;
   }
 
   if (!state.manualAlways) {
