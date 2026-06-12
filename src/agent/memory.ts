@@ -9,9 +9,18 @@ import type { AgentMessage } from './types.js';
 
 const DEFAULT_MAX_MESSAGES = Number(process.env.AGENT_MEMORY_MESSAGES || 24);
 
-/** Asistan cevaplarına sızan internal tool-artifact'ı temizle. */
+/** Asistan cevaplarına sızan internal tool-artifact'ı temizle.
+ *  - Tam "[Used tools: ...]" bloğu.
+ *  - Eski n8n verisinde yarım kalmış varyant (yalnız kapanış "]" baş­ta kalmış,
+ *    örn. "] Bilgilerini güncelle...") → baştaki orphan "]" temizlenir.
+ *  - Satır içinde sızan Gemini text-mode tool kodu ("tool_code\nprint(tool_x())"). */
 export function stripToolArtifacts(text: string): string {
-  return text.replace(/\[Used tools:[\s\S]*?\]\s*/gi, '').trim();
+  return text
+    .replace(/\[Used tools:[\s\S]*?\]\s*/gi, '')
+    .replace(/```?\s*tool_code[\s\S]*?(?:```|$)/gi, '')
+    .replace(/\bprint\(\s*tool_[a-z_]+\([^)]*\)\s*\)/gi, '')
+    .replace(/^\s*\]\s*/, '')
+    .trim();
 }
 
 /**
