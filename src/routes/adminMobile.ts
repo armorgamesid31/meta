@@ -13196,6 +13196,12 @@ router.post('/conversations/:channel/:conversationKey/handover', authenticateTok
       direction: 'SYSTEM',
       eventTimestamp: new Date(),
       processingStatus: InboundMessageStatus.DONE,
+      // Devralan çalışanın kimliği KOLONA yazılmalı — okuma tarafı (messages list)
+      // `${actorDisplayName} devraldı.` metnini outboundSenderUserId join'inden
+      // üretiyor. Sadece rawPayload.actor'a yazmak yetmiyordu → "Salon Ekibi"ye
+      // düşüyordu (isim yerine).
+      outboundSenderUserId: senderUser?.id || null,
+      outboundSenderEmail: senderUserEmail || null,
       rawPayload: {
         direction: 'system',
         source: 'HUMAN_APP',
@@ -13346,6 +13352,9 @@ router.post('/conversations/:channel/:conversationKey/resume-auto', authenticate
       direction: 'SYSTEM',
       eventTimestamp: new Date(),
       processingStatus: InboundMessageStatus.DONE,
+      // Devreden çalışanın kimliği KOLONA yazılmalı (bkz. manual_takeover).
+      outboundSenderUserId: senderUser?.id || null,
+      outboundSenderEmail: senderUserEmail || null,
       rawPayload: {
         direction: 'system',
         source: 'HUMAN_APP',
