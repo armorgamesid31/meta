@@ -33,6 +33,10 @@ import {
   loadCustomerSnapshot,
   loadSalonAgentContext,
 } from '../services/salonAgentContext.js';
+// W6 cutover: salon AGENT_BACKEND_SALON_IDS listesindeyse inbound n8n yerine
+// backend-native agent'a gider. Default (liste boş) → davranış değişmez.
+import { isBackendEngine } from '../agent/cutover.js';
+import { dispatchAgentInbound, type AgentInboundItem } from '../agent/dispatch.js';
 
 const router = Router();
 
@@ -901,6 +905,24 @@ async function forwardToN8n(payload: any, channel: ChannelType) {
     headers,
     timeout: 20000,
   });
+}
+
+/** W6: processed webhook item → backend agent dispatch girdisi. Alanlar n8n'e
+ *  giden payload ile aynı kaynaklardan; aiAllowed konuşma modu + kanal-AI gate'i. */
+function mapToAgentInboundItem(item: any): AgentInboundItem {
+  return {
+    salonId: item.salonId,
+    channel: item.channel as ChannelType,
+    conversationKey: item.conversationKey,
+    canonicalUserId: item.canonicalUserId ?? null,
+    customerId: item.customerId ?? null,
+    channelProfileName: item.profileName ?? null,
+    registeredName: item.customerFullName ?? null,
+    customerName: item.customerFullName ?? item.profileName ?? null,
+    externalAccountId: item.externalAccountId ?? null,
+    aiAllowed: Boolean(item.state?.aiAllowed),
+    repliedTo: item.repliedTo ?? null,
+  };
 }
 
 function normalizeWebhookPayload(body: any) {
@@ -1895,7 +1917,14 @@ async function handleInbound(req: any, res: any, forcedChannel?: ChannelType) {
 
     for (const item of processed) {
       if (!item.success || item.isEcho) continue;
-      await forwardToN8n(item, item.channel);
+      // W6 cutover: bu salon backend-native motorundaysa n8n'e değil in-process
+      // agent'a yolla. dispatchAgentInbound 5sn debounce içerdiğinden AWAIT
+      // EDİLMEZ (HTTP cevabını bekletmesin) — fire-and-forget, hatayı kendi yutar.
+      if (isBackendEngine(item.salonId)) {
+        void dispatchAgentInbound(mapToAgentInboundItem(item));
+      } else {
+        await forwardToN8n(item, item.channel);
+      }
     }
 
     return res.status(200).json({

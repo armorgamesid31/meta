@@ -21,6 +21,30 @@ export function resolveModel(name: string = DEFAULT_MODEL) {
   return google(n.startsWith('gemini') ? n : 'gemini-2.5-flash');
 }
 
+/** AgentMessage → AI SDK ModelMessage. Medya varsa content'i çok-parçalı diziye
+ *  çevirir (text + image/file part'ları); yoksa düz string. */
+function toModelMessage(m: AgentMessage) {
+  if (!m.media || m.media.length === 0) {
+    return { role: m.role, content: m.content };
+  }
+  const parts: any[] = [];
+  const text = (m.content || '').trim();
+  if (text) parts.push({ type: 'text', text });
+  for (const med of m.media) {
+    if (med.kind === 'image') {
+      parts.push({ type: 'image', image: med.data, mediaType: med.mediaType });
+    } else {
+      // ses → file part (Gemini ses'i native anlar/transkribe eder)
+      parts.push({ type: 'file', data: med.data, mediaType: med.mediaType });
+    }
+  }
+  // En az bir text part garanti (boş user content modeli tetiklemeyebilir).
+  if (parts.every((p) => p.type !== 'text')) {
+    parts.unshift({ type: 'text', text: '(müşteri görsel/sesli mesaj gönderdi)' });
+  }
+  return { role: m.role, content: parts };
+}
+
 /**
  * Tek agent turu: sistem-prompt + temiz hafıza + birleşik kullanıcı mesajı →
  * native tool-calling döngüsü (tool→sonuç→model, stepCountIs ile sınırlı) →
@@ -37,7 +61,7 @@ export async function runAgentTurn(params: {
   const result = await generateText({
     model: resolveModel(params.modelName),
     system: params.system,
-    messages: params.messages.map((m) => ({ role: m.role, content: m.content })),
+    messages: params.messages.map(toModelMessage) as any,
     tools: params.tools,
     stopWhen: stepCountIs(params.maxSteps ?? DEFAULT_MAX_STEPS),
   });

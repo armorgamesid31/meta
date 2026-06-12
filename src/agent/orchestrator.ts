@@ -10,7 +10,7 @@ import type { ChannelType } from '@prisma/client';
 import { runAgentTurn } from './llm.js';
 import { buildToolSet } from './tools/registry.js';
 import { loadConversationMemory } from './memory.js';
-import type { AgentButton, AgentMessage, ToolContext, ToolIntent } from './types.js';
+import type { AgentButton, AgentMediaPart, AgentMessage, ToolContext, ToolIntent } from './types.js';
 
 export interface AgentDraftResult {
   reply: string;
@@ -36,6 +36,8 @@ export async function runAgentDraft(params: {
   modelName?: string;
   /** Bu turda işlenen inbound event id'leri (hafıza çiftlemesini önler). */
   excludeIds?: number[];
+  /** Current-batch inbound medyası (görsel/ses) — modele part olarak gider. */
+  media?: AgentMediaPart[];
 }): Promise<AgentDraftResult> {
   const memory = await loadConversationMemory({
     salonId: params.salonId,
@@ -43,7 +45,14 @@ export async function runAgentDraft(params: {
     conversationKey: params.conversationKey,
     excludeIds: params.excludeIds,
   });
-  const messages: AgentMessage[] = [...memory, { role: 'user', content: params.mergedUserMessage }];
+  const messages: AgentMessage[] = [
+    ...memory,
+    {
+      role: 'user',
+      content: params.mergedUserMessage,
+      ...(params.media && params.media.length ? { media: params.media } : {}),
+    },
+  ];
 
   const ctx: ToolContext = {
     salonId: params.salonId,

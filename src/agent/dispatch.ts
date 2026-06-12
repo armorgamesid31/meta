@@ -24,6 +24,7 @@ import { buildAgentSystemPrompt } from './systemPrompt.js';
 import { runAgentDraft, executeIntents } from './orchestrator.js';
 import { sendAgentReply } from './outbound.js';
 import { acquireConversationLock, releaseConversationLock } from './lock.js';
+import { resolveBatchMedia, type MediaSourceEvent } from './media.js';
 
 /** channelWebhooks'un ürettiği normalize item'dan ihtiyaç duyduğumuz alanlar. */
 export interface AgentInboundItem {
@@ -53,9 +54,12 @@ interface PendingMsg {
   id: number;
   text: string;
   ts: Date;
+  hasMedia: boolean;
+  media: MediaSourceEvent;
 }
 
-/** Bu konuşmanın işlenmemiş (PENDING) inbound mesajlarını kronolojik çek. */
+/** Bu konuşmanın işlenmemiş (PENDING) inbound mesajlarını kronolojik çek.
+ *  Medya event'leri (görsel/ses) metni boş olsa da TUTULUR — W5 model part'ı. */
 async function fetchPending(item: AgentInboundItem): Promise<PendingMsg[]> {
   const since = new Date(Date.now() - PENDING_WINDOW_MS);
   const rows = await prisma.conversationMessageEvent.findMany({
@@ -68,11 +72,34 @@ async function fetchPending(item: AgentInboundItem): Promise<PendingMsg[]> {
       eventTimestamp: { gte: since },
     },
     orderBy: { eventTimestamp: 'asc' },
-    select: { id: true, text: true, voiceTranscript: true, eventTimestamp: true },
+    select: {
+      id: true,
+      text: true,
+      voiceTranscript: true,
+      eventTimestamp: true,
+      mediaItems: true,
+      mediaCached: true,
+    },
   });
   return rows
-    .map((r) => ({ id: r.id, text: (r.text || r.voiceTranscript || '').trim(), ts: r.eventTimestamp }))
-    .filter((r) => r.text.length > 0);
+    .map((r) => {
+      const hasMedia = Array.isArray(r.mediaItems) && (r.mediaItems as unknown[]).length > 0;
+      return {
+        id: r.id,
+        text: (r.text || r.voiceTranscript || '').trim(),
+        ts: r.eventTimestamp,
+        hasMedia,
+        media: {
+          id: r.id,
+          salonId: item.salonId,
+          channel: item.channel,
+          conversationKey: item.conversationKey,
+          mediaItems: r.mediaItems,
+          mediaCached: r.mediaCached,
+        } as MediaSourceEvent,
+      };
+    })
+    .filter((r) => r.text.length > 0 || r.hasMedia);
 }
 
 /** Inbound batch'i işlendi olarak işaretle (DONE) — tekrar işlenmesin. */
@@ -113,7 +140,11 @@ export async function dispatchAgentInbound(item: AgentInboundItem): Promise<void
 
       const batchIds = pending.map((p) => p.id);
       const maxTs = pending[pending.length - 1].ts;
-      const merged = pending.map((p) => p.text).join('\n');
+      const merged = pending.map((p) => p.text).filter(Boolean).join('\n');
+
+      // W5: current-batch görsel/ses → model part'ları (hata izole, atlanır).
+      const mediaEvents = pending.filter((p) => p.hasMedia).map((p) => p.media);
+      const media = mediaEvents.length ? await resolveBatchMedia(mediaEvents) : [];
 
       const draft = await runAgentDraft({
         salonId: item.salonId,
@@ -125,6 +156,7 @@ export async function dispatchAgentInbound(item: AgentInboundItem): Promise<void
         mergedUserMessage: merged,
         modelName: item.modelName,
         excludeIds: batchIds,
+        media,
       });
 
       // RE-CHECK: taslak sürerken yeni mesaj geldi mi? (sınır yok — yakala)

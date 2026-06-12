@@ -4,12 +4,22 @@
 
 export type AgentRole = 'user' | 'assistant';
 
+/** Multimodal medya parçası (W5). Gemini görüntü+ses'i native işler; bytes
+ *  modele image/file part olarak verilir. Yalnız mevcut (current-batch) inbound
+ *  medyası modele gider; geçmiş medya hafızada metin/transkript olarak kalır. */
+export interface AgentMediaPart {
+  kind: 'image' | 'audio';
+  mediaType: string; // örn. image/jpeg, audio/ogg
+  data: Buffer | Uint8Array;
+}
+
 /** LLM context'ine giren temiz konuşma turu (tool-artifact YOK — halüsinasyon
  *  fix'i: ConversationMessageEvent'ten sadece müşteri sözü + asistanın gönderdiği
- *  temiz cevap yüklenir). */
+ *  temiz cevap yüklenir). Opsiyonel `media`: yalnız current-batch user turunda. */
 export interface AgentMessage {
   role: AgentRole;
   content: string;
+  media?: AgentMediaPart[];
 }
 
 /** Bir agent turunun yan-etkiye dönüşecek "niyeti". Çekirdek ilke: taslak
