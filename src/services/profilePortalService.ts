@@ -95,12 +95,43 @@ export async function getPortalProfile(globalIdentityId: string) {
       photoUrl: true,
       acceptMarketing: true,
       phoneE164: true,
+      verifiedAt: true,
     },
   });
   if (!identity) return null;
 
-  const channels = await listIdentityChannels(globalIdentityId);
+  const channelRows = await listIdentityChannels(globalIdentityId);
   const birthdayEditableAt = nextBirthdayEditableAt(identity.birthDateChangedAt);
+
+  // Multiple phones / Instagram accounts / future platforms render generically.
+  const channels = channelRows.map((c) => ({
+    id: c.id,
+    channel: c.channel as string,
+    subjectType: c.subjectType as string,
+    label: c.profileUsername ?? c.subjectRaw ?? c.subjectNormalized,
+    verified: !!c.verifiedAt,
+    isPrimaryPhone: c.channel === 'WHATSAPP' && c.subjectNormalized === identity.phoneE164,
+    photoUrl: c.profilePicUrl as string | null,
+  }));
+
+  // The PRIMARY phone (phoneE164) must always appear — some identities have no
+  // GlobalIdentityChannel row for it (older / not-yet-synced data). Synthesize
+  // it if missing so "Bağlı kanallar" never looks empty for a phone-keyed
+  // customer. Synthetic id won't match a real row, and the UI hides remove for
+  // the primary phone anyway.
+  const hasPrimary = channels.some((c) => c.isPrimaryPhone);
+  if (!hasPrimary && identity.phoneE164) {
+    channels.unshift({
+      id: 'primary-phone',
+      channel: 'WHATSAPP',
+      subjectType: 'PHONE',
+      label: identity.phoneE164,
+      verified: !!identity.verifiedAt,
+      isPrimaryPhone: true,
+      photoUrl: null,
+    });
+  }
+
   return {
     profile: {
       firstName: identity.firstName,
@@ -112,16 +143,7 @@ export async function getPortalProfile(globalIdentityId: string) {
       birthdayEditableNow: birthdayEditableAt === null || birthdayEditableAt.getTime() <= Date.now(),
       birthdayEditableAt,
     },
-    // Multiple phones / Instagram accounts / future platforms render generically.
-    channels: channels.map((c) => ({
-      id: c.id,
-      channel: c.channel,
-      subjectType: c.subjectType,
-      label: c.profileUsername ?? c.subjectRaw ?? c.subjectNormalized,
-      verified: !!c.verifiedAt,
-      isPrimaryPhone: c.channel === 'WHATSAPP' && c.subjectNormalized === identity.phoneE164,
-      photoUrl: c.profilePicUrl,
-    })),
+    channels,
   };
 }
 

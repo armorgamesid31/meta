@@ -575,10 +575,10 @@ router.post('/send', async (req: any, res: any) => {
     select: { slug: true, googleMapsUrl: true, address: true, district: true, city: true },
   });
   const salonSlug = typeof salonMeta?.slug === 'string' && salonMeta.slug.trim() ? salonMeta.slug.trim() : null;
-  // "Yol Tarifi" butonu DÜZGÜN bir yön-tarifi deep-link'i ister. Kayıtlı URL bir
-  // paylaşım/kısa link ise (share.google / goo.gl / maps.app.goo.gl) yön tarifi
-  // AÇMAZ → adresten gerçek bir dir/ linki kur. Düzgün google.com/maps URL'i
-  // varsa onu koru.
+  // Salonun kayıtlı konum linki OTORİTATİFTİR — sahibin haritada seçtiği gerçek
+  // pin (paylaşım/kısa link olsa bile doğru yeri gösterir). Adresten geocode
+  // ETME: adres tam-kapı vermeyebilir ve YAKIN/YANLIŞ bir yere düşer. Yalnızca
+  // kayıtlı link HİÇ yoksa son çare olarak adresten yön-tarifi linki kur.
   const rawMapsUrl = typeof salonMeta?.googleMapsUrl === 'string' ? salonMeta.googleMapsUrl.trim() : '';
   const salonDestination =
     (typeof salonMeta?.address === 'string' && salonMeta.address.trim()) ||
@@ -586,12 +586,11 @@ router.post('/send', async (req: any, res: any) => {
       .map((p) => (typeof p === 'string' ? p.trim() : ''))
       .filter(Boolean)
       .join(', ');
-  const isProperMapsUrl = /^https?:\/\/(www\.)?google\.[a-z.]+\/maps/i.test(rawMapsUrl);
-  const salonGoogleMapsUrl = isProperMapsUrl
+  const salonGoogleMapsUrl = rawMapsUrl
     ? rawMapsUrl
     : salonDestination
       ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(salonDestination)}`
-      : rawMapsUrl || null;
+      : null;
 
   let magicLinkUrl = pickMagicLinkUrl(body);
   let magicLinkAction: 'created' | 'renewed' | 'pending' | null = null;
