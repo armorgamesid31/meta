@@ -12495,7 +12495,10 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
         const iLast = identity ? (identity.lastName || '').trim() : '';
         const iFull = `${iFirst} ${iLast}`.trim();
         const iDisplay = identity ? (identity.displayName || '').trim() : '';
-        const friendly = full || display || iFull || iDisplay;
+        // Global identity (profil) ismi ÖNCELİKLİ; SalonUser (salon-seviyesi) ismi
+        // yalnız identity yoksa fallback. Aksi halde salon-seviyesinde kalmış eski
+        // isim (ör. "Enayinin Biri") profil adını (ör. "Deniz Kara") eziyordu.
+        const friendly = iFull || iDisplay || full || display;
         if (friendly) senderNameByUserId.set(u.id, friendly);
       }
     }
