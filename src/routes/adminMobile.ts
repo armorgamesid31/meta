@@ -12549,7 +12549,7 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
         if (!isSystemRow) return row.text;
         const actor = systemActorDisplayName || 'Salon Ekibi';
         if (systemAction === 'manual_takeover') return `${actor} devraldı.`;
-        if (systemAction === 'manual_resume') return `${actor} Kedy AI'ı devreye aldı.`;
+        if (systemAction === 'manual_resume') return `${actor} devreye aldı.`;
         return row.text;
       })();
 
@@ -13174,13 +13174,18 @@ router.post('/conversations/:channel/:conversationKey/handover', authenticateTok
       });
     }
 
-    const updatedState = await markConversationHumanPending({
+    // "Siz Yanıtlayın" = personel sohbeti BİZZAT üstleniyor → HUMAN_ACTIVE (aktif
+    // yanıtlıyor). Eskiden HUMAN_PENDING idi; bu hasHandoverRequest=true yapıp
+    // gereksiz bir "handover talebi" + alarm oluşturuyordu (oysa zaten birisi
+    // devraldı). HUMAN_ACTIVE: AI susar, talep/alarm YOK, "devraldı" kaydı kalır.
+    const updatedState = await markConversationHumanActive({
       salonId,
       channel,
       conversationKey: resolvedConversationKey,
-      note: note || 'manual_handover_by_salon',
       profileName: latestInbound.customerName || null,
     });
+    // AUTO'dan gelmediyse (savunma) bekleyen alarm varsa durdur.
+    await resolveHandoverAlert({ salonId, channel, conversationKey: resolvedConversationKey, byHumanMessage: true }).catch(() => {});
 
     await upsertConversationMessageEvent({
       salonId,
