@@ -208,6 +208,21 @@ export async function dispatchAgentInbound(item: AgentInboundItem): Promise<void
 
       // STABİL → yan-etkileri çalıştır + butonlu TEK mesaj gönder + commit.
       const reply = (draft.reply || '').trim();
+
+      // HANDOVER NARRATION GÜVENLİK AĞI: Model cevapta "sizi uzmanımıza yönlendirdim"
+      // gibi devir-onayı yazıp tool_request_handover'ı ÇAĞIRMAYABİLİYOR — temiz hafıza
+      // tool-çağrısını sakladığı için, geçmiş narration'ı görünce "zaten devrettim"
+      // sanıp tekrar çağırmıyor. Sonuç: müşteri "yönlendirildiniz" der ama KİMSE
+      // uyarılmaz (kritik sessiz hata). Metin devri ima ediyor + tool çağrılmadıysa
+      // doHandover'ı ZORLA (idempotent: zaten pending'se zarar yok).
+      const handoverFired = draft.intents.some((i) => i.tool === 'tool_request_handover');
+      const replyImpliesHandover =
+        /(uzman|insan|yetkili|temsilci|ekibimiz)[\s\wçğıöşüÇĞİÖŞÜ]{0,24}(yönlendir|bağl[ıia]yor|bağlad|aktar|ilet)/i.test(reply);
+      if (replyImpliesHandover && !handoverFired) {
+        draft.intents.push({ tool: 'tool_request_handover', args: { note: 'narration_safety_net' } });
+        console.warn('[agent-dispatch] handover narration tespit edildi → tool zorlandı (salon ' + item.salonId + ')');
+      }
+
       const { buttons } = await executeIntents({
         salonId: item.salonId,
         channel: item.channel,
