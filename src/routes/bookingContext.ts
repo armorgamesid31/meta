@@ -357,7 +357,7 @@ router.get('/context', async (req: any, res: any) => {
 
   const salon = await prisma.salon.findUnique({
     where: { id: salonId },
-    select: { name: true },
+    select: { name: true, communicationTone: true },
   });
 
   if (!salon) {
@@ -759,6 +759,7 @@ router.get('/context', async (req: any, res: any) => {
     originInstagramId,
     salonId,
     salonName: salon.name,
+    communicationTone: salon.communicationTone,
     isKnownCustomer,
     crossSalonRecognition,
     identityLinked,
