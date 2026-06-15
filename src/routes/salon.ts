@@ -534,6 +534,19 @@ router.get('/services/public', async (req: any, res: any) => {
 
     const sourceLocale = settings?.contentSourceLocale || 'tr';
 
+    // 1b. Salon's per-category display order, set via the admin/mobile
+    // drag-reorder (writes ServiceCategory.displayOrder). Used when the
+    // legacy salon-level SalonSettings.categoryOrder array isn't set, so the
+    // reorder in the app actually surfaces on the public booking page.
+    const categoryRows = await prisma.serviceCategory.findMany({
+      where: { salonId },
+      select: { displayOrder: true, categoryRef: { select: { key: true } } },
+      orderBy: { displayOrder: 'asc' },
+    });
+    const dbCategoryOrder = categoryRows
+      .map((c) => c.categoryRef?.key?.toUpperCase().trim())
+      .filter((k): k is string => Boolean(k));
+
     // 2. Fetch services with optional gender filter
     const rawServices = await prisma.service.findMany({
       where: {
@@ -572,7 +585,11 @@ router.get('/services/public', async (req: any, res: any) => {
             categoryId: true,
           },
         },
-      }
+      },
+      // Honor the admin/mobile reorder. displayOrder is per-category; the
+      // id tiebreaker keeps a stable, insertion-like order when several
+      // rows share the same displayOrder (e.g. not yet reordered = all 0).
+      orderBy: [{ displayOrder: 'asc' }, { id: 'asc' }],
     });
 
     const translationMap = await resolveServiceTranslations({
@@ -657,7 +674,14 @@ router.get('/services/public', async (req: any, res: any) => {
 
     // 4. Use custom order if exists, otherwise default order
     const customOrder = settings?.categoryOrder as string[] | null;
-    const finalOrder = (customOrder && Array.isArray(customOrder)) ? customOrder : CATEGORY_ORDER;
+    // Only trust ServiceCategory.displayOrder when the salon has actually
+    // reordered (distinct values). A salon that never touched order has all
+    // 0/null displayOrder — there we keep the curated CATEGORY_ORDER default
+    // instead of an arbitrary insertion order.
+    const hasExplicitCategoryOrder = new Set(categoryRows.map((c) => c.displayOrder ?? 0)).size > 1;
+    const finalOrder = (customOrder && Array.isArray(customOrder) && customOrder.length > 0)
+      ? customOrder
+      : (hasExplicitCategoryOrder && dbCategoryOrder.length > 0 ? dbCategoryOrder : CATEGORY_ORDER);
 
     // 5. Build response
     const response = finalOrder
