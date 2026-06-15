@@ -51,6 +51,64 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// ── NARRATION GÜVENLİK AĞI (W4.1) ──────────────────────────────────────────
+// Model bazen yan-etkili bir eylemi "yaptım/yapıyorum" diye ANLATIP tool'u
+// ÇAĞIRMAYABİLİYOR (temiz hafıza tool-izini sakladığı için geçmiş narration'ı
+// görüp "zaten yaptım" sanıyor). Sonuç: müşteri "yönlendirildiniz / link
+// gönderildi" okur ama eylem GERÇEKLEŞMEZ (sessiz hata). Çözüm: cevap gitmeden,
+// metin bir eylemi OLUMLU ima ediyor + tool çağrılmadıysa → ZORLA.
+// Yalnız OLUMLU çekimleri yakalar; olumsuz/soru/mastar ("yönlendiremiyorum",
+// "yönlendirmek ister misiniz?") ve eşsesli ("iletişim"≠"ilet") TETİKLEMEZ.
+// 45 tuzakla doğrulandı (scratch/net_regex_test.mjs). Eylemler idempotent.
+//
+// NET_POS: olumlu fiil çekim ekleri. Baştaki [ae]? ünlü-düşmesini (bağl+adım)
+// yutar; olumsuz "em/am-ıyor" & mastar "-mek/-mak" eşleşMEZ (hiçbir olumlu ek
+// 'm' ile başlamaz).
+const NET_POS =
+  '(?:[ıiuü]yor(?:um|uz|sun(?:uz)?)?|[ae]?d[ıiuü](?:m|k|n[ıiuü]z)?|[ae]?t[ıiuü](?:m|k)?|[ae]ca[kğ](?:[ıi]m)?|[ae]ce[kğ](?:[ıi]m)?|[ae]y[ıi]m|[ae]l[ıi]m)';
+const NET_W = '[\\s\\wçğıöşüÇĞİÖŞÜ]{0,28}';
+const NET_W2 = '[\\s\\wçğıöşüÇĞİÖŞÜ]{0,16}';
+const NET_W3 = '[\\s\\wçğıöşüÇĞİÖŞÜ]{0,45}';
+
+const NARRATION_NETS: Array<{ tool: string; re: RegExp }> = [
+  {
+    tool: 'tool_request_handover',
+    re: new RegExp(
+      `(uzman|insan|yetkili|temsilci|danışman|ekibimiz|ekibimize|arkadaşımız)${NET_W}(yönlendir|aktar|ilet|ulaştır|bağl|havale\\s*et)${NET_POS}`,
+      'i',
+    ),
+  },
+  {
+    tool: 'tool_request_location',
+    re: new RegExp(
+      `((konum|adres|lokasyon|harita)${NET_W}(paylaş|gönder|yolla)${NET_POS}|(konum|adres)${NET_W2}(iletiyor|ilett[ıi]|at[ıi]yor|att[ıi])|işte${NET_W2}(konum|adres))`,
+      'i',
+    ),
+  },
+  {
+    tool: 'tool_booking_link',
+    // Olumsuz/arızalı "link gönderemiyorum / link çalışmıyor"u dışla: link/buton'a
+    // OLUMLU sun-fiili (gönder+POS) ya da sunum-ipucu (aşağıda/buyur/hazır) ŞART.
+    re: new RegExp(
+      `(tek\\s*t[ıi]k${NET_W}(randevu|rezervasyon)` +
+        `|(randevu|rezervasyon)${NET_W}oluşturabilir` +
+        `|(randevu|rezervasyon)${NET_W2}(link|buton)${NET_W2}(gönder|paylaş|yolla|ilet)${NET_POS}` +
+        `|(randevu|rezervasyon)${NET_W2}(link|buton)${NET_W2}(hazır|aşağıda|buyur|bulabilir|işte))`,
+      'i',
+    ),
+  },
+  {
+    tool: 'tool_request_profile_edit',
+    // POS ZORUNLU → "link gönderemiyorum" yakalanmaz.
+    re: new RegExp(`(profil|bilgi)${NET_W3}(link|bağlant[ıi])${NET_W2}(gönder|paylaş|yolla|ilet|att)${NET_POS}`, 'i'),
+  },
+];
+
+/** Türkçe-güvenli küçültme (İ→i, I→ı; standart toLowerCase İ'yi "i̇"ye bozar). */
+function trLowerNet(s: string): string {
+  return s.replace(/İ/g, 'i').replace(/I/g, 'ı').toLowerCase();
+}
+
 interface PendingMsg {
   id: number;
   text: string;
@@ -209,18 +267,16 @@ export async function dispatchAgentInbound(item: AgentInboundItem): Promise<void
       // STABİL → yan-etkileri çalıştır + butonlu TEK mesaj gönder + commit.
       const reply = (draft.reply || '').trim();
 
-      // HANDOVER NARRATION GÜVENLİK AĞI: Model cevapta "sizi uzmanımıza yönlendirdim"
-      // gibi devir-onayı yazıp tool_request_handover'ı ÇAĞIRMAYABİLİYOR — temiz hafıza
-      // tool-çağrısını sakladığı için, geçmiş narration'ı görünce "zaten devrettim"
-      // sanıp tekrar çağırmıyor. Sonuç: müşteri "yönlendirildiniz" der ama KİMSE
-      // uyarılmaz (kritik sessiz hata). Metin devri ima ediyor + tool çağrılmadıysa
-      // doHandover'ı ZORLA (idempotent: zaten pending'se zarar yok).
-      const handoverFired = draft.intents.some((i) => i.tool === 'tool_request_handover');
-      const replyImpliesHandover =
-        /(uzman|insan|yetkili|temsilci|ekibimiz)[\s\wçğıöşüÇĞİÖŞÜ]{0,24}(yönlendir|bağl[ıia]yor|bağlad|aktar|ilet)/i.test(reply);
-      if (replyImpliesHandover && !handoverFired) {
-        draft.intents.push({ tool: 'tool_request_handover', args: { note: 'narration_safety_net' } });
-        console.warn('[agent-dispatch] handover narration tespit edildi → tool zorlandı (salon ' + item.salonId + ')');
+      // NARRATION GÜVENLİK AĞI (bkz. NARRATION_NETS): cevap metni bir yan-etkili
+      // eylemi OLUMLU ima ediyor ama ilgili tool çağrılmadıysa → ZORLA. Handover
+      // (kritik: kimse uyarılmaz) + konum/randevu/profil (buton hiç gitmez) için
+      // ortak. Türkçe-güvenli küçültme sonrası eşleşir; eylemler idempotent.
+      const replyNorm = trLowerNet(reply);
+      for (const net of NARRATION_NETS) {
+        if (draft.intents.some((i) => i.tool === net.tool)) continue; // zaten çağrılmış
+        if (!net.re.test(replyNorm)) continue;
+        draft.intents.push({ tool: net.tool, args: { note: 'narration_safety_net' } });
+        console.warn(`[agent-dispatch] narration net: ${net.tool} zorlandı (salon ${item.salonId})`);
       }
 
       const { buttons } = await executeIntents({
