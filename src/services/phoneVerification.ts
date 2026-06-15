@@ -88,6 +88,10 @@ export async function createPhoneVerification(input: {
   purpose: CustomerPhoneVerificationPurpose;
   payload: VerificationPayload;
   customerId?: number | null;
+  // When false, create the record but DON'T send the plain-text code. Used by
+  // the LINK-based verification (step-1 wizard) where ownership is proven by
+  // tapping a kdy_islem_link instead of entering a code.
+  deliver?: boolean;
 }) {
   const code = generateCode();
   const record = await prisma.customerPhoneVerification.create({
@@ -108,7 +112,9 @@ export async function createPhoneVerification(input: {
     },
   });
 
-  await sendWhatsappCode({ salonId: input.salonId, phone: input.phone, code });
+  if (input.deliver !== false) {
+    await sendWhatsappCode({ salonId: input.salonId, phone: input.phone, code });
+  }
   return record;
 }
 

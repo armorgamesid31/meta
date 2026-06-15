@@ -446,12 +446,16 @@ router.post('/verify/resend/:id', async (req: any, res: any) => {
       const phone = record.targetPhone || '';
       const salonId = record.targetSalonId || 0;
       if (!phone || !salonId) throw new Error('whatsapp_target_missing');
-      await sendVerificationLinkTemplate({
+      // sendVerificationLinkTemplate falls back to Kedy's central WABA when
+      // the salon isn't connected; a falsy .ok means NEITHER could send, so
+      // fail loudly rather than reporting a phantom resend success.
+      const resendResult = await sendVerificationLinkTemplate({
         salonId,
         phone,
         token: newLink.token,
         ttlMinutes: VERIFICATION_TTL_MINUTES,
       });
+      if (!resendResult.ok) throw new Error(resendResult.error || 'whatsapp_send_failed');
     }
   } catch (error: any) {
     console.error('[verification/resend] dispatch failed', error?.message || error);

@@ -903,6 +903,126 @@ router.post('/verify-phone/check-otp', async (req: any, res: any) => {
 });
 
 // ─────────────────────────────────────────────────────────────────
+// STEP-1 phone verification via the APPROVED kdy_islem_link template (LINK).
+//
+// Cold-number safe (works outside the 24h window, unlike the plain-text code).
+// request-link: create a verification record WITHOUT sending a code, then send
+// the link; tapping it marks the record VERIFIED (customerVerifyLanding, no
+// Customer created). status: frontend polls until verified. The final /register
+// trusts it via the existing verifiedVerificationId bypass.
+// ─────────────────────────────────────────────────────────────────
+router.post('/verify-phone/request-link', async (req: any, res: any) => {
+  const salonId = req.salon?.id;
+  if (!salonId) {
+    throw new BusinessError('VALIDATION_FAILED', 'Salon context required.', 400);
+  }
+  const rawPhone =
+    (typeof req.body?.rawPhone === 'string' && req.body.rawPhone) ||
+    (typeof req.body?.phone === 'string' && req.body.phone) ||
+    '';
+  const countryIso = typeof req.body?.countryIso === 'string' ? req.body.countryIso : 'TR';
+  const normalizedPhone = typeof req.body?.normalizedPhone === 'string' ? req.body.normalizedPhone : undefined;
+
+  let validated;
+  try {
+    validated = validateMobilePhone({ rawPhone, countryIso, normalizedPhone });
+  } catch {
+    throw new BusinessError('VALIDATION_FAILED', 'Geçerli bir cep telefonu numarası girin.', 400);
+  }
+
+  const salon = await prisma.salon.findUnique({
+    where: { id: salonId },
+    select: { id: true, name: true, slug: true, chakraPluginId: true, chakraPhoneNumberId: true },
+  });
+  if (!salon) {
+    throw new BusinessError('VALIDATION_FAILED', 'Salon bulunamadı.', 404);
+  }
+  // NOTE: we intentionally do NOT require the salon's own WhatsApp here.
+  // sendVerificationLinkTemplate falls back to Kedy's central WABA (Kedy TR
+  // number) when the salon hasn't connected its own, so the verification
+  // link still reaches the customer. The only hard failure is when NEITHER
+  // sender is available — handled below as a 412.
+
+  const verification = await createPhoneVerification({
+    salonId,
+    phone: validated.digits,
+    countryIso: validated.countryIso,
+    purpose: CustomerPhoneVerificationPurpose.BOOKING_REGISTER,
+    payload: {
+      step1: true,
+      originChannel: typeof req.body?.originChannel === 'string' ? req.body.originChannel : null,
+      originPhone: typeof req.body?.originPhone === 'string' ? req.body.originPhone : null,
+    },
+    deliver: false,
+  });
+
+  const { ipAddress, userAgent } = clientReqInfo(req);
+  const link = await createVerificationLink({
+    purpose: VerificationPurpose.CUSTOMER_PHONE,
+    channel: VerificationChannel.WHATSAPP,
+    targetSalonId: salonId,
+    targetPhone: validated.digits,
+    payload: {
+      salonName: salon.name,
+      customerName: 'Müşteri',
+      source: 'BOOKING',
+      countryIso: validated.countryIso,
+      e164: validated.e164,
+      step1VerificationId: verification.id,
+    },
+    salonSlug: salon.slug || null,
+    ipAddress,
+    userAgent,
+  });
+
+  const sendResult = await sendVerificationLinkTemplate({
+    salonId,
+    phone: validated.digits,
+    token: link.token,
+    ttlMinutes: VERIFICATION_TTL_MINUTES,
+  });
+  if (!sendResult.ok) {
+    // Neither the salon's own WABA nor Kedy's central WABA could send —
+    // tell the client it's not ready (412) rather than a generic 500.
+    if (sendResult.error === 'no_whatsapp_sender_available') {
+      throw new BusinessError(
+        'PRECONDITION_FAILED',
+        'WhatsApp doğrulama servisi şu an kullanılamıyor. Lütfen daha sonra tekrar deneyin.',
+        412,
+      );
+    }
+    throw new BusinessError('INTERNAL_ERROR', 'WhatsApp doğrulama mesajı gönderilemedi.', 500, {
+      reason: sendResult.error,
+    });
+  }
+
+  return res.status(202).json({
+    status: 'verification_link_sent',
+    verificationId: verification.id,
+    expiresAt: link.expiresAt.toISOString(),
+  });
+});
+
+router.get('/verify-phone/status', async (req: any, res: any) => {
+  const salonId = req.salon?.id;
+  if (!salonId) {
+    throw new BusinessError('VALIDATION_FAILED', 'Salon context required.', 400);
+  }
+  const verificationId = typeof req.query?.verificationId === 'string' ? req.query.verificationId.trim() : '';
+  if (!verificationId) {
+    throw new BusinessError('VALIDATION_FAILED', 'verificationId is required.', 400);
+  }
+  const v = await prisma.customerPhoneVerification.findFirst({
+    where: { id: verificationId, salonId },
+    select: { status: true, expiresAt: true },
+  });
+  if (!v) return res.status(200).json({ status: 'not_found' });
+  if (String(v.status) === 'VERIFIED') return res.status(200).json({ status: 'verified' });
+  if (v.expiresAt < new Date()) return res.status(200).json({ status: 'expired' });
+  return res.status(200).json({ status: 'pending' });
+});
+
+// ─────────────────────────────────────────────────────────────────
 // INSTAGRAM account verification by code-DM (wizard step 4).
 //
 // start: returns a short code + the IG account (@username) to DM it to. The

@@ -225,6 +225,27 @@ router.post('/:token', async (req: any, res: any) => {
   }
 
   const payloadAny = consumed.payload as any;
+
+  // STEP-1 verify-only (wizard): this link only proves phone ownership before the
+  // form is filled. Mark the CustomerPhoneVerification VERIFIED and STOP — do NOT
+  // create a Customer (the final /register creates it once with the full form,
+  // trusting this via verifiedVerificationId). Creating a stub Customer here would
+  // make /register's existingVerified short-circuit skip the real name/gender.
+  const step1VerificationId =
+    typeof payloadAny?.step1VerificationId === 'string' ? payloadAny.step1VerificationId : '';
+  if (step1VerificationId) {
+    try {
+      await prisma.customerPhoneVerification.updateMany({
+        where: { id: step1VerificationId, salonId, phone, status: 'PENDING' },
+        data: { status: 'VERIFIED' },
+      });
+    } catch (e) {
+      console.warn('[c/v] step1 phone verify mark failed', e);
+    }
+    const okHtml = `<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Doğrulandı</title></head><body style="font-family:system-ui,-apple-system,sans-serif;margin:0;background:#f6f7f9;color:#111"><div style="max-width:380px;margin:48px auto;padding:0 24px"><div style="background:#fff;border-radius:20px;padding:32px 24px;text-align:center;box-shadow:0 2px 14px rgba(15,23,42,.06)"><div style="font-size:46px;line-height:1">✅</div><h2 style="margin:14px 0 6px;font-size:20px">Numaranız doğrulandı</h2><p style="color:#555;font-size:15px;line-height:1.55;margin:0">Açtığınız randevu sekmesine dönüp işleminize devam edebilirsiniz.</p></div></div></body></html>`;
+    return res.status(200).type('html').send(okHtml);
+  }
+
   const customerName = (payloadAny?.customerName as string) || 'Müşteri';
   const source = ((payloadAny?.source as string) || 'BOOKING').toUpperCase() as
     | 'INSTAGRAM'

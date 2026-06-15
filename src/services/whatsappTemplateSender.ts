@@ -23,6 +23,7 @@ import {
 import { prisma } from '../prisma.js';
 import { normalizeDigitsOnly } from './phoneValidation.js';
 import { upsertConversationMessageEvent } from './conversationMessageEvents.js';
+import { sendCentralTemplate, isKedyWhatsappConfigured } from './whatsappCentralSender.js';
 
 const CHAKRA_WHATSAPP_SEND_URL = (process.env.CHAKRA_WHATSAPP_SEND_URL || '').trim();
 const CHAKRA_API_TOKEN = (process.env.CHAKRA_API_TOKEN || '').trim();
@@ -85,16 +86,6 @@ export async function sendVerificationLinkTemplate(
     select: { name: true, chakraPluginId: true, chakraPhoneNumberId: true },
   });
 
-  if (!salon?.chakraPluginId) {
-    throw new Error('salon_whatsapp_not_connected');
-  }
-  const phoneNumberId = typeof salon.chakraPhoneNumberId === 'string'
-    ? salon.chakraPhoneNumberId.trim()
-    : '';
-  if (!phoneNumberId) {
-    throw new Error('salon_whatsapp_phone_not_connected');
-  }
-
   const to = normalizeDigitsOnly(input.phone);
   if (!to) {
     throw new Error('recipient_phone_invalid');
@@ -104,47 +95,75 @@ export async function sendVerificationLinkTemplate(
     throw new Error('verification_token_missing');
   }
 
+  const salonName = truncate(salon?.name || 'Salon', 60);
+  const pluginId = typeof salon?.chakraPluginId === 'string' ? salon.chakraPluginId.trim() : '';
+  const phoneNumberId = typeof salon?.chakraPhoneNumberId === 'string'
+    ? salon.chakraPhoneNumberId.trim()
+    : '';
+  const salonConnected = Boolean(pluginId && phoneNumberId);
+
+  // kdy_islem_link components — identical whether the link is sent from the
+  // salon's own WABA or Kedy's central WABA:
+  //   HEADER:  named param salonname  → salon's display name (brand stays)
+  //   BODY:    static (no parameters needed)
+  //   BUTTON:  URL placeholder {{1}}  → raw verification token
+  const components = [
+    {
+      type: 'header',
+      parameters: [
+        { type: 'text', parameter_name: 'salonname', text: salonName },
+      ],
+    },
+    {
+      type: 'button',
+      sub_type: 'url',
+      index: '0',
+      parameters: [
+        { type: 'text', text: input.token },
+      ],
+    },
+  ];
+
+  // FALLBACK: the salon hasn't connected its own WhatsApp → send the very
+  // same verification link from Kedy's central WABA (Kedy TR number
+  // +90 536 456 80 84) so the message still reaches the customer. The
+  // {{salonname}} header keeps the salon's brand even though the sender is
+  // Kedy. Requires the kdy_islem_link template to be approved on the central
+  // WABA and KEDY_CENTRAL_CHAKRA_* env to be set; if the central sender is
+  // also unconfigured we surface a structured error so the caller can 412.
+  if (!salonConnected) {
+    if (!isKedyWhatsappConfigured()) {
+      return { ok: false, error: 'no_whatsapp_sender_available' };
+    }
+    return sendCentralTemplate({
+      to,
+      templateName: TEMPLATE_NAME,
+      language: TEMPLATE_LANG,
+      components,
+    });
+  }
+
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (CHAKRA_API_TOKEN) {
     headers.Authorization = `Bearer ${CHAKRA_API_TOKEN}`;
   }
 
-  const sendUrl = buildSendUrl(salon.chakraPluginId, phoneNumberId);
+  const sendUrl = buildSendUrl(pluginId, phoneNumberId);
 
-  // Meta WhatsApp Cloud API template message shape for kdy_islem_link:
-  //   HEADER:  named param salonname  → salon's display name
-  //   BODY:    static (no parameters needed)
-  //   BUTTON:  URL placeholder {{1}}  → raw verification token
-  //
   // `messaging_product: 'whatsapp'` is mandatory on the Cloud API v19+
   // request body — Chakra surfaces the schema rejection as 400 if we
   // forget it, which is exactly the failure that pinned the booking
   // registration flow earlier.
   const body = {
     messaging_product: 'whatsapp',
-    pluginId: salon.chakraPluginId,
+    pluginId,
     phoneNumberId,
     to,
     type: 'template',
     template: {
       name: TEMPLATE_NAME,
       language: { code: TEMPLATE_LANG },
-      components: [
-        {
-          type: 'header',
-          parameters: [
-            { type: 'text', parameter_name: 'salonname', text: truncate(salon.name || 'Salon', 60) },
-          ],
-        },
-        {
-          type: 'button',
-          sub_type: 'url',
-          index: '0',
-          parameters: [
-            { type: 'text', text: input.token },
-          ],
-        },
-      ],
+      components,
     },
   };
 
