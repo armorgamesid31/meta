@@ -25,6 +25,7 @@ import { runAgentDraft, executeIntents } from './orchestrator.js';
 import { sendAgentReply } from './outbound.js';
 import { acquireConversationLock, renewConversationLock, releaseConversationLock } from './lock.js';
 import { resolveBatchMedia, type MediaSourceEvent } from './media.js';
+import { describeAndStoreImages } from './mediaDescribe.js';
 import { loadConversationSummary, summarizeIfNeeded } from './summarizer.js';
 
 /** channelWebhooks'un ürettiği normalize item'dan ihtiyaç duyduğumuz alanlar. */
@@ -311,6 +312,13 @@ export async function dispatchAgentInbound(item: AgentInboundItem): Promise<void
         conversationKey: item.conversationKey,
         modelName: item.modelName,
       });
+
+      // Görsel betimi (fire-and-forget): gelen görselleri salon-bağlamlı betimleyip
+      // mediaDescription'a yaz → sonraki turlar HATIRLAR. Cevabı bloklamaz; ses
+      // event'leri describer içinde atlanır (izleri voiceTranscript'te).
+      if (mediaEvents.length) {
+        void describeAndStoreImages({ events: mediaEvents, modelName: item.modelName });
+      }
 
       // BREAK ETME — döngüye devam: kilit bizdeyken (re-check'ten sonra) düşen
       // bir mesaj orphan kalmasın. Sıradaki tur 5sn bekleyip PENDING'i tarar;

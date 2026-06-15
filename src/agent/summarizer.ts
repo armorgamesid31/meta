@@ -91,13 +91,15 @@ export async function summarizeIfNeeded(params: {
         id: { gt: through },
       },
       orderBy: { eventTimestamp: 'asc' },
-      select: { id: true, direction: true, text: true, voiceTranscript: true },
+      select: { id: true, direction: true, text: true, voiceTranscript: true, mediaDescription: true },
     });
     if (aged.length < FOLD_THRESHOLD) return; // henüz katlamaya değmez
 
     const lines: string[] = [];
     for (const r of aged) {
-      const raw = (r.text || r.voiceTranscript || '').trim();
+      let raw = (r.text || r.voiceTranscript || '').trim();
+      const desc = (r.mediaDescription || '').trim();
+      if (desc) raw = raw ? `${raw}\n[Görsel: ${desc}]` : `[Görsel: ${desc}]`;
       if (!raw) continue;
       if (r.direction === 'INBOUND') lines.push(`Müşteri: ${raw}`);
       else if (r.direction === 'OUTBOUND') {

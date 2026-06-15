@@ -49,13 +49,17 @@ export async function loadConversationMemory(params: {
     },
     orderBy: { eventTimestamp: 'desc' },
     take: limit,
-    select: { direction: true, text: true, voiceTranscript: true },
+    select: { direction: true, text: true, voiceTranscript: true, mediaDescription: true },
   });
   rows.reverse(); // kronolojik
 
   const messages: AgentMessage[] = [];
   for (const r of rows) {
-    const raw = (r.text || r.voiceTranscript || '').trim();
+    let raw = (r.text || r.voiceTranscript || '').trim();
+    // Görsel betimi (varsa) "[Görsel: ...]" olarak eklenir → model önceki turlarda
+    // gelen görseli HATIRLAR (başlıksız görsel aksi halde çapraz-tur kaybolur).
+    const desc = (r.mediaDescription || '').trim();
+    if (desc) raw = raw ? `${raw}\n[Görsel: ${desc}]` : `[Görsel: ${desc}]`;
     if (!raw) continue;
     if (r.direction === 'INBOUND') {
       messages.push({ role: 'user', content: raw });

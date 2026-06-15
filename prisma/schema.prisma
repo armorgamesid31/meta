@@ -1902,6 +1902,12 @@ model ConversationMessageEvent {
   voiceTranscript            String?
   voiceTranscriptLang        String?
   voiceTranscriptAt          DateTime?              @db.Timestamp(6)
+  // Backend agent (W5+) görsel betimi: gelen görsel salon bağlamında TEK-İKİ
+  // cümle betimlenip buraya yazılır (async, cevabı bloklamaz). Hafıza bunu
+  // "[Görsel: ...]" olarak okur → sonraki turlar görseli HATIRLAR (n8n paritesi;
+  // başlıksız görsel aksi halde çapraz-tur kaybolurdu). Ses'in voiceTranscript'i
+  // neyse görselin bu.
+  mediaDescription           String?
   // Inbound reactions/emoji attached to this message by the customer
   // (or the salon, for outbound echo). Shape:
   //   [{ emoji: "❤️", from: "<psid|phone>", at: <iso-string>, action?: "react"|"unreact" }]
@@ -3393,4 +3399,24 @@ model SalonOnboardingEvent {
   @@index([salonId, createdAt])
   @@index([eventType])
   @@map("SalonOnboardingEvent")
+}
+
+/// Salon-sahibi AI iş-ortağı agent'ının Bilgi Tabanı (RAG) parçaları.
+/// Tablo + pgvector extension CANLI'ya elle (additive) uygulandı; embedding
+/// kolonu pgvector "vector(768)" — Prisma native desteklemediği için Unsupported.
+/// Sorgu/yazma raw SQL ile (src/kb/*). Embedding: gemini-embedding-001 @ 768 + L2-normalize.
+model KbChunk {
+  id          String                      @id
+  namespace   String // 'coach' (kayıtlı salon) | 'public' (aday/IG lead)
+  source      String // kaynak md dosyası
+  heading     String // bölüm başlığı
+  criteriaKey String? // setup-center criteria eşlemesi (deterministik kısayol)
+  content     String
+  tokenCount  Int?
+  embedding   Unsupported("vector(768)")?
+  createdAt   DateTime                    @default(now()) @db.Timestamp(3)
+  updatedAt   DateTime                    @default(now()) @updatedAt @db.Timestamp(3)
+
+  @@index([namespace])
+  @@map("KbChunk")
 }
