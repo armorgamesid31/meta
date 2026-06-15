@@ -99,7 +99,7 @@ export async function summarizeIfNeeded(params: {
     for (const r of aged) {
       let raw = (r.text || r.voiceTranscript || '').trim();
       const desc = (r.mediaDescription || '').trim();
-      if (desc) raw = raw ? `${raw}\n[Görsel: ${desc}]` : `[Görsel: ${desc}]`;
+      if (desc) raw = raw ? `${raw}\n[Müşterinin gönderdiği görsel: ${desc}]` : `[Müşterinin gönderdiği görsel: ${desc}]`;
       if (!raw) continue;
       if (r.direction === 'INBOUND') lines.push(`Müşteri: ${raw}`);
       else if (r.direction === 'OUTBOUND') {

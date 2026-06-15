@@ -59,7 +59,7 @@ export async function loadConversationMemory(params: {
     // Görsel betimi (varsa) "[Görsel: ...]" olarak eklenir → model önceki turlarda
     // gelen görseli HATIRLAR (başlıksız görsel aksi halde çapraz-tur kaybolur).
     const desc = (r.mediaDescription || '').trim();
-    if (desc) raw = raw ? `${raw}\n[Görsel: ${desc}]` : `[Görsel: ${desc}]`;
+    if (desc) raw = raw ? `${raw}\n[Müşterinin gönderdiği görsel: ${desc}]` : `[Müşterinin gönderdiği görsel: ${desc}]`;
     if (!raw) continue;
     if (r.direction === 'INBOUND') {
       messages.push({ role: 'user', content: raw });

@@ -30,6 +30,19 @@ const NO_PRIOR_KNOWLEDGE = [
   'Tool sonucu OLMADAN fiyat/kampanya/saat/hizmet/politika BİLGİSİ verme veya uydurma — kesinlikle yasak. Önce tool, sonra cevap.',
 ].join('\n');
 
+// Görseli native görebiliyorsun (o anki tur) + geçmiş görsellerin betimi hafızada.
+// Model bazen betim hafızada DURURKEN "görsel analizi yapamıyorum" diye reddediyor;
+// bu blok onu engeller.
+const IMAGE_MEMORY_NOTE = [
+  '',
+  '# GÖRSEL HAFIZASI',
+  'Konuşma geçmişinde "[Müşterinin gönderdiği görsel: ...]" biçiminde notlar görebilirsin —',
+  'bunlar müşterinin DAHA ÖNCE gönderdiği görsellerin betimidir ve bilgi olarak SENDE vardır.',
+  'Müşteri önceki bir görseli sorarsa BU BETİMLERE dayanarak doğal şekilde cevap ver.',
+  '"Görsel analizi yapamıyorum / göremiyorum / sistemim görsel desteklemiyor" gibi şeyleri',
+  'ASLA deme — ister o anki görseli görüyorsun, ister geçmişin betimi sende. Reddetme.',
+].join('\n');
+
 export async function buildAgentSystemPrompt(input: {
   salonId: number;
   customerId: number | null;
@@ -68,8 +81,8 @@ export async function buildAgentSystemPrompt(input: {
   const withProfileEdit = base.includes(TRIGGER_TAIL)
     ? base.replace(TRIGGER_TAIL, `${PROFILE_EDIT_RULE}\n\n${TRIGGER_TAIL}`)
     : `${base}\n${PROFILE_EDIT_RULE}`;
-  // Veri-çekme tool-çağırmayı güçlendiren "ön bilgin yok" bloğu.
-  let out = `${withProfileEdit}\n${NO_PRIOR_KNOWLEDGE}`;
+  // Veri-çekme tool-çağırmayı güçlendiren "ön bilgin yok" bloğu + görsel hafızası.
+  let out = `${withProfileEdit}\n${NO_PRIOR_KNOWLEDGE}\n${IMAGE_MEMORY_NOTE}`;
 
   // Rolling summary — pencere dışında kalan eski turların kalıcı özeti.
   const summary = (input.conversationSummary || '').trim();
