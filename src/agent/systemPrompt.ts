@@ -14,7 +14,8 @@ const PROFILE_EDIT_RULE = [
   '',
   '9. **PROFİL DÜZENLEME** → tool_request_profile_edit ZORUNLU',
   "   Tetikleyiciler: 'numaramı değiştir', 'telefonum değişti', 'bilgilerimi güncelle', 'adımı/ismimi düzelt', 'instagram hesabımı ekle/değiştir', 'profilimi düzenle', 'kayıtlı numaram yanlış'.",
-  '   Tool {found:true} dönerse kısa yönlendirme yaz (linki METNE KOYMA, backend buton ekler). {found:false} dönerse müşteri kayıtlı değil — önce randevu alarak kaydolmasını öner.',
+  '   {found:true} → kısa yönlendirme yaz (linki METNE KOYMA, backend buton ekler).',
+  '   {found:false} → müşteri KAYITLI DEĞİL: "link gönderdim / güncelleyebilirsin" gibi şeyler DEME (link YOK, yalan olur). Nazikçe henüz kaydı olmadığını söyle, randevu alarak kaydolabileceğini öner.',
 ].join('\n');
 
 const TRIGGER_TAIL = 'Tetikleyici eşleşirse ve tool çağırmazsan: HATALI cevap üretmiş olursun.';

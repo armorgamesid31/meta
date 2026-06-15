@@ -45,9 +45,10 @@ export async function prepareLocationButton(salonId: number): Promise<AgentButto
   return null;
 }
 
-/** PROFİL DÜZENLEME: global kimlik çöz + portal token mint → düzenleme butonu.
- *  Tanınan müşteri yoksa null (AI önce kayıt önersin). */
-export async function prepareProfileEditButton(ctx: ToolContext): Promise<AgentButton | null> {
+/** Profil-düzenleme için global kimliği (gid) + portal originSubject'i çöz.
+ *  Kayıt durumunun TEK doğru kaynağı — customerId YETMEZ (müşteri başka kanaldan
+ *  kayıtlı olabilir; gerçek kontrol globalIdentity'nin varlığı). */
+async function resolveProfileEditIdentity(ctx: ToolContext): Promise<{ gid: string | null; originSubject: string }> {
   let gid: string | null = null;
   let originSubject = ctx.canonicalUserId || ctx.conversationKey;
   if (ctx.customerId) {
@@ -59,6 +60,21 @@ export async function prepareProfileEditButton(ctx: ToolContext): Promise<AgentB
     const i = await lookupGlobalIdentityByChannel(ctx.channel as ChannelType, ctx.canonicalUserId);
     gid = i?.id ?? null;
   }
+  return { gid, originSubject };
+}
+
+/** Müşteri profil-düzenlemeye uygun mu (tanınan/kayıtlı kimliği var mı)? DRAFT
+ *  fazında modele dürüst {found} dönmek için — yoksa side-effect ertelendiği için
+ *  model kayıtsıza "link gönderdim" diye YALAN söylüyor (buton üretilemez). */
+export async function isProfileEditable(ctx: ToolContext): Promise<boolean> {
+  const { gid } = await resolveProfileEditIdentity(ctx);
+  return !!gid;
+}
+
+/** PROFİL DÜZENLEME: global kimlik çöz + portal token mint → düzenleme butonu.
+ *  Tanınan müşteri yoksa null (AI önce kayıt önersin). */
+export async function prepareProfileEditButton(ctx: ToolContext): Promise<AgentButton | null> {
+  const { gid, originSubject } = await resolveProfileEditIdentity(ctx);
   if (!gid) return null;
 
   const { token } = await mintPortalToken({

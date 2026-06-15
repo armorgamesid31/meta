@@ -16,6 +16,7 @@ import {
   prepareProfileEditButton,
   prepareBookingButton,
   doHandover,
+  isProfileEditable,
 } from '../actions.js';
 import type { ToolContext } from '../types.js';
 
@@ -130,13 +131,20 @@ export function buildToolSet(ctx: ToolContext): ToolSet {
     tool_request_profile_edit: tool({
       description: 'Müşteri kendi bilgilerini (ad/numara/Instagram) değiştirmek istediğinde ZORUNLU çağır. Güvenli düzenleme bağlantısı gönderilir.',
       inputSchema: z.object({}),
-      execute: async () =>
-        sideEffect('tool_request_profile_edit', {}, async () => {
-          const btn = await prepareProfileEditButton(ctx);
-          if (btn) ctx.buttons.push(btn);
-          // found:false → müşteri kayıtlı değil; AI kayıt önersin (prompt rule 9).
-          return { found: !!btn };
-        }),
+      // Generic sideEffect'i KULLANMAZ: DRAFT'ta da kayıt kontrolü yapıp modele
+      // dürüst {found} döner. Yoksa side-effect ertelendiği için model cevabı
+      // yazarken kayıt durumunu bilmiyor, kayıtsıza "link gönderdim" diye yalan
+      // söylüyor (final'de buton üretilemez → müşteri linksiz kalır).
+      execute: async () => {
+        if (ctx.draft) {
+          const editable = await isProfileEditable(ctx);
+          if (editable) ctx.intents.push({ tool: 'tool_request_profile_edit', args: {} });
+          return { found: editable };
+        }
+        const btn = await prepareProfileEditButton(ctx);
+        if (btn) ctx.buttons.push(btn);
+        return { found: !!btn };
+      },
     }),
 
     tool_request_handover: tool({
