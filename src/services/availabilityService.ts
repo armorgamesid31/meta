@@ -87,6 +87,9 @@ export function buildSingleServiceGroups(serviceId: number, peopleCount = 1): Pe
   }));
 }
 
+// Stampede/single-flight: cache miss anında aynı anahtar için tek hesaplama.
+const inFlightSlots = new Map<string, Promise<SlotsResponse>>();
+
 export async function generateAvailability(
   request: AvailabilityRequest,
   options: { persistSearchContext?: boolean } = {},
@@ -109,10 +112,23 @@ export async function generateAvailability(
     const cached = await getCachedAvailability<SlotsResponse>(cacheKey);
     if (cached) return cached;
 
-    const engine = new SlotsEngine();
-    const result = await engine.generateSlots(request, options);
-    await setCachedAvailability(cacheKey, result);
-    return result;
+    // Stampede koruması: cache miss anında popüler bir salon/tarih için aynı anda
+    // gelen N müşteri pahalı motoru PARALEL çalıştırıyordu. Aynı anahtar için tek
+    // hesaplama; bekleyenler aynı promise'i paylaşır (process-içi single-flight).
+    const existing = inFlightSlots.get(cacheKey);
+    if (existing) return existing;
+    const compute = (async () => {
+      const engine = new SlotsEngine();
+      const result = await engine.generateSlots(request, options);
+      await setCachedAvailability(cacheKey, result);
+      return result;
+    })();
+    inFlightSlots.set(cacheKey, compute);
+    try {
+      return await compute;
+    } finally {
+      inFlightSlots.delete(cacheKey);
+    }
   }
 
   const engine = new SlotsEngine();

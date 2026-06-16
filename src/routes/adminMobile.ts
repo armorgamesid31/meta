@@ -3421,11 +3421,9 @@ router.get('/customers', authenticateToken, async (req: any, res: any) => {
       error,
     );
     if (message === 'CUSTOMERS_QUERY_TIMEOUT') {
-      return res.status(504).json({
-        message: 'Müşteri listesi zaman aşımına uğradı. Lütfen tekrar deneyin.',
-        requestId,
-        code: 'CUSTOMERS_QUERY_TIMEOUT',
-      });
+      // BusinessError → errorMiddleware standart gövde + traceId ekler (eskiden
+      // elle json'du, traceId yoktu → app'in "Kod: xxx" destek akışı çalışmıyordu).
+      throw new BusinessError('CUSTOMERS_QUERY_TIMEOUT', 'Müşteri listesi zaman aşımına uğradı. Lütfen tekrar deneyin.', 504, { requestId });
     }
     throw new BusinessError('INTERNAL_ERROR', 'Internal server error.', 500, { requestId, code: 'UPSTREAM_UNAVAILABLE' });
   }
