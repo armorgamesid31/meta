@@ -13439,7 +13439,7 @@ router.post('/conversations/:channel/:conversationKey/take-over', authenticateTo
         conversationKey: { in: keyCandidates },
       },
       orderBy: { eventTimestamp: 'desc' },
-      select: { conversationKey: true, customerName: true },
+      select: { conversationKey: true, customerName: true, externalAccountId: true },
     });
 
     const resolvedConversationKey = latestInbound?.conversationKey || conversationKey;
@@ -13471,6 +13471,55 @@ router.post('/conversations/:channel/:conversationKey/take-over', authenticateTo
       channel,
       rawKeyCandidates,
     );
+
+    // "Devraldım" de en az "Siz Yanıtlayın" kadar iz bıraksın: sohbete
+    // "{Ad} devraldı." sistem kaydı düş. Devralanın kimliği kolona yazılır;
+    // metin okuma anında üretilir (isim değişiklikleri yansısın). Loglama
+    // hatası devralmayı bozmasın diye .catch ile yutuluyor.
+    {
+      const senderUserId = Number.isInteger(Number(req.user?.userId)) ? Number(req.user.userId) : null;
+      const senderUser = senderUserId
+        ? await prisma.salonUser.findFirst({
+            where: { id: senderUserId, salonId },
+            select: { id: true, email: true, displayName: true, firstName: true, lastName: true },
+          })
+        : null;
+      const senderUserEmail =
+        typeof senderUser?.email === 'string' && senderUser.email.trim() ? senderUser.email.trim() : null;
+      const senderUserDisplayName =
+        typeof senderUser?.displayName === 'string' && senderUser.displayName.trim() ? senderUser.displayName.trim() : null;
+      const senderUserFullName = (() => {
+        const first = typeof senderUser?.firstName === 'string' ? senderUser.firstName.trim() : '';
+        const last = typeof senderUser?.lastName === 'string' ? senderUser.lastName.trim() : '';
+        const joined = `${first} ${last}`.trim();
+        return joined || null;
+      })();
+      await upsertConversationMessageEvent({
+        salonId,
+        channel,
+        conversationKey: resolvedConversationKey,
+        providerMessageId: `manual_takeover_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+        externalAccountId: latestInbound?.externalAccountId || '',
+        customerName: latestInbound?.customerName || null,
+        messageType: 'manual_takeover',
+        text: null,
+        direction: 'SYSTEM',
+        eventTimestamp: new Date(),
+        processingStatus: InboundMessageStatus.DONE,
+        outboundSenderUserId: senderUser?.id || null,
+        outboundSenderEmail: senderUserEmail || null,
+        rawPayload: {
+          direction: 'system',
+          source: 'HUMAN_APP',
+          action: 'manual_handover',
+          actor: {
+            userId: senderUser?.id || null,
+            email: senderUserEmail,
+            displayName: senderUserFullName || senderUserDisplayName,
+          },
+        } as any,
+      }).catch((err) => { console.error('take-over manual_takeover log failed', err); });
+    }
 
     return res.status(200).json({
       ok: true,
