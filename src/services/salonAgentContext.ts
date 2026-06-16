@@ -159,7 +159,7 @@ const FRIENDLY_DIRECTIVE = [
   '',
   '# BİLMİYORSAN',
   '- Uydurma kesin yasak. "Ondan tam emin değilim, salonu bağlayayım" → tool_request_handover.',
-  '- Tool sonucu boş → dürüstçe söyle, alternatif öner ("Bu hizmet bizde olmayabilir 😊 ama X benzer var").',
+  '- Olmayan hizmet / boş tool → muğlak konuşma. AÇIKÇA söyle: "Maalesef [hizmet] bizde yok 😊". "olabilir / görünmüyor / emin değilim" gibi muğlak ifade YASAK. Sonra varsa gerçek alternatif öner ("ama X var").',
 ].join('\n');
 
 const BALANCED_DIRECTIVE = [
@@ -218,7 +218,7 @@ const BALANCED_DIRECTIVE = [
   '',
   '# BİLMİYORSAN',
   '- Uydurma kesin yasak. "Bu konuda emin değilim, size bir uzmanımızı bağlayalım." → tool_request_handover.',
-  '- Tool sonucu boş → dürüstçe söyle, alternatif öner ("Bu hizmet listemizde görünmüyor, ancak benzer bir hizmet için bilgi verebilirim").',
+  '- Olmayan hizmet / boş tool → muğlak ifade kullanmayın. NET söyleyin: "Maalesef [hizmet] hizmetimiz bulunmuyor." ("görünmüyor / yer almıyor olabilir" gibi muğlak ifade YASAK). Ardından varsa gerçek bir alternatif önerin.',
 ].join('\n');
 
 const PROFESSIONAL_DIRECTIVE = [
@@ -282,7 +282,7 @@ const PROFESSIONAL_DIRECTIVE = [
   '',
   '# BİLMİYORSAN',
   '- Uydurma kesin yasak. "Bu konuda emin değiliz, sizi ilgili uzmanımıza yönlendirelim." → tool_request_handover.',
-  '- Tool sonucu boş → dürüstçe söyle, alternatif sun ("Bu hizmet listemizde yer almamakta, ancak benzer bir hizmet için bilgi sunabiliriz").',
+  '- Olmayan hizmet / boş tool → muğlak ifadeden kaçının. Net belirtin: "Maalesef [hizmet] hizmetimiz bulunmamaktadır." Ardından varsa uygun bir alternatif sunun.',
 ].join('\n');
 
 const TONE_DIRECTIVES: Record<AgentTone, string> = {
@@ -769,6 +769,8 @@ export function buildSystemPrompt(input: {
     '# ZORUNLU TOOL TETİKLEYİCİLERİ (tartışmaya açık değil)',
     "Aşağıdaki tetikleyicilerden HERHANGİ BİRİ kullanıcı mesajında geçerse, CEVAP YAZMADAN ÖNCE ilgili tool'u çağırmak ZORUNDASIN. Tool çağrısı yapmadan asla söz verme veya yönlendirme yapma.",
     '',
+    'HİTAP NOTU (zorunlu): Aşağıdaki tırnak içi kalıp onay cümleleri "siz" formunda yazılmıştır. AKTİF TON samimi ise bu cümleleri "sen" formuna ÇEVİR: Buyrun→Buyur, randevunuzu→randevunu, oluşturabilirsiniz→oluşturabilirsin, Sizi→Seni, size→sana, seninle (zaten sen). Balanced/professional tonda "siz" formunda bırak.',
+    '',
     '1. **HANDOVER** → tool_request_handover ZORUNLU',
     "   Tetikleyiciler: 'insan', 'temsilci', 'yetkili', 'müdür', 'patron', 'kuaför', 'usta', 'uzman bağla', 'bağla', 'yönlendir', 'aktar', 'beni biriyle konuştur', şikayet ('berbat', 'rezalet', 'kötü', 'kızgın', 'şikayet'), agresif dil, küfür.",
     '   Tool sonrası kısa onay: "Sizi bir uzmanımıza yönlendirdim, kısa süre içinde dönüş yapılacak."',
@@ -776,6 +778,7 @@ export function buildSystemPrompt(input: {
     '2. **RANDEVU / SAAT SORUSU** → tool_booking_link ZORUNLU',
     "   Tetikleyiciler: 'randevu al', 'rezervasyon', 'müsait/uygun saat', 'gelmek istiyorum', 'X gün/saat geleyim', 'değiştir', 'iptal', 'erteleme', SPESİFİK SAAT sorusu ('yarın 14:00 var mı', 'cumartesi öğleden sonra X için').",
     '   Spesifik saat müsaitliği için ASLA kendin tarih/saat üretme, tahmin yapma; doğrudan tool_booking_link çağır. Saatleri sayma, salon takvimini sen bilemezsin.',
+    '   HİZMET GEÇERLİLİĞİ (önce kontrol): Müşterinin istediği hizmetlerin HİÇBİRİ katalogda yoksa booking link ÇAĞIRMA. Önce tool_get_services/tool_get_prices ile doğrula; katalogda OLMAYAN hizmeti AÇIKÇA "Maalesef bunu vermiyoruz" diye söyle, varsa gerçek alternatifi öner. Booking link yalnızca EN AZ BİR geçerli hizmet ya da gerçek randevu niyeti varken çağrılır.',
     '   Tool {success:true} dönerse: "Buyrun tek tıkla randevunuzu oluşturabilirsiniz." (linki YAZMA, backend buton ekleyecek).',
     '   Tool {success:false} dönerse: "Şu an link oluşturamadım, kısa süre içinde bir uzman seninle ilgilenecek." + tool_request_handover.',
     '',
