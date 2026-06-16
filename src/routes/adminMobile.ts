@@ -12506,10 +12506,13 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
         const iLast = identity ? (identity.lastName || '').trim() : '';
         const iFull = `${iFirst} ${iLast}`.trim();
         const iDisplay = identity ? (identity.displayName || '').trim() : '';
-        // Global identity (profil) ismi ÖNCELİKLİ; SalonUser (salon-seviyesi) ismi
-        // yalnız identity yoksa fallback. Aksi halde salon-seviyesinde kalmış eski
-        // isim (ör. "Enayinin Biri") profil adını (ör. "Deniz Kara") eziyordu.
-        const friendly = iFull || iDisplay || full || display;
+        // Tam ad (ad+soyad) ÖNCELİKLİ — aynı ada sahip iki çalışan ayırt
+        // edilebilsin (örn. "devraldı" kaydında). Profil (global kimlik)
+        // önceliği korunur; profilde soyad yoksa salon kaydındaki tam ada
+        // düşülür. İkisinde de tam ad yoksa display nick'e, en son sadece ada.
+        const identityFull = iFirst && iLast ? `${iFirst} ${iLast}` : '';
+        const salonFull = first && last ? `${first} ${last}` : '';
+        const friendly = identityFull || salonFull || iDisplay || display || iFull || full;
         if (friendly) senderNameByUserId.set(u.id, friendly);
       }
     }
