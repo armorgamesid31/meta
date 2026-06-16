@@ -16,7 +16,10 @@ import { BusinessError } from '../lib/errors.js';
  */
 export const authRateLimiter = rateLimit({
   windowMs: 60_000,
-  limit: 60,
+  // 60→20/dk: login + 8-haneli aktivasyon kodu/telefon-probe brute-force yüzeyi için
+  // 60 gevşekti. Meşru kullanım (login birkaç deneme + ~saatlik refresh + retry, çoklu
+  // cihaz dahil) 20/dk/IP'nin çok altında; onboarding poll zaten skip ediliyor.
+  limit: 20,
   standardHeaders: true,
   legacyHeaders: false,
   skip: (req: Request) => {

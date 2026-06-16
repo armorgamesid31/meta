@@ -40,6 +40,10 @@ export const BootstrapResponseSchema = z.object({
     kurulumStage: z.string().nullable().optional(),
     // ISO-8601 string. Drives F5 WhatsAppNudgeBanner age threshold (>3 days).
     createdAt: z.string().nullable().optional(),
+    // Salon silme zamanlandıysa ISO; DeletionScheduledBanner + SalonDangerZone okur.
+    // Şemada YOKTU → app `as any` ile okuyordu; şema doğrulaması eklenirse sessizce
+    // silinip banner kaybolacaktı (saatli bomba). Sözleşmeye eklendi.
+    deletionScheduledAt: z.string().nullable().optional(),
   }),
   capabilities: z.record(z.string(), z.union([z.boolean(), z.string()])),
   featureFlags: z.record(z.string(), z.boolean()),
@@ -74,8 +78,12 @@ export const BootstrapResponseSchema = z.object({
       firstName: z.string().nullable(),
       lastName: z.string().nullable(),
       gender: z.enum(['female', 'male', 'other']).nullable(),
+      // Kimliğe bağlı profil fotoğrafı (route döndürüyor; şemada eksikti).
+      profileImageUrl: z.string().nullable().optional(),
       completionRequired: z.boolean(),
     })
     .optional(),
+  // Route notifications.defaults döndürüyor (varsayılan bildirim politikası).
+  notifications: z.object({ defaults: z.unknown() }).optional(),
 });
 export type BootstrapResponse = z.infer<typeof BootstrapResponseSchema>;

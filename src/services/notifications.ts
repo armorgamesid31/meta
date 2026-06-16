@@ -245,7 +245,10 @@ async function getRecipientUserIds(salonId: number, eventType: NotificationEvent
       : DEFAULT_RECIPIENTS[eventType]) || [];
 
   const users = await prisma.$queryRawUnsafe<any[]>(
-    `SELECT "id", UPPER(COALESCE("role", 'STAFF')) AS "role" FROM "SalonUser" WHERE "salonId" = $1`,
+    // isActive filtresi: pasife alınmış (işten çıkmış) personel artık bildirim
+    // ALICISI olmaz — eskiden filtre yoktu, eski çalışan müşteri/randevu
+    // bildirimi almaya devam ediyordu (KVKK/veri sızıntısı).
+    `SELECT "id", UPPER(COALESCE("role", 'STAFF')) AS "role" FROM "SalonUser" WHERE "salonId" = $1 AND COALESCE("isActive", true) = true`,
     salonId,
   );
 
