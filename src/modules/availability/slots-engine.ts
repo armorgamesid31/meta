@@ -297,7 +297,7 @@ export class SlotsEngine {
 
     const relevantStaffIds = [...new Set(staffServices.map((row) => row.staffId))];
 
-    const [workingHours, salonClosures, staffTimeOffs, legacyLeaves, slotLocks] = await Promise.all([
+    const [workingHours, salonClosures, staffTimeOffs, legacyLeaves, slotLocks, staffSchedules] = await Promise.all([
       prisma.staffWorkingHours.findMany({
         where: {
           staffId: { in: relevantStaffIds },
@@ -361,6 +361,15 @@ export class SlotsEngine {
         },
         select: { entries: true },
       }),
+      // Hangi personelin GÜN-BAZLI özel takvimi var (herhangi bir günde)? Set
+      // BOŞSA (kimse özel saat girmemişse) davranış AYNEN korunur (sıfır regresyon).
+      // Doluysa: özel takvimli personelin o güne kaydı yoksa motor onu KAPALI sayar
+      // (salon fallback'ine düşmez) — "Zeynep cumartesi çalışmaz" ifade edilebilsin.
+      prisma.staffWorkingHours.findMany({
+        where: { staffId: { in: relevantStaffIds } },
+        select: { staffId: true },
+        distinct: ['staffId'],
+      }),
     ]);
 
     const indexedData: IndexedData = {
@@ -423,16 +432,21 @@ export class SlotsEngine {
       const fallbackEnd = typeof perDay?.end === 'number' ? perDay.end : salonSettings.workEndHour;
 
       if (salonOpenToday) {
+        // Gün-bazlı özel takvimi olan personeller. Boşsa (kimse girmemişse) eski
+        // davranış: tüm personel salon saatine düşer (sıfır regresyon).
+        const staffWithSchedule = new Set(staffSchedules.map((s) => s.staffId));
         for (const staffId of relevantStaffIds) {
           const key = `${staffId}-${dayOfWeek}`;
-          if (!indexedData.workingHoursByStaffAndDay.has(key)) {
-            indexedData.workingHoursByStaffAndDay.set(key, {
-              staffId,
-              dayOfWeek,
-              startHour: fallbackStart,
-              endHour: fallbackEnd,
-            });
-          }
+          if (indexedData.workingHoursByStaffAndDay.has(key)) continue; // bugüne kaydı var → kullan
+          // Özel takvimli ama bugün kaydı YOK → bu personel bugün KAPALI (fallback YAPMA).
+          if (staffWithSchedule.has(staffId)) continue;
+          // Hiç özel takvimi olmayan personel → salon (gün-bazlı) saatine düş.
+          indexedData.workingHoursByStaffAndDay.set(key, {
+            staffId,
+            dayOfWeek,
+            startHour: fallbackStart,
+            endHour: fallbackEnd,
+          });
         }
       }
     }

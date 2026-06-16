@@ -14,6 +14,7 @@ import { getPushProviderStatus } from '../services/pushProvider.js';
 import { ACCESS_VERSION, ensureSalonAccessSeed, getEffectivePermissionSet } from '../services/accessControl.js';
 import { getFeaturesForPlan } from '../services/planFeatures.js';
 import { deleteR2Object, isR2Configured, uploadBufferToR2 } from '../lib/r2.js';
+import { invalidateAvailabilityForSalon } from '../services/availabilityCache.js';
 
 const router = Router();
 
@@ -404,6 +405,79 @@ router.put('/staff-profile', authenticateToken, async (req: any, res: any) => {
       bio: null,
     },
   });
+});
+
+// Gün kodu ↔ JS getDay (0=Pazar..6=Cumartesi). StaffWorkingHours.dayOfWeek bu
+// konvansiyonu kullanır (slots-engine date.getDay() ile eşler).
+const DAY_TO_DOW: Record<string, number> = { SUN: 0, MON: 1, TUE: 2, WED: 3, THU: 4, FRI: 5, SAT: 6 };
+const DOW_TO_DAY: Record<number, string> = { 0: 'SUN', 1: 'MON', 2: 'TUE', 3: 'WED', 4: 'THU', 5: 'FRI', 6: 'SAT' };
+
+/**
+ * GET /staff-profile/working-hours  (mounted at /api/mobile)
+ * Auth'lu personelin kendi gün-bazlı çalışma saatleri. Kayıt yoksa boş döner
+ * (motor salon saatine düşer). dayOfWeek: JS getDay (0=Pazar..6=Cumartesi).
+ */
+router.get('/staff-profile/working-hours', authenticateToken, async (req: any, res: any) => {
+  if (!req.user) throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
+  const salonId = req.user.salonId;
+  const membershipId = Number(req.user.membershipId || 0);
+  if (!membershipId) throw new BusinessError('FORBIDDEN', 'Membership required.', 403);
+  const staff = await prisma.staff.findFirst({ where: { salonId, membershipId }, select: { id: true } });
+  if (!staff) return res.status(200).json({ usesSalonHours: true, days: [] });
+  const rows = await prisma.staffWorkingHours.findMany({
+    where: { staffId: staff.id },
+    select: { dayOfWeek: true, startHour: true, endHour: true },
+    orderBy: { dayOfWeek: 'asc' },
+  });
+  const days = rows
+    .filter((r) => r.dayOfWeek !== null && DOW_TO_DAY[r.dayOfWeek] !== undefined)
+    .map((r) => ({ day: DOW_TO_DAY[r.dayOfWeek as number], open: true, start: r.startHour, end: r.endHour }));
+  return res.status(200).json({ usesSalonHours: days.length === 0, days });
+});
+
+/**
+ * PUT /staff-profile/working-hours  (mounted at /api/mobile)
+ * Auth'lu personelin gün-bazlı çalışma saatini KAYDEDER (replace = sil + yeniden yaz).
+ * Body: { days: [{ day:'MON', open:true, start:9, end:18 }, ...] }.
+ * - Kapalı gün (open:false) için satır YAZILMAZ.
+ * - Hiç açık gün yoksa tüm kayıtlar silinir → personel "salon saatini kullanıyor"
+ *   sayılır (motor salon fallback'ine düşer).
+ * Booking motoru semantiği: bir personelin EN AZ BİR kaydı varsa, kaydı OLMAYAN
+ * günler o personel için KAPALI'dır (salon fallback'ine düşmez).
+ */
+router.put('/staff-profile/working-hours', authenticateToken, async (req: any, res: any) => {
+  if (!req.user) throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
+  const salonId = req.user.salonId;
+  const membershipId = Number(req.user.membershipId || 0);
+  if (!membershipId) throw new BusinessError('FORBIDDEN', 'Membership required.', 403);
+  const staff = await prisma.staff.findFirst({ where: { salonId, membershipId }, select: { id: true } });
+  if (!staff) throw new BusinessError('NOT_FOUND', 'Bu kullanıcının bu salonda personel kaydı yok.', 404);
+
+  const rawDays = Array.isArray(req.body?.days) ? req.body.days : [];
+  const seen = new Set<number>();
+  const rows: { staffId: number; dayOfWeek: number; startHour: number; endHour: number }[] = [];
+  for (const d of rawDays) {
+    if (!d || d.open === false) continue; // kapalı gün → satır yok
+    const dow = DAY_TO_DOW[String(d?.day ?? '').toUpperCase().trim().slice(0, 3)];
+    if (dow === undefined || seen.has(dow)) continue;
+    const start = Number(d.start);
+    const end = Number(d.end);
+    if (!Number.isInteger(start) || !Number.isInteger(end)) continue;
+    if (start < 0 || start > 23 || end < 1 || end > 24 || end <= start) continue;
+    seen.add(dow);
+    rows.push({ staffId: staff.id, dayOfWeek: dow, startHour: start, endHour: end });
+  }
+
+  await prisma.$transaction([
+    prisma.staffWorkingHours.deleteMany({ where: { staffId: staff.id } }),
+    ...(rows.length ? [prisma.staffWorkingHours.createMany({ data: rows })] : []),
+  ]);
+
+  await invalidateAvailabilityForSalon(salonId).catch((e) =>
+    console.error('[staff-hours] cache invalidate failed', e?.message || e),
+  );
+
+  return res.status(200).json({ ok: true, days: rows.length, usesSalonHours: rows.length === 0 });
 });
 
 /**
