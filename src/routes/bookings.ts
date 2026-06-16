@@ -450,6 +450,29 @@ async function createExactSlotBooking(input: {
       const createdAppointments = [] as any[];
       let pricingLineIndex = 0;
 
+      // FİŞ-KİLİDİ (idempotency): anahtarı transaction İÇİNDE atomik rezerve et.
+      // Eşzamanlı çift-tık (özellikle "fark etmez personel"de iki tık farklı
+      // personele düşüp İKİ randevu açabiliyordu) → ikinci istek burada claim
+      // alamaz → IDEMPOTENT_DUPLICATE ile durur, ikinci randevu OLUŞMAZ.
+      // ON CONFLICT ... WHERE expiresAt<NOW(): süresi dolmuş eski anahtar yeniden
+      // kullanılabilir; aktif anahtar (gerçek eşzamanlı dup) → boş döner → durur.
+      if (input.idempotencyKey) {
+        const claim = await tx.$queryRawUnsafe<any[]>(
+          `INSERT INTO "BookingIdempotencyKey" ("key","salonId","appointmentIds","expiresAt")
+           VALUES ($1,$2,'[]'::jsonb,$3)
+           ON CONFLICT ("key") DO UPDATE
+             SET "appointmentIds"='[]'::jsonb, "expiresAt"=$3, "salonId"=$2
+             WHERE "BookingIdempotencyKey"."expiresAt" < NOW()
+           RETURNING "key"`,
+          input.idempotencyKey,
+          input.salonId,
+          new Date(Date.now() + 24 * 60 * 60 * 1000),
+        );
+        if (!Array.isArray(claim) || claim.length === 0) {
+          throw { code: 'IDEMPOTENT_DUPLICATE' };
+        }
+      }
+
       for (const [personIndex, personServices] of orderedPeople) {
         const selectedPersonSlot = matchedDisplaySlot.personSlots.find((slot) => slot.personId === `p${personIndex}`);
         if (!selectedPersonSlot) {
@@ -548,6 +571,7 @@ async function createExactSlotBooking(input: {
               salonId: input.salonId,
               customerId: input.customerId,
               line: pricingResult.lines[pricingLineIndex],
+              db: tx, // cüzdan tüketimi artık tx'in parçası → rollback'te geri alınır
             });
           }
           pricingLineIndex += 1;
@@ -564,11 +588,31 @@ async function createExactSlotBooking(input: {
         });
       }
 
+      // Fiş-kilidini gerçek appointment id'leriyle güncelle (tx içinde → atomik).
+      if (input.idempotencyKey && createdAppointments.length) {
+        await tx.bookingIdempotencyKey.update({
+          where: { key: input.idempotencyKey },
+          data: { appointmentIds: createdAppointments.map((a) => Number(a.id)) as any },
+        });
+      }
+
       return createdAppointments;
       },
       { isolationLevel: 'Serializable' },
     );
   } catch (error: any) {
+    if (error?.code === 'IDEMPOTENT_DUPLICATE') {
+      // Eşzamanlı aynı-anahtar isteği: kazanan commit ettiyse onun sonucunu dön;
+      // henüz etmediyse 409 (client idempotent retry'da kazananın sonucunu alır).
+      if (input.idempotencyKey) {
+        const cached = await findCachedBookingByIdempotencyKey({
+          salonId: input.salonId,
+          idempotencyKey: input.idempotencyKey,
+        });
+        if (cached) return cached;
+      }
+      return { status: 409, body: { message: 'Bu randevu zaten işleniyor. Lütfen birkaç saniye sonra tekrar deneyin.' } };
+    }
     if (error?.code === 'SLOT_NOT_AVAILABLE') {
       const alternatives = await generateAvailabilityAlternatives({
         salonId: input.salonId,

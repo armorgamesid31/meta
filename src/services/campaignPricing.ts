@@ -949,13 +949,18 @@ export async function consumeWalletBalances(input: {
   salonId: number;
   customerId?: number | null;
   line: CampaignPricingLineResult;
+  // tx geçilirse cüzdan tüketimi booking transaction'ının PARÇASI olur → randevu
+  // rollback olursa paket/bakiye düşümü de geri alınır (eskiden tx-dışıydı: randevu
+  // patlasa bile müşterinin paketinden hak gidiyordu).
+  db?: { $executeRawUnsafe: (...args: any[]) => Promise<any> };
 }): Promise<void> {
   if (!input.customerId) return;
+  const db = input.db ?? prisma;
 
   for (const app of input.line.appliedCampaigns) {
     if (app.campaignType !== 'LOYALTY' && app.campaignType !== 'REFERRAL') continue;
 
-    await prisma.$executeRawUnsafe(
+    await db.$executeRawUnsafe(
       `
         UPDATE "CustomerCampaignWallet"
         SET "consumedAmount" = COALESCE("consumedAmount", 0) + $1, "updatedAt" = NOW()
