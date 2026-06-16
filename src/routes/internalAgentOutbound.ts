@@ -8,6 +8,34 @@ import { ensureMagicLink } from '../services/magicLinkService.js';
 import { buildBookingUrl } from '../utils/bookingUrl.js';
 import { BusinessError } from '../lib/errors.js';
 
+/**
+ * Giden mesaj için GÜVENLİ retry. WhatsApp/Meta'da idempotency anahtarı YOK →
+ * körlemesine retry, "gönderildi ama timeout" durumunda müşteriye ÇİFT mesaj atar.
+ * Bu yüzden YALNIZ mesajın provider'a KESİN ULAŞMADIĞI hatalarda retry yapılır
+ * (bağlantı reddi / DNS / reset / 429 rate-limit). Timeout (ECONNABORTED) ve 5xx
+ * BELİRSİZ kabul edilir (mesaj gitmiş olabilir) → retry EDİLMEZ.
+ */
+function isDefinitelyNotDelivered(err: any): boolean {
+  const code = err?.code;
+  if (code === 'ENOTFOUND' || code === 'ECONNREFUSED' || code === 'EAI_AGAIN' || code === 'ECONNRESET') return true;
+  if (err?.response?.status === 429) return true;
+  return false;
+}
+
+async function postWithSafeRetry<T>(doPost: () => Promise<T>, label: string): Promise<T> {
+  const MAX_RETRY = 2;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await doPost();
+    } catch (err: any) {
+      if (attempt >= MAX_RETRY || !isDefinitelyNotDelivered(err)) throw err;
+      const backoffMs = 500 * Math.pow(2, attempt);
+      console.warn(`[outbound] ${label} güvenli-retry ${attempt + 1}/${MAX_RETRY} (${err?.code || err?.response?.status})`);
+      await new Promise((r) => setTimeout(r, backoffMs));
+    }
+  }
+}
+
 const router = Router();
 
 const META_GRAPH_VERSION = (process.env.META_GRAPH_VERSION || 'v23.0').trim();
@@ -357,13 +385,9 @@ export async function sendInstagramMessage(params: {
     };
   }
 
-  const response = await axios.post(
-    url,
-    payload,
-    {
-      params: { access_token: accessToken },
-      timeout: 20000,
-    },
+  const response = await postWithSafeRetry(
+    () => axios.post(url, payload, { params: { access_token: accessToken }, timeout: 20000 }),
+    'instagram',
   );
 
   const providerMessageId =
@@ -511,10 +535,10 @@ export async function sendWhatsappViaChakra(params: {
   }
 
   const sendUrl = buildChakraWhatsappSendUrl(salon.chakraPluginId, phoneNumberId);
-  const response = await axios.post(sendUrl, payload, {
-    headers,
-    timeout: 25000,
-  });
+  const response = await postWithSafeRetry(
+    () => axios.post(sendUrl, payload, { headers, timeout: 25000 }),
+    'whatsapp',
+  );
 
   const providerMessageId =
     (typeof response.data?.messageId === 'string' && response.data.messageId.trim()) ||
