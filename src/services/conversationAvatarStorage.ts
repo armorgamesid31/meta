@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
 import axios from 'axios';
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import type { ChannelType } from '@prisma/client';
 
 const R2_ENABLED = (process.env.IMPORTS_R2_ENABLED || '').trim().toLowerCase() === 'true';
@@ -151,6 +151,60 @@ export async function storeConversationAvatarFromUrl(input: {
       sourceUrl,
       error: error?.message || 'unknown_error',
     });
+    return null;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// R2-hosted avatar okuma. R2'nin S3 endpoint'i imzasız GET'i reddeder
+// (400/403) ve IMPORTS_R2_PUBLIC_BASE_URL ayarlı değilse profilePicUrl
+// bu endpoint'e düşer → düz axios GET ile çekilemez. Aşağıdaki yardımcı,
+// host R2 ise objeyi imzalı S3 GetObject ile çeker; böylece bucket
+// private kalır (içinde import/, conv-media/, users/ gibi müşteri verisi var).
+// ─────────────────────────────────────────────────────────────────
+function deriveR2ObjectKey(parsed: URL): string | null {
+  const host = parsed.hostname.toLowerCase();
+  const path = decodeURIComponent(parsed.pathname.replace(/^\/+/, ''));
+  if (!path) return null;
+  if (R2_PUBLIC_BASE_HOST && host === R2_PUBLIC_BASE_HOST) {
+    return path;
+  }
+  if (R2_ENDPOINT_HOST && host === R2_ENDPOINT_HOST) {
+    const prefix = `${R2_BUCKET}/`;
+    return path.startsWith(prefix) ? path.slice(prefix.length) : path;
+  }
+  return null;
+}
+
+export function isR2ObjectUrl(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return Boolean(
+    (R2_ENDPOINT_HOST && host === R2_ENDPOINT_HOST) ||
+    (R2_PUBLIC_BASE_HOST && host === R2_PUBLIC_BASE_HOST),
+  );
+}
+
+export async function fetchR2ObjectByUrl(rawUrl: string): Promise<{ body: Buffer; contentType: string } | null> {
+  const client = getClient();
+  if (!client) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return null;
+  }
+  const key = deriveR2ObjectKey(parsed);
+  if (!key) return null;
+  try {
+    const resp = await client.send(new GetObjectCommand({ Bucket: R2_BUCKET, Key: key }));
+    const bytes = resp.Body ? await resp.Body.transformToByteArray() : null;
+    if (!bytes || !bytes.length) return null;
+    const contentType = typeof resp.ContentType === 'string' && resp.ContentType.trim()
+      ? resp.ContentType
+      : 'image/jpeg';
+    return { body: Buffer.from(bytes), contentType };
+  } catch (error: any) {
+    console.error('R2 object fetch failed:', { rawUrl, key, error: error?.message || 'unknown_error' });
     return null;
   }
 }

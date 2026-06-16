@@ -76,6 +76,7 @@ import {
 } from '../services/waitlist.js';
 import { normalizeDigitsOnly } from '../services/phoneValidation.js';
 import { backfillConversationThreadSummaryForSalon } from '../services/conversationThreadSummary.js';
+import { isR2ObjectUrl, fetchR2ObjectByUrl } from '../services/conversationAvatarStorage.js';
 import {
   listCampaignsForSend,
   previewCampaignPricing,
@@ -11800,6 +11801,18 @@ router.get('/conversations/profile-image', authenticateToken, async (req: any, r
 
     if (channel === 'WHATSAPP' && isChakraHost(parsed.hostname) && process.env.CHAKRA_API_TOKEN) {
       headers.Authorization = `Bearer ${process.env.CHAKRA_API_TOKEN}`;
+    }
+
+    // R2-hosted avatarlar: imzalı S3 GetObject ile çek. R2 S3 endpoint'i
+    // imzasız GET'i reddeder; bucket private kaldığı için düz axios çalışmaz.
+    if (isR2ObjectUrl(parsed.hostname)) {
+      const obj = await fetchR2ObjectByUrl(parsed.toString());
+      if (!obj) {
+        return res.status(404).json({ message: 'Profile image could not be fetched.' });
+      }
+      res.setHeader('Content-Type', obj.contentType);
+      res.setHeader('Cache-Control', 'private, max-age=1800');
+      return res.status(200).send(obj.body);
     }
 
     const response = await axios.get<ArrayBuffer>(parsed.toString(), {
