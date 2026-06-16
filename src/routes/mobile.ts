@@ -702,18 +702,9 @@ router.post('/push/register', authenticateToken, async (req: any, res: any) => {
       appVersion,
       JSON.stringify(deviceMeta || {}),
     );
-
-    // K2 — hayalet token: bir fiziksel cihaz token'ı yalnız EN SON giriş yapılan
-    // salonda aktif kalmalı. Aynı token'ın DİĞER salonlardaki kayıtlarını pasifle
-    // → salon değiştirince / yeniden giriş yapınca eski salonun "çıkmış cihaza
-    // push" sızıntısı sunucu tarafında kesilir (logout unregister mevcut salonu
-    // kapatıyordu; bu da diğerlerini kapatır).
-    await prisma.$executeRawUnsafe(
-      `UPDATE "PushDeviceToken" SET "isActive" = false, "updatedAt" = NOW()
-       WHERE "token" = $1 AND "salonId" <> $2 AND "isActive" = true`,
-      token,
-      salonId,
-    );
+    // NOT: Burada DİĞER salonların token'ını pasiflemiyoruz — çok-salonlu kullanıcı
+    // (iki salonu olan sahip / iki salonda çalışan) HER salonundan bildirim almalı.
+    // "Çıkmış cihaz" temizliği logout → /push/unregister'da (token-bazlı) yapılır.
 
     return res.status(200).json({ ok: true });
   } catch (error) {
@@ -735,13 +726,15 @@ router.post('/push/unregister', authenticateToken, async (req: any, res: any) =>
 
   try {
     await prisma.$executeRawUnsafe(
+      // Çıkış = cihazı TAMAMEN temizle: token-bazlı, TÜM salonlardaki kayıtları
+      // pasifle. Çok-salonlu kullanıcı salon değiştirince değil yalnız LOGOUT'ta
+      // tetiklenir → "çıkmış cihaza push" sızıntısı kapanır, çok-salonlu push
+      // korunur. (FCM/APNs token'ı cihaz-app kurulumuna özgü → sahiplik güvenli.)
       `
         UPDATE "PushDeviceToken"
         SET "isActive" = false, "updatedAt" = NOW()
-        WHERE "salonId" = $1 AND "userId" = $2 AND "token" = $3
+        WHERE "token" = $1
       `,
-      salonId,
-      userId,
       token,
     );
     return res.status(200).json({ ok: true });
