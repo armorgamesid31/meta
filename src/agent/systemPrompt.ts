@@ -78,12 +78,11 @@ export async function buildAgentSystemPrompt(input: {
     toneName: tone,
   });
 
-  // Profil-edit kuralını tetikleyici listesinin sonuna ekle (8 → 9).
-  const withProfileEdit = base.includes(TRIGGER_TAIL)
-    ? base.replace(TRIGGER_TAIL, `${PROFILE_EDIT_RULE}\n\n${TRIGGER_TAIL}`)
-    : `${base}\n${PROFILE_EDIT_RULE}`;
-  // Veri-çekme tool-çağırmayı güçlendiren "ön bilgin yok" bloğu + görsel hafızası.
-  let out = `${withProfileEdit}\n${NO_PRIOR_KNOWLEDGE}\n${IMAGE_MEMORY_NOTE}`;
+  // NOT: PROFİL DÜZENLEME (9. tetikleyici) + "ÖN BİLGİN YOK" + "GÖRSEL HAFIZASI"
+  // artık buildSystemPrompt'un İÇİNDE (tek-kaynak + cache-dostu statik sıra).
+  // Aşağıdaki PROFILE_EDIT_RULE/NO_PRIOR_KNOWLEDGE/IMAGE_MEMORY_NOTE/TRIGGER_TAIL
+  // sabitleri DEAD — buildSystemPrompt'taki kopya kanonik (ikisini birlikte güncelle).
+  let out = base;
 
   // Rolling summary — pencere dışında kalan eski turların kalıcı özeti.
   const summary = (input.conversationSummary || '').trim();
