@@ -1709,6 +1709,11 @@ router.post('/refresh', async (req: any, res: any) => {
       },
     });
   } catch (error) {
+    // 401/403 (geçersiz/expired refresh token, inaktif hesap) GERÇEK reddi temsil
+    // eder; istemci bunu "kalıcı oturum bitti" diye yorumlamalı. Eskiden hepsi 500'e
+    // yutuluyordu → istemci gerçek red'i "geçici 5xx" sanıp gereksiz retry/logout
+    // yapıyordu. Beklenen BusinessError'ı OLDUĞU GİBİ geçir; yalnız beklenmeyeni 500 yap.
+    if (error instanceof BusinessError) throw error;
     console.error(`[auth/refresh] failed latencyMs=${Date.now() - startedAt} reason=exception`, error);
     throw new BusinessError('INTERNAL_ERROR', 'Internal server error.', 500, { code: 'AUTH_RECOVERY_FAILED' });
   }

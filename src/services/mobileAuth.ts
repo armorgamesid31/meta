@@ -221,10 +221,14 @@ export async function rotateRefreshToken(refreshToken: string) {
     const newRefreshToken = createRefreshToken();
     const newRefreshTokenHash = hashToken(newRefreshToken);
 
-    await tx.mobileAuthSession.update({
-      where: { id: session.id },
+    // Atomik koşullu revoke: eşzamanlı (çift) refresh'te yalnız BİRİ kazanır.
+    // Koşulsuz update, iki paralel rotation'da iki ayrı AKTİF session üretip
+    // (forked) app'i revoke-edilmiş token'la bırakıyordu → haksız logout.
+    const revoked = await tx.mobileAuthSession.updateMany({
+      where: { id: session.id, revokedAt: null },
       data: { revokedAt: now },
     });
+    if (revoked.count === 0) return null; // başka bir rotation önce davrandı → forklama
 
     await tx.mobileAuthSession.create({
       data: {
