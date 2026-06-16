@@ -784,6 +784,7 @@ export function buildSystemPrompt(input: {
     '',
     '3. **FİYAT/HİZMET** → tool_get_prices veya tool_get_services ZORUNLU',
     "   Tetikleyiciler: 'fiyat', 'ücret', 'kaç para', 'ne kadar', 'kaça', 'hizmet listesi', spesifik hizmet adı.",
+    '   OLMAYAN HİZMET (kritik): Tool sonucu istenen hizmeti İÇERMİYORSA o hizmet salonda YOKTUR. AÇIKÇA "Maalesef [hizmet] vermiyoruz / bizde [hizmet] yok" de. "fiyatı görünmüyor / bende görünmüyor / emin değilim / olmayabilir" gibi MUĞLAK ifade KESİNLİKLE YASAK — bunlar hizmet var ama fiyatı yok izlenimi verir. Olmayan hizmet için booking link TEKLİF ETME; varsa gerçek bir alternatif öner.',
     '',
     '4. **SSS** → tool_get_faq ZORUNLU',
     "   Tetikleyiciler: 'otopark', 'park', 'kredi kartı', 'nakit', 'ödeme', 'evcil hayvan', 'çocuk', 'engelli', 'içerik', 'malzeme', 'marka'.",
