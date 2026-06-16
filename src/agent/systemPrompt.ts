@@ -51,6 +51,8 @@ export async function buildAgentSystemPrompt(input: {
   repliedTo?: Parameters<typeof buildSystemPrompt>[0]['repliedTo'];
   /** Rolling summary — pencere dışı eski turların kalıcı özeti (varsa). */
   conversationSummary?: string | null;
+  /** İnsan temsilci talebi (HUMAN_PENDING) aktifse: kaç dakika önce açıldığı. */
+  handover?: { sinceMinutes: number } | null;
 }): Promise<string> {
   const agentContext = await loadSalonAgentContext(input.salonId);
   const tone = agentContext?.agentSettings?.tone ?? 'balanced';
@@ -76,6 +78,7 @@ export async function buildAgentSystemPrompt(input: {
     customerCalibration,
     repliedTo: input.repliedTo ?? null,
     toneName: tone,
+    handover: input.handover ?? null,
   });
 
   // NOT: PROFİL DÜZENLEME (9. tetikleyici) + "ÖN BİLGİN YOK" + "GÖRSEL HAFIZASI"

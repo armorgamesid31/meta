@@ -14,7 +14,7 @@ import { upsertConversationMessageEvent } from '../services/conversationMessageE
 import { sendInstagramMessage, sendWhatsappViaChakra } from '../routes/internalAgentOutbound.js';
 import type { AgentButton } from './types.js';
 
-type ActionKind = 'none' | 'booking' | 'location' | 'profile_edit';
+type ActionKind = 'none' | 'cancel' | 'booking' | 'location' | 'profile_edit';
 
 // Tek mesaj = tek buton. Birden çok hazırlandıysa eylem-önceliği: randevu en
 // güçlü çağrı, sonra profil-düzenleme, sonra konum.
@@ -38,10 +38,14 @@ export async function sendAgentReply(params: {
   customerName?: string | null;
   text: string;
   buttons?: AgentButton[];
+  /** Handover beklemede: içerik butonu yerine "İptal Et" butonu iliştir (öncelikli). */
+  forceCancelButton?: boolean;
   externalAccountId?: string | null;
 }): Promise<{ ok: boolean; providerMessageId: string | null }> {
-  const button = pickButton(params.buttons ?? []);
-  const actionKind: ActionKind = (button?.kind as ActionKind) ?? 'none';
+  // Handover beklemedeyken iptal butonu içerik butonunu (booking/konum/profil) EZER:
+  // müşterinin devirden dönme yolu her mesajda görünür kalmalı.
+  const button = params.forceCancelButton ? null : pickButton(params.buttons ?? []);
+  const actionKind: ActionKind = params.forceCancelButton ? 'cancel' : ((button?.kind as ActionKind) ?? 'none');
 
   const sendArgs = {
     salonId: params.salonId,

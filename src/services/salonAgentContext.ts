@@ -773,6 +773,8 @@ export function buildSystemPrompt(input: {
   customerCalibration?: string | null;
   repliedTo?: RepliedToForPrompt | null;
   toneName?: AgentTone | null;
+  /** İnsan temsilci talebi (HUMAN_PENDING) aktifse: kaç dakika önce açıldığı. */
+  handover?: { sinceMinutes: number } | null;
 }): string {
   const tone = (input.toneDirective && input.toneDirective.trim()) || TONE_FALLBACK;
   const style = (input.styleDirective && input.styleDirective.trim()) || STYLE_FALLBACK;
@@ -797,6 +799,7 @@ export function buildSystemPrompt(input: {
     '',
     '1. **HANDOVER** → tool_request_handover ZORUNLU',
     "   Tetikleyiciler: 'insan', 'temsilci', 'yetkili', 'müdür', 'patron', 'kuaför', 'usta', 'uzman bağla', 'bağla', 'yönlendir', 'aktar', 'beni biriyle konuştur', şikayet ('berbat', 'rezalet', 'kötü', 'kızgın', 'şikayet'), agresif dil, küfür.",
+    '   Çözemediğin durum da devir sebebidir: müşterinin gelebileceği tek zaman salonun çalışma saatlerine/kapanışına sığmıyorsa (ör. kapanışa yakın saatte uzun işlem) önce uygun alternatif (daha erken saat / başka gün) öner; müşteri ısrar eder ya da çözemezsen devret.',
     `   Tool sonrası kısa onay: "${handoverNarr}"`,
     '',
     '2. **RANDEVU / SAAT SORUSU** → tool_booking_link ZORUNLU',
@@ -883,7 +886,33 @@ export function buildSystemPrompt(input: {
     'Müşteri henüz kayıtsız ve ismi yoksa nötr selamla — uydurma isim kullanma. Müşterinin profilden gelen ismi varsa (channel_profile) gerçek adı olmayabilir, hitabı temkinli kullan.',
   ];
 
-  return lines.join('\n') + buildRepliedToBlock(input.repliedTo);
+  return lines.join('\n') + buildRepliedToBlock(input.repliedTo) + buildHandoverBlock(input.handover ?? null, isFriendly);
+}
+
+/**
+ * İnsan temsilci talebi (HUMAN_PENDING) aktifken EN SONA eklenir (dinamik —
+ * cache prefix'ini kırmaz, sadece handover sırasında görünür). AI susmaz;
+ * temsilci dönene kadar yardımcı olmaya devam eder + her mesaja "İptal Et"
+ * butonu sistemce iliştirilir.
+ */
+function buildHandoverBlock(handover: { sinceMinutes: number } | null, isFriendly: boolean): string {
+  if (!handover) return '';
+  const m = Math.round(handover.sinceMinutes);
+  const dur = m < 1 ? 'az önce' : m < 60 ? `${m} dakika önce` : `${Math.round(m / 60)} saat önce`;
+  const sana = isFriendly ? 'sana' : 'size';
+  return (
+    '\n' +
+    [
+      '# İNSAN TEMSİLCİ TALEBİ AKTİF',
+      `Bu konuşmada ${dur} bir insan temsilciye devir talebi oluşturuldu ve temsilci henüz katılmadı.`,
+      'Müşteriyi yalnız bırakma — sorularına yardımcı olmaya DEVAM ET. Ama:',
+      '- Devir talebi ZATEN açık ve ilgili kişiye iletildi; tool_request_handover\'ı TEKRAR çağırma (müşteri yine "insan/temsilci" dese bile) — sadece döneceklerini hatırlat.',
+      `- Sen temsilci/yetkili DEĞİLSİN; şikayet, ödeme veya özel-karar konularında onların yerine SÖZ VERME/karar verme — "temsilcimiz en kısa sürede ${sana} dönecek" de.`,
+      '- Bilgi, çalışma saati, fiyat, randevu gibi çözebileceğin konularda normal şekilde yardımcı ol.',
+      '- Temsilcinin döneceğini uygun bir yerde BİR KEZ hatırlat; her mesajda tekrarlama.',
+      '- Mesajına otomatik olarak bir "İptal Et" butonu ekleniyor (müşteri devir talebini iptal edip seninle devam edebilir); bu butondan SEN bahsetme, sistem hallediyor.',
+    ].join('\n')
+  );
 }
 
 export const __testing = {

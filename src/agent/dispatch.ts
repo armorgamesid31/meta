@@ -40,6 +40,9 @@ export interface AgentInboundItem {
   customerName?: string | null;
   externalAccountId?: string | null;
   aiAllowed: boolean;
+  /** HUMAN_PENDING + kanal-AI açık → aiAllowed false olsa da AI yanıt vermeye
+   *  devam etsin (insan dönene kadar müşteri yalnız kalmasın). */
+  handoverPending?: boolean;
   repliedTo?: Parameters<typeof buildAgentSystemPrompt>[0]['repliedTo'];
   modelName?: string;
 }
@@ -180,32 +183,46 @@ async function markDone(ids: number[]): Promise<void> {
  * tutarlı). Hata yutulur (webhook 200 dönmeye devam etmeli).
  */
 export async function dispatchAgentInbound(item: AgentInboundItem): Promise<void> {
-  if (!item.aiAllowed) return;
+  // AI kapalıysa çık — AMA handover BEKLEMEDE (HUMAN_PENDING) ise müşteriyi yalnız
+  // bırakmamak için yanıt vermeye devam et (insan temsilci henüz katılmadı).
+  if (!item.aiAllowed && !item.handoverPending) return;
 
   const got = await acquireConversationLock(item.salonId, item.channel, item.conversationKey);
   if (!got) return; // aktif runner re-check'te yakalar
 
   try {
-    // customerId güvenliği: webhook'un per-mesaj çözümü bazen null veriyor
-    // (IdentityBinding yok + legacy fallback channelUserId formatına takılıyor).
-    // ConversationState konuşmanın bağlı müşterisini KALICI tutuyor → null ise
-    // oradan düş. Yoksa kayıtlı müşteri "kayıtsız" sanılıp resmi ("Hanım") konuşur.
-    let effectiveCustomerId = item.customerId;
-    if (effectiveCustomerId == null) {
-      const st = await prisma.conversationState
-        .findUnique({
-          where: {
-            salonId_channel_conversationKey: {
-              salonId: item.salonId,
-              channel: item.channel,
-              conversationKey: item.conversationKey,
-            },
+    // Konuşma durumu (TEK sorgu): müşteri-bağı (null fallback) + handover modu/süresi.
+    // customerId: webhook'un per-mesaj çözümü bazen null veriyor (IdentityBinding yok);
+    // ConversationState bağlı müşteriyi KALICI tutar → oradan düş (yoksa kayıtlı müşteri
+    // "kayıtsız" sanılıp resmi konuşur). mode/humanPendingSince: handover bağlamı için.
+    const convState = await prisma.conversationState
+      .findUnique({
+        where: {
+          salonId_channel_conversationKey: {
+            salonId: item.salonId,
+            channel: item.channel,
+            conversationKey: item.conversationKey,
           },
-          select: { customerId: true },
-        })
-        .catch(() => null);
-      if (st?.customerId) effectiveCustomerId = st.customerId;
-    }
+        },
+        select: { customerId: true, mode: true, humanPendingSince: true },
+      })
+      .catch(() => null);
+
+    let effectiveCustomerId = item.customerId;
+    if (effectiveCustomerId == null && convState?.customerId) effectiveCustomerId = convState.customerId;
+
+    // Handover canlı durumu (debounce sırasında değişmiş olabilir): insan AKTİF
+    // katıldıysa ya da kalıcı manuel kilitse AI SUSAR (insanın üstüne yazma).
+    const liveMode = convState?.mode ?? null;
+    if (liveMode === 'HUMAN_ACTIVE' || liveMode === 'MANUAL_ALWAYS') return;
+    const handoverPending = liveMode === 'HUMAN_PENDING';
+    const handoverCtx = handoverPending
+      ? {
+          sinceMinutes: convState?.humanPendingSince
+            ? Math.max(0, (Date.now() - convState.humanPendingSince.getTime()) / 60_000)
+            : 0,
+        }
+      : null;
 
     const conversationSummary = await loadConversationSummary({
       salonId: item.salonId,
@@ -219,6 +236,7 @@ export async function dispatchAgentInbound(item: AgentInboundItem): Promise<void
       registeredName: item.registeredName,
       repliedTo: item.repliedTo,
       conversationSummary,
+      handover: handoverCtx,
     });
 
     let rounds = 0;
@@ -300,6 +318,9 @@ export async function dispatchAgentInbound(item: AgentInboundItem): Promise<void
       // ortak. Türkçe-güvenli küçültme sonrası eşleşir; eylemler idempotent.
       const replyNorm = trLowerNet(reply);
       for (const net of NARRATION_NETS) {
+        // Handover ZATEN beklemede: "temsilciye ilettim" gibi metin handover net'ini
+        // yeniden tetikleyip humanPendingSince sıfırlamasın / personeli spam'lemesin.
+        if (handoverPending && net.tool === 'tool_request_handover') continue;
         if (draft.intents.some((i) => i.tool === net.tool)) continue; // zaten çağrılmış
         if (!net.re.test(replyNorm)) continue;
         draft.intents.push({ tool: net.tool, args: { note: 'narration_safety_net' } });
@@ -325,6 +346,9 @@ export async function dispatchAgentInbound(item: AgentInboundItem): Promise<void
           customerName: item.customerName ?? item.registeredName ?? item.channelProfileName ?? null,
           text: reply,
           buttons,
+          // Handover beklemedeyken HER mesaja "İptal Et" butonu (içerik butonundan
+          // öncelikli) → müşteri devirden dönüp AI ile devam edebilir.
+          forceCancelButton: handoverPending,
           externalAccountId: item.externalAccountId ?? null,
         });
       }

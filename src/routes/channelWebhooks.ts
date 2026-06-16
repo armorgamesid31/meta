@@ -938,6 +938,9 @@ function mapToAgentInboundItem(item: any): AgentInboundItem {
     customerName: item.customerFullName ?? item.profileName ?? null,
     externalAccountId: item.externalAccountId ?? null,
     aiAllowed: Boolean(item.state?.aiAllowed),
+    // HUMAN_PENDING + kanal-AI açık → AI yanıt vermeye devam etsin (dispatch gate'i
+    // bunu aiAllowed=false olsa bile geçirir; canlı mod tekrar kontrol edilir).
+    handoverPending: Boolean(item.state?.mode === 'HUMAN_PENDING' && item.state?.channelAiEnabled),
     repliedTo: item.repliedTo ?? null,
   };
 }
@@ -1817,6 +1820,9 @@ async function processIncomingBatch(items: any[]) {
         // Konuşma modu izin veriyor VE kanal-bazı AI açıksa otomatik yanıt.
         aiAllowed: statePolicy.aiAllowed && channelAiEnabled,
         responsePolicy: statePolicy.responsePolicy,
+        // Backend dispatch: HUMAN_PENDING'de aiAllowed false olsa da kanal-AI açıksa
+        // yanıt vermeye devam etsin (n8n bundan etkilenmez — aiAllowed'ı okur).
+        channelAiEnabled,
       },
       userAction: forceAutoByCancel ? 'HUMAN_CANCEL' : row.actionPayload || null,
       // Reply-to context for the AI agent. When the customer quotes an
