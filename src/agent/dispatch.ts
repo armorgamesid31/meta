@@ -44,7 +44,11 @@ export interface AgentInboundItem {
   modelName?: string;
 }
 
-const DEBOUNCE_MS = Number(process.env.AGENT_DEBOUNCE_MS || 5_000);
+const DEBOUNCE_MS = Number(process.env.AGENT_DEBOUNCE_MS || 6_000);
+// Yan-etki + gönderimden HEMEN ÖNCE son kısa bekleme + ek re-check: taslak
+// biterken DB'ye yeni düşmüş ama ilk re-check anında henüz PENDING görünmeyen
+// mesajı yakalar (çift-yanıt fix). continue ederse hiç yan-etki/gönderim olmaz.
+const SETTLE_MS = Number(process.env.AGENT_SETTLE_MS || 2_500);
 const PENDING_WINDOW_MS = Number(process.env.AGENT_PENDING_WINDOW_MS || 15 * 60_000);
 const MAX_RECHECK_ROUNDS = Number(process.env.AGENT_MAX_RECHECK_ROUNDS || 30);
 
@@ -268,6 +272,24 @@ export async function dispatchAgentInbound(item: AgentInboundItem): Promise<void
         },
       });
       if (newer > 0) continue; // catch-up: eski cevabı gönderme, döngü başa
+
+      // SON SETTLE RE-CHECK (çift-yanıt fix): ilk re-check, 2. mesajın DB satırı
+      // tam o an commit olmadıysa kaçırabiliyordu → ayrı tur ayrı cevap. Kısa
+      // bekle + bir kez daha bak. Yan-etkilerden ÖNCE: continue güvenli (gönderim
+      // ya da buton mint/handover henüz YOK).
+      await sleep(SETTLE_MS);
+      const newerSettle = await prisma.conversationMessageEvent.count({
+        where: {
+          salonId: item.salonId,
+          channel: item.channel,
+          conversationKey: item.conversationKey,
+          direction: 'INBOUND',
+          processingStatus: 'PENDING',
+          eventTimestamp: { gte: maxTs },
+          id: { notIn: batchIds },
+        },
+      });
+      if (newerSettle > 0) continue;
 
       // STABİL → yan-etkileri çalıştır + butonlu TEK mesaj gönder + commit.
       const reply = (draft.reply || '').trim();
