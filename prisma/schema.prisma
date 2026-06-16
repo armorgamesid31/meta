@@ -222,6 +222,9 @@ model SalonSettings {
   categoryOrder       Json?
   contentSourceLocale LocaleCode @default(tr)
   workingDays         Json?
+  // Gün-bazlı çalışma saati override'ı: { "MON": {"start":9,"end":18}, "SAT": {"start":9,"end":13} }.
+  // Bir gün için kayıt yoksa düz workStartHour/workEndHour geçerli. Booking motoru + AI okur.
+  workingHoursByDay   Json?
   commonQuestions     Json?
   salon               Salon      @relation(fields: [salonId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 }

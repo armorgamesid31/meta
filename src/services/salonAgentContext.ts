@@ -45,6 +45,7 @@ export interface SalonInfo {
   workEndHour: number;
   slotInterval: number;
   workingDays: unknown;
+  workingHoursByDay: unknown;
   commonQuestions: unknown;
 }
 
@@ -351,14 +352,41 @@ function dayToTr(raw: unknown): string {
   return DAY_TR[key] ?? s;
 }
 
+const WEEK_ORDER = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
+function normDay(raw: unknown): string {
+  return String(raw ?? '').toUpperCase().trim().slice(0, 3);
+}
+
 function buildSalonOneLiner(info: SalonInfo): string {
   const parts: string[] = [];
   if (info.name) parts.push(`Salon: ${info.name}`);
   const place = [info.district, info.city].filter(Boolean).join(', ');
   if (place) parts.push(`Konum: ${place}`);
-  parts.push(`Çalışma saatleri: ${pad2(info.workStartHour)}:00–${pad2(info.workEndHour)}:00 (${info.timezone})`);
-  if (Array.isArray(info.workingDays) && info.workingDays.length) {
-    parts.push(`Açık günler: ${info.workingDays.map(dayToTr).join(', ')}`);
+
+  const openCodes = Array.isArray(info.workingDays) && info.workingDays.length
+    ? info.workingDays.map(normDay).filter((d) => WEEK_ORDER.includes(d))
+    : null;
+  const whbd =
+    info.workingHoursByDay && typeof info.workingHoursByDay === 'object' && !Array.isArray(info.workingHoursByDay)
+      ? (info.workingHoursByDay as Record<string, { start?: number; end?: number }>)
+      : null;
+  // Gün-bazlı saat VAR mı: en az bir açık günün düz saatten farklı kaydı?
+  const hasPerDay = Boolean(
+    whbd && openCodes && openCodes.some((c) => whbd[c] && (typeof whbd[c].start === 'number' || typeof whbd[c].end === 'number')),
+  );
+
+  if (hasPerDay && openCodes) {
+    const sorted = [...openCodes].sort((a, b) => WEEK_ORDER.indexOf(a) - WEEK_ORDER.indexOf(b));
+    const dayLines = sorted.map((c) => {
+      const o = whbd![c];
+      const s = typeof o?.start === 'number' ? o.start : info.workStartHour;
+      const e = typeof o?.end === 'number' ? o.end : info.workEndHour;
+      return `${dayToTr(c)} ${pad2(s)}:00–${pad2(e)}:00`;
+    });
+    parts.push(`Çalışma saatleri (gün-bazlı): ${dayLines.join('; ')} (${info.timezone})`);
+  } else {
+    parts.push(`Çalışma saatleri: ${pad2(info.workStartHour)}:00–${pad2(info.workEndHour)}:00 (${info.timezone})`);
+    if (openCodes) parts.push(`Açık günler: ${openCodes.map(dayToTr).join(', ')}`);
   }
   return parts.join(' · ');
 }
@@ -391,6 +419,7 @@ export async function loadSalonAgentContext(salonId: number): Promise<SalonAgent
             workEndHour: true,
             slotInterval: true,
             workingDays: true,
+            workingHoursByDay: true,
             timezone: true,
             commonQuestions: true,
           },
@@ -429,6 +458,7 @@ export async function loadSalonAgentContext(salonId: number): Promise<SalonAgent
     workEndHour: settings?.workEndHour ?? 18,
     slotInterval: settings?.slotInterval ?? 30,
     workingDays: settings?.workingDays ?? null,
+    workingHoursByDay: settings?.workingHoursByDay ?? null,
     commonQuestions: settings?.commonQuestions ?? null,
   };
 

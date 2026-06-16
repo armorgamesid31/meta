@@ -6,6 +6,7 @@ import { prisma } from '../prisma.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { BusinessError } from '../lib/errors.js';
+import { normalizeWorkingHoursByDay } from '../lib/workingHours.js';
 import { syncSubscriptionQuantity } from '../services/seatBilling.js';
 import { deriveTones, isBlockedPastel, isPresetId, normalizeHex } from '../lib/theme/derive.js';
 import { syncCustomerToGlobalIdentity } from '../services/globalCustomerIdentity.js';
@@ -6946,6 +6947,7 @@ router.get('/setup', authenticateToken, async (req: any, res: any) => {
           workEndHour: true,
           slotInterval: true,
           workingDays: true,
+          workingHoursByDay: true,
           commonQuestions: true,
         },
       }),
@@ -7032,6 +7034,7 @@ router.put('/setup', authenticateToken, async (req: any, res: any) => {
     payload.workEndHour !== undefined ||
     payload.slotInterval !== undefined ||
     payload.workingDays !== undefined ||
+    payload.workingHoursByDay !== undefined ||
     payload.commonQuestions !== undefined;
 
     let settings: any = null;
@@ -7039,6 +7042,9 @@ router.put('/setup', authenticateToken, async (req: any, res: any) => {
     if (hasSettingsUpdate) {
       const commonQuestions =
         payload.commonQuestions !== undefined ? normalizeCommonQuestions(payload.commonQuestions) : undefined;
+      // Gün-bazlı saat: app per-gün gönderirse kaydet (geçersiz → null = düz saate düş).
+      const workingHoursByDay =
+        payload.workingHoursByDay !== undefined ? normalizeWorkingHoursByDay(payload.workingHoursByDay) : undefined;
       settings = await prisma.salonSettings.upsert({
         where: { salonId },
         update: {
@@ -7046,6 +7052,7 @@ router.put('/setup', authenticateToken, async (req: any, res: any) => {
           ...(payload.workEndHour !== undefined ? { workEndHour: Number(payload.workEndHour) } : {}),
           ...(payload.slotInterval !== undefined ? { slotInterval: Number(payload.slotInterval) } : {}),
           ...(payload.workingDays !== undefined ? { workingDays: payload.workingDays } : {}),
+          ...(workingHoursByDay !== undefined ? { workingHoursByDay: workingHoursByDay ?? Prisma.DbNull } : {}),
           ...(commonQuestions !== undefined ? { commonQuestions } : {}),
         },
         create: {
@@ -7054,6 +7061,7 @@ router.put('/setup', authenticateToken, async (req: any, res: any) => {
           ...(payload.workEndHour !== undefined ? { workEndHour: Number(payload.workEndHour) } : {}),
           ...(payload.slotInterval !== undefined ? { slotInterval: Number(payload.slotInterval) } : {}),
           ...(payload.workingDays !== undefined ? { workingDays: payload.workingDays } : {}),
+          ...(workingHoursByDay ? { workingHoursByDay } : {}),
           ...(commonQuestions !== undefined ? { commonQuestions } : {}),
         },
       });

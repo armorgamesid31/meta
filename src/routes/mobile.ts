@@ -165,6 +165,7 @@ router.get('/bootstrap', authenticateToken, async (req: any, res: any) => {
           workEndHour: true,
           slotInterval: true,
           workingDays: true,
+          workingHoursByDay: true,
         },
       }),
       prisma.service.count({ where: { salonId: user.salon.id } }),
@@ -231,6 +232,7 @@ router.get('/bootstrap', authenticateToken, async (req: any, res: any) => {
         workEndHour: settings?.workEndHour ?? null,
         slotInterval: settings?.slotInterval ?? null,
         workingDays: settings?.workingDays ?? null,
+        workingHoursByDay: (settings?.workingHoursByDay as any) ?? null,
       },
       staffProfile: {
         // linkedStaffId is the per-salon Staff row id when this

@@ -8,6 +8,7 @@ import { normalizeLocale } from '../constants/locales.js';
 import { resolveServiceTranslations } from '../services/serviceTranslations.js';
 import { syncSubscriptionQuantity } from '../services/seatBilling.js';
 import { BusinessError } from '../lib/errors.js';
+import { normalizeWorkingHoursByDay } from '../lib/workingHours.js';
 import { slugify, withSlugCollision } from '../utils/slug.js';
 import { resolveStaffProfile } from '../services/staffProfileResolver.js';
 import { OnboardingStatus, OnboardingStep, Prisma } from '@prisma/client';
@@ -359,6 +360,7 @@ router.put('/settings', authenticateToken, async (req: any, res: any) => {
     slotInterval,
     categoryOrder,
     workingDays,
+    workingHoursByDay,
   } = req.body;
 
   const effectivePhone =
@@ -417,7 +419,10 @@ router.put('/settings', authenticateToken, async (req: any, res: any) => {
       }
     }
 
-    if (workStartHour !== undefined || workEndHour !== undefined || slotInterval !== undefined || categoryOrder !== undefined || workingDays !== undefined) {
+    const normalizedWhbd =
+      workingHoursByDay !== undefined ? normalizeWorkingHoursByDay(workingHoursByDay) : undefined;
+
+    if (workStartHour !== undefined || workEndHour !== undefined || slotInterval !== undefined || categoryOrder !== undefined || workingDays !== undefined || workingHoursByDay !== undefined) {
       const settings = await prisma.salonSettings.upsert({
         where: { salonId: req.user.salonId },
         update: {
@@ -426,6 +431,8 @@ router.put('/settings', authenticateToken, async (req: any, res: any) => {
           ...(slotInterval !== undefined && { slotInterval }),
           ...(categoryOrder !== undefined && { categoryOrder }),
           ...(workingDays !== undefined && { workingDays }),
+          // Gün-bazlı saat: geçersiz/boş → null (düz saate düş).
+          ...(workingHoursByDay !== undefined && { workingHoursByDay: normalizedWhbd ?? Prisma.DbNull }),
         },
         create: {
           salonId: req.user.salonId,
@@ -434,6 +441,7 @@ router.put('/settings', authenticateToken, async (req: any, res: any) => {
           ...(slotInterval !== undefined && { slotInterval }),
           ...(categoryOrder !== undefined && { categoryOrder }),
           ...(workingDays !== undefined && { workingDays }),
+          ...(normalizedWhbd && { workingHoursByDay: normalizedWhbd }),
         }
       });
 

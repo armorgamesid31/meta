@@ -201,7 +201,7 @@ export async function checkDayOpen(
 
   const settings = await prisma.salonSettings.findUnique({
     where: { salonId },
-    select: { workingDays: true, workStartHour: true, workEndHour: true, timezone: true },
+    select: { workingDays: true, workStartHour: true, workEndHour: true, workingHoursByDay: true, timezone: true },
   });
 
   const minDate = resolved.dates[0];
@@ -226,7 +226,12 @@ export async function checkDayOpen(
 
   const workStart = settings?.workStartHour ?? 9;
   const workEnd = settings?.workEndHour ?? 18;
-  const workHoursFull = `${String(workStart).padStart(2, '0')}:00–${String(workEnd).padStart(2, '0')}:00`;
+  // Gün-bazlı saat override'ı (varsa o günün düz saati yerine geçer).
+  const whbd =
+    settings?.workingHoursByDay && typeof settings.workingHoursByDay === 'object' && !Array.isArray(settings.workingHoursByDay)
+      ? (settings.workingHoursByDay as Record<string, { start?: number; end?: number }>)
+      : null;
+  const pad2h = (h: number) => String(h).padStart(2, '0');
 
   const days = resolved.dates.map((date) => {
     const dayName = ymdToWeekdayLongTr(date);
@@ -236,10 +241,15 @@ export async function checkDayOpen(
     const overlappingClosure = closures.find((c) => c.startAt <= dayEnd && c.endAt >= dayStart);
     const holiday = findHolidayOnDate(date);
 
+    // O güne özel saat (yoksa düz saat).
+    const perDay = whbd?.[weekKey];
+    const dStart = typeof perDay?.start === 'number' ? perDay.start : workStart;
+    const dEnd = typeof perDay?.end === 'number' ? perDay.end : workEnd;
+
     let isOpen = true;
     let reason: string | null = null;
     let isHalfDay = false;
-    let workHours: string | null = workHoursFull;
+    let workHours: string | null = `${pad2h(dStart)}:00–${pad2h(dEnd)}:00`;
     let salonClosureNote: string | null = null;
 
     if (overlappingClosure) {
@@ -258,7 +268,7 @@ export async function checkDayOpen(
     } else if (holiday && holiday.closesByDefault === 'half') {
       isOpen = true;
       isHalfDay = true;
-      workHours = `${String(workStart).padStart(2, '0')}:00–13:00`;
+      workHours = `${pad2h(dStart)}:00–13:00`;
     }
 
     return {

@@ -289,6 +289,8 @@ export class SlotsEngine {
           // değilse staff için hiç working hour kaydı yazmayız —
           // motor o günü "yok" sayar, slot dönmez.
           workingDays: true,
+          // Gün-bazlı saat override'ı (varsa o günün düz saati yerine geçer).
+          workingHoursByDay: true,
         },
       }),
     ]);
@@ -411,6 +413,15 @@ export class SlotsEngine {
         : null;
       const salonOpenToday = workingDays === null || workingDays.includes(todayKey);
 
+      // Gün-bazlı saat override'ı: bu gün için kayıt varsa düz saat yerine onu kullan
+      // (ör. Cumartesi 09–13). Personelin kendi StaffWorkingHours kaydı varsa o yine
+      // önceliklidir (yukarıda set edildi); fallback yalnızca kaydı olmayan personel için.
+      const perDay = (salonSettings.workingHoursByDay as Record<string, { start?: number; end?: number }> | null)?.[
+        todayKey
+      ];
+      const fallbackStart = typeof perDay?.start === 'number' ? perDay.start : salonSettings.workStartHour;
+      const fallbackEnd = typeof perDay?.end === 'number' ? perDay.end : salonSettings.workEndHour;
+
       if (salonOpenToday) {
         for (const staffId of relevantStaffIds) {
           const key = `${staffId}-${dayOfWeek}`;
@@ -418,8 +429,8 @@ export class SlotsEngine {
             indexedData.workingHoursByStaffAndDay.set(key, {
               staffId,
               dayOfWeek,
-              startHour: salonSettings.workStartHour,
-              endHour: salonSettings.workEndHour,
+              startHour: fallbackStart,
+              endHour: fallbackEnd,
             });
           }
         }

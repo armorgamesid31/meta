@@ -70,6 +70,11 @@ export const BootstrapResponseSchema = z.object({
       workEndHour: z.number().nullable(),
       slotInterval: z.number().nullable(),
       workingDays: z.array(z.string()).nullable(),
+      // Gün-bazlı saat override'ı (varsa). Yoksa düz saat geçerli.
+      workingHoursByDay: z
+        .record(z.string(), z.object({ start: z.number(), end: z.number() }))
+        .nullable()
+        .optional(),
     })
     .optional(),
   staffProfile: z

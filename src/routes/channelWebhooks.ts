@@ -1751,6 +1751,7 @@ async function processIncomingBatch(items: any[]) {
       workEndHour: 18,
       slotInterval: 30,
       workingDays: null,
+      workingHoursByDay: null,
       commonQuestions: null,
     };
     const toneDirective = agentContext?.toneDirective || '';
