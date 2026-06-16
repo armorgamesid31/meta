@@ -43,7 +43,14 @@ export function buildToolSet(ctx: ToolContext): ToolSet {
         service_name: z.string().describe('Sorulan hizmet adı'),
         related_terms: z.string().optional().describe('Eşanlamlı/ilişkili terimler, virgülle'),
       }),
-      execute: async (args) => ({ prices: await queryServicePrices(ctx.salonId, args.service_name, args.related_terms || '') }),
+      execute: async (args) => {
+        const prices = await queryServicePrices(ctx.salonId, args.service_name, args.related_terms || '');
+        // found:false = istenen hizmet katalogda YOK (boş dizi muğlaktı; model
+        // "fiyat yok ama hizmet olabilir" diye hedge ediyordu). Net sinyal.
+        return prices.length
+          ? { found: true, prices }
+          : { found: false, reason: 'service_not_offered', message: `"${args.service_name}" salon kataloğunda yok — bu hizmet verilmiyor.` };
+      },
     }),
 
     tool_get_services: tool({
@@ -53,7 +60,13 @@ export function buildToolSet(ctx: ToolContext): ToolSet {
         related_terms: z.string().optional().describe('Eşanlamlı/ilişkili terimler, virgülle'),
         limit: z.number().optional().describe('1-20, default 10'),
       }),
-      execute: async (args) => ({ services: await searchServices(ctx.salonId, args.q, args.related_terms || '', args.limit ?? 10) }),
+      execute: async (args) => {
+        const result = await searchServices(ctx.salonId, args.q, args.related_terms || '', args.limit ?? 10);
+        const services = Array.isArray(result) ? result : [];
+        return services.length
+          ? { found: true, services }
+          : { found: false, reason: 'no_match', message: `"${args.q}" için eşleşen hizmet yok.` };
+      },
     }),
 
     tool_get_faq: tool({

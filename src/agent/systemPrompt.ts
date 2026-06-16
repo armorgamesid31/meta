@@ -75,6 +75,7 @@ export async function buildAgentSystemPrompt(input: {
     customer,
     customerCalibration,
     repliedTo: input.repliedTo ?? null,
+    toneName: tone,
   });
 
   // Profil-edit kuralını tetikleyici listesinin sonuna ekle (8 → 9).

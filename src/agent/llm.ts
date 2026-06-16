@@ -17,6 +17,9 @@ const DEFAULT_MAX_STEPS = Number(process.env.AGENT_MAX_STEPS || 6);
 const THINKING_BUDGET = Number(process.env.AGENT_THINKING_BUDGET ?? 0);
 // Boş cevap güvenlik ağı: tur boş metin + hiç tool çağrısı dönerse yeniden dene.
 const EMPTY_RETRIES = Number(process.env.AGENT_EMPTY_RETRIES ?? 2);
+// Düşük temperature = tutarlılık (kalıp cümleler + "vermiyoruz" gibi net kurallar
+// daha güvenilir uygulanır). Yaratıcılık değil sadakat istiyoruz. Default 0.3.
+const TEMPERATURE = Number(process.env.AGENT_TEMPERATURE ?? 0.3);
 
 /** Gemini thinking ayarı için providerOptions (yalnız gemini modellerinde). */
 function providerOptionsFor(modelName?: string): any {
@@ -104,6 +107,7 @@ export async function runAgentTurn(params: {
       system: params.system,
       messages,
       tools: params.tools,
+      temperature: TEMPERATURE,
       stopWhen: stepCountIs(params.maxSteps ?? DEFAULT_MAX_STEPS),
       ...(providerOptions ? { providerOptions } : {}),
     });

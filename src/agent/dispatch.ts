@@ -260,7 +260,11 @@ export async function dispatchAgentInbound(item: AgentInboundItem): Promise<void
           conversationKey: item.conversationKey,
           direction: 'INBOUND',
           processingStatus: 'PENDING',
-          eventTimestamp: { gt: maxTs },
+          // gte + batch hariç: WhatsApp aynı saniyede (aynı eventTimestamp) ardışık
+          // mesaj teslim edebiliyor; salt `gt: maxTs` bunları kaçırıp ÇİFT YANIT
+          // üretiyordu. gte ile aynı-saniye mesajları yakalanır, batchIds kendini saymaz.
+          eventTimestamp: { gte: maxTs },
+          id: { notIn: batchIds },
         },
       });
       if (newer > 0) continue; // catch-up: eski cevabı gönderme, döngü başa
