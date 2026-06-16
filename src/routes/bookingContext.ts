@@ -760,6 +760,10 @@ router.get('/context', async (req: any, res: any) => {
     salonId,
     salonName: salon.name,
     communicationTone: salon.communicationTone,
+    // Surface the magic-link type so the booking page can react to it
+    // (e.g. RESCHEDULE / FEEDBACK links jump the customer to their
+    // "Randevularım" section instead of the new-booking flow).
+    linkType: magicLink.type,
     isKnownCustomer,
     crossSalonRecognition,
     identityLinked,

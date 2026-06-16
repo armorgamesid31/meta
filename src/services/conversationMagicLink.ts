@@ -96,8 +96,25 @@ export async function sendMagicLinkInConversation(
   // 1. Look up the latest identity session for this conversation so we
   //    know the channel + customer subject. Sessions are upserted on
   //    every inbound message and are the canonical conversation record.
+  //
+  //    NOTE: the conversation panel posts the BARE recipient id
+  //    (e.g. "905312006807") but inbound webhooks store the
+  //    channel-prefixed form ("WHATSAPP:905312006807" / "INSTAGRAM:<psid>")
+  //    — see channelWebhooks.ts + adminMobile ensureChannelPrefixedKey.
+  //    Match either shape so the lookup is robust regardless of caller.
+  const rawKey = input.conversationKey.replace(/^(WHATSAPP|INSTAGRAM):/, '').trim();
+  const conversationKeyCandidates = Array.from(
+    new Set(
+      [
+        input.conversationKey,
+        rawKey,
+        `WHATSAPP:${rawKey}`,
+        `INSTAGRAM:${rawKey}`,
+      ].filter(Boolean),
+    ),
+  );
   const session = await prisma.identitySession.findFirst({
-    where: { salonId: input.salonId, conversationKey: input.conversationKey },
+    where: { salonId: input.salonId, conversationKey: { in: conversationKeyCandidates } },
     orderBy: { lastInboundAt: 'desc' },
   });
   if (!session) {
