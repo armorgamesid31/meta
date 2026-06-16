@@ -133,10 +133,11 @@ export async function rotateRefreshToken(refreshToken: string) {
         const newRefreshToken = createRefreshToken();
         const newRefreshTokenHash = hashToken(newRefreshToken);
 
-        await tx.mobileAuthSession.update({
-          where: { id: session.id },
+        const revokedP = await tx.mobileAuthSession.updateMany({
+          where: { id: session.id, revokedAt: null },
           data: { revokedAt: now },
         });
+        if (revokedP.count === 0) return null; // eşzamanlı rotation kazandı → forklama
         await tx.mobileAuthSession.create({
           data: {
             identityId: session.identityId,
@@ -184,10 +185,11 @@ export async function rotateRefreshToken(refreshToken: string) {
       const newRefreshToken = createRefreshToken();
       const newRefreshTokenHash = hashToken(newRefreshToken);
 
-      await tx.mobileAuthSession.update({
-        where: { id: session.id },
+      const revokedI = await tx.mobileAuthSession.updateMany({
+        where: { id: session.id, revokedAt: null },
         data: { revokedAt: now },
       });
+      if (revokedI.count === 0) return null; // eşzamanlı rotation kazandı → forklama
       await tx.mobileAuthSession.create({
         data: {
           identityId: session.identityId,
