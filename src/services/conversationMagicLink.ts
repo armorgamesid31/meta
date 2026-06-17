@@ -32,6 +32,7 @@ import { prisma } from '../prisma.js';
 import { ensureMagicLink } from './magicLinkService.js';
 import { upsertConversationMessageEvent } from './conversationMessageEvents.js';
 import { normalizeDigitsOnly } from './phoneValidation.js';
+import { isReplyWindowExpired } from '../utils/replyWindow.js';
 
 const CHAKRA_API_TOKEN = (process.env.CHAKRA_API_TOKEN || '').trim();
 const CHAKRA_API_BASE = (process.env.CHAKRA_API_BASE || 'https://api.chakrahq.com')
@@ -184,6 +185,29 @@ export async function sendMagicLinkInConversation(
       channel: session.channel,
       delivered: false,
       error: 'SALON_WHATSAPP_NOT_CONNECTED',
+    };
+  }
+
+  // 5b. Respect WhatsApp's 24-hour customer-service window. Outside it Meta
+  //     rejects every free-form message (plain text AND interactive cta_url)
+  //     with a 400, so calling Chakra is wasted and noisy. Detect it up front
+  //     and return the link for manual copy with a clean, typed error the UI
+  //     can explain — instead of a raw WHATSAPP_SEND_FAILED:400.
+  const windowExpired = await isReplyWindowExpired(input.salonId, ChannelType.WHATSAPP, [
+    input.conversationKey,
+    rawKey,
+    `WHATSAPP:${rawKey}`,
+    session.conversationKey,
+  ]);
+  if (windowExpired) {
+    return {
+      ok: true,
+      magicUrl: linkResult.magicUrl,
+      token: linkResult.token,
+      expiresAt: linkResult.expiresAt,
+      channel: session.channel,
+      delivered: false,
+      error: 'WHATSAPP_WINDOW_EXPIRED',
     };
   }
 
