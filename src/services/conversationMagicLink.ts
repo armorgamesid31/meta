@@ -211,7 +211,14 @@ export async function sendMagicLinkInConversation(
     };
   }
 
-  const to = normalizeDigitsOnly(session.subjectRaw);
+  // Recipient = the conversation's WhatsApp number, taken from the conversation
+  // key (the channel-prefixed recipient id) — NOT session.subjectRaw. A
+  // conversation can resolve to a customer-linked identity session whose
+  // subjectRaw is "customer:<id>" (e.g. "customer:29"), which normalizes to a
+  // bogus recipient like "29" and gets rejected by Meta with
+  // "(#100) Invalid parameter". The conversation key always carries the real
+  // WhatsApp number for WhatsApp threads.
+  const to = normalizeDigitsOnly(rawKey) || normalizeDigitsOnly(session.subjectRaw);
   if (!to) {
     return {
       ok: true,
