@@ -74,3 +74,45 @@ export function validateMobilePhone(input: {
 export function normalizeDigitsOnly(value: string | null | undefined): string {
   return normalizeDigits(value);
 }
+
+/**
+ * Resolve a libphonenumber region from a salon's stored country code, falling
+ * back to 'TR' (the platform's home market) when missing/invalid.
+ */
+export function resolveRegion(countryCode: string | null | undefined): CountryCode {
+  const up = String(countryCode || '').trim().toUpperCase();
+  return up && isSupportedCountry(up as CountryCode) ? (up as CountryCode) : 'TR';
+}
+
+/**
+ * Canonical E.164 form ("+905312006807") for COMPARING / LOOKING UP phone
+ * numbers — NOT for storing new records (use validateMobilePhone for that).
+ *
+ * Phones live in the system in mixed shapes (E.164 "905…", national
+ * "5312006807", formatted "(531) 200 68 07", leading-zero "0531…"). A raw
+ * digit-strip compares unequal across these, silently breaking ban checks,
+ * customer lookups, dedupe, etc. This normalises both sides to one form:
+ *   - national numbers resolve via `region` (the salon's country, fallback TR)
+ *   - foreign numbers that carry their own country code resolve via the
+ *     international ("+" + digits) fallback — so it is foreign-compatible
+ *   - un-parseable input falls back to raw digits so equality still works.
+ */
+export function canonicalPhone(value: string | null | undefined, region: CountryCode = 'TR'): string {
+  const digits = normalizeDigits(value);
+  if (!digits) return '';
+  const national = parsePhoneNumberFromString(digits, region);
+  if (national && national.isValid()) return national.number;
+  const intl = parsePhoneNumberFromString('+' + digits);
+  if (intl && intl.isValid()) return intl.number;
+  return digits;
+}
+
+/**
+ * Canonical E.164 DIGITS (no leading "+", e.g. "905312006807"). Matches how
+ * WhatsApp identity keys (`subjectNormalized`) are stored (digits only). Use
+ * for identity-session / subjectNormalized lookups so a customer phone in any
+ * shape resolves to the stored key.
+ */
+export function canonicalPhoneDigits(value: string | null | undefined, region: CountryCode = 'TR'): string {
+  return normalizeDigits(canonicalPhone(value, region));
+}

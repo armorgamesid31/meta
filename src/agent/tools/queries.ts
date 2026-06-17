@@ -6,6 +6,7 @@
 import type { ChannelType } from '@prisma/client';
 import { prisma } from '../../prisma.js';
 import { resolveStaffProfile } from '../../services/staffProfileResolver.js';
+import { canonicalPhoneDigits } from '../../services/phoneValidation.js';
 import {
   findBoundCustomer,
   normalizeInstagramIdentity,
@@ -121,8 +122,16 @@ export async function lookupCustomer(
   let customer = await findBoundCustomer({ salonId, channel, subjectNormalized });
   if (!customer && subjectNormalized) {
     if (channel === 'WHATSAPP') {
+      const e164 = canonicalPhoneDigits(subjectNormalized);
+      const tail = (e164 || subjectNormalized).slice(-10);
       customer = await prisma.customer.findFirst({
-        where: { salonId, phone: { contains: subjectNormalized } },
+        where: {
+          salonId,
+          OR: [
+            ...(e164 ? [{ phone: { contains: e164 } }] : []),
+            ...(tail ? [{ phone: { contains: tail } }] : []),
+          ],
+        },
         select: { id: true, name: true, firstName: true, lastName: true, phone: true, instagram: true },
       });
     } else {

@@ -6,6 +6,7 @@ import type { DisplaySlot, PersonGroup } from '../modules/availability/types.js'
 import { generateAvailability } from './availabilityService.js';
 import { createNotification } from './notifications.js';
 import { buildWaitlistOfferUrl } from '../utils/waitlistOfferUrl.js';
+import { canonicalPhoneDigits } from './phoneValidation.js';
 
 const OFFER_TTL_MINUTES = 15;
 const CHAKRA_WHATSAPP_SEND_URL = (process.env.CHAKRA_WHATSAPP_SEND_URL || '').trim();
@@ -244,9 +245,16 @@ async function resolveCustomer(input: { salonId: number; customer: WaitlistCusto
   if (!name || !phone) {
     throw new Error('customer_name_and_phone_required');
   }
+  // Store + match phones in the same canonical (E.164-digit) form the
+  // register/verify path uses, so the waitlist doesn't create a DUPLICATE
+  // Customer for a number that already exists in another format. Look up by
+  // both the typed value and its canonical form (to also catch existing
+  // already-canonical rows without a data migration).
+  const phoneCanonical = canonicalPhoneDigits(phone) || phone;
+  const lookupPhones = Array.from(new Set([phone, phoneCanonical].filter(Boolean)));
 
   const existing = await prisma.customer.findFirst({
-    where: { salonId: input.salonId, phone },
+    where: { salonId: input.salonId, phone: { in: lookupPhones } },
     select: { id: true, name: true, phone: true },
   });
 
@@ -271,7 +279,7 @@ async function resolveCustomer(input: { salonId: number; customer: WaitlistCusto
       name,
       firstName: firstName || null,
       lastName: lastName || null,
-      phone,
+      phone: phoneCanonical,
       registrationStatus: 'PENDING',
       acceptMarketing: false,
     },

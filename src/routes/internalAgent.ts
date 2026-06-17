@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { loadSalonAgentContext } from '../services/salonAgentContext.js';
 import { resolveStaffProfile } from '../services/staffProfileResolver.js';
+import { canonicalPhoneDigits } from '../services/phoneValidation.js';
 import {
   findBoundCustomer,
   normalizeInstagramIdentity,
@@ -98,8 +99,16 @@ router.post('/customer-lookup', async (req: any, res: any) => {
     // Fallback: IdentityBinding henüz yoksa Customer tablosunda direkt ara.
     if (!customer && subjectNormalized) {
       if (channel === 'WHATSAPP') {
+        const e164 = canonicalPhoneDigits(subjectNormalized);
+        const tail = (e164 || subjectNormalized).slice(-10);
         customer = await prisma.customer.findFirst({
-          where: { salonId, phone: { contains: subjectNormalized } },
+          where: {
+            salonId,
+            OR: [
+              ...(e164 ? [{ phone: { contains: e164 } }] : []),
+              ...(tail ? [{ phone: { contains: tail } }] : []),
+            ],
+          },
           select: { id: true, name: true, firstName: true, lastName: true, phone: true, instagram: true },
         });
       } else {

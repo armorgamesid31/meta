@@ -14,6 +14,7 @@
 // template-based and link-bearing.
 
 import axios from 'axios';
+import { canonicalPhoneDigits } from './phoneValidation.js';
 import {
   ChannelType,
   InboundMessageStatus,
@@ -438,17 +439,23 @@ async function resolveConversationKeyForPhone(
   // threads correctly under the same chat the customer started. Falls
   // back to a synthetic `WHATSAPP:<digits>` key — same shape webhook
   // ingestion uses for net-new threads.
+  // subjectNormalized for WhatsApp is stored as E.164 digits (the sender always
+  // arrives in E.164). The incoming phoneNormalized may be a national-form
+  // customer phone, so match against both it and its canonical E.164 digits —
+  // otherwise the thread fragments into a new WHATSAPP:<national> key.
+  const canonical = canonicalPhoneDigits(phoneNormalized);
+  const subjectCandidates = Array.from(new Set([phoneNormalized, canonical].filter(Boolean)));
   const session = await prisma.identitySession.findFirst({
     where: {
       salonId,
       channel: ChannelType.WHATSAPP,
-      subjectNormalized: phoneNormalized,
+      subjectNormalized: { in: subjectCandidates },
     },
     orderBy: { updatedAt: 'desc' },
     select: { conversationKey: true },
   });
   if (session?.conversationKey) return session.conversationKey;
-  return `WHATSAPP:${phoneNormalized}`;
+  return `WHATSAPP:${canonical || phoneNormalized}`;
 }
 
 async function logTemplateOutbound(input: LogTemplateOutboundInput): Promise<void> {
