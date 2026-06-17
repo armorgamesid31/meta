@@ -236,8 +236,8 @@ export async function sendMagicLinkInConversation(
   // WhatsApp Cloud API interactive cta_url has a 20-char label limit on
   // the button (truncated by Meta otherwise) and ~1024 chars body.
   const interactivePayload = {
-    pluginId: salon.chakraPluginId,
-    phoneNumberId: salon.chakraPhoneNumberId,
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
     to,
     type: 'interactive',
     interactive: {
@@ -278,8 +278,8 @@ export async function sendMagicLinkInConversation(
       reason,
     });
     const textPayload = {
-      pluginId: salon.chakraPluginId,
-      phoneNumberId: salon.chakraPhoneNumberId,
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
       to,
       type: 'text',
       text: { body: textFallback.slice(0, 4096) },
