@@ -6,7 +6,7 @@ import { prisma } from '../prisma.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { BusinessError } from '../lib/errors.js';
-import { normalizeWorkingHoursByDay } from '../lib/workingHours.js';
+import { normalizeWorkingHoursByDay, buildStaffWorkingHourRows, DOW_TO_STAFF_DAY } from '../lib/workingHours.js';
 import { syncSubscriptionQuantity } from '../services/seatBilling.js';
 import { deriveTones, isBlockedPastel, isPresetId, normalizeHex } from '../lib/theme/derive.js';
 import { syncCustomerToGlobalIdentity } from '../services/globalCustomerIdentity.js';
@@ -2431,6 +2431,11 @@ function mapStaffForMobile(staff: any) {
     monthlyGoal: staff.monthlyGoal ?? 0,
     services,
     serviceCount: services.length,
+    // Gün-bazlı çalışma saatleri (boşsa salon saatine düşer). Gün kodu MON..SUN.
+    workingHours: (staff?.StaffWorkingHours || [])
+      .filter((r: any) => r?.dayOfWeek !== null && DOW_TO_STAFF_DAY[r.dayOfWeek] !== undefined)
+      .map((r: any) => ({ day: DOW_TO_STAFF_DAY[r.dayOfWeek], open: true, start: r.startHour, end: r.endHour })),
+    usesSalonHours: !((staff?.StaffWorkingHours || []).length),
   };
 }
 
@@ -8591,6 +8596,10 @@ router.get('/staff', authenticateToken, async (req: any, res: any) => {
         profileImageUrl: true,
         monthlyGoal: true,
         commissionRate: true,
+        // Gün-bazlı çalışma saatleri (uzman). Boşsa salon saatine düşer.
+        StaffWorkingHours: {
+          select: { dayOfWeek: true, startHour: true, endHour: true },
+        },
         // Cross-salon profile (Phase 3): for membership-linked
         // staff the resolver reads firstName / lastName /
         // displayName / photo / gender from the identity row
@@ -8874,8 +8883,9 @@ router.put('/staff/:id', authenticateToken, async (req: any, res: any) => {
 
   const hasAssignments = req.body?.serviceAssignments !== undefined;
   const assignments = hasAssignments ? parseStaffServiceAssignments(req.body?.serviceAssignments) : [];
+  const hasWorkingHours = req.body?.workingHours !== undefined;
 
-  if (!Object.keys(updates).length && !hasAssignments) {
+  if (!Object.keys(updates).length && !hasAssignments && !hasWorkingHours) {
     throw new BusinessError('VALIDATION_FAILED', 'No valid update field provided.', 400);
   }
 
@@ -8994,7 +9004,25 @@ router.put('/staff/:id', authenticateToken, async (req: any, res: any) => {
           });
         }
       }
+
+      if (hasWorkingHours) {
+        // Uzmanın gün-bazlı çalışma saati (replace). Boş → tüm kayıt silinir
+        // (salon saatine döner). Motor semantiği: kaydı olan uzmanın kaydı
+        // OLMAYAN günü KAPALI sayar (salon fallback'ine düşmez).
+        await tx.staffWorkingHours.deleteMany({ where: { staffId } });
+        const whRows = buildStaffWorkingHourRows(req.body.workingHours, staffId);
+        if (whRows.length) {
+          await tx.staffWorkingHours.createMany({ data: whRows });
+        }
+      }
     });
+
+    if (hasWorkingHours || hasAssignments) {
+      // Saat/hizmet değişimi müsaitliği etkiler → cache'i tazele.
+      await invalidateAvailabilityForSalon(salonId).catch((e) =>
+        console.error('[staff-update] availability cache invalidate failed', e?.message || e),
+      );
+    }
 
     const staff = await prisma.staff.findFirst({
       where: { id: staffId, salonId },
@@ -9010,6 +9038,9 @@ router.put('/staff/:id', authenticateToken, async (req: any, res: any) => {
         themeColor: true,
         profileImageUrl: true,
         monthlyGoal: true,
+        StaffWorkingHours: {
+          select: { dayOfWeek: true, startHour: true, endHour: true },
+        },
         // Cross-salon profile (Phase 3): for membership-linked
         // staff the resolver reads firstName / lastName /
         // displayName / photo / gender from the identity row
