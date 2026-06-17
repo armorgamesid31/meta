@@ -86,6 +86,27 @@ const DEFAULT_COPY: Record<MagicLinkType, string> = {
   FEEDBACK: 'Geri bildiriminiz bizim için değerli — buradan bırakabilirsiniz:',
 };
 
+// Tone-aware message copy (plain Turkish, no jargon). The link is NOT in the
+// text — it rides on the interactive cta_url button; only the rare plain-text
+// fallback appends the URL separately.
+const TONE_COPY: Record<'FRIENDLY' | 'BALANCED' | 'PROFESSIONAL', Record<MagicLinkType, string>> = {
+  FRIENDLY: {
+    BOOKING: 'Randevunu hemen aşağıdaki butondan oluşturabilirsin 😊',
+    RESCHEDULE: 'Randevunu aşağıdaki butondan kolayca değiştirebilirsin 😊',
+    FEEDBACK: 'Deneyimini bizimle paylaşır mısın? Aşağıdaki butondan birkaç saniyeni alır 🌸',
+  },
+  BALANCED: {
+    BOOKING: 'Randevunuzu aşağıdaki butondan kolayca oluşturabilirsiniz.',
+    RESCHEDULE: 'Randevunuzu aşağıdaki butondan yeniden planlayabilirsiniz.',
+    FEEDBACK: 'Görüşlerinizi aşağıdaki butondan paylaşabilirsiniz.',
+  },
+  PROFESSIONAL: {
+    BOOKING: 'Randevunuzu oluşturmak için aşağıdaki butonu kullanabilirsiniz.',
+    RESCHEDULE: 'Randevunuzu yeniden planlamak için aşağıdaki butonu kullanabilirsiniz.',
+    FEEDBACK: 'Değerlendirmenizi aşağıdaki buton aracılığıyla iletebilirsiniz.',
+  },
+};
+
 export async function sendMagicLinkInConversation(
   input: SendConversationMagicLinkInput,
 ): Promise<SendConversationMagicLinkResult> {
@@ -139,7 +160,7 @@ export async function sendMagicLinkInConversation(
   // 3. Mint (or renew) a magic link.
   const salon = await prisma.salon.findUnique({
     where: { id: input.salonId },
-    select: { slug: true, chakraPluginId: true, chakraPhoneNumberId: true },
+    select: { slug: true, chakraPluginId: true, chakraPhoneNumberId: true, communicationTone: true },
   });
   const linkResult = await ensureMagicLink({
     salonId: input.salonId,
@@ -154,9 +175,13 @@ export async function sendMagicLinkInConversation(
     salonSlug: salon?.slug || null,
   });
 
-  const body =
-    (input.customMessage?.trim() || DEFAULT_COPY[type]) +
-    `\n\n${linkResult.magicUrl}\n\nBu link 60 dakika geçerli.`;
+  // Message copy follows the salon's communication tone. The link is NOT placed
+  // in the text — it rides on the interactive cta_url button below. Only the
+  // plain-text fallback (plugins without cta_url) appends the URL.
+  const toneKey = String(salon?.communicationTone || 'BALANCED') as keyof typeof TONE_COPY;
+  const toneSet = TONE_COPY[toneKey] || TONE_COPY.BALANCED;
+  const copy = input.customMessage?.trim() || toneSet[type] || DEFAULT_COPY[type];
+  const textFallbackBody = `${copy}\n\n${linkResult.magicUrl}\n\nBu link 60 dakika geçerli.`;
 
   // 4. Instagram outbound is not implemented yet; return the URL so the
   //    UI can offer "manual copy" fallback.
@@ -249,7 +274,7 @@ export async function sendMagicLinkInConversation(
     type: 'interactive',
     interactive: {
       type: 'cta_url',
-      body: { text: body.slice(0, 1024) },
+      body: { text: copy.slice(0, 1024) },
       action: {
         name: 'cta_url',
         parameters: {
@@ -262,7 +287,7 @@ export async function sendMagicLinkInConversation(
 
   const sendUrl = buildChakraWhatsappSendUrl(salon.chakraPluginId, salon.chakraPhoneNumberId);
   let providerMessageId = '';
-  let textFallback = body;
+  let textFallback = textFallbackBody;
 
   try {
     const response = await axios.post(sendUrl, interactivePayload, { headers, timeout: 25_000 });
@@ -332,7 +357,7 @@ export async function sendMagicLinkInConversation(
         providerMessageId,
         externalAccountId: salon.chakraPhoneNumberId,
         messageType: 'text',
-        text: textFallback,
+        text: copy,
         direction: MessageEventDirection.OUTBOUND,
         eventTimestamp: new Date(),
         outboundSource: OutboundMessageSource.HUMAN_APP,
