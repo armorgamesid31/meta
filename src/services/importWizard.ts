@@ -10,7 +10,7 @@ import { parse as csvParse } from 'csv-parse/sync';
 import XLSX from 'xlsx';
 import type { CustomerGender, ImportConflictType, ImportRowStatus, ImportSourceType } from '@prisma/client';
 import { prisma } from '../prisma.js';
-import { normalizeDigitsOnly } from './phoneValidation.js';
+import { normalizeDigitsOnly, canonicalPhoneDigits } from './phoneValidation.js';
 
 const prismaAny = prisma as any;
 
@@ -1198,7 +1198,10 @@ function normalizeRows(input: {
   return input.parsedRows.map((row) => {
     const customerName = normalizeText(pickByAliases(row.raw, 'customerName')) || null;
     const customerPhoneRaw = normalizeText(pickByAliases(row.raw, 'customerPhoneRaw')) || null;
-    const customerPhoneNormalized = normalizeDigitsOnly(customerPhoneRaw || '') || null;
+    // Store imported phones in the same canonical E.164-digit form the rest of
+    // the system uses, so an imported appointment's phone matches the customer's
+    // WhatsApp / booking / blacklist records instead of forking on format.
+    const customerPhoneNormalized = canonicalPhoneDigits(customerPhoneRaw || '') || null;
     const dateKey = parseDateKey(pickByAliases(row.raw, 'appointmentDate'));
     const startMinute = parseMinuteOfDay(pickByAliases(row.raw, 'startTime'));
     const endFromInput = parseMinuteOfDay(pickByAliases(row.raw, 'endTime'));
@@ -2283,7 +2286,7 @@ export async function saveImportMappingDecisions(input: {
     if (Number.isInteger(rowId) && rowId > 0) {
       const matchedServiceId = Number(patch.matchedServiceId);
       const matchedStaffId = Number(patch.matchedStaffId);
-      const normalizedPhone = normalizeDigitsOnly(String(patch.customerPhoneNormalized || patch.customerPhone || ''));
+      const normalizedPhone = canonicalPhoneDigits(String(patch.customerPhoneNormalized || patch.customerPhone || ''));
       await prisma.importRow.updateMany({
         where: { id: rowId, batchId: input.batchId, salonId: input.salonId },
         data: {
