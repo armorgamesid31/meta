@@ -111,9 +111,10 @@ export async function sendMagicLinkInConversation(
   input: SendConversationMagicLinkInput,
 ): Promise<SendConversationMagicLinkResult> {
   const type = input.type || 'BOOKING';
-  if (type === 'RESCHEDULE' && !input.appointmentId) {
-    throw new Error('APPOINTMENT_REQUIRED_FOR_TYPE');
-  }
+  // RESCHEDULE/FEEDBACK no longer require a pre-selected appointment: the
+  // customer chooses which appointment to change/rate on the booking page's
+  // "Randevularım" section (the link routes them there). If an appointmentId
+  // IS supplied it's still validated + bound below.
 
   // 1. Look up the latest identity session for this conversation so we
   //    know the channel + customer subject. Sessions are upserted on
