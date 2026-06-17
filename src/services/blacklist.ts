@@ -2,6 +2,7 @@ import type { ChannelType } from '@prisma/client';
 import { prisma } from '../prisma.js';
 import { normalizeInstagramIdentity, normalizePhoneDigits } from './identityService.js';
 import { getSalonCustomerRiskPolicy } from './customerRiskPolicy.js';
+import { parsePhoneNumberFromString, isSupportedCountry, type CountryCode } from 'libphonenumber-js/max';
 
 export type BlacklistMatchType = 'CUSTOMER' | 'PHONE' | 'IDENTITY';
 
@@ -55,8 +56,38 @@ function normalizeIdentity(input: {
   };
 }
 
+// Country-aware canonical phone (E.164) so a ban stored WITH a country code
+// ("905312006807") still matches a booking phone stored in national form
+// ("5312006807" / "(531) 200 68 07"). National numbers resolve via the salon's
+// region; foreign numbers that carry their own country code resolve via the
+// international ("+digits") fallback. So it works for foreign numbers too.
+function resolveRegion(countryCode: string | null | undefined): CountryCode {
+  const up = String(countryCode || '').trim().toUpperCase();
+  return up && isSupportedCountry(up as CountryCode) ? (up as CountryCode) : 'TR';
+}
+
+function canonicalPhone(value: string | null | undefined, region: CountryCode): string {
+  const digits = (value || '').replace(/\D/g, '');
+  if (!digits) return '';
+  try {
+    const national = parsePhoneNumberFromString(digits, region);
+    if (national && national.isValid()) return national.number;
+  } catch { /* ignore parse errors */ }
+  try {
+    const intl = parsePhoneNumberFromString('+' + digits);
+    if (intl && intl.isValid()) return intl.number;
+  } catch { /* ignore parse errors */ }
+  return digits; // best-effort: compare raw digits when un-parseable
+}
+
 export async function isIdentityBanned(input: IdentityBanCheckInput): Promise<IdentityBanCheckResult> {
   const normalized = normalizeIdentity(input);
+  const salonRow = await prisma.salon.findUnique({
+    where: { id: input.salonId },
+    select: { countryCode: true },
+  });
+  const region = resolveRegion(salonRow?.countryCode);
+  const normalizedPhoneCanonical = canonicalPhone(normalized.phone, region);
   const blacklist = (prisma as any).blacklistEntry;
 
   const whereOr: any[] = [];
@@ -112,8 +143,10 @@ export async function isIdentityBanned(input: IdentityBanCheckInput): Promise<Id
   }
 
   for (const item of candidates as any[]) {
-    const itemPhone = normalizePhoneDigits(item.phone || '');
-    if (normalized.phone && itemPhone && itemPhone === normalized.phone) {
+    if (
+      normalizedPhoneCanonical &&
+      canonicalPhone(item.phone, region) === normalizedPhoneCanonical
+    ) {
       return {
         blocked: true,
         reason: item.reason || null,
