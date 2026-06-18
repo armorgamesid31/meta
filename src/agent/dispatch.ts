@@ -327,7 +327,7 @@ export async function dispatchAgentInbound(item: AgentInboundItem): Promise<void
         console.warn(`[agent-dispatch] narration net: ${net.tool} zorlandı (salon ${item.salonId})`);
       }
 
-      const { buttons } = await executeIntents({
+      const { buttons, executed } = await executeIntents({
         salonId: item.salonId,
         channel: item.channel,
         conversationKey: item.conversationKey,
@@ -348,7 +348,7 @@ export async function dispatchAgentInbound(item: AgentInboundItem): Promise<void
           buttons,
           // Handover beklemedeyken HER mesaja "İptal Et" butonu (içerik butonundan
           // öncelikli) → müşteri devirden dönüp AI ile devam edebilir.
-          forceCancelButton: handoverPending,
+          forceCancelButton: handoverPending || executed.includes('tool_request_handover'),
           externalAccountId: item.externalAccountId ?? null,
         });
       }

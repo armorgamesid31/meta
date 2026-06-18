@@ -541,6 +541,7 @@ export async function sendWhatsappViaChakra(params: {
   );
 
   const providerMessageId =
+    (typeof response.data?._data?.whatsappMessageId === 'string' && response.data._data.whatsappMessageId.trim()) ||
     (typeof response.data?.messageId === 'string' && response.data.messageId.trim()) ||
     (typeof response.data?.id === 'string' && response.data.id.trim()) ||
     (typeof response.data?.data?.id === 'string' && response.data.data.id.trim()) ||
