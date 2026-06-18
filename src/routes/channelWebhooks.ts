@@ -1482,8 +1482,8 @@ async function processIncomingBatch(items: any[]) {
         const contactPhone = salonRow?.whatsappPhone?.trim() || null;
         const salonName = salonRow?.name?.trim() || 'Salon';
         const banMsg = contactPhone
-          ? `Üzgünüz, bu numara üzerinden randevu veya hizmet işlemi yapılamamaktadır. Daha fazla bilgi için ${salonName} ile iletişime geçebilirsiniz: ${contactPhone}`
-          : `Üzgünüz, bu numara üzerinden randevu veya hizmet işlemi yapılamamaktadır. Daha fazla bilgi için ${salonName} ile iletişime geçebilirsiniz.`;
+          ? `Merhaba! Bu numara/hesap, ${salonName} tarafından randevu ve hizmet alımına kapatılmıştır. Bir yanlışlık olduğunu düşünüyorsanız veya durumu çözmek istiyorsanız lütfen salonumuzu arayın: ${contactPhone}`
+          : `Merhaba! Bu numara/hesap, ${salonName} tarafından randevu ve hizmet alımına kapatılmıştır. Bir yanlışlık olduğunu düşünüyorsanız lütfen salonla doğrudan iletişime geçiniz.`;
 
         if (channel === 'WHATSAPP') {
           await sendWhatsappViaChakra({
