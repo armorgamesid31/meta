@@ -1680,7 +1680,9 @@ async function processIncomingBatch(items: any[]) {
       text: row.text || null,
       direction: row.isEcho ? 'OUTBOUND' : 'INBOUND',
       eventTimestamp: eventDate,
-      processingStatus: row.isEcho ? InboundMessageStatus.DONE : InboundMessageStatus.PENDING,
+      // Cancel sinyali (HUMAN_CANCEL): state evaluateConversationState'de zaten işlendi
+      // (mode→AUTO). Agent'a iletme — "İptal Et" metnini randevu-iptali sanmasın.
+      processingStatus: (row.isEcho || forceAutoByCancel) ? InboundMessageStatus.DONE : InboundMessageStatus.PENDING,
       outboundSource: row.isEcho ? outboundTraceMeta?.source || null : null,
       outboundSenderUserId: row.isEcho ? outboundTraceMeta?.sourceUserId || null : null,
       outboundSenderEmail: row.isEcho ? outboundTraceMeta?.sourceUserEmail || null : null,
