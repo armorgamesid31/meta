@@ -10,6 +10,7 @@ import {
   SlotsResponse,
   StaffServiceRow,
   WorkingHoursRow,
+  localDateKey,
 } from './types.js';
 import { AnchorIterator } from './anchor-iterator.js';
 import { PermutationPruner } from './permutation-pruner.js';
@@ -527,7 +528,9 @@ export class SlotsEngine {
     }
 
     for (const appointment of [...appointments, ...blockedAppointments]) {
-      const dateKey = appointment.startTime.toISOString().split('T')[0];
+      // Yerel (Istanbul) tarih anahtarı — lookup ile aynı taban. UTC değil:
+      // cross-midnight randevuların doğru güne indekslenmesi için (bkz. localDateKey).
+      const dateKey = localDateKey(appointment.startTime);
       const key = `${appointment.staffId}-${dateKey}`;
       if (!indexedData.appointmentsByStaffAndDate.has(key)) {
         indexedData.appointmentsByStaffAndDate.set(key, []);

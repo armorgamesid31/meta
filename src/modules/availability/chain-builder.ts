@@ -8,6 +8,7 @@ import {
   WorkingHoursRow,
   PersonGroup,
   getAllowedStaffIdsForService,
+  localDateKey,
 } from './types.js';
 
 export type ServiceChain = {
@@ -207,7 +208,7 @@ export class ChainBuilder {
     }
 
     // 2. Check appointment conflicts
-    const dateKey = date.toISOString().split('T')[0];
+    const dateKey = localDateKey(date);
     const appointmentsKey = `${staffId}-${dateKey}`;
     const appointments = data.appointmentsByStaffAndDate.get(appointmentsKey) || [];
     
@@ -251,7 +252,7 @@ export class ChainBuilder {
     // Effect: salon doesn't need to know about capacity to get correct
     // single-customer-per-staff behaviour; only an explicit number > 1
     // (or a service-level override) opts into a global resource limit.
-    const dateKey = date.toISOString().split('T')[0];
+    const dateKey = localDateKey(date);
     const blockEnd = startTime + duration;
 
     for (const service of block.services) {

@@ -7,7 +7,14 @@ export type TimeSlot = {
 };
 
 export class AnchorIterator {
-  private readonly MAX_ANCHORS = 500;
+  // Eski tasarım: tek global 500'lük sayaç. Personeller working-hours
+  // döngüsünde sırayla işlendiğinden, çok personelli + uzun mesaili salonda
+  // (örn. 10 personel × 12 saat = 1440 adet 5dk anchor) ilk birkaç personel
+  // 500'ü tüketip SONRAKİ personelleri sıfır-anchor bırakıyordu → o uzmanlar
+  // müsaitlik sonucundan sessizce düşüyordu. Çözüm: personel-başına adil pay
+  // + sonsuz büyümeye karşı global tavan.
+  private readonly PER_STAFF_ANCHOR_CAP = 300; // ~25 saatlik 5dk slot — normal günü asla kesmez
+  private readonly GLOBAL_ANCHOR_CAP = 6000; // güvenlik tavanı (~40 personel tam gün)
 
   async *iterateAnchors(
     request: AvailabilityRequest,
@@ -42,13 +49,18 @@ export class AnchorIterator {
         const startMinutes = workingHours.startHour * 60;
         const endMinutes = workingHours.endHour * 60;
 
+        // Her personele kendi payı — böylece çok personelli salonda kimse
+        // sessizce düşmez. Global tavan yalnızca patolojik durumlar için.
+        let staffAnchors = 0;
         for (let time = startMinutes; time < endMinutes; time += 5) {
-          if (anchorCount >= this.MAX_ANCHORS) {
-            console.warn("ANCHOR_LIMIT_REACHED", { staffId, date: date.toISOString() });
+          if (anchorCount >= this.GLOBAL_ANCHOR_CAP) {
+            console.warn("ANCHOR_GLOBAL_LIMIT_REACHED", { staffId, anchorCount, date: date.toISOString() });
             return;
           }
+          if (staffAnchors >= this.PER_STAFF_ANCHOR_CAP) break; // bu personelin payı doldu → sonraki personele geç
           yield { hour: time, staffId };
           anchorCount++;
+          staffAnchors++;
         }
       }
     }
@@ -80,8 +92,8 @@ export class AnchorIterator {
         
         // Ensure time is within working hours
         if (this.isWithinWorkingHours(time, staffId, dayOfWeek, data)) {
-          if (anchorCount >= this.MAX_ANCHORS) {
-            console.warn("ANCHOR_LIMIT_REACHED", { staffId, date: date.toISOString() });
+          if (anchorCount >= this.GLOBAL_ANCHOR_CAP) {
+            console.warn("ANCHOR_GLOBAL_LIMIT_REACHED", { staffId, anchorCount, date: date.toISOString() });
             return;
           }
           yield { hour: time, staffId };

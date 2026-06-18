@@ -297,6 +297,9 @@ async function createExactSlotBooking(input: {
   selectedSlots: ReturnType<typeof parseSelectedPersonSlots>;
   idempotencyKey?: string | null;
   slotLockId?: string | null;
+  // Müşterinin seçtiği görsel saat ("HH:mm"). ANY + tek kişilik esnek
+  // geri-dönüş eşleşmesinde kullanılır (personel kaymasına karşı).
+  time?: string | null;
 }): Promise<{ status: number; body: any }> {
   // Idempotency replay: client retry'sı veya çift tıklamada aynı key
   // gelir; daha önce başarılı commit olmuşsa yeni randevu yaratmak
@@ -354,7 +357,35 @@ async function createExactSlotBooking(input: {
     ...(input.slotLockId ? { ignoreLockId: input.slotLockId } : {}),
   };
   const availabilityResult = await generateAvailability(availabilityRequest, { persistSearchContext: false });
-  const matchedDisplaySlot = matchSelectedDisplaySlots(availabilityResult, input.selectedSlots);
+  let matchedDisplaySlot = matchSelectedDisplaySlots(availabilityResult, input.selectedSlots);
+
+  // Esnek geri-dönüş — yalnız "fark etmez" (ANY) + tek kişilik rezervasyon:
+  // 120sn'lik form penceresinde başka bir değişiklik, motorun AYNI görsel saate
+  // FARKLI personel atamasına yol açabilir → slotKey kayar → exact eşleşme boşa
+  // düşer → haksız 409 ("boş görünen saati alamıyorum"). Personel sabitlenmemişse
+  // aynı saat + aynı hizmet kümesini personelden BAĞIMSIZ eşle. Çifte-booking yine
+  // aşağıdaki per-service SQL çakışma guard'ıyla engellenir (yanlış personele de
+  // yazmaz; atanan staff o anda doluysa SLOT_NOT_AVAILABLE fırlar).
+  if (!matchedDisplaySlot && Array.isArray(input.selectedSlots) && input.selectedSlots.length === 1) {
+    const groups = Array.isArray((searchContext.data as any)?.groups) ? (searchContext.data as any).groups : [];
+    const isPureAny = groups.length === 1 && ((groups[0]?.services as any[]) || []).every(
+      (s: any) => typeof s === 'number' || !Array.isArray(s?.allowedStaffIds) || s.allowedStaffIds.length === 0,
+    );
+    const selectedTime = String(input.time || '').trim();
+    const personId = input.selectedSlots[0].personId;
+    const wantIds = input.services
+      .map((s: any) => Number(s?.serviceId))
+      .filter((id: number) => Number.isInteger(id) && id > 0)
+      .sort((a: number, b: number) => a - b);
+    if (isPureAny && /^\d{2}:\d{2}$/.test(selectedTime) && wantIds.length > 0) {
+      matchedDisplaySlot = availabilityResult.displaySlots.find((ds) => {
+        const ps = ds.personSlots.find((p) => p.personId === personId);
+        if (!ps || ps.startTime !== selectedTime) return false;
+        const haveIds = ps.serviceSequence.map((x) => x.serviceId).sort((a, b) => a - b);
+        return haveIds.length === wantIds.length && haveIds.every((id, i) => id === wantIds[i]);
+      }) || null;
+    }
+  }
 
   if (!matchedDisplaySlot) {
     const alternatives = await generateAvailabilityAlternatives({
@@ -1742,6 +1773,7 @@ router.post('/', async (req: any, res: any, next: any) => {
           selectedSlots,
           idempotencyKey,
           slotLockId,
+          time: typeof b.time === 'string' ? b.time.trim() : null,
         });
         return res.status(exactResult.status).json(exactResult.body);
       }

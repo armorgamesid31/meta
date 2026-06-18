@@ -267,6 +267,24 @@ export function getGroupServiceIds(group: PersonGroup): number[] {
   return getGroupServiceSelections(group).map((selection) => selection.serviceId);
 }
 
+/**
+ * Randevu/lock'ları gün bazında indekslerken ve sorgularken kullanılan
+ * anahtar — YEREL (server TZ = Europe/Istanbul) tarih bileşenleriyle.
+ *
+ * Neden toISOString() DEĞİL: ISO UTC tarihi verir. Istanbul 00:00–02:59
+ * arası başlayan bir randevu UTC'de bir önceki güne düşer; indeksleme UTC,
+ * çakışma hesabı ise yerel saat (getHours) kullandığından randevu yanlış
+ * güne indekslenip o günün çakışma kontrolünden kaçabilirdi (slot yanlışlıkla
+ * "boş" görünürdü). İndeksleme ve lookup'ın İKİSİ de bu yerel anahtarı
+ * kullanmalı ki cross-midnight randevular doğru güne otursun.
+ */
+export function localDateKey(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 export function getAllowedStaffIdsForService(group: PersonGroup, serviceId: number): number[] | null {
   const matching = getGroupServiceSelections(group)
     .filter((selection) => selection.serviceId === serviceId)
