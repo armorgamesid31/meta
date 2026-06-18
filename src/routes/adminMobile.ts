@@ -12673,6 +12673,7 @@ router.post('/conversations/:channel/:conversationKey/reply', authenticateToken,
   // composer's long-press menu populates this. We resolve the provider id
   // server-side so the client can't spoof a different conversation.
   const replyToMessageId = Number(req.body?.replyToMessageId) || null;
+  console.log('[reply-debug] body keys:', Object.keys(req.body || {}), 'replyToMessageId raw:', req.body?.replyToMessageId, 'parsed:', replyToMessageId);
   if (!text) {
     throw new BusinessError('VALIDATION_FAILED', 'text is required.', 400);
   }
