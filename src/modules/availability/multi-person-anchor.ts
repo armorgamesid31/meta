@@ -44,6 +44,15 @@ export class MultiPersonAnchor {
       }));
     }
 
+    // #1: her DİĞER grubun slotlarını BİR KEZ hesapla. Eskiden buildCombinations
+    // her anchor slotu × her recursion seviyesinde generateSlotsForGroup'u tekrar
+    // çağırıyordu (O(anchor×grup) pahalı yeniden hesaplama). Bir grubun slotları
+    // anchor'dan bağımsızdır (yalnız kendi kısıtları) → güvenle memoize edilir.
+    const slotsByPersonId = new Map<string, ServiceChain[]>();
+    for (const g of otherGroups) {
+      slotsByPersonId.set(g.personId, await this.slotsEngine.generateSlotsForGroup(g, date, data));
+    }
+
     const synchronized: SynchronizedSlot[] = [];
 
     for (const anchorSlot of firstPersonSlots) {
@@ -52,6 +61,7 @@ export class MultiPersonAnchor {
       const combinations = await this.tryOtherGroups(
         anchorSlot,
         otherGroups,
+        slotsByPersonId,
         date,
         data,
         maxCombinations - synchronized.length
@@ -117,30 +127,29 @@ export class MultiPersonAnchor {
   private async tryOtherGroups(
     anchorSlot: ServiceChain,
     otherGroups: PersonGroup[],
+    slotsByPersonId: Map<string, ServiceChain[]>,
     date: Date,
     data: IndexedData,
     remainingLimit: number
   ): Promise<SynchronizedSlot[]> {
     const results: SynchronizedSlot[] = [];
-    
+
     // Recursive search for combinations
     await this.buildCombinations(
       [anchorSlot],
       otherGroups,
-      date,
-      data,
+      slotsByPersonId,
       results,
       remainingLimit
     );
-    
+
     return results;
   }
-  
+
   private async buildCombinations(
     currentSlots: ServiceChain[],
     remainingGroups: PersonGroup[],
-    date: Date,
-    data: IndexedData,
+    slotsByPersonId: Map<string, ServiceChain[]>,
     results: SynchronizedSlot[],
     limit: number
   ): Promise<void> {
@@ -155,7 +164,6 @@ export class MultiPersonAnchor {
     }
     
     const [nextGroup, ...restGroups] = remainingGroups;
-    const previousSlot = currentSlots[currentSlots.length - 1];
     
     // Constraint: Next person starts after previous person ends (within 15 min gap window?)
     // Requirement: "Bir kişinin bitişi +15dk ≥ diğerinin başlangıcı"
@@ -204,16 +212,14 @@ export class MultiPersonAnchor {
     // The requirement "Bir kişinin bitişi +15dk >= diğerinin başlangıcı" is key.
     // It's a "Max Gap" constraint.
     
-    // Let's define the search window for Next Group based on Current Slots.
-    // We want the group to be "together".
-    // Let's search for NextGroup slots that start in [MinStart, MaxStart].
-    // MaxStart = Math.max(...currentSlots.map(s => s.endTime)) + 15.
-    // MinStart = Math.min(...currentSlots.map(s => s.startTime)) - 15? (Allow starting slightly earlier?)
-    
-    // To be efficient, let's use the anchor (first person) as the reference for "general time area".
-    const anchor = currentSlots[0];
-    const maxStart = anchor.endTime + 15;
-    const minStart = anchor.startTime - 60; // optimization: don't look too far back
+    // #3 (Berkay kararı "çakışma yeterli"): yeni kişi, ŞU ANA KADAR yerleşmiş
+    // TÜM kişilerin (sadece ilk kişi/anchor DEĞİL — küme) zaman aralığıyla
+    // çakışmalı ya da en fazla 15dk boşlukla yakın olmalı. Eski kod sadece
+    // anchor'a (ilk kişi) bakıyordu → 3+ kişide 2. ve 3. kişi birbirinden uzak
+    // düşebiliyor ve anchor uzun hizmet alıyorsa pencere şişip kayıyordu.
+    // Küme aralığı = tüm yerleşmiş slotların min başlangıç / max bitiş (dakika).
+    const clusterStart = Math.min(...currentSlots.map((s) => s.startTime));
+    const clusterEnd = Math.max(...currentSlots.map((s) => s.endTime));
     
     // However, the constraint is pairwise or global?
     // "Bir kişinin randevusu bittiğinde diğer kişi en geç 15 dakika içinde başlamalı."
@@ -222,9 +228,8 @@ export class MultiPersonAnchor {
     // Let's simply generate VALID slots for NextGroup that satisfy the constraint against AT LEAST ONE existing slot?
     // Or against the Anchor?
     
-    // Let's generate ALL slots for NextGroup on this date (cached/optimized) and filter.
-    // Actually, `slotsEngine.generateSlotsForGroup` generates all valid slots for a group.
-    const nextGroupSlots = await this.slotsEngine.generateSlotsForGroup(nextGroup, date, data);
+    // #1: bu grubun slotları synchronizeGroups'ta BİR KEZ hesaplandı (memoize).
+    const nextGroupSlots = slotsByPersonId.get(nextGroup.personId) || [];
     
     for (const nextSlot of nextGroupSlots) {
         if (results.length >= limit) return;
@@ -250,15 +255,17 @@ export class MultiPersonAnchor {
         // Let's stick to: Next.Start <= Anchor.End + 15.
         // And also Next.Start >= Anchor.Start - 30 (heuristic to keep them close).
         
-        if (nextSlot.startTime <= anchor.endTime + 15 && nextSlot.startTime >= anchor.startTime - 30) {
-             // Also check for staff conflicts between people!
-             // "Aynı staff aynı anda iki kişiye atanamaz."
+        // Küme-bazlı çakışma: yeni slot kümeyle çakışsın ya da ≤15dk yakın olsun.
+        // (Sonradan başlıyorsa kümenin bitişinden ≤15dk sonra; önce bitiyorsa
+        // kümenin başlangıcından ≤15dk önce başlasın.)
+        const cohesive = nextSlot.startTime <= clusterEnd + 15 && nextSlot.endTime >= clusterStart - 15;
+        if (cohesive) {
+             // Aynı staff aynı anda iki kişiye atanamaz.
              if (!this.hasStaffConflict(nextSlot, currentSlots)) {
                  await this.buildCombinations(
                      [...currentSlots, nextSlot],
                      restGroups,
-                     date,
-                     data,
+                     slotsByPersonId,
                      results,
                      limit
                  );

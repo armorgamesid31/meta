@@ -631,7 +631,12 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
         }
         const startMinute = toMinute(cfg.startHour) ?? toMinute('12:00')!;
         const endMinute = toMinute(cfg.endHour) ?? toMinute('16:00')!;
-        if (!(minuteOfDay >= startMinute && minuteOfDay < endMinute)) {
+        // Gece yarısını aşan pencere desteği (örn. 22:00–02:00): endMinute
+        // startMinute'ten küçük/eşitse aralık ertesi güne sarar.
+        const inOffPeak = endMinute > startMinute
+          ? (minuteOfDay >= startMinute && minuteOfDay < endMinute)
+          : (minuteOfDay >= startMinute || minuteOfDay < endMinute);
+        if (!inOffPeak) {
           skip(campaign, 'OFF_PEAK_NOT_ELIGIBLE');
           continue;
         }

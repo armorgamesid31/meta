@@ -102,14 +102,18 @@ export async function createSlotLock(
   }, { isolationLevel: 'Serializable' });
 
   if (result.ok) {
-    invalidateAvailabilityForSalon(salonId).catch(() => undefined);
+    // AWAIT: kilit yazıldıktan SONRA, dönmeden önce cache temizlensin. Aksi halde
+    // (fire-and-forget) eşzamanlı bir /dates veya /alternatives isteği 30sn'ye kadar
+    // stale cache okuyup kilitli slotu/günü "boş" gösterebilirdi. Redis DEL ucuz;
+    // .catch korunuyor ki Redis hatası kilidi BOZMASIN (invalidation best-effort).
+    await invalidateAvailabilityForSalon(salonId).catch(() => undefined);
   }
   return result;
 }
 
 export async function deleteSlotLock(salonId: number, id: string): Promise<void> {
   await prisma.slotLock.deleteMany({ where: { id, salonId } });
-  invalidateAvailabilityForSalon(salonId).catch(() => undefined);
+  await invalidateAvailabilityForSalon(salonId).catch(() => undefined);
 }
 
 /**

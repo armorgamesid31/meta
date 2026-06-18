@@ -839,6 +839,24 @@ router.post("/confirm", authenticateToken, async (req: any, res: any) => {
           const endTime = new Date((searchContext.data as any).date);
           endTime.setHours(endHours, endMinutes, 0, 0);
 
+          // Per-randevu çakışma guard'ı (createExactSlotBooking ile aynı desen).
+          // Motor re-validation + Serializable izolasyon zaten koruyor ama açık
+          // bu kontrol, motor yanılsa (örn. stale state) bile aynı staff×saate
+          // ikinci kaydı kesin engeller — savunma derinliği.
+          const conflicting = await tx.appointment.findFirst({
+            where: {
+              salonId,
+              staffId: reqApt.staffId,
+              startTime: { lt: endTime },
+              endTime: { gt: startTime },
+              status: 'BOOKED',
+            },
+            select: { id: true },
+          });
+          if (conflicting) {
+            return { error: 'Slot no longer available.', status: 409 };
+          }
+
           const appointment = await tx.appointment.create({
             data: {
               salonId,
