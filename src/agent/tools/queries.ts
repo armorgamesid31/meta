@@ -280,14 +280,22 @@ export async function checkDayOpen(
       workHours = `${pad2h(dStart)}:00–13:00`;
     }
 
+    // holidayName/holidayType: tatil kapatma NEDENİ olduğunda dön.
+    // weekly_off / salon_closure durumunda tatil adı döndürme — model ikinci
+    // neden olarak yorumlayıp yanlış cevap verir (örn. Babalar Günü + weekly_off).
+    const holidayIsReason =
+      reason === 'religious_holiday' ||
+      reason === 'national_holiday' ||
+      isHalfDay;
+
     return {
       date,
       dayName,
       isOpen,
       reason,
       isHalfDay,
-      holidayName: holiday?.name || null,
-      holidayType: holiday?.type || null,
+      holidayName: holidayIsReason ? (holiday?.name || null) : null,
+      holidayType: holidayIsReason ? (holiday?.type || null) : null,
       salonClosureNote,
       workHours,
     };
