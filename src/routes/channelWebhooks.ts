@@ -28,6 +28,8 @@ import { storeConversationAvatarFromUrl } from '../services/conversationAvatarSt
 import { buildMediaItemsFromWebhook } from '../services/conversationMediaCache.js';
 import { bindPendingInstagramUsername } from '../services/globalCustomerIdentity.js';
 import { tryConsumeInstagramVerifyCode } from '../services/instagramVerifyService.js';
+import { isIdentityBanned } from '../services/blacklist.js';
+import { sendWhatsappViaChakra, sendInstagramMessage } from './internalAgentOutbound.js';
 import {
   buildCustomerCalibration,
   buildSystemPrompt,
@@ -1457,6 +1459,54 @@ async function processIncomingBatch(items: any[]) {
       }
     }
     // ----------------------------------
+
+    // Yasaklı müşteri kontrolü — echo değil + gerçek inbound mesaj
+    if (!row.isEcho) {
+      const subjectForBan = channel === 'INSTAGRAM'
+        ? (typeof row.channelUserId === 'string' ? row.channelUserId.trim() : null)
+        : null;
+      const phoneForBan = channel === 'WHATSAPP' ? conversationKey : null;
+      const banResult = await isIdentityBanned({
+        salonId,
+        customerId: customer?.id ?? null,
+        phone: phoneForBan,
+        channel,
+        subjectNormalized: subjectForBan,
+      }).catch(() => ({ blocked: false, reason: null, entryId: null, matchType: null }));
+
+      if (banResult.blocked) {
+        const salonRow = await prisma.salon.findUnique({
+          where: { id: salonId },
+          select: { name: true, whatsappPhone: true },
+        }).catch(() => null);
+        const contactPhone = salonRow?.whatsappPhone?.trim() || null;
+        const salonName = salonRow?.name?.trim() || 'Salon';
+        const banMsg = contactPhone
+          ? `Üzgünüz, bu numara üzerinden randevu veya hizmet işlemi yapılamamaktadır. Daha fazla bilgi için ${salonName} ile iletişime geçebilirsiniz: ${contactPhone}`
+          : `Üzgünüz, bu numara üzerinden randevu veya hizmet işlemi yapılamamaktadır. Daha fazla bilgi için ${salonName} ile iletişime geçebilirsiniz.`;
+
+        if (channel === 'WHATSAPP') {
+          await sendWhatsappViaChakra({
+            salonId,
+            conversationKey,
+            text: banMsg,
+            actionKind: 'none',
+            externalAccountId: externalAccountId || null,
+          }).catch(() => {});
+        } else if (channel === 'INSTAGRAM') {
+          await sendInstagramMessage({
+            salonId,
+            conversationKey,
+            text: banMsg,
+            actionKind: 'none',
+            externalAccountId: externalAccountId || null,
+          }).catch(() => {});
+        }
+
+        processed.push({ ...row, success: true, result: 'banned_autoreply' });
+        continue;
+      }
+    }
 
     const customerStatus = computeCustomerStatus({ customer, identityLinked });
     const canonicalUserId = customer?.id ? `customer:${customer.id}` : conversationKey;

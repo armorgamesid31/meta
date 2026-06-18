@@ -43,6 +43,7 @@ import {
   linkCustomerToIdentity,
   upsertPhoneIdentity,
 } from '../services/phoneIdentityService.js';
+import { isIdentityBanned } from '../services/blacklist.js';
 
 const router = Router();
 
@@ -435,12 +436,23 @@ router.post('/register', async (req: any, res: any) => {
       select: { id: true, registrationStatus: true },
     });
     if (existingVerified) {
+      // Ban check: kayıtlı müşteri bile ban'lıysa randevu oluşturulamaz.
+      const banCheck = await isIdentityBanned({ salonId: salonIdNum, customerId: existingVerified.id, phone: validatedPhone.digits });
+      if (banCheck.blocked) {
+        throw new BusinessError('CUSTOMER_BANNED', 'Bu numara ile randevu oluşturulamaz. Lütfen başka bir numara girin veya salon ile iletişime geçin.', 403);
+      }
       return res.status(200).json({
         status: 'registered',
         customerId: existingVerified.id,
         isNew: false,
         registrationStatus: existingVerified.registrationStatus,
       });
+    }
+
+    // Yeni kayıt öncesi de ban check — telefon numarası daha önce ban'lanmış olabilir.
+    const banCheckNew = await isIdentityBanned({ salonId: salonIdNum, phone: validatedPhone.digits });
+    if (banCheckNew.blocked) {
+      throw new BusinessError('CUSTOMER_BANNED', 'Bu numara ile randevu oluşturulamaz. Lütfen başka bir numara girin veya salon ile iletişime geçin.', 403);
     }
 
     const originChannelTyped = asChannel(body.originChannel);

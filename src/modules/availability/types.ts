@@ -95,6 +95,8 @@ export type DisplaySlot = {
   startTime: string;
   endTime: string;
   personSlots: DisplayPersonSlot[];
+  /** OFF_PEAK kampanyası varsa slot bu aralığa giriyordur: "Sakin saat – %10 indirim" gibi. */
+  offPeakLabel?: string;
 };
 
 export type LockToken = {

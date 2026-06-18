@@ -6,6 +6,8 @@ import {
   normalizePersonGroups,
 } from '../services/availabilityService.js';
 import { BusinessError } from '../lib/errors.js';
+import { prisma } from '../prisma.js';
+import type { DisplaySlot } from '../modules/availability/types.js';
 import { createSlotLock, deleteSlotLock, refreshSlotLock, parseSlotLockEntries } from '../services/slotLock.js';
 
 const router = Router();
@@ -44,13 +46,42 @@ router.post('/slots', async (req: any, res: any) => {
       throw new BusinessError('VALIDATION_FAILED', 'Missing required fields or tenant context', 400);
     }
 
-    const result = await generateAvailability({
-      salonId,
-      date,
-      groups,
-    });
+    const result = await generateAvailability({ salonId, date, groups });
 
-    res.json(result);
+    // OFF_PEAK kampanyası varsa slot saatlerini etiketle.
+    const offPeakCampaigns = await prisma.campaign.findMany({
+      where: { salonId, isActive: true, type: 'OFF_PEAK' },
+      select: { config: true },
+    }).catch(() => []);
+
+    const offPeakRanges = offPeakCampaigns
+      .map((c) => {
+        const cfg = (c.config || {}) as Record<string, any>;
+        const sh = String(cfg.startHour || '').trim();
+        const eh = String(cfg.endHour || '').trim();
+        const dt = String(cfg.discountType || cfg.rewardType || '').toLowerCase();
+        const dv = Number(cfg.discountValue ?? cfg.rewardValue ?? 0);
+        if (!/^\d{2}:\d{2}$/.test(sh) || !/^\d{2}:\d{2}$/.test(eh)) return null;
+        const label = dt.includes('percent') && dv > 0
+          ? `%${dv} indirim`
+          : dt.includes('fixed') && dv > 0
+            ? `${dv}₺ indirim`
+            : 'özel fiyat';
+        return { startHour: sh, endHour: eh, label };
+      })
+      .filter(Boolean) as { startHour: string; endHour: string; label: string }[];
+
+    let displaySlots = result.displaySlots as DisplaySlot[];
+    if (offPeakRanges.length > 0) {
+      displaySlots = displaySlots.map((slot) => {
+        const matched = offPeakRanges.find(
+          (r) => slot.startTime >= r.startHour && slot.startTime < r.endHour,
+        );
+        return matched ? { ...slot, offPeakLabel: `Sakin saat – ${matched.label}` } : slot;
+      });
+    }
+
+    res.json({ ...result, displaySlots });
   } catch (error) {
     console.error('Error fetching slots:', error);
     throw new BusinessError('INTERNAL_ERROR', 'Internal server error', 500);
