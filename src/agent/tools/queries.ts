@@ -13,7 +13,6 @@ import {
   normalizePhoneDigits,
 } from '../../services/identityService.js';
 import {
-  findHolidayOnDate,
   resolveDateExpression,
   todayInIstanbul,
   ymdToWeekdayKey,
@@ -248,7 +247,6 @@ export async function checkDayOpen(
     const dayStart = new Date(`${date}T00:00:00+03:00`);
     const dayEnd = new Date(`${date}T23:59:59+03:00`);
     const overlappingClosure = closures.find((c) => c.startAt <= dayEnd && c.endAt >= dayStart);
-    const holiday = findHolidayOnDate(date);
 
     // O güne özel saat (yoksa düz saat).
     const perDay = whbd?.[weekKey];
@@ -257,10 +255,12 @@ export async function checkDayOpen(
 
     let isOpen = true;
     let reason: string | null = null;
-    let isHalfDay = false;
     let workHours: string | null = `${pad2h(dStart)}:00–${pad2h(dEnd)}:00`;
     let salonClosureNote: string | null = null;
 
+    // Kapatma nedeni: yalnızca SalonClosure (manuel tatil) veya workingDays (haftalık kapalı gün).
+    // Genel tatil takvimi (Kurban/Ramazan/Cumhuriyet vb.) otomatik kapatmaz —
+    // salon kendi SalonClosure kaydını oluşturmadıysa açık sayılır.
     if (overlappingClosure) {
       isOpen = false;
       reason = 'salon_closure';
@@ -270,32 +270,13 @@ export async function checkDayOpen(
       isOpen = false;
       reason = 'weekly_off';
       workHours = null;
-    } else if (holiday && holiday.closesByDefault === true) {
-      isOpen = false;
-      reason = holiday.type === 'religious' ? 'religious_holiday' : 'national_holiday';
-      workHours = null;
-    } else if (holiday && holiday.closesByDefault === 'half') {
-      isOpen = true;
-      isHalfDay = true;
-      workHours = `${pad2h(dStart)}:00–13:00`;
     }
-
-    // holidayName/holidayType: tatil kapatma NEDENİ olduğunda dön.
-    // weekly_off / salon_closure durumunda tatil adı döndürme — model ikinci
-    // neden olarak yorumlayıp yanlış cevap verir (örn. Babalar Günü + weekly_off).
-    const holidayIsReason =
-      reason === 'religious_holiday' ||
-      reason === 'national_holiday' ||
-      isHalfDay;
 
     return {
       date,
       dayName,
       isOpen,
       reason,
-      isHalfDay,
-      holidayName: holidayIsReason ? (holiday?.name || null) : null,
-      holidayType: holidayIsReason ? (holiday?.type || null) : null,
       salonClosureNote,
       workHours,
     };
