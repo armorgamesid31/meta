@@ -272,6 +272,7 @@ export class SlotsEngine {
           bufferOverride: true,
           categoryId: true,
           capacityOverride: true,
+          sequentialOverride: true,
         },
       }),
 

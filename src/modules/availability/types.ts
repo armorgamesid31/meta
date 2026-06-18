@@ -132,6 +132,9 @@ export type ServiceInfo = {
   bufferOverride: number | null;
   categoryId: number | null;
   capacityOverride: number | null;
+  // Hizmet-bazlı "ardışık zorunlu" override'ı. null = kategori ayarına düş.
+  // permutation-pruner: service.sequentialOverride ?? category.sequentialRequired.
+  sequentialOverride: boolean | null;
   // When a ServiceVariant override was applied during permutation
   // build, we remember its id here so the booking commit can snapshot
   // it onto AppointmentLine.serviceVariantId. Undefined = no variant

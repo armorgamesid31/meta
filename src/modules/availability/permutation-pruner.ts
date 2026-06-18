@@ -56,7 +56,11 @@ export class PermutationPruner {
         : baseService;
 
       const category = service.categoryId ? data.categoriesById.get(service.categoryId) : undefined;
-      const isSequential = category?.sequentialRequired === true;
+      // Hizmet-bazlı override öncelikli (set ise), yoksa kategori ayarı. Eskiden
+      // yalnız kategori okunuyordu → Service.sequentialOverride DEAD'di.
+      const isSequential = typeof service.sequentialOverride === 'boolean'
+        ? service.sequentialOverride
+        : (category?.sequentialRequired === true);
       
       if (isSequential) {
         if (currentCategoryId === service.categoryId) {

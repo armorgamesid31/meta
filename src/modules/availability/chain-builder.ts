@@ -211,17 +211,27 @@ export class ChainBuilder {
       return false;
     }
 
-    // 2. Check appointment conflicts
+    // 2. Check appointment conflicts (TAMPON dahil — gerçek temizlik süresi).
+    // Her randevu staff zamanını [start, end + AÇIK tampon] kadar işgal eder; yeni
+    // blok da [start, end + kendi açık tamponu]. Çakışma bu genişletilmiş ayak
+    // izlerine göre. NOT: yalnız AÇIKÇA tanımlı tampon (bufferOverride / kategori
+    // bufferMinutes) müşteriler-arası boşluk yaratır — implicit 15dk default'u
+    // tüm salonlara dayatmıyoruz (tampon-yok salonda davranış aynı = 0 boşluk).
     const dateKey = localDateKey(date);
     const appointmentsKey = `${staffId}-${dateKey}`;
     const appointments = data.appointmentsByStaffAndDate.get(appointmentsKey) || [];
-    
+
+    const lastService = block.services[block.services.length - 1];
+    const newTrailingBuffer = this.getExplicitBufferForServiceId(lastService?.id, data);
+    const newOccupiedEnd = startTime + duration + newTrailingBuffer;
+
     for (const apt of appointments) {
       const aptStart = (apt.startTime.getHours() * 60) + apt.startTime.getMinutes();
-      const aptEnd = (apt.endTime.getHours() * 60) + apt.endTime.getMinutes();
-      
-      // Check overlap
-      if (startTime < aptEnd && (startTime + duration) > aptStart) {
+      const aptEndRaw = (apt.endTime.getHours() * 60) + apt.endTime.getMinutes();
+      const aptOccupiedEnd = aptEndRaw + this.getExplicitBufferForServiceId(apt.serviceId, data);
+
+      // Check overlap of buffer-extended footprints
+      if (startTime < aptOccupiedEnd && newOccupiedEnd > aptStart) {
         return false;
       }
     }
@@ -329,5 +339,19 @@ export class ChainBuilder {
     const lastService = block.services[block.services.length - 1];
     const categoryBuffer = block.categoryId ? data.categoriesById.get(block.categoryId)?.bufferMinutes : null;
     return lastService.bufferOverride ?? categoryBuffer ?? 15;
+  }
+
+  // Müşteriler-ARASI temizlik tamponu (footprint rezervasyonu). getBufferTime'dan
+  // FARKI: implicit 15dk default YOK → yalnız salonun AÇIKÇA tanımladığı tampon
+  // (Service.bufferOverride veya ServiceCategory.bufferMinutes) boşluk yaratır.
+  // Tanımsız (veya bloklu: serviceId<=0 closure/timeoff/lock) → 0 (davranış aynı).
+  private getExplicitBufferForServiceId(serviceId: number | undefined, data: IndexedData): number {
+    if (!serviceId || serviceId <= 0) return 0;
+    const service = data.servicesById.get(serviceId);
+    if (!service) return 0;
+    if (service.bufferOverride !== null && service.bufferOverride !== undefined) return service.bufferOverride;
+    const cat = service.categoryId ? data.categoriesById.get(service.categoryId) : undefined;
+    if (cat && cat.bufferMinutes !== null && cat.bufferMinutes !== undefined) return cat.bufferMinutes;
+    return 0;
   }
 }
