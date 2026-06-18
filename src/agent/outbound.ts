@@ -42,10 +42,12 @@ export async function sendAgentReply(params: {
   forceCancelButton?: boolean;
   externalAccountId?: string | null;
 }): Promise<{ ok: boolean; providerMessageId: string | null }> {
-  // Handover beklemedeyken iptal butonu içerik butonunu (booking/konum/profil) EZER:
-  // müşterinin devirden dönme yolu her mesajda görünür kalmalı.
-  const button = params.forceCancelButton ? null : pickButton(params.buttons ?? []);
-  const actionKind: ActionKind = params.forceCancelButton ? 'cancel' : ((button?.kind as ActionKind) ?? 'none');
+  // Handover beklemedeyken iptal butonu içerik butonunu EZER — istisna: randevu
+  // butonu çalışmışsa (tool_send_booking_link) randevu > cancel hiyerarşisi.
+  const contentButton = pickButton(params.buttons ?? []);
+  const hasBooking = contentButton?.kind === 'booking';
+  const button = (params.forceCancelButton && !hasBooking) ? null : contentButton;
+  const actionKind: ActionKind = (params.forceCancelButton && !hasBooking) ? 'cancel' : ((button?.kind as ActionKind) ?? 'none');
 
   const sendArgs = {
     salonId: params.salonId,
