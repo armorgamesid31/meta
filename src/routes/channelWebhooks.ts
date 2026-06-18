@@ -1717,6 +1717,26 @@ async function processIncomingBatch(items: any[]) {
       eventDate,
     });
 
+    // HUMAN_CANCEL sonrası: drain bitti, şimdi AI'nın bağlamı anlayacağı
+    // synthetic bir PENDING mesaj ekle. Dispatch 5sn debounce içinde bunu alır
+    // ve agent "handover iptal edildi" bağlamıyla uygun yanıt üretir.
+    if (forceAutoByCancel && !row.isEcho) {
+      await upsertConversationMessageEvent({
+        salonId,
+        channel,
+        conversationKey,
+        providerMessageId: `handover_cancel_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        externalAccountId: externalAccountId || externalBusinessId || '',
+        customerName: profileName,
+        messageType: 'handover_cancelled',
+        text: 'Asistanla devam etmek istiyorum.',
+        direction: 'INBOUND',
+        eventTimestamp: new Date(eventDate.getTime() + 1),
+        processingStatus: InboundMessageStatus.PENDING,
+        rawPayload: {},
+      });
+    }
+
     const statePolicy = computeStatePolicy(state.mode);
 
     // Kanal-bazı "AI Aktif": salon bu kanalda otomatik yanıtı kapattıysa
