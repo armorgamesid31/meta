@@ -13399,6 +13399,12 @@ router.post('/conversations/:channel/:conversationKey/resume-auto', authenticate
       channel,
       conversationKey: resolvedConversationKey,
     });
+    // Manuel dönemdeki birikmiş PENDING inbound mesajları DONE yap → AI hafızasında
+    // görünsünler ama bir sonraki turda mevcut batch'e girip yanıt tetiklemesin.
+    await prisma.conversationMessageEvent.updateMany({
+      where: { salonId, channel, conversationKey: resolvedConversationKey, direction: 'INBOUND', processingStatus: 'PENDING' },
+      data: { processingStatus: 'DONE' },
+    }).catch(() => {});
     await upsertConversationMessageEvent({
       salonId,
       channel,

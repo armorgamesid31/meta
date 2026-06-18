@@ -510,6 +510,12 @@ async function evaluateConversationState(input: {
     await resolveHandoverAlert({ salonId: input.salonId, channel: input.channel, conversationKey: input.conversationKey }).catch(
       (err) => console.error('[handover] resolve on cancel failed', err?.message || err),
     );
+    // Manuel dönemdeki birikmiş PENDING inbound mesajları DONE yap → hafızada
+    // görünsünler (memory.ts processingStatus'a bakmaz) ama mevcut batch'e girmesin.
+    await prisma.conversationMessageEvent.updateMany({
+      where: { salonId: input.salonId, channel: input.channel, conversationKey: input.conversationKey, direction: 'INBOUND', processingStatus: 'PENDING' },
+      data: { processingStatus: 'DONE' },
+    }).catch(() => {});
     return updated;
   }
 
@@ -553,7 +559,7 @@ async function evaluateConversationState(input: {
       now.getTime() - state.humanPendingSince.getTime() >= HUMAN_ACTIVE_MINUTES * 60 * 1000;
 
     if (activeExpired || pendingExpired) {
-      return prisma.conversationState.update({
+      const updated = await prisma.conversationState.update({
         where: { id: state.id },
         data: {
           mode: ConversationAutomationMode.AUTO,
@@ -562,6 +568,11 @@ async function evaluateConversationState(input: {
           notes: pendingExpired ? 'auto_resumed_pending_timeout' : 'auto_resumed_active_timeout',
         },
       });
+      await prisma.conversationMessageEvent.updateMany({
+        where: { salonId: input.salonId, channel: input.channel, conversationKey: input.conversationKey, direction: 'INBOUND', processingStatus: 'PENDING' },
+        data: { processingStatus: 'DONE' },
+      }).catch(() => {});
+      return updated;
     }
   }
 
