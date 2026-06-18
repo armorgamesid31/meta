@@ -239,6 +239,7 @@ export class SlotsEngine {
           serviceId: true,
           duration: true,
           isactive: true,
+          gender: true,
         },
       }),
 

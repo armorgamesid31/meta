@@ -78,7 +78,7 @@ export class ChainBuilder {
       if (isFirstBlock) {
         // Try to assign the anchor staff
         if (this.canStaffPerformBlock(anchor.staffId, block, data, group)) {
-           if (await this.validateBlockPlacement(block, currentTime, anchor.staffId, salonId, data, date)) {
+           if (await this.validateBlockPlacement(block, currentTime, anchor.staffId, salonId, data, date, group?.gender)) {
              assignedStaffId = anchor.staffId;
            }
         }
@@ -89,7 +89,7 @@ export class ChainBuilder {
         
         // Try previous staff first
         if (this.canStaffPerformBlock(prevStaffId, block, data, group)) {
-           if (await this.validateBlockPlacement(block, currentTime, prevStaffId, salonId, data, date)) {
+           if (await this.validateBlockPlacement(block, currentTime, prevStaffId, salonId, data, date, group?.gender)) {
              assignedStaffId = prevStaffId;
            }
         }
@@ -99,7 +99,7 @@ export class ChainBuilder {
            const capableStaff = this.findCapableStaffForBlock(block, data, group);
            for (const staffId of capableStaff) {
              if (staffId === prevStaffId) continue; // Already tried
-             if (await this.validateBlockPlacement(block, currentTime, staffId, salonId, data, date)) {
+             if (await this.validateBlockPlacement(block, currentTime, staffId, salonId, data, date, group?.gender)) {
                assignedStaffId = staffId;
                break; // Found one
              }
@@ -111,7 +111,7 @@ export class ChainBuilder {
         return null; // Cannot place this block
       }
 
-      const serviceDurations = this.calculateServiceDurations(block, assignedStaffId, data);
+      const serviceDurations = this.calculateServiceDurations(block, assignedStaffId, data, group?.gender);
       const duration = serviceDurations.reduce((sum, d) => sum + d, 0);
 
       chainBlocks.push({
@@ -189,9 +189,13 @@ export class ChainBuilder {
     staffId: number,
     salonId: number,
     data: IndexedData,
-    date: Date
+    date: Date,
+    gender?: string
   ): Promise<boolean> {
-    const duration = this.calculateBlockDuration(block, staffId, data);
+    // gender'ı geç ki fit-check süresi gerçek yerleştirme süresiyle AYNI olsun
+    // (aksi halde gender-aware yerleştirme, gender-kör fit-check'i aşıp working
+    // hours taşması / çakışma yaratabilir).
+    const duration = this.calculateBlockDuration(block, staffId, data, gender);
 
     // 1. Check working hours
     const dayOfWeek = date.getDay();
@@ -302,20 +306,22 @@ export class ChainBuilder {
     return true;
   }
 
-  private calculateServiceDurations(block: ChainBlock, staffId: number, data: IndexedData): number[] {
-    // Priority: StaffService.duration (per-staff speed) > s.duration
-    // (which permutation-pruner may have already rewritten with a
-    // gender ServiceVariant). Falling back to Service.duration is
-    // automatic because s.duration is the base when no variant applies.
+  private calculateServiceDurations(block: ChainBlock, staffId: number, data: IndexedData, gender?: string): number[] {
+    // Öncelik (fiyat resolver'ı ile tutarlı): StaffService(staffId, gender) >
+    // StaffService(staffId, herhangi) > s.duration (permutation-pruner gender
+    // ServiceVariant'ını buraya yedirmiş olabilir; yoksa base Service.duration).
+    // ESKİ HATA: gender'a bakmadan ilk staff satırı alınıyordu → bir uzmanın
+    // kadın/erkek farklı süreleri tanımlıyken erkek istekte de kadın süresi
+    // dönüyordu (gender-kör). Artık önce müşteri cinsiyetine eşleşen satır.
     return block.services.map((s) => {
-      const staffServices = data.staffServicesByService.get(s.id) || [];
-      const staffOverride = staffServices.find((ss) => ss.staffId === staffId);
-      return staffOverride?.duration ?? s.duration;
+      const rows = (data.staffServicesByService.get(s.id) || []).filter((ss) => ss.staffId === staffId);
+      const match = (gender ? rows.find((r) => r.gender === gender) : undefined) || rows[0];
+      return match?.duration ?? s.duration;
     });
   }
 
-  private calculateBlockDuration(block: ChainBlock, staffId: number, data: IndexedData): number {
-    return this.calculateServiceDurations(block, staffId, data).reduce((sum, d) => sum + d, 0);
+  private calculateBlockDuration(block: ChainBlock, staffId: number, data: IndexedData, gender?: string): number {
+    return this.calculateServiceDurations(block, staffId, data, gender).reduce((sum, d) => sum + d, 0);
   }
 
   private getBufferTime(block: ChainBlock, data: IndexedData): number {

@@ -174,6 +174,9 @@ export type StaffServiceRow = {
   serviceId: number;
   duration: number;
   isactive: boolean;
+  // Müşteri cinsiyetine göre per-staff süre (ve fiyat) ayrımı. Süre seçiminde
+  // (chain-builder.calculateServiceDurations) staff×gender eşleşmesi için.
+  gender?: string;
 };
 
 export type WorkingHoursRow = {

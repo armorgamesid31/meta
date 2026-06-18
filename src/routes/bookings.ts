@@ -33,9 +33,19 @@ import {
   releaseAppointmentCampaignApplications,
 } from '../services/campaignPricing.js';
 import { assertBookingAllowed } from '../services/blacklist.js';
+import { resolveServicePricing } from '../services/servicePricing.js';
 import { BusinessError } from '../lib/errors.js';
 
 const router = Router();
+
+// female/male/other + Türkçe kadin/erkek toleranslı gender parse (pricing için).
+function parsePricingGender(raw: unknown): 'female' | 'male' | 'other' | null {
+  const g = String(raw || '').trim().toLowerCase();
+  if (g === 'female' || g === 'kadin' || g === 'kadın') return 'female';
+  if (g === 'male' || g === 'erkek') return 'male';
+  if (g === 'other' || g === 'belirtmek-istemiyorum') return 'other';
+  return null;
+}
 
 function sendCustomerBannedResponse(_res: any, detail?: string | null): never {
   const message = detail && detail.trim()
@@ -444,21 +454,43 @@ async function createExactSlotBooking(input: {
     return candidate < earliest ? candidate : earliest;
   }, Number.MAX_SAFE_INTEGER);
 
-  const pricingInputLines = orderedPeople.flatMap(([personIndex, personServices]) =>
+  // Etkin fiyat için gender (availability isteğindeki grup cinsiyeti) + atanan
+  // uzman (seçilen slot) eşlemesi. Böylece commit, katalog/sepette gösterilen
+  // variant/staff fiyatıyla AYNI tutarı yazar (eskiden hep base yazıyordu = B1).
+  const genderByPersonId = new Map<string, string>();
+  for (const g of ((availabilityRequest as any)?.groups || []) as any[]) {
+    if (g?.personId && g?.gender) genderByPersonId.set(String(g.personId), String(g.gender));
+  }
+  const staffByPersonService = new Map<string, number>();
+  for (const ps of matchedDisplaySlot.personSlots) {
+    for (const seq of ps.serviceSequence) {
+      staffByPersonService.set(`${ps.personId}:${seq.serviceId}`, Number(seq.staffId));
+    }
+  }
+
+  const pricingLineMeta = orderedPeople.flatMap(([personIndex, personServices]) =>
     personServices.map((serviceItem: any) => {
       const serviceId = Number(serviceItem?.serviceId);
-      const catalog = serviceById.get(serviceId);
+      const personId = `p${personIndex}`;
       return {
         serviceId,
-        listPrice: catalog ? catalog.price : 0,
-        isPackageCovered: packageByService.has(serviceId),
-        // Faz 42: pricing engine scopes campaigns to the booker
-        // (personIndex 1) only. Companion lines (personIndex >= 2)
-        // pass through with no discount applied.
         personIndex,
+        gender: genderByPersonId.get(personId) || null,
+        staffId: staffByPersonService.get(`${personId}:${serviceId}`) ?? null,
       };
     }),
   );
+  const resolvedCommitPricing = await resolveServicePricing(
+    input.salonId,
+    pricingLineMeta.map((l) => ({ serviceId: l.serviceId, gender: l.gender, staffId: l.staffId })),
+  );
+  const pricingInputLines = pricingLineMeta.map((l, i) => ({
+    serviceId: l.serviceId,
+    listPrice: Math.max(0, Number(resolvedCommitPricing[i]?.price || 0)),
+    isPackageCovered: packageByService.has(l.serviceId),
+    // Faz 42: pricing engine scopes campaigns to the booker (personIndex 1) only.
+    personIndex: l.personIndex,
+  }));
   const pricingResult = await previewCampaignPricing({
     salonId: input.salonId,
     customerId: input.customerId,
@@ -1547,13 +1579,18 @@ router.post('/pricing-preview', async (req: any, res: any) => {
   // can scope discounts to the booker. Default to 1 (the booker) when
   // the client doesn't send a personIndex — pre-companion clients keep
   // working unchanged.
-  const requestedLines: Array<{ serviceId: number; personIndex: number }> = services
+  // gender (sepet/katalog cinsiyeti) + per-line staffId (uzman seçildiyse) →
+  // etkin fiyat. Frontend göndermezse gender/staffId null → resolver base döner
+  // (geriye dönük uyumlu; eski davranış = base price).
+  const previewGender = parsePricingGender(req.body?.gender);
+  const requestedLines: Array<{ serviceId: number; personIndex: number; staffId: number | null }> = services
     .map((item: any) => ({
       serviceId: Number(item?.serviceId),
       personIndex:
         Number.isInteger(Number(item?.personIndex)) && Number(item?.personIndex) > 0
           ? Number(item.personIndex)
           : 1,
+      staffId: Number.isInteger(Number(item?.staffId)) && Number(item?.staffId) > 0 ? Number(item.staffId) : null,
     }))
     .filter((line: { serviceId: number }) => Number.isInteger(line.serviceId) && line.serviceId > 0);
   if (!requestedLines.length) {
@@ -1561,21 +1598,16 @@ router.post('/pricing-preview', async (req: any, res: any) => {
   }
 
   try {
-    const uniqueServiceIds: number[] = Array.from(new Set<number>(requestedLines.map((l) => l.serviceId)));
-    const catalog = await prisma.service.findMany({
-      where: { salonId, id: { in: uniqueServiceIds } },
-      select: { id: true, price: true },
-    });
-    const priceByServiceId = new Map<number, number>();
-    for (const item of catalog) {
-      priceByServiceId.set(Number(item.id), Number(item.price || 0));
-    }
+    const resolved = await resolveServicePricing(
+      salonId,
+      requestedLines.map((l) => ({ serviceId: l.serviceId, gender: previewGender, staffId: l.staffId })),
+    );
 
-    const lines = requestedLines.map(({ serviceId, personIndex }: { serviceId: number; personIndex: number }) => ({
-      serviceId,
-      listPrice: Math.max(0, Number(priceByServiceId.get(serviceId) || 0)),
-      isPackageCovered: packageByService.has(serviceId),
-      personIndex,
+    const lines = requestedLines.map((l, i) => ({
+      serviceId: l.serviceId,
+      listPrice: Math.max(0, Number(resolved[i]?.price || 0)),
+      isPackageCovered: packageByService.has(l.serviceId),
+      personIndex: l.personIndex,
     }));
 
     const pricing = await previewCampaignPricing({

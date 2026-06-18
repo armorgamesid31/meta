@@ -11,6 +11,7 @@ import { BusinessError } from '../lib/errors.js';
 import { normalizeWorkingHoursByDay } from '../lib/workingHours.js';
 import { slugify, withSlugCollision } from '../utils/slug.js';
 import { resolveStaffProfile } from '../services/staffProfileResolver.js';
+import { resolveServicePricing } from '../services/servicePricing.js';
 import { OnboardingStatus, OnboardingStep, Prisma } from '@prisma/client';
 import { markTaskComplete } from '../services/journeyService.js';
 import { deriveTones, PRESET_DEFAULT_BRAND, isPresetId } from '../lib/theme/derive.js';
@@ -606,6 +607,18 @@ router.get('/services/public', async (req: any, res: any) => {
       sourceLocale,
     });
 
+    // Cinsiyet-bazlı fiyat/süre: katalog da müşterinin gördüğü fiyatı sepet/commit
+    // ile TUTARLI göstermeli. gender verildiyse ServiceVariant(gender) fiyat+süresini
+    // bindir (uzman bilinmediği için staff katmanı yok → variant ya da base).
+    const pricedByServiceId = new Map<number, { price: number; duration: number }>();
+    if (gender) {
+      const resolved = await resolveServicePricing(
+        salonId,
+        rawServices.map((s) => ({ serviceId: s.id, gender: String(gender) })),
+      );
+      for (const r of resolved) pricedByServiceId.set(r.serviceId, { price: r.price, duration: r.duration });
+    }
+
     // Pre-compute per-service campaign badges so the booking UI can
     // show small pills like "⭐ Sadakat sayar" / "🎯 Çoklu uygun" at
     // the bottom of a service card. We only badge the campaign types
@@ -670,8 +683,8 @@ router.get('/services/public', async (req: any, res: any) => {
         id: service.id,
         name: translated?.name || service.name,
         description: translated?.description || service.description || null,
-        duration: service.duration,
-        price: service.price,
+        duration: pricedByServiceId.get(service.id)?.duration ?? service.duration,
+        price: pricedByServiceId.get(service.id)?.price ?? service.price,
         requiresSpecialist: service.requiresSpecialist || false,
         regionId: service.regionId,
         regionName: service.ServiceRegion?.name || null,
