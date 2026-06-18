@@ -821,12 +821,29 @@ router.post("/confirm", authenticateToken, async (req: any, res: any) => {
           const group = availabilityResult.groups.find(g => g.personId === reqApt.personId);
           if (!group) return { error: 'Slot no longer available (person not found).', status: 409 };
 
-          const slot = group.slots.find(s => 
-              s.startTime === reqApt.startTime && 
+          const slot = group.slots.find(s =>
+              s.startTime === reqApt.startTime &&
               s.staffId === reqApt.staffId
           );
 
           if (!slot) return { error: 'Slot no longer available.', status: 409 };
+
+          // Per-randevu SQL çakışma guard'ı — create'lerden ÖNCE (bu döngüde henüz
+          // hiçbir randevu YAZILMADI → return güvenli, orphan riski yok; Prisma
+          // interactive TX'te return = COMMIT olduğundan create'lerden sonra
+          // dönmek yarım kayıt bırakırdı). Serializable + bu açık kontrol: motor
+          // yanılsa (stale state) bile aynı staff×saate ikinci kaydı engeller.
+          const [gh, gm] = reqApt.startTime.split(':').map(Number);
+          const guardStart = new Date((searchContext.data as any).date);
+          guardStart.setHours(gh, gm, 0, 0);
+          const [geh, gem] = reqApt.endTime.split(':').map(Number);
+          const guardEnd = new Date((searchContext.data as any).date);
+          guardEnd.setHours(geh, gem, 0, 0);
+          const conflicting = await tx.appointment.findFirst({
+            where: { salonId, staffId: reqApt.staffId, startTime: { lt: guardEnd }, endTime: { gt: guardStart }, status: 'BOOKED' },
+            select: { id: true },
+          });
+          if (conflicting) return { error: 'Slot no longer available.', status: 409 };
       }
 
       const createdAppointments = [];
@@ -838,24 +855,6 @@ router.post("/confirm", authenticateToken, async (req: any, res: any) => {
           const [endHours, endMinutes] = reqApt.endTime.split(':').map(Number);
           const endTime = new Date((searchContext.data as any).date);
           endTime.setHours(endHours, endMinutes, 0, 0);
-
-          // Per-randevu çakışma guard'ı (createExactSlotBooking ile aynı desen).
-          // Motor re-validation + Serializable izolasyon zaten koruyor ama açık
-          // bu kontrol, motor yanılsa (örn. stale state) bile aynı staff×saate
-          // ikinci kaydı kesin engeller — savunma derinliği.
-          const conflicting = await tx.appointment.findFirst({
-            where: {
-              salonId,
-              staffId: reqApt.staffId,
-              startTime: { lt: endTime },
-              endTime: { gt: startTime },
-              status: 'BOOKED',
-            },
-            select: { id: true },
-          });
-          if (conflicting) {
-            return { error: 'Slot no longer available.', status: 409 };
-          }
 
           const appointment = await tx.appointment.create({
             data: {
