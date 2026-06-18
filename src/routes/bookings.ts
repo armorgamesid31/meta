@@ -1582,8 +1582,10 @@ router.post('/pricing-preview', async (req: any, res: any) => {
   // gender (sepet/katalog cinsiyeti) + per-line staffId (uzman seçildiyse) →
   // etkin fiyat. Frontend göndermezse gender/staffId null → resolver base döner
   // (geriye dönük uyumlu; eski davranış = base price).
+  // Üst-seviye gender = fallback; her satır kendi gender'ını taşıyabilir (çoklu-kişi
+  // karışık cinsiyet → her kişinin hizmeti kendi cinsiyetiyle fiyatlanır).
   const previewGender = parsePricingGender(req.body?.gender);
-  const requestedLines: Array<{ serviceId: number; personIndex: number; staffId: number | null }> = services
+  const requestedLines: Array<{ serviceId: number; personIndex: number; staffId: number | null; gender: 'female' | 'male' | 'other' | null }> = services
     .map((item: any) => ({
       serviceId: Number(item?.serviceId),
       personIndex:
@@ -1591,6 +1593,7 @@ router.post('/pricing-preview', async (req: any, res: any) => {
           ? Number(item.personIndex)
           : 1,
       staffId: Number.isInteger(Number(item?.staffId)) && Number(item?.staffId) > 0 ? Number(item.staffId) : null,
+      gender: parsePricingGender(item?.gender) ?? previewGender,
     }))
     .filter((line: { serviceId: number }) => Number.isInteger(line.serviceId) && line.serviceId > 0);
   if (!requestedLines.length) {
@@ -1600,7 +1603,7 @@ router.post('/pricing-preview', async (req: any, res: any) => {
   try {
     const resolved = await resolveServicePricing(
       salonId,
-      requestedLines.map((l) => ({ serviceId: l.serviceId, gender: previewGender, staffId: l.staffId })),
+      requestedLines.map((l) => ({ serviceId: l.serviceId, gender: l.gender, staffId: l.staffId })),
     );
 
     const lines = requestedLines.map((l, i) => ({

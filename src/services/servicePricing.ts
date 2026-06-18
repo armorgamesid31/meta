@@ -42,7 +42,7 @@ export async function resolveServicePricing(salonId: number, items: PricingItem[
   const [services, variants, staffServices] = await Promise.all([
     prisma.service.findMany({ where: { salonId, id: { in: serviceIds } }, select: { id: true, price: true, duration: true } }),
     prisma.serviceVariant.findMany({ where: { serviceId: { in: serviceIds }, isActive: true }, select: { id: true, serviceId: true, gender: true, price: true, duration: true } }),
-    prisma.staffService.findMany({ where: { serviceId: { in: serviceIds }, isactive: true, Staff: { salonId } }, select: { staffId: true, serviceId: true, gender: true, price: true, duration: true } }),
+    prisma.staffService.findMany({ where: { serviceId: { in: serviceIds }, isactive: true, Staff: { salonId } }, select: { staffId: true, serviceId: true, gender: true, price: true, duration: true }, orderBy: { id: 'asc' } }),
   ]);
 
   const baseById = new Map(services.map((s) => [Number(s.id), s]));

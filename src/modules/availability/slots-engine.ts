@@ -241,6 +241,10 @@ export class SlotsEngine {
           isactive: true,
           gender: true,
         },
+        // Deterministik sıra: calculateServiceDurations gender eşleşmesi bulamazsa
+        // rows[0]'a düşüyor; orderBy olmadan DB sırası belirsizdi (other müşteri
+        // bazen female bazen male süre alabilirdi).
+        orderBy: { id: 'asc' },
       }),
 
       prisma.appointment.findMany({

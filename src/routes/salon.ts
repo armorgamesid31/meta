@@ -594,6 +594,9 @@ router.get('/services/public', async (req: any, res: any) => {
             categoryId: true,
           },
         },
+        // Bu hizmet hangi cinsiyet(ler) için? Boş = herkese uygun (gender-agnostic).
+        // Frontend, farklı cinsiyetteki bir kişiye (refakatçi) atanınca uyarı için kullanır.
+        ServiceGender: { select: { gender: true } },
       },
       // Honor the admin/mobile reorder. displayOrder is per-category; the
       // id tiebreaker keeps a stable, insertion-like order when several
@@ -685,6 +688,8 @@ router.get('/services/public', async (req: any, res: any) => {
         description: translated?.description || service.description || null,
         duration: pricedByServiceId.get(service.id)?.duration ?? service.duration,
         price: pricedByServiceId.get(service.id)?.price ?? service.price,
+        // Cinsiyet etiketleri (boş = herkese uygun). Refakatçi uyumsuzluk uyarısı için.
+        genders: (service.ServiceGender || []).map((g) => String(g.gender)),
         requiresSpecialist: service.requiresSpecialist || false,
         regionId: service.regionId,
         regionName: service.ServiceRegion?.name || null,
