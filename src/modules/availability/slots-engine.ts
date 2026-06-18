@@ -67,6 +67,20 @@ export class SlotsEngine {
 
     const data = await this.batchFetchData(request);
 
+    // O günkü salon açık penceresi: tüm personelin working hours birleşimi
+    // (en erken start, en geç end). Frontend tam ızgarayı kurup boş saatleri
+    // "müsait değil" göstermek için kullanır. Kayıt yoksa (salon kapalı)
+    // undefined bırak — frontend grid kurmaz, sadece dönen slotları gösterir.
+    let minStartHour = Number.POSITIVE_INFINITY;
+    let maxEndHour = Number.NEGATIVE_INFINITY;
+    for (const wh of data.workingHoursByStaffAndDay.values()) {
+      if (typeof wh.startHour === 'number' && wh.startHour < minStartHour) minStartHour = wh.startHour;
+      if (typeof wh.endHour === 'number' && wh.endHour > maxEndHour) maxEndHour = wh.endHour;
+    }
+    const workingWindow = Number.isFinite(minStartHour) && Number.isFinite(maxEndHour) && maxEndHour > minStartHour
+      ? { startHour: minStartHour, endHour: maxEndHour }
+      : undefined;
+
     const startSync = performance.now();
     const maxCombinationsForRequest = this.getMaxCombinations(request);
     const synchronized = await this.multiPersonAnchor.synchronizeGroups(
@@ -124,6 +138,7 @@ export class SlotsEngine {
         groups: optimized.groups,
         displaySlots: optimized.displaySlots,
         hasMoreAlternatives: hitCombinationCap,
+        workingWindow,
       };
     }
 
@@ -145,6 +160,7 @@ export class SlotsEngine {
         expiresAt,
       },
       hasMoreAlternatives: hitCombinationCap,
+      workingWindow,
     };
   }
 

@@ -81,6 +81,49 @@ router.post('/slots', async (req: any, res: any) => {
       });
     }
 
+    // Uzman tercihi etiketleme (matchesPreferred). Frontend uzman seçimini artık
+    // KATI FİLTRE (allowedStaffIds) yerine TERCİH (preferredStaffIds) olarak
+    // gönderir: motor tüm uzmanları hesaplar, biz her slotu "tercih edilen
+    // uzmanla mı dolu?" diye işaretleriz. normalizePersonGroups bu alanı yok
+    // sayar (motor algoritması değişmez) → ham body'den person+service bazında
+    // okuyoruz. personId frontend ile aynı kuralla (p1, p2…) hizalanır.
+    const preferenceByPersonService = new Map<string, Set<number>>();
+    let anyPreference = false;
+    const rawGroups = Array.isArray(req.body?.groups) ? req.body.groups : [];
+    rawGroups.forEach((g: any, gi: number) => {
+      const personId = typeof g?.personId === 'string' && g.personId.trim() ? g.personId.trim() : `p${gi + 1}`;
+      const svcs = Array.isArray(g?.services) ? g.services : [];
+      for (const s of svcs) {
+        if (!s || typeof s !== 'object') continue;
+        const serviceId = Number(s.serviceId);
+        if (!Number.isInteger(serviceId) || serviceId <= 0) continue;
+        const pref = Array.isArray(s.preferredStaffIds)
+          ? s.preferredStaffIds.map((x: any) => Number(x)).filter((x: number) => Number.isInteger(x) && x > 0)
+          : [];
+        if (pref.length) {
+          anyPreference = true;
+          preferenceByPersonService.set(`${personId}:${serviceId}`, new Set(pref));
+        }
+      }
+    });
+
+    displaySlots = displaySlots.map((slot) => {
+      // Tercih yoksa her slot "istediği gibi" (yeşil) sayılır.
+      if (!anyPreference) return { ...slot, matchesPreferred: true };
+      let matchesPreferred = true;
+      for (const ps of slot.personSlots) {
+        for (const seq of ps.serviceSequence) {
+          const pref = preferenceByPersonService.get(`${ps.personId}:${seq.serviceId}`);
+          if (pref && !pref.has(seq.staffId)) {
+            matchesPreferred = false;
+            break;
+          }
+        }
+        if (!matchesPreferred) break;
+      }
+      return { ...slot, matchesPreferred };
+    });
+
     res.json({ ...result, displaySlots });
   } catch (error) {
     console.error('Error fetching slots:', error);

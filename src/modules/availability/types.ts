@@ -58,6 +58,13 @@ export type SlotsResponse = {
    * "Daha fazla saat için tarihi daralt".
    */
   hasMoreAlternatives?: boolean;
+  /**
+   * O gün salonun açık olduğu saat penceresi (tüm personelin working hours
+   * birleşimi: en erken başlangıç, en geç bitiş — saat tam sayısı). Frontend
+   * bunu kullanarak tam zaman ızgarasını kurar ve hiç slot dönmeyen saatleri
+   * "müsait değil" (silik gri) gösterir. Salon o gün kapalıysa undefined.
+   */
+  workingWindow?: { startHour: number; endHour: number };
 };
 
 export type GroupSlots = {
@@ -97,6 +104,13 @@ export type DisplaySlot = {
   personSlots: DisplayPersonSlot[];
   /** OFF_PEAK kampanyası varsa slot bu aralığa giriyordur: "Sakin saat – %10 indirim" gibi. */
   offPeakLabel?: string;
+  /**
+   * Müşteri uzman tercihi yaptıysa (preferredStaffIds): bu slot tercih edilen
+   * uzman(lar)la mı dolduruluyor? true = istediği gibi (UI yeşil), false =
+   * müsait ama BAŞKA uzmanla (UI mavi + onay sorar). Tercih yoksa hepsi true.
+   * Route seviyesinde set edilir (motor algoritması değişmez).
+   */
+  matchesPreferred?: boolean;
 };
 
 export type LockToken = {
