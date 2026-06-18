@@ -7,3 +7,6 @@ dist
 .nixpacks
 dist/
 .oauth-credentials.local
+
+# BerkAI: kisisel varlik/asset alani (commit edilmez)
+varliklar/
