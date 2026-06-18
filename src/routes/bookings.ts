@@ -334,10 +334,10 @@ async function createExactSlotBooking(input: {
   });
 
   if (!searchContext) {
-    return { status: 404, body: { message: 'Availability selection not found.' } };
+    return { status: 404, body: { code: 'SELECTION_EXPIRED', message: 'Availability selection not found.' } };
   }
   if (searchContext.expiresAt < new Date()) {
-    return { status: 410, body: { message: 'Availability selection has expired.' } };
+    return { status: 410, body: { code: 'SELECTION_EXPIRED', message: 'Availability selection has expired.' } };
   }
   if (searchContext.salonId !== input.salonId) {
     return { status: 403, body: { message: 'Salon mismatch.' } };
@@ -1794,6 +1794,18 @@ router.post('/', async (req: any, res: any, next: any) => {
         });
         return res.status(exactResult.status).json(exactResult.body);
       }
+
+      // ── Yol B (kilit-token'sız legacy commit) KAPATILDI ────────────────────
+      // Eski yol transaction'sız check-then-create yapıyordu → TOCTOU çifte-booking
+      // + kısmi-yazım riski. Canlı HİÇBİR istemci bu yolu kullanmıyor: v0 booking
+      // her zaman availabilityLockToken+selectedSlots gönderir (Yol A); v2 deprecated;
+      // admin ayrı /api/admin/appointments endpoint'i kullanır. Kilitsiz isteği
+      // sessizce riskli yola düşürmek yerine açıkça reddediyoruz. (Aşağıdaki eski
+      // Yol B kodu artık ERİŞİLEMEZ — ileride temizlenecek.)
+      return res.status(400).json({
+        code: 'AVAILABILITY_LOCK_REQUIRED',
+        message: 'Randevu seçiminizin süresi dolmuş olabilir. Lütfen sayfayı yenileyip saati yeniden seçin.',
+      });
 
       const packageByService = new Map<number, number>();
       if (Array.isArray(packageSelections)) {
