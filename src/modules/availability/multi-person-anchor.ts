@@ -55,6 +55,12 @@ export class MultiPersonAnchor {
 
     const synchronized: SynchronizedSlot[] = [];
 
+    // Her anchor için EN FAZLA 1 kombinasyon al. Aksi halde tek bir anchor (5dk
+    // granülerlikte ~100+ slot) kişi-2'nin onlarca cohesive seçeneğiyle budget'i
+    // (maxCombinations) sabah anchor'larında tüketiyordu → öğleden sonra hiç
+    // işlenmiyordu (2 kişilik ağda 09:00-11:00'da kesiliyordu — Berkay bug'ı).
+    // Bir anchor başlangıcının "müsait" işaretlenmesi için 1 geçerli düzen yeter;
+    // slot-scorer aynı görsel saate düşen anchor'lar arasından en iyisini seçer.
     for (const anchorSlot of firstPersonSlots) {
       if (synchronized.length >= maxCombinations) break;
 
@@ -64,7 +70,7 @@ export class MultiPersonAnchor {
         slotsByPersonId,
         date,
         data,
-        maxCombinations - synchronized.length
+        1,
       );
 
       synchronized.push(...combinations);
