@@ -61,15 +61,25 @@ export async function resolveServicePricing(salonId: number, items: PricingItem[
     const g = it.gender ? String(it.gender) : null;
     const staffId = it.staffId && Number.isInteger(Number(it.staffId)) ? Number(it.staffId) : null;
 
-    // 1 + 2: StaffService (uzman seçiliyse)
-    if (staffId) {
-      const ss = (g ? ssByKey.get(`${staffId}:${serviceId}:${g}`) : undefined) || ssAnyByStaffService.get(`${staffId}:${serviceId}`);
-      if (ss) return { serviceId, price: Number(ss.price), duration: Number(ss.duration), serviceVariantId: null, source: 'staff' };
+    // Öncelik (Berkay kararı 2026-06-19 — chain-builder süre seçimiyle TUTARLI):
+    //   1. StaffService(staffId, gender) > 2. ServiceVariant(gender) >
+    //   3. StaffService(staffId, herhangi) > 4. base.
+    // Variant ARTIK uzmanın genel satırını EZER → katalog (staff'sız) ile booking
+    // (staff'lı) cinsiyet fiyatı/süresi TUTARLI olur.
+    // 1: StaffService(staffId, gender)
+    if (staffId && g) {
+      const ssg = ssByKey.get(`${staffId}:${serviceId}:${g}`);
+      if (ssg) return { serviceId, price: Number(ssg.price), duration: Number(ssg.duration), serviceVariantId: null, source: 'staff' };
     }
-    // 3: ServiceVariant (cinsiyet)
+    // 2: ServiceVariant(gender)
     if (g) {
       const v = variantByKey.get(`${serviceId}:${g}`);
       if (v) return { serviceId, price: Number(v.price), duration: Number(v.duration), serviceVariantId: v.id, source: 'variant' };
+    }
+    // 3: StaffService(staffId, herhangi)
+    if (staffId) {
+      const ssa = ssAnyByStaffService.get(`${staffId}:${serviceId}`);
+      if (ssa) return { serviceId, price: Number(ssa.price), duration: Number(ssa.duration), serviceVariantId: null, source: 'staff' };
     }
     // 4: base
     return { serviceId, price: Number(base.price), duration: Number(base.duration), serviceVariantId: null, source: 'base' };

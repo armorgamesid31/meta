@@ -486,14 +486,10 @@ describe('Gender', () => {
     expect(first.endTime).toBe('10:00');
   });
 
-  it('BUG (documented): per-gender ServiceVariant duration is IGNORED when a StaffService row exists', async () => {
-    // Realistic prod setup: StaffService.duration is seeded == Service.duration (60),
-    // staff row has NO gender. Salon adds a female ServiceVariant of 90 min.
-    // permutation-pruner rewrites service.duration -> 90 (correct), but
-    // chain-builder.calculateServiceDurations (lines ~319-331) returns
-    //   rows[0].duration (60) ?? s.duration  -> the StaffService 60 WINS,
-    // so the 90-min female variant is silently discarded.
-    // EXPECTED: female -> 10:30 (90 min). ACTUAL: 10:00 (60 min).
+  it('per-gender ServiceVariant duration beats an ungendered StaffService row (precedence 2 > 3)', async () => {
+    // FIX (2026-06-19, Berkay): a gender ServiceVariant must override the staff's
+    // generic (ungendered) row, matching servicePricing precedence → catalog
+    // (no staff) and booking (with staff) report the SAME gendered duration.
     const data = emptyData();
     addService(data, 1, 60);
     addStaffService(data, 10, 1, 60); // ungendered staff row == base duration (typical seed)
@@ -504,34 +500,19 @@ describe('Gender', () => {
     const female = await runSingle(group('pf', [1], 'female'), monday(), data);
     const male = await runSingle(group('pm', [1], 'male'), monday(), data);
 
-    // Pinning the buggy reality (regression sentinel). SHOULD be 10:30 / 09:45.
-    expect(female.slots.find((s) => s.startTime === '09:00')!.endTime).toBe('10:00'); // BUG: variant 90 ignored
-    expect(male.slots.find((s) => s.startTime === '09:00')!.endTime).toBe('10:00'); // BUG: variant 45 ignored
+    expect(female.slots.find((s) => s.startTime === '09:00')!.endTime).toBe('10:30'); // variant 90 wins
+    expect(male.slots.find((s) => s.startTime === '09:00')!.endTime).toBe('09:45'); // variant 45 wins
   });
 
-  it('ServiceVariant duration IS honored only when NO StaffService row exists for the staff', async () => {
-    // This is the narrow path where calculateServiceDurations falls through to
-    // s.duration (which the pruner set to the variant). In practice a performing
-    // staff always has a StaffService row, so this path rarely fires — but it
-    // proves the variant value does propagate when the staff override is absent.
+  it('StaffService(staffId, gender) row still beats ServiceVariant(gender) (precedence 1 > 2)', async () => {
+    // Most-specific wins: a per-staff gendered duration overrides the service-level variant.
     const data = emptyData();
     addService(data, 1, 60);
-    // Two staff offer svc1, but we give staff 10 a row and rely on the anchor for staff 10.
-    // To hit the fallback we register the service with a staff that HAS hours but
-    // whose StaffService row we deliberately omit is impossible (anchor needs the row).
-    // Instead: confirm pruner propagation via the per-person slot's serviceSequence
-    // length is unaffected; duration fallback verified at unit level below.
-    addStaffService(data, 10, 1, 60);
+    addStaffService(data, 10, 1, 80, 'female'); // staff + female (most specific)
+    addServiceVariant(data, 100, 1, 'female', 90); // service-level variant (lower priority)
     setWorkingHours(data, 10, DOW_MON, 9, 17);
-    addServiceVariant(data, 100, 1, 'female', 90);
-    // Sanity: the pruner stamps serviceVariantId even though chain-builder ignores duration.
-    const { PermutationPruner } = await import('../src/modules/availability/permutation-pruner.js');
-    const pruner = new PermutationPruner();
-    let svcDuration = 0;
-    for await (const perm of pruner.generateValidPermutations([1], data, 'female')) {
-      svcDuration = perm.blocks[0].services[0].duration;
-    }
-    expect(svcDuration).toBe(90); // pruner-level duration IS the variant; chain-builder later overrides it.
+    const female = await runSingle(group('pf', [1], 'female'), monday(), data);
+    expect(female.slots.find((s) => s.startTime === '09:00')!.endTime).toBe('10:20'); // staff-gender 80, not variant 90
   });
 
   it('per-gender StaffService duration override beats base when gender matches', async () => {

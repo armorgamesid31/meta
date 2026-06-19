@@ -317,16 +317,23 @@ export class ChainBuilder {
   }
 
   private calculateServiceDurations(block: ChainBlock, staffId: number, data: IndexedData, gender?: string): number[] {
-    // Öncelik (fiyat resolver'ı ile tutarlı): StaffService(staffId, gender) >
-    // StaffService(staffId, herhangi) > s.duration (permutation-pruner gender
-    // ServiceVariant'ını buraya yedirmiş olabilir; yoksa base Service.duration).
-    // ESKİ HATA: gender'a bakmadan ilk staff satırı alınıyordu → bir uzmanın
-    // kadın/erkek farklı süreleri tanımlıyken erkek istekte de kadın süresi
-    // dönüyordu (gender-kör). Artık önce müşteri cinsiyetine eşleşen satır.
+    // Öncelik (fiyat resolver'ı servicePricing ile TUTARLI — Berkay kararı 2026-06-19):
+    //   1. StaffService(staffId, gender)        — uzman + cinsiyet (en spesifik)
+    //   2. ServiceVariant(gender)               — hizmet-seviyesi cinsiyet override'ı
+    //   3. StaffService(staffId, herhangi)       — uzmanın genel satırı
+    //   4. base Service.duration
+    // Variant ARTIK staff-genel satırı EZER (eskiden rows[0] variant'ı yutuyordu →
+    // katalog variant süresini gösterip booking staff-genel süresini kullanıyordu).
     return block.services.map((s) => {
       const rows = (data.staffServicesByService.get(s.id) || []).filter((ss) => ss.staffId === staffId);
-      const match = (gender ? rows.find((r) => r.gender === gender) : undefined) || rows[0];
-      return match?.duration ?? s.duration;
+      const gMatch = gender ? rows.find((r) => r.gender === gender) : undefined;
+      if (gMatch) return gMatch.duration; // 1
+      if (gender) {
+        const variant = data.serviceVariantsByServiceAndGender.get(`${s.id}:${gender}`);
+        if (variant) return variant.duration; // 2
+      }
+      if (rows[0]) return rows[0].duration; // 3
+      return s.duration; // 4 (base)
     });
   }
 
