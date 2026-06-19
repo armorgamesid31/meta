@@ -236,8 +236,23 @@ export class MultiPersonAnchor {
     
     // #1: bu grubun slotları synchronizeGroups'ta BİR KEZ hesaplandı (memoize).
     const nextGroupSlots = slotsByPersonId.get(nextGroup.personId) || [];
-    
-    for (const nextSlot of nextGroupSlots) {
+
+    // PARALEL TERCİHİ: anchor başına yalnız 1 kombinasyon alındığından, ilk GEÇERLİ
+    // (cohesive + staff-conflict'siz) kombinasyon seçilir. Slotları öyle sırala ki
+    // önce (a) yerleşmiş kişilerle ÇAKIŞMAYAN staff kullananlar (gerçek paralel),
+    // sonra (b) küme başlangıcına HİZALI olanlar gelsin. Böylece yeterli uzman varken
+    // 3+ kişi aynı anda farklı uzmana yerleşir (sıralı tek-uzmana yığılmak yerine).
+    const placedStaff = new Set<number>();
+    for (const s of currentSlots) for (const b of s.blocks) placedStaff.add(b.staffId);
+    const usesDisjointStaff = (slot: ServiceChain) => slot.blocks.every((b) => !placedStaff.has(b.staffId));
+    const orderedNextSlots = [...nextGroupSlots].sort((a, b) => {
+      const ad = usesDisjointStaff(a) ? 0 : 1;
+      const bd = usesDisjointStaff(b) ? 0 : 1;
+      if (ad !== bd) return ad - bd;
+      return Math.abs(a.startTime - clusterStart) - Math.abs(b.startTime - clusterStart);
+    });
+
+    for (const nextSlot of orderedNextSlots) {
         if (results.length >= limit) return;
 
         // Check constraint against the anchor (or strictly previous person?)
