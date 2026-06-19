@@ -744,6 +744,11 @@ router.get('/services/public', async (req: any, res: any) => {
 router.get('/services/:serviceId/staff', async (req: any, res: any) => {
   const salonId = req.salon?.id;
   const { serviceId } = req.params;
+  // Cinsiyet süzme: bir uzmanın hizmet için cinsiyet-bazlı satırları olabilir
+  // (örn. Zeynep kadın 90dk/2200₺, erkek 60dk/1600₺). gender verilirse o
+  // cinsiyetin ekranından SADECE uygun satır görünmeli — resolveServicePricing
+  // ile TUTARLI: gender-eşleşen satır > ilk satır (any fallback), uzman başına TEK.
+  const gender = typeof req.query?.gender === 'string' ? String(req.query.gender) : null;
 
   if (!salonId) {
     throw new BusinessError('VALIDATION_FAILED', 'Tenant context required', 400);
@@ -756,6 +761,7 @@ router.get('/services/:serviceId/staff', async (req: any, res: any) => {
         Staff: { salonId },
         isactive: true
       },
+      orderBy: { id: 'asc' }, // determinizm + "any fallback" = en düşük id'li satır
       include: {
         Staff: {
           select: {
@@ -786,7 +792,19 @@ router.get('/services/:serviceId/staff', async (req: any, res: any) => {
       }
     });
 
-    const response = staffServices.map(ss => {
+    // Uzman başına tek satıra daralt: gender-eşleşen kazanır, yoksa ilk (any) satır kalır.
+    const byStaff = new Map<number, (typeof staffServices)[number]>();
+    for (const ss of staffServices) {
+      const sid = ss.Staff.id;
+      const existing = byStaff.get(sid);
+      if (!existing) {
+        byStaff.set(sid, ss); // ilk görülen (id asc) = any fallback
+      } else if (gender && ss.gender === gender && existing.gender !== gender) {
+        byStaff.set(sid, ss); // tam cinsiyet eşleşmesi fallback'i ezer
+      }
+    }
+
+    const response = [...byStaff.values()].map(ss => {
       const resolved = resolveStaffProfile(ss.Staff, ss.Staff.membership?.identity ?? null);
       return {
         id: ss.Staff.id,
