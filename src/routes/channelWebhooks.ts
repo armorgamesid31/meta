@@ -1398,7 +1398,11 @@ async function processIncomingBatch(items: any[]) {
             salonId,
             customerId: customer.id,
             startTime: { gte: now },
-            status: { in: [AppointmentStatus.BOOKED, AppointmentStatus.UPDATED] }
+            // UPDATED = ertelenmiş (ölü) randevu — WhatsApp onay/iptal butonu onu
+            // HEDEF ALMAMALI (yoksa müşteri "Onayla"da canlı yeni randevu yerine
+            // eski ölü randevuyu CONFIRMED/CANCELLED yapardı). CONFIRMED dahil:
+            // onaylanmış randevu yine iptal edilebilsin.
+            status: { in: [AppointmentStatus.BOOKED, AppointmentStatus.CONFIRMED] }
           },
           orderBy: { startTime: 'asc' }
         });

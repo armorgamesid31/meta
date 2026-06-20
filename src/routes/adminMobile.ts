@@ -2285,6 +2285,17 @@ async function ensureDefaultAppointmentLine(
 }
 
 async function recomputeAndPersistAppointmentStatusFromLines(tx: any, appointmentId: number) {
+  // Ertelenen (reschedule sonrası) randevu 'UPDATED' = terminal. Line'ları hâlâ
+  // BOOKED olabilir (reschedule line'lara dokunmaz) — bunu line'lardan yeniden
+  // hesaplarsak 'else' dalı randevuyu BOOKED'a DİRİLTİR (ölü randevu canlanır,
+  // slotu kapatır, listelere döner). UPDATED ise dokunma.
+  const current = await (tx as any).appointment.findUnique({
+    where: { id: appointmentId },
+    select: { status: true },
+  });
+  if (current && String(current.status).toUpperCase() === 'UPDATED') {
+    return current.status;
+  }
   const lines = await (tx as any).appointmentLine.findMany({
     where: { appointmentId },
     select: { status: true },
@@ -3933,7 +3944,9 @@ router.patch('/customers/:id/no-show-risk', authenticateToken, async (req: any, 
           where: { salonId, customerId, status: 'NO_SHOW' },
         }),
         tx.appointment.count({
-          where: { salonId, customerId, status: { not: 'CANCELLED' } },
+          // No-show oranı paydası: ertelenen (UPDATED) randevu "ayrı bir randevu"
+          // değil → sayma (yoksa 1 reschedule paydayı 2'ye çıkarıp oranı düşürür).
+          where: { salonId, customerId, status: { notIn: ['CANCELLED', 'UPDATED'] } },
         }),
       ]);
 
