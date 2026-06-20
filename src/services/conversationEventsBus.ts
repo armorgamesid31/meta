@@ -10,6 +10,11 @@ export type ConversationStreamEvent = {
   eventType: string;
   messageEventId: number | null;
   eventTimestamp: string;
+  // Efemeral "Asistan yazıyor" sinyali. kind:'typing' olan event'ler DB'ye
+  // yazılmaz, cursor'ı yoktur (replay'e girmez) — WS sunucu bunları
+  // conversation.update yerine conversation.typing olarak iletir.
+  kind?: 'message' | 'typing';
+  actor?: 'ai' | 'human';
 };
 
 type Listener = (event: ConversationStreamEvent) => void;
@@ -117,6 +122,28 @@ export function publishConversationStreamEvent(event: ConversationStreamEvent): 
   const payload: BusEnvelope = { nodeId: NODE_ID, event };
   void publishClient.publish(BUS_CHANNEL, JSON.stringify(payload)).catch((error) => {
     console.error('[conversation-events-bus] redis publish failed:', error);
+  });
+}
+
+// "Asistan yazıyor" efemeral sinyali. Aynı pub/sub kanalını kullanır ama
+// kind:'typing' işaretiyle gider; DB'ye hiçbir şey yazılmaz, cursor 0'dır.
+export function publishConversationTypingEvent(params: {
+  salonId: number;
+  channel: ChannelType;
+  conversationKey: string;
+  typing: boolean;
+  actor?: 'ai' | 'human';
+}): void {
+  publishConversationStreamEvent({
+    cursor: 0,
+    salonId: params.salonId,
+    channel: params.channel,
+    conversationKey: params.conversationKey,
+    eventType: params.typing ? 'typing.start' : 'typing.stop',
+    messageEventId: null,
+    eventTimestamp: new Date().toISOString(),
+    kind: 'typing',
+    actor: params.actor || 'ai',
   });
 }
 

@@ -35,6 +35,15 @@ type ServerMessage =
       payload: ConversationStreamEvent;
     }
   | {
+      type: 'conversation.typing';
+      payload: {
+        channel: ChannelType;
+        conversationKey: string;
+        typing: boolean;
+        actor: string;
+      };
+    }
+  | {
       type: 'heartbeat';
       payload: {
         latestCursor: number;
@@ -208,6 +217,20 @@ async function handleSubscribe(ws: WebSocket, incoming: ClientSubscribeMessage):
 
   const unsubscribe = subscribeConversationStream(user.salonId, (event) => {
     if (channelFilter && event.channel !== channelFilter) return;
+    // "Asistan yazıyor" efemeral sinyali — DB cursor'ı yok, replay'e girmez.
+    // Ayrı tip olarak ilet, latestCursor'a dokunma.
+    if (event.kind === 'typing') {
+      sendJson(ws, {
+        type: 'conversation.typing',
+        payload: {
+          channel: event.channel,
+          conversationKey: event.conversationKey,
+          typing: event.eventType === 'typing.start',
+          actor: event.actor || 'ai',
+        },
+      });
+      return;
+    }
     latestCursor = Math.max(latestCursor, event.cursor);
     sendJson(ws, {
       type: 'conversation.update',

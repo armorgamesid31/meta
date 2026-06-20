@@ -6,7 +6,7 @@ import {
   Prisma,
 } from '@prisma/client';
 import { prisma } from '../prisma.js';
-import { publishConversationStreamEvent } from './conversationEventsBus.js';
+import { publishConversationStreamEvent, publishConversationTypingEvent } from './conversationEventsBus.js';
 import { createRealtimeEventInTx } from './conversationRealtimeEvents.js';
 import { upsertConversationThreadSummaryInTx } from './conversationThreadSummary.js';
 
@@ -165,4 +165,43 @@ export async function upsertConversationMessageEvent(
     messageEventId: realtimeEvent.messageEventId,
     eventTimestamp: realtimeEvent.eventTimestamp,
   });
+
+  // "Asistan yazıyor" efemeral sinyali (DB'siz). Müşteri mesajı geldi + AI aktif
+  // (mode AUTO / AUTO_RESUME_PENDING) → yazıyor başlat; herhangi giden mesaj (AI
+  // ya da insan cevabı) → durdur. Frontend'in ayrıca 30sn TTL'i var, AI tool
+  // çağırıp cevap üretmezse takılı kalmaz. Hata mesaj akışını ASLA bozmamalı.
+  try {
+    if (input.direction === MessageEventDirection.INBOUND) {
+      const state = await prisma.conversationState.findUnique({
+        where: {
+          salonId_channel_conversationKey: {
+            salonId: input.salonId,
+            channel: input.channel,
+            conversationKey: input.conversationKey,
+          },
+        },
+        select: { mode: true },
+      });
+      const aiActive = !state || state.mode === 'AUTO' || state.mode === 'AUTO_RESUME_PENDING';
+      if (aiActive) {
+        publishConversationTypingEvent({
+          salonId: input.salonId,
+          channel: input.channel,
+          conversationKey: input.conversationKey,
+          typing: true,
+          actor: 'ai',
+        });
+      }
+    } else if (input.direction === MessageEventDirection.OUTBOUND) {
+      publishConversationTypingEvent({
+        salonId: input.salonId,
+        channel: input.channel,
+        conversationKey: input.conversationKey,
+        typing: false,
+        actor: 'ai',
+      });
+    }
+  } catch (typingErr) {
+    console.warn('[typing] "Asistan yazıyor" sinyali yayınlanamadı (yok sayıldı):', typingErr);
+  }
 }
