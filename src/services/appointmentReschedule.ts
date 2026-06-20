@@ -618,7 +618,13 @@ export async function commitAppointmentReschedule(params: RescheduleCommitParams
       await tx.appointment.update({
         where: { id: oldAppointment.id },
         data: {
-          status: 'CANCELLED',
+          // Reschedule İPTAL DEĞİL: eski randevu 'UPDATED' (güncellendi/ertelendi)
+          // olur — 'CANCELLED' değil. Böylece iptal istatistiğine girmez
+          // (notifications "cancelled" sayımı yalnız CANCELLED sayar) ve panelde
+          // "İptal Edildi" yerine "Güncellendi" görünür. Müsaitlik motoru
+          // ['BOOKED','COMPLETED'] saydığı için UPDATED slotu yine boşaltır;
+          // müşteri "Randevularım" UPDATED'i de gizler (bookingContext).
+          status: 'UPDATED',
           notes: appendNoteLine(oldAppointment.notes, `[RESCHEDULED_TO_BATCH:${batchId}]`),
           rescheduleBatchId: batchId,
         },
