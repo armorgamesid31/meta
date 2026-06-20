@@ -2827,6 +2827,37 @@ router.post('/appointments', authenticateToken, validate({ body: CreateAppointme
           };
         }
 
+        // İzin / kapalı-saat koruması (R3): admin elle randevu yazarken de
+        // müsaitlik motoruyla aynı blokları zorla. Public booking motoru
+        // çalıştırıp bunları zaten engelliyordu; admin yolu atlıyordu → salonun
+        // kapalı / uzmanın izinli olduğu saate randevu yazılabiliyordu.
+        // (Leave = eski gün-bazlı izin; StaffTimeOff modern sistemi ve
+        // SalonClosure ile birlikte ana boşluğu kapatır.)
+        const salonClosureBlock = await tx.salonClosure.findFirst({
+          where: { salonId, startAt: { lt: slotEnd }, endAt: { gt: slotStart } },
+          select: { id: true },
+        });
+        if (salonClosureBlock) {
+          return {
+            error: {
+              code: 409,
+              message: `${slotStart.toISOString()} saatinde salon kapalı (tatil/kapanış) — randevu yazılamaz.`,
+            },
+          };
+        }
+        const staffTimeOffBlock = await tx.staffTimeOff.findFirst({
+          where: { salonId, staffId: selectedStaffId, startAt: { lt: slotEnd }, endAt: { gt: slotStart } },
+          select: { id: true },
+        });
+        if (staffTimeOffBlock) {
+          return {
+            error: {
+              code: 409,
+              message: `${service.name} için ${slotStart.toISOString()} saatinde uzman izinli — randevu yazılamaz.`,
+            },
+          };
+        }
+
         // Başka müşterinin aktif SlotLock'ı bu staff×zaman'ı tutmuş olabilir.
         // Kendi lock'umuzu (slotLockId) hariç tut; o zaten bu slot için alındı.
         const conflictingLocks = await tx.slotLock.findMany({

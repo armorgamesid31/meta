@@ -363,6 +363,13 @@ export async function writeAccessAudit(input: {
   });
 }
 
+// Kritik (para/yetki) izinlerin anahtar kümesi. Yetki istisnası (override) ile
+// kendine kritik izin verip RBAC'i delmeyi engellemek için adminAccess kullanır
+// (bu izinleri override ile yalnız OWNER verebilir).
+export const CRITICAL_PERMISSION_KEYS = new Set<string>(
+  PERMISSION_CATALOG.filter((item) => item.isCritical === true).map((item) => item.key),
+);
+
 export function mapAdminRouteToPermission(path: string, method: string): string | null {
   const normalizedPath = path.toLowerCase();
   const m = method.toUpperCase();
@@ -388,6 +395,15 @@ export function mapAdminRouteToPermission(path: string, method: string): string 
   if (normalizedPath.startsWith('/meta-direct')) return 'meta_direct.manage';
   if (normalizedPath.startsWith('/imports')) return 'imports.manage';
   if (normalizedPath.startsWith('/setup')) return 'website.manage';
+  if (normalizedPath.startsWith('/commissions')) {
+    // Uzmanın kendi hakedişi (/commissions/me) route içinde membership
+    // eşleşmesiyle korunur → buradan ek izin şartı koyma. Diğer TÜM komisyon
+    // uçları (prim kuralı, bonus, ödeme açma/geri alma) kritik para işlemidir:
+    // commissions.manage şart. Eskiden bu dal yoktu → catch-all 'dashboard.view'
+    // devreye girip pano-görme izni olan herkes prim ödemesi açabiliyordu.
+    if (normalizedPath.startsWith('/commissions/me')) return null;
+    return 'commissions.manage';
+  }
   return 'dashboard.view';
 }
 

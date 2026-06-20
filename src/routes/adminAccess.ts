@@ -6,6 +6,7 @@ import { prisma } from '../prisma.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { requirePermissionKey } from '../middleware/access.js';
 import {
+  CRITICAL_PERMISSION_KEYS,
   FIXED_ROLES,
   PERMISSION_CATALOG,
   ensureSalonAccessSeed,
@@ -29,7 +30,22 @@ function getAuth(req: any, res: any) {
     userId: Number(req.user.userId),
     membershipId: Number(req.user.membershipId),
     identityId: Number(req.user.identityId || 0),
+    role: String(req.user.role || ''),
   };
+}
+
+// Aktörün GERÇEK OWNER olup olmadığı — primary + secondaryRoles birlikte.
+// auth.role yalnız primary rolü taşır; yetki motoru secondary OWNER'ı da TAM
+// OWNER sayar (getEffectivePermissionSet:289). Bu yüzden yetki yükseltme
+// frenlerinde OWNER tespiti BURADAN yapılmalı — yoksa secondary-OWNER bir aktör
+// yanlış (OWNER değil gibi) değerlendirilir.
+async function actorIsOwner(salonId: number, membershipId: number): Promise<boolean> {
+  const m = await prisma.salonMembership.findFirst({
+    where: { id: membershipId, salonId },
+    select: { role: true, secondaryRoles: true },
+  });
+  if (!m) return false;
+  return [normalizeRole(m.role), ...normalizeRoles(m.secondaryRoles)].includes('OWNER');
 }
 
 function randomTempPassword(): string {
@@ -270,6 +286,15 @@ router.post('/users', authenticateToken, requirePermissionKey('access.users.mana
   const staffId = Number.isInteger(Number(req.body?.staffId)) && Number(req.body.staffId) > 0 ? Number(req.body.staffId) : null;
   const rawPassword = typeof req.body?.password === 'string' && req.body.password.trim() ? req.body.password.trim() : randomTempPassword();
 
+  // Yetki yükseltme freni: yeni üyeye OWNER rolü (primary VEYA secondary) yalnızca
+  // mevcut bir OWNER atayabilir. Bu fren olmadan access.users.manage'li bir MANAGER
+  // `POST /users {roles:['MANAGER','OWNER']}` ile secondary-OWNER bir hesap açıp
+  // (getEffectivePermissionSet:289 secondary OWNER'a tüm izinleri verir) tüm RBAC'i
+  // baypaslardı. PUT/overrides freninin POST eşleniği.
+  if ([role, ...secondaryRoles].some((r) => normalizeRole(r) === 'OWNER') && !(await actorIsOwner(auth.salonId, auth.membershipId))) {
+    throw new BusinessError('FORBIDDEN', 'Sahip (OWNER) rolünü yalnızca mevcut bir sahip atayabilir.', 403);
+  }
+
   try {
     const email = emailInput || null;
     const passwordHash = await bcrypt.hash(rawPassword, 10);
@@ -415,6 +440,18 @@ router.put('/users/:id', authenticateToken, requirePermissionKey('access.users.m
   const isActive = req.body?.isActive !== false;
   const staffIdRaw = req.body?.staffId;
   const staffId = staffIdRaw === null ? null : Number.isInteger(Number(staffIdRaw)) && Number(staffIdRaw) > 0 ? Number(staffIdRaw) : undefined;
+
+  // Yetki yükseltme freni (privilege-escalation guard):
+  // (1) Kendi üyeliğini bu uçtan düzenleyemezsin — kendi rolünü yükseltmek ya da
+  //     kendini pasifleştirip kilitlemek engellenir (ad/profil değişimi ayrı yer).
+  // (2) OWNER (sahip) rolünü yalnızca mevcut bir OWNER atayabilir — MANAGER kendini
+  //     veya başkasını sahip yapıp tüm RBAC'i baypaslayamaz.
+  if (targetMembershipId === Number(auth.membershipId)) {
+    throw new BusinessError('FORBIDDEN', 'Kendi rolünü veya erişimini bu ekrandan değiştiremezsin.', 403);
+  }
+  if ([role, ...secondaryRoles].some((r) => normalizeRole(r) === 'OWNER') && !(await actorIsOwner(auth.salonId, auth.membershipId))) {
+    throw new BusinessError('FORBIDDEN', 'Sahip (OWNER) rolünü yalnızca mevcut bir sahip atayabilir.', 403);
+  }
 
   try {
     const updated = await prisma.$transaction(async (tx) => {
@@ -644,6 +681,18 @@ router.delete('/users/:id', authenticateToken, requirePermissionKey('access.user
     throw new BusinessError('INTERNAL_ERROR', 'Üye silinemedi.', 500);
   }
 
+  // Audit: ekip üyesi silme denetim izi bırakmalı (kim, kimi, ne zaman) — geri
+  // alınamaz bir işlem, izsiz kalmamalı.
+  await writeAccessAudit({
+    salonId: auth.salonId,
+    actorUserId: auth.userId,
+    actorMembershipId: Number(auth.membershipId) || null,
+    action: 'USER_DELETED',
+    targetType: 'USER',
+    targetId: String(targetMembershipId),
+    metadata: { role: target.role, legacySalonUserId: target.legacySalonUserId ?? null },
+  });
+
   return res.status(200).json({ ok: true });
 });
 
@@ -669,6 +718,23 @@ router.put('/users/:id/overrides', authenticateToken, requirePermissionKey('acce
         }))
         .filter((item: any) => item.permissionKey)
     : [];
+
+  // Yetki yükseltme freni:
+  // (1) Kendi yetki istisnalarını düzenleyemezsin — kendine kritik izin verip
+  //     RBAC'i delmek engellenir.
+  // (2) Kritik izinleri (prim, ödeme, rol/yetki matrisi) override ile yalnızca
+  //     OWNER verebilir; diğer yöneticiler yalnız kritik-olmayanları override eder.
+  if (targetMembershipId === Number(auth.membershipId)) {
+    throw new BusinessError('FORBIDDEN', 'Kendi yetki istisnalarını düzenleyemezsin.', 403);
+  }
+  if (!(await actorIsOwner(auth.salonId, auth.membershipId))) {
+    const grantingCritical = overrides.some(
+      (o: any) => o.granted && CRITICAL_PERMISSION_KEYS.has(o.permissionKey),
+    );
+    if (grantingCritical) {
+      throw new BusinessError('FORBIDDEN', 'Kritik yetkileri (prim, ödeme, rol matrisi) yalnızca sahip (OWNER) verebilir.', 403);
+    }
+  }
 
   try {
     const permissions = await prisma.permissionDefinition.findMany({
