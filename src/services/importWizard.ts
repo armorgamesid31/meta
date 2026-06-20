@@ -2538,7 +2538,7 @@ export async function commitImportBatch(input: {
           where: {
             salonId: input.salonId,
             staffId,
-            status: { in: ['BOOKED'] },
+            status: { in: ['BOOKED', 'CONFIRMED', 'COMPLETED'] },
             startTime: { lt: endTime },
             endTime: { gt: startTime },
           },

@@ -2810,7 +2810,7 @@ router.post('/appointments', authenticateToken, validate({ body: CreateAppointme
           where: {
             salonId,
             staffId: selectedStaffId,
-            status: { in: ['BOOKED'] },
+            status: { in: ['BOOKED', 'CONFIRMED', 'COMPLETED'] },
             startTime: { lt: slotEnd },
             endTime: { gt: slotStart },
           },
@@ -5540,7 +5540,7 @@ router.patch(
               where: {
                 salonId,
                 staffId: selectedStaffId,
-                status: { in: ['BOOKED'] },
+                status: { in: ['BOOKED', 'CONFIRMED', 'COMPLETED'] },
                 id: { not: appointmentId },
                 startTime: { lt: slotEnd },
                 endTime: { gt: slotStart },

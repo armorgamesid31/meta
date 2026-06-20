@@ -283,7 +283,7 @@ async function candidateAvailability(
       salonId,
       staffId,
       id: { notIn: chainIds },
-      status: 'BOOKED',
+      status: { in: ['BOOKED', 'CONFIRMED', 'COMPLETED'] },
       startTime: { lt: endTime },
       endTime: { gt: startTime },
     },

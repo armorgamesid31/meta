@@ -251,7 +251,7 @@ export class SlotsEngine {
         where: {
           salonId: request.salonId,
           startTime: { gte: startOfDay, lte: endOfDay },
-          status: { in: ['BOOKED', 'COMPLETED'] },
+          status: { in: ['BOOKED', 'CONFIRMED', 'COMPLETED'] },
         },
         select: {
           id: true,

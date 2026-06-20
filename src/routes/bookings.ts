@@ -872,7 +872,7 @@ router.post("/confirm", authenticateToken, async (req: any, res: any) => {
           const guardEnd = new Date((searchContext.data as any).date);
           guardEnd.setHours(geh, gem, 0, 0);
           const conflicting = await tx.appointment.findFirst({
-            where: { salonId, staffId: reqApt.staffId, startTime: { lt: guardEnd }, endTime: { gt: guardStart }, status: 'BOOKED' },
+            where: { salonId, staffId: reqApt.staffId, startTime: { lt: guardEnd }, endTime: { gt: guardStart }, status: { in: ['BOOKED', 'CONFIRMED', 'COMPLETED'] } },
             select: { id: true },
           });
           if (conflicting) return { error: 'Slot no longer available.', status: 409 };

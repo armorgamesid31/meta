@@ -67,7 +67,7 @@ export async function createSlotLock(
         where: {
           salonId,
           staffId: entry.staffId,
-          status: 'BOOKED',
+          status: { in: ['BOOKED', 'CONFIRMED', 'COMPLETED'] },
           startTime: { lt: new Date(entry.endTime) },
           endTime: { gt: new Date(entry.startTime) },
         },

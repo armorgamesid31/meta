@@ -796,7 +796,7 @@ export async function acceptWaitlistOffer(token: string) {
         where: {
           salonId: offer.salonId,
           staffId: block.staffId,
-          status: { in: ['BOOKED', 'COMPLETED'] },
+          status: { in: ['BOOKED', 'CONFIRMED', 'COMPLETED'] },
           startTime: { lt: block.endTime },
           endTime: { gt: block.startTime },
         },
