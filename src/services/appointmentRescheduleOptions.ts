@@ -17,10 +17,6 @@ export type RescheduleOptionsResponse = {
 const SLOT_INCREMENT_MINUTES = 5;
 const DISPLAY_CLUSTER_MINUTES = 15;
 
-function toIsoDate(value: Date): string {
-  return value.toISOString().split('T')[0];
-}
-
 function createDateTime(date: string, minutesFromMidnight: number): Date {
   const value = new Date(`${date}T00:00:00`);
   value.setMinutes(minutesFromMidnight, 0, 0);
@@ -55,7 +51,11 @@ export async function buildRescheduleOptions(input: {
   date: string;
   assignments?: Record<number, number>;
 }): Promise<RescheduleOptionsResponse> {
-  const targetDate = toIsoDate(new Date(`${input.date}T00:00:00`));
+  // input.date zaten 'YYYY-MM-DD' (endpoint doğruluyor). Date'e round-trip YAPMA:
+  // server TZ Istanbul'da new Date('...T00:00:00') YEREL gece-yarısı = UTC'de önceki
+  // gün 21:00 → toISOString().slice(0,10) BİR GÜN GERİ verir → reschedule slotları +
+  // commit yanlış güne (Pzt isteyince Pazar'a) düşüyordu. Doğrudan kullan.
+  const targetDate = input.date;
   const settings = await prisma.salonSettings.findUnique({
     where: { salonId: input.salonId },
     select: { workStartHour: true, workEndHour: true },
