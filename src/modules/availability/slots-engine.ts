@@ -231,7 +231,9 @@ export class SlotsEngine {
       prisma.staffService.findMany({
         where: {
           serviceId: { in: serviceIds },
-          Staff: { salonId: request.salonId },
+          // isActive: true → pasife alınan personel slot üretmez (soft-delete).
+          // StaffService.isactive (hizmet-bazlı) ayrı; ikisi de aktif olmalı.
+          Staff: { salonId: request.salonId, isActive: true },
           isactive: true,
         },
         select: {

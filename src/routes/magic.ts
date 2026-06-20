@@ -225,7 +225,7 @@ router.get('/:token', async (req: any, res: any) => {
 
     // 8. Check salon has staff
     const salonStaff = await prisma.staff.count({
-      where: { salonId: salon.id }
+      where: { salonId: salon.id, isActive: true }
     });
 
     if (salonStaff === 0) {

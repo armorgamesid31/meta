@@ -2440,6 +2440,7 @@ function mapStaffForMobile(staff: any) {
     profileImageUrl: resolved.profileImageUrl,
     themeColor: normalizeThemeColor(staff.themeColor) || paletteColorBySeed(staff.id),
     monthlyGoal: staff.monthlyGoal ?? 0,
+    isActive: staff.isActive !== false,
     services,
     serviceCount: services.length,
     // Gün-bazlı çalışma saatleri (boşsa salon saatine düşer). Gün kodu MON..SUN.
@@ -8179,7 +8180,8 @@ router.get('/services/:id/staff', authenticateToken, async (req: any, res: any) 
       where: {
         serviceId,
         isactive: true,
-        Staff: { salonId },
+        // Pasife alınan personel yeni-randevu uzman seçicisinde görünmesin (soft-delete).
+        Staff: { salonId, isActive: true },
       },
       select: {
         staffId: true,
@@ -8640,6 +8642,7 @@ router.get('/staff', authenticateToken, async (req: any, res: any) => {
         profileImageUrl: true,
         monthlyGoal: true,
         commissionRate: true,
+        isActive: true,
         // Gün-bazlı çalışma saatleri (uzman). Boşsa salon saatine düşer.
         StaffWorkingHours: {
           select: { dayOfWeek: true, startHour: true, endHour: true },
@@ -9169,13 +9172,18 @@ router.delete('/staff/:id', authenticateToken, async (req: any, res: any) => {
       throw new BusinessError('NOT_FOUND', 'Staff not found.', 404);
     }
 
-    await prisma.staff.delete({
+    // Soft-delete: pasife al — randevu + prim geçmişi korunur (eski hard-delete,
+    // Commission* cascade'i prim kayıtlarını sessizce uçuruyordu). Bağlı membership
+    // (hesap/login) DOKUNULMAZ; ayrı yönetilir. Geri al: POST /staff/:id/reactivate.
+    await prisma.staff.update({
       where: { id: staffId },
+      data: { isActive: false },
     });
 
-    // KURAL 4: seat count changed -> reconcile Stripe subscription quantity.
+    // Seat sayımı pasifi de saydığı için (seatBilling raw count) quantity değişmez;
+    // çağrı idempotent kalsın diye korunuyor (no-op olur).
     void syncSubscriptionQuantity(salonId).catch((err) => {
-      console.error('[adminMobile:staff:delete] syncSubscriptionQuantity failed', err);
+      console.error('[adminMobile:staff:deactivate] syncSubscriptionQuantity failed', err);
     });
 
     return res.status(204).send();
@@ -9184,6 +9192,39 @@ router.delete('/staff/:id', authenticateToken, async (req: any, res: any) => {
       throw new BusinessError('CONFLICT', 'Bu çalışan randevularda kullanıldığı için silinemez.', 409);
     }
     console.error('Admin staff delete error:', error);
+    throw error;
+  }
+});
+
+// Pasife alınan personeli geri getir (soft-delete reaktivasyonu).
+router.post('/staff/:id/reactivate', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  const staffId = Number(req.params.id);
+  if (!Number.isInteger(staffId) || staffId <= 0) {
+    throw new BusinessError('VALIDATION_FAILED', 'Invalid staff id.', 400);
+  }
+
+  try {
+    const existing = await prisma.staff.findFirst({
+      where: { id: staffId, salonId },
+      select: { id: true },
+    });
+    if (!existing) {
+      throw new BusinessError('NOT_FOUND', 'Staff not found.', 404);
+    }
+
+    await prisma.staff.update({
+      where: { id: staffId },
+      data: { isActive: true },
+    });
+
+    void syncSubscriptionQuantity(salonId).catch((err) => {
+      console.error('[adminMobile:staff:reactivate] syncSubscriptionQuantity failed', err);
+    });
+
+    return res.status(204).send();
+  } catch (error: any) {
+    console.error('Admin staff reactivate error:', error);
     throw error;
   }
 });

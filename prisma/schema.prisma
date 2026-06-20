@@ -530,6 +530,10 @@ model Staff {
   // hesaplanmaz (CommissionRule veya Service.defaultCommissionRate ile
   // override edilebilir).
   commissionRate       Float?
+  // Soft-delete: pasife alınan personel listelerden + müsaitlik motorundan düşer,
+  // ama randevu + prim geçmişi korunur (hard-delete cascade'i prim kayıtlarını
+  // uçuruyordu). Geri alınabilir (POST /staff/:id/reactivate). Service.isActive ile simetrik.
+  isActive             Boolean               @default(true)
   appointments         Appointment[]
   appointmentLines     AppointmentLine[]
   leaves               Leave[]
@@ -543,6 +547,8 @@ model Staff {
   commissionBonusRules CommissionBonusRule[]
   commissionEntries    CommissionEntry[]
   commissionPayouts    CommissionPayout[]
+
+  @@index([salonId, isActive], map: "idx_staff_salon_active")
 }
 
 model Leave {

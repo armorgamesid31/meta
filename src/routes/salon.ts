@@ -890,7 +890,7 @@ router.get('/staff', authenticateToken, async (req: any, res: any) => {
 
   try {
     const rows = await prisma.staff.findMany({
-      where: { salonId: req.user.salonId },
+      where: { salonId: req.user.salonId, isActive: true },
       select: {
         id: true,
         name: true,
@@ -941,7 +941,7 @@ router.get('/staff/public', async (req: any, res: any) => {
 
   try {
     const rows = await prisma.staff.findMany({
-      where: { salonId },
+      where: { salonId, isActive: true },
       select: {
         id: true,
         name: true,
@@ -1083,8 +1083,11 @@ router.delete('/staff/:id', authenticateToken, async (req: any, res: any) => {
       throw new BusinessError('NOT_FOUND', 'Staff member not found', 404);
     }
 
-    await prisma.staff.delete({
+    // Soft-delete: pasife al (legacy route da hard-delete yapmamalı; cascade
+    // prim/randevu geçmişini uçuruyordu). adminMobile DELETE ile aynı davranış.
+    await prisma.staff.update({
       where: { id: parseInt(id) },
+      data: { isActive: false },
     });
 
     // KURAL 4: seat count changed -> reconcile Stripe subscription quantity.
