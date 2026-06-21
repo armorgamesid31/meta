@@ -226,9 +226,22 @@ export async function presignReadUrl(
   const client = getClient();
   if (!client) return null;
   try {
+    // R2 presigned GET, depolanan content-type yerine application/octet-stream
+    // döndürebiliyor. Meta sesli mesajı işlerken content-type'ı STRICT kontrol
+    // edip audio/ogg değilse "media upload error 131053" ile reddediyor
+    // (görseller magic-byte ile geçiyor, ses geçmiyor). ResponseContentType
+    // ile imzalı URL fetch edildiğinde doğru tipi zorluyoruz — uzantıdan türet.
+    const ext = (cached.r2Key.split('.').pop() || '').toLowerCase();
+    const ctMap: Record<string, string> = {
+      ogg: 'audio/ogg', m4a: 'audio/mp4', aac: 'audio/aac', mp3: 'audio/mpeg', amr: 'audio/amr',
+      jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp',
+      mp4: 'video/mp4', '3gp': 'video/3gpp',
+    };
+    const responseContentType = ctMap[ext];
     const cmd = new GetObjectCommand({
       Bucket: cached.r2Bucket,
       Key: cached.r2Key,
+      ...(responseContentType ? { ResponseContentType: responseContentType } : {}),
     });
     return await getSignedUrl(client, cmd, { expiresIn: SIGNED_URL_TTL_SEC });
   } catch (err) {

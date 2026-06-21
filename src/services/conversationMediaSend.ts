@@ -139,12 +139,9 @@ async function whatsAppLinkSend(opts: {
     mediaPayload.caption = input.caption;
   }
   // Voice flag for audio: WhatsApp shows as a push-to-talk bubble.
-  // GEÇİCİ TEŞHİS: voice:true + link-payload kombinasyonu Meta'da async-drop'a
-  // yol açıyor olabilir (foto link ile gidiyor, ses gitmiyor — tek fark bu).
-  // Devre dışı bırakıp sesin normal-audio olarak teslim olup olmadığını ölçüyoruz.
-  // if (input.kind === 'audio' && input.isVoice) {
-  //   mediaPayload.voice = true;
-  // }
+  if (input.kind === 'audio' && input.isVoice) {
+    mediaPayload.voice = true;
+  }
   const body: Record<string, unknown> = {
     messaging_product: 'whatsapp',
     recipient_type: 'individual',
