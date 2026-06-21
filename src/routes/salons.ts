@@ -410,6 +410,7 @@ router.get('/:slug/homepage', async (req: any, res: any) => {
             icon: true,
             coverImageUrl: true,
             displayOrder: true,
+            categoryRef: { select: { defaultImageUrl: true } },
             _count: {
               select: {
                 Service: true,
@@ -669,7 +670,7 @@ router.get('/:slug/homepage', async (req: any, res: any) => {
         name: category.name,
         marketingDescription: category.marketingDescription,
         icon: category.icon,
-        coverImageUrl: category.coverImageUrl || coverImageByCategoryId.get(category.id) || null,
+        coverImageUrl: category.coverImageUrl || coverImageByCategoryId.get(category.id) || category.categoryRef?.defaultImageUrl || null,
         displayOrder: category.displayOrder,
         serviceCount: category._count.Service,
       })),
