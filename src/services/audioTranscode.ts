@@ -13,19 +13,6 @@ import ffmpegStatic from 'ffmpeg-static';
 // (string | null). null gelirse PATH'teki sistem ffmpeg'ine düş.
 const FFMPEG_PATH: string = (ffmpegStatic as unknown as string | null) || 'ffmpeg';
 
-// Boot-time probe: ffmpeg binary bu ortamda (Docker/Linux) gerçekten
-// çalışıyor mu? ffmpeg-static'in arch/glibc/izin sorunlarını ses gönderimini
-// beklemeden, başlangıç log'unda yakalamak için. Tek seferlik, hafif.
-try {
-  const probe = spawn(FFMPEG_PATH, ['-version']);
-  let v = '';
-  probe.stdout.on('data', (d: Buffer) => { v += d.toString(); });
-  probe.on('error', (e) => console.error('[ffmpeg-probe] FAIL path=' + FFMPEG_PATH, (e as Error)?.message));
-  probe.on('close', (c) => console.log('[ffmpeg-probe] exit=' + c + ' path=' + FFMPEG_PATH + ' ' + (v.split('\n')[0] || '')));
-} catch (e) {
-  console.error('[ffmpeg-probe] spawn threw:', (e as Error)?.message);
-}
-
 /**
  * Girdi ses buffer'ını ffmpeg ile verilen kodek argümanlarıyla çevirir.
  * Diske dokunmaz: girdi stdin'e yazılır, çıktı stdout'tan toplanır.
