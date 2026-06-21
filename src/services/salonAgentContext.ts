@@ -156,7 +156,6 @@ const FRIENDLY_DIRECTIVE = [
   '- Sadece fiyat/bilgi sorusu varsa → cevap ver, sonuna BİR KEZ "İstersen sana randevu linki gönderebilirim?" ekle.',
   '- Müşteri "şimdi değil/düşüneceğim" derse → tekrar ısrar etme; "Aklında olsun, ne zaman istersen yaz" deyip bırak.',
   '- Aynı konuşmada link atıldıysa → 2. kez teklif etme.',
-  '- KAYITSIZ MÜŞTERİ (# MÜŞTERİ KİMLİK\'te isRegistered=false): Linki ilk gönderirken BİR KEZ şunu ekle: "Randevu sürecinde sadece bir kez hızlı bir kayıt adımı çıkacak, sonraki randevularda gerek olmayacak." Konuşma boyunca 1 kezden fazla tekrar etme.',
   '',
   '# BİLMİYORSAN',
   '- Uydurma kesin yasak. "Ondan tam emin değilim, salonu bağlayayım" → tool_request_handover.',
@@ -215,7 +214,6 @@ const BALANCED_DIRECTIVE = [
   '- Sadece fiyat/bilgi sorusu varsa → cevap ver, sonuna BİR KEZ "İsterseniz size randevu linki gönderebilirim." (soru işareti yok — kapalı cümle).',
   '- Müşteri "şimdi değil/düşüneceğim" derse → tekrar ısrar etme; "Tabii, ne zaman uygun olursanız buradayız." deyip bırak.',
   '- Aynı konuşmada link gönderildiyse → 2. kez teklif etme.',
-  '- KAYITSIZ MÜŞTERİ (# MÜŞTERİ KİMLİK\'te isRegistered=false): Linki ilk gönderirken BİR KEZ şunu ekle: "Randevu sürecinde sadece bir kez hızlı bir kayıt adımı yer alacak, sonraki randevularınızda gerek kalmayacak." Konuşma boyunca 1 kezden fazla tekrar etme.',
   '',
   '# BİLMİYORSAN',
   '- Uydurma kesin yasak. "Bu konuda emin değilim, size bir uzmanımızı bağlayalım." → tool_request_handover.',
@@ -279,7 +277,6 @@ const PROFESSIONAL_DIRECTIVE = [
   '- Sadece fiyat/bilgi sorusu varsa → cevap ver, sonuna BİR KEZ "Dilerseniz randevu bağlantısını tarafınıza iletebiliriz." (kapalı cümle).',
   '- Müşteri "şimdi değil/düşüneceğim" derse → tekrar ısrar etme; "Tabii, dilediğiniz zaman ulaşabilirsiniz." deyip bırak.',
   '- Aynı konuşmada link gönderildiyse → 2. kez teklif etme.',
-  '- KAYITSIZ MÜŞTERİ (# MÜŞTERİ KİMLİK\'te isRegistered=false): Linki ilk gönderirken BİR KEZ şunu ekle: "Randevu sürecinde sadece bir kez hızlı bir kayıt adımı tamamlamanız gerekecek; sonraki randevularınızda bu adım gerekmeyecektir." Konuşma boyunca 1 kezden fazla tekrar etme.',
   '',
   '# BİLMİYORSAN',
   '- Uydurma kesin yasak. "Bu konuda emin değiliz, sizi ilgili uzmanımıza yönlendirelim." → tool_request_handover.',
@@ -548,14 +545,13 @@ export function buildCustomerCalibration(tone: AgentTone, c: CustomerSnapshot): 
     const baseHitap = hasFullName
       ? `Hitap: "Sayın ${c.displayName!.trim()}". Eksiksiz ad+soyad kullan, "Hanım/Bey" eki EKLEME.`
       : 'Hitap: "Sayın Misafirimiz". Tam ad+soyad bilinmiyor — uydurma, "Sayın Ayşe" gibi tek-isim de YASAK.';
-    const unregNote = !c.isRegistered
-      ? ' Kayıtsız müşteri: magic link ilk gönderiminde BİR KEZ "sadece 1 kez hızlı kayıt, sonraki randevularda gerek kalmayacak" vurgusunu ekle.'
-      : '';
     const visitNote =
       c.isRegistered && c.lastVisit && c.lastVisit.serviceName
         ? ` Son ziyaret: ${c.lastVisit.daysAgo} gün önce (${c.lastVisit.serviceName}${c.lastVisit.staffName ? ', ' + c.lastVisit.staffName : ''}) — gerekirse referans verebilirsin.`
         : '';
-    return baseHitap + visitNote + unregNote;
+    // Kayıt-adımı uyarısı artık buildSystemPrompt'taki dinamik KAYIT DURUMU guard'ında
+    // (yalnızca kayıtsızda girer, kayıtlıda açık yasak) — burada tekrar etme.
+    return baseHitap + visitNote;
   }
 
   if (tone === 'friendly') {
@@ -569,11 +565,10 @@ export function buildCustomerCalibration(tone: AgentTone, c: CustomerSnapshot): 
       }
       // Kayıtsız
       if (!c.isRegistered) {
-        const unregNote = ' Kayıtsız: magic link ilk gönderiminde BİR KEZ "sadece 1 kez hızlı kayıt, sonraki randevularda gerek olmayacak" vurgusunu ekle.';
         if (c.nameSource === 'channel_profile' && c.firstName) {
-          return `Müşteri kayıtsız, isim kanaldan ("${c.firstName}") — gerçek adı olmayabilir. "siz" + "${firstHon}" kullan, yakınlık eki yok.` + unregNote;
+          return `Müşteri kayıtsız, isim kanaldan ("${c.firstName}") — gerçek adı olmayabilir. "siz" + "${firstHon}" kullan, yakınlık eki yok.`;
         }
-        return 'Müşterinin adı bilinmiyor. "Merhaba, hoş geldiniz" — uydurma isim kullanma, "siz" + nötr kal.' + unregNote;
+        return 'Müşterinin adı bilinmiyor. "Merhaba, hoş geldiniz" — uydurma isim kullanma, "siz" + nötr kal.';
       }
       // Kayıtlı + 55-/unknown
       if (c.lastVisit && c.lastVisit.daysAgo <= 60) {
@@ -601,11 +596,10 @@ export function buildCustomerCalibration(tone: AgentTone, c: CustomerSnapshot): 
     const hon = c.honorific || 'Hanım';
     const fullHon = c.firstName ? `${c.firstName} ${hon}` : hon;
     if (!c.isRegistered) {
-      const unregNote = ' Kayıtsız: magic link ilk gönderiminde BİR KEZ "sadece 1 kez hızlı kayıt, sonraki randevularda gerek olmayacak" vurgusunu ekle.';
       if (c.nameSource === 'channel_profile' && c.firstName) {
-        return `Müşteri kayıtsız, isim kanaldan ("${c.firstName}") — gerçek adı olmayabilir. "siz" + "${fullHon}" kullan. Mesafeyi koru, abartı sıcaklık yok.` + unregNote;
+        return `Müşteri kayıtsız, isim kanaldan ("${c.firstName}") — gerçek adı olmayabilir. "siz" + "${fullHon}" kullan. Mesafeyi koru, abartı sıcaklık yok.`;
       }
-      return 'Müşterinin adı bilinmiyor. "Merhaba, hoş geldiniz, size nasıl yardımcı olabilirim?" gibi nötr selamla. Uydurma isim kullanma.' + unregNote;
+      return 'Müşterinin adı bilinmiyor. "Merhaba, hoş geldiniz, size nasıl yardımcı olabilirim?" gibi nötr selamla. Uydurma isim kullanma.';
     }
     if (c.lastVisit && c.lastVisit.daysAgo <= 60) {
       const visitNote = c.lastVisit.serviceName
@@ -814,13 +808,6 @@ export function buildSystemPrompt(input: {
   // Onay kalıpları tona göre KODDA seçilir (modele "siz→sen çevir" dedirtmek
   // tutarsızdı). samimi = sen, balanced/professional = siz.
   const isFriendly = (input.toneName ?? null) === 'friendly';
-  const bookingNarr = isFriendly
-    ? 'Buyur, tek tıkla randevunu oluşturabilirsin.'
-    : 'Buyrun, tek tıkla randevunuzu oluşturabilirsiniz.';
-  const handoverNarr = isFriendly
-    ? 'Seni bir uzmanımıza yönlendirdim, kısa süre içinde dönüş yapılacak.'
-    : 'Sizi bir uzmanımıza yönlendirdim, kısa süre içinde dönüş yapılacak.';
-
   const lines = [
     'Sen Kedy salon asistanısın. Salon adına müşterinin WhatsApp/Instagram mesajına cevap veriyorsun.',
     '',
@@ -830,13 +817,13 @@ export function buildSystemPrompt(input: {
     '1. **HANDOVER** → tool_request_handover ZORUNLU',
     "   Tetikleyiciler: 'insan', 'temsilci', 'yetkili', 'müdür', 'patron', 'kuaför', 'usta', 'uzman bağla', 'bağla', 'yönlendir', 'aktar', 'beni biriyle konuştur', şikayet ('berbat', 'rezalet', 'kötü', 'kızgın', 'şikayet'), agresif dil, küfür.",
     '   Çözemediğin durum da devir sebebidir: müşterinin gelebileceği tek zaman salonun çalışma saatlerine/kapanışına sığmıyorsa (ör. kapanışa yakın saatte uzun işlem) önce uygun alternatif (daha erken saat / başka gün) öner; müşteri ısrar eder ya da çözemezsen devret.',
-    `   Tool sonrası kısa onay: "${handoverNarr}"`,
+    '   Tool sonrası, AKTİF TONUNA uygun KISA bir bilgilendirme yaz: müşteriyi bir uzmana/yetkiliye yönlendirdiğini ve kısa süre içinde dönüleceğini kendi doğal cümlenle belirt; kalıplaşmış/şablon ifade kullanma.',
     '',
     '2. **RANDEVU / SAAT SORUSU** → tool_booking_link ZORUNLU',
     "   Tetikleyiciler: 'randevu al', 'rezervasyon', 'müsait/uygun saat', 'gelmek istiyorum', 'X gün/saat geleyim', 'değiştir', 'iptal', 'erteleme', SPESİFİK SAAT sorusu ('yarın 14:00 var mı', 'cumartesi öğleden sonra X için').",
     '   Spesifik saat müsaitliği için ASLA kendin tarih/saat üretme, tahmin yapma; doğrudan tool_booking_link çağır. Saatleri sayma, salon takvimini sen bilemezsin.',
     '   HİZMET GEÇERLİLİĞİ (önce kontrol): Müşterinin istediği hizmetlerin HİÇBİRİ katalogda yoksa booking link ÇAĞIRMA. Önce tool_get_services/tool_get_prices ile doğrula; katalogda OLMAYAN hizmeti AÇIKÇA "Maalesef bunu vermiyoruz" diye söyle, varsa gerçek alternatifi öner. Booking link yalnızca EN AZ BİR geçerli hizmet ya da gerçek randevu niyeti varken çağrılır.',
-    `   tool_booking_link çağrıldıktan sonra kısa yönlendirme yaz: "${bookingNarr}" (linki METNE YAZMA, backend buton ekler).`,
+    '   tool_booking_link çağrıldıktan sonra randevu butonuna yönlendiren, AKTİF TONUNA uygun KISA ve doğal bir cümle yaz — kalıbı kendin seç; "Buyur/Buyrun" gibi kalıplaşmış veya emir kipi ifadeler kullanma. Linki METNE YAZMA, backend buton ekler.',
     '   Link oluşturulamazsa kısa özür + tool_request_handover.',
     '',
     '3. **FİYAT/HİZMET** → tool_get_prices veya tool_get_services ZORUNLU',
@@ -889,6 +876,7 @@ export function buildSystemPrompt(input: {
     'ASLA deme — ister o anki görseli görüyorsun, ister geçmişin betimi sende. Reddetme.',
     '',
     '# DİĞER KURALLAR',
+    '- Hitap ismini ÖLÇÜLÜ kullan: ismi en fazla selamlamada ya da önemli bir onayda bir kez geçir; her mesajda veya her cümlede tekrarlama — sürekli isim kullanmak yapay ve sırıtkan durur.',
     '- Bilgi uydurma. Yalnızca tool sonuçlarına, # MÜŞTERİ KİMLİK ve # SALON bilgisine dayan.',
     '- Tool sonucu boşsa dürüstçe söyle, alternatif kategori sor.',
     '- Tool çağrılarken ara açıklama mesajı yazma.',
@@ -915,6 +903,17 @@ export function buildSystemPrompt(input: {
     `Kalibrasyon: ${calibration}`,
     'Müşteri henüz kayıtsız ve ismi yoksa nötr selamla — uydurma isim kullanma. Müşterinin profilden gelen ismi varsa (channel_profile) gerçek adı olmayabilir, hitabı temkinli kullan.',
   ];
+
+  // Kayıt-adımı uyarısı YALNIZCA gerçekten kayıtsız müşteride prompt'a girer.
+  // Kayıtlıda hiçbir şey eklenmez — "bahsetme" gibi negatif talimat gereksiz (cümle
+  // yoksa model zaten demez) ve "kayıt" kelimesini modele hatırlatması ters teper.
+  if (input.customer && !input.customer.isRegistered) {
+    lines.push(
+      isFriendly
+        ? 'Bu müşteri henüz kayıtlı DEĞİL. Randevu linkini İLK kez gönderirken yalnızca BİR KEZ, kendi doğal cümlenle şu bilgiyi verebilirsin: randevu sırasında sadece bir kez kısa bir kayıt adımı çıkacak, sonraki randevularda gerekmeyecek. Aynı konuşmada bir daha tekrarlama.'
+        : 'Bu müşteri henüz kayıtlı DEĞİL. Randevu linkini İLK kez gönderirken yalnızca BİR KEZ, kendi doğal cümlenle şu bilgiyi verebilirsin: randevu sırasında sadece bir kez kısa bir kayıt adımı yer alacak, sonraki randevularınızda gerekmeyecek. Aynı konuşmada bir daha tekrarlama.',
+    );
+  }
 
   return lines.join('\n') + buildRepliedToBlock(input.repliedTo) + buildHandoverBlock(input.handover ?? null, isFriendly);
 }
