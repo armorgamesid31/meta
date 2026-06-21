@@ -168,6 +168,15 @@ async function whatsAppLinkSend(opts: {
     const bodyStr = typeof respBody === 'string' ? respBody.slice(0, 300) : JSON.stringify(respBody || {}).slice(0, 300);
     throw new Error(`whatsapp_media_send_failed status=${status ?? 'n/a'} url=${sendUrl} body=${bodyStr}`);
   }
+  try {
+    console.log('[WA-VOICE-DBG]', JSON.stringify({
+      status: sendResp?.status,
+      data: sendResp?.data,
+      type: whatsAppType,
+      voice: (mediaPayload as any).voice ?? null,
+      r2link: String(r2Url).slice(0, 90),
+    }).slice(0, 1400));
+  } catch (_) { /* ignore */ }
   const providerMessageId = String(
     sendResp.data?.messages?.[0]?.id ||
       sendResp.data?.data?.messages?.[0]?.id ||
