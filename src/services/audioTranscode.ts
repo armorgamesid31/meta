@@ -1,15 +1,10 @@
 // Sesli mesaj formatı dönüştürücü.
 //
 // WhatsApp Cloud API "voice note" (push-to-talk) olarak SADECE OGG/Opus
-// kabul eder. Ama istemciler farklı format üretiyor:
-//   - Web (MediaRecorder)        → audio/webm; codecs=opus
-//   - iOS / Capacitor WebView    → audio/mp4 (AAC)
-// İkisi de WhatsApp voice ile uyumsuz: Meta dosyayı R2 link'inden çekip
-// sessizce reddediyordu → mesaj "gönderildi" görünüp müşteriye ulaşmıyordu.
-//
-// Bu modül girdiyi tek geçişte OGG/Opus'a çevirir. ffmpeg-static binary'sini
+// kabul eder; normal "ses dosyası" olarak MP3/AAC/AMR/MP4'ü de kabul eder.
+// İstemciler farklı format üretiyor (web → webm/opus, iOS → mp4/aac), bu
+// modül girdiyi tek geçişte hedef formata çevirir. ffmpeg-static binary'sini
 // child_process ile pipe üzerinden çalıştırır (stdin→stdout, diske yazmadan).
-// ffmpeg-static binary'si npm install ile gelir; sunucuya elle kurulum yok.
 
 import { spawn } from 'node:child_process';
 import ffmpegStatic from 'ffmpeg-static';
@@ -32,30 +27,21 @@ try {
 }
 
 /**
- * Verilen ses buffer'ını (webm/opus, m4a/aac, vb.) WhatsApp voice note
- * uyumlu OGG/Opus'a çevirir: mono, 32 kbps Opus — WhatsApp'ın PTT
- * baloncuğunun beklediği profil.
- *
+ * Girdi ses buffer'ını ffmpeg ile verilen kodek argümanlarıyla çevirir.
  * Diske dokunmaz: girdi stdin'e yazılır, çıktı stdout'tan toplanır.
- * Hata durumunda ffmpeg'in stderr'ini içeren bir Error fırlatır.
  */
-export async function transcodeToWhatsAppVoice(input: Buffer): Promise<Buffer> {
+function runFfmpegAudio(input: Buffer, audioArgs: string[]): Promise<Buffer> {
   if (!input || input.length === 0) {
-    throw new Error('transcode_empty_input');
+    return Promise.reject(new Error('transcode_empty_input'));
   }
-  return await new Promise<Buffer>((resolve, reject) => {
+  return new Promise<Buffer>((resolve, reject) => {
     const args = [
-      '-hide_banner',
-      '-loglevel', 'error',
-      '-i', 'pipe:0',     // stdin'den oku (konteyner otomatik algılanır)
-      '-vn',              // varsa video/kapak görselini at
-      '-ac', '1',         // mono
-      '-c:a', 'libopus',  // Opus codec
-      '-b:a', '32k',      // voice için yeterli bitrate
-      '-f', 'ogg',        // OGG konteyner
-      'pipe:1',           // stdout'a yaz
+      '-hide_banner', '-loglevel', 'error',
+      '-i', 'pipe:0',
+      '-vn',
+      ...audioArgs,
+      'pipe:1',
     ];
-
     let proc;
     try {
       proc = spawn(FFMPEG_PATH, args, { stdio: ['pipe', 'pipe', 'pipe'] });
@@ -63,7 +49,6 @@ export async function transcodeToWhatsAppVoice(input: Buffer): Promise<Buffer> {
       reject(err);
       return;
     }
-
     const out: Buffer[] = [];
     const errChunks: Buffer[] = [];
     proc.stdout.on('data', (d: Buffer) => out.push(d));
@@ -78,11 +63,24 @@ export async function transcodeToWhatsAppVoice(input: Buffer): Promise<Buffer> {
         reject(new Error(`ffmpeg_transcode_failed code=${code} ${stderr}`.trim()));
       }
     });
-
-    // ffmpeg erken ölürse stdin EPIPE atabilir — close handler asıl sebebi
-    // raporladığı için burada yutuyoruz.
     proc.stdin.on('error', () => { /* ignore EPIPE */ });
     proc.stdin.write(input);
     proc.stdin.end();
   });
+}
+
+/**
+ * WhatsApp voice note (PTT) için OGG/Opus: mono, 32 kbps Opus.
+ */
+export function transcodeToWhatsAppVoice(input: Buffer): Promise<Buffer> {
+  return runFfmpegAudio(input, ['-ac', '1', '-c:a', 'libopus', '-b:a', '32k', '-f', 'ogg']);
+}
+
+/**
+ * WhatsApp normal ses dosyası için MP3: mono, 64 kbps. Voice-note baloncuğu
+ * olmaz ama yaygın bir format olduğu için BSP/Meta tarafında daha az sürtünme
+ * bekleniyor.
+ */
+export function transcodeToMp3(input: Buffer): Promise<Buffer> {
+  return runFfmpegAudio(input, ['-ac', '1', '-c:a', 'libmp3lame', '-b:a', '64k', '-f', 'mp3']);
 }

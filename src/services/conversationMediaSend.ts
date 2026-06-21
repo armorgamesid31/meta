@@ -37,7 +37,7 @@ import {
   type MediaCachedMeta,
   type MediaKind,
 } from './conversationMediaCache.js';
-import { transcodeToWhatsAppVoice } from './audioTranscode.js';
+import { transcodeToMp3 } from './audioTranscode.js';
 
 const META_GRAPH_VERSION = (process.env.META_GRAPH_VERSION || 'v22.0').trim();
 const META_INSTAGRAM_GRAPH_BASE = `https://graph.instagram.com/${META_GRAPH_VERSION}`;
@@ -139,9 +139,11 @@ async function whatsAppLinkSend(opts: {
     mediaPayload.caption = input.caption;
   }
   // Voice flag for audio: WhatsApp shows as a push-to-talk bubble.
-  if (input.kind === 'audio' && input.isVoice) {
-    mediaPayload.voice = true;
-  }
+  // GEÇİCİ MP3 DENEMESİ: mp3 voice-note olamaz; normal ses dosyası olarak
+  // gönderiyoruz, voice flag eklemiyoruz.
+  // if (input.kind === 'audio' && input.isVoice) {
+  //   mediaPayload.voice = true;
+  // }
   const body: Record<string, unknown> = {
     messaging_product: 'whatsapp',
     recipient_type: 'individual',
@@ -346,10 +348,14 @@ export async function sendOutboundMedia(input: SendMediaInput): Promise<SendMedi
   let effectiveMime = input.mimeType;
   if (input.channel === 'WHATSAPP' && kind === 'audio' && input.isVoice) {
     try {
-      effectiveBuffer = await transcodeToWhatsAppVoice(input.buffer);
-      effectiveMime = 'audio/ogg';
+      // GEÇİCİ MP3 DENEMESİ: Chakra, OGG audio-link'i Meta'ya iletirken
+      // content-type'ı octet-stream'e çeviriyor (131053 media upload error).
+      // MP3'ün doğru iletilip iletilmediğini test ediyoruz; başarılıysa
+      // voice baloncuğu yerine normal "ses dosyası" olarak gider.
+      effectiveBuffer = await transcodeToMp3(input.buffer);
+      effectiveMime = 'audio/mpeg';
     } catch (err) {
-      console.error('[conversationMediaSend] WA voice transcode failed:', err);
+      console.error('[conversationMediaSend] WA audio transcode failed:', err);
       throw new Error('voice_transcode_failed');
     }
   }
