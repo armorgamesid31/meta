@@ -942,6 +942,10 @@ async function markConversationHumanActive(input: {
   channel: 'INSTAGRAM' | 'WHATSAPP';
   conversationKey: string;
   profileName?: string | null;
+  // true → SÜRESİZ manuel (MANUAL_ALWAYS): AI hiç geri devreye girmez,
+  // humanActiveUntil null (auto-resume `manualAlways`'i atlar). false/undefined
+  // → süreli (HUMAN_ACTIVE, DEFAULT_HUMAN_ACTIVE_MINUTES sonra otomatik AI'a döner).
+  manualAlways?: boolean;
 }) {
   // IMPORTANT: ConversationState rows must use the SAME key format the
   // inbound webhook handler writes, otherwise mode transitions land on a
@@ -950,7 +954,9 @@ async function markConversationHumanActive(input: {
   // shape here so handover / resume mutations target the same row.
   const canonicalConversationKey = ensureChannelPrefixedKey(input.channel, input.conversationKey);
   const now = new Date();
-  const until = new Date(now.getTime() + DEFAULT_HUMAN_ACTIVE_MINUTES * 60 * 1000);
+  const manualAlways = !!input.manualAlways;
+  const mode: 'MANUAL_ALWAYS' | 'HUMAN_ACTIVE' = manualAlways ? 'MANUAL_ALWAYS' : 'HUMAN_ACTIVE';
+  const until = manualAlways ? null : new Date(now.getTime() + DEFAULT_HUMAN_ACTIVE_MINUTES * 60 * 1000);
   return prisma.conversationState.upsert({
     where: {
       salonId_channel_conversationKey: {
@@ -960,8 +966,8 @@ async function markConversationHumanActive(input: {
       },
     },
     update: {
-      mode: 'HUMAN_ACTIVE',
-      manualAlways: false,
+      mode,
+      manualAlways,
       humanPendingSince: null,
       lastHumanMessageAt: now,
       humanActiveUntil: until,
@@ -971,8 +977,8 @@ async function markConversationHumanActive(input: {
       salonId: input.salonId,
       channel: input.channel,
       conversationKey: canonicalConversationKey,
-      mode: 'HUMAN_ACTIVE',
-      manualAlways: false,
+      mode,
+      manualAlways,
       humanPendingSince: null,
       lastHumanMessageAt: now,
       humanActiveUntil: until,
@@ -13379,6 +13385,51 @@ router.post('/conversations/:channel/:conversationKey/handover', authenticateTok
     });
   } catch (error) {
     console.error('Admin conversations handover error:', error);
+    throw error;
+  }
+});
+
+// "Süresiz" — manuel yanıt modunu SÜRESİZ yap (AI 6 saat sonra geri devreye
+// GİRMESİN). enabled:false → süreli handover'a (6 saat) geri döner. Handover
+// route'undan ayrı çünkü o, zaten handover'daysa erken-return yapar (mode
+// değiştirmez); bu route mode'u açıkça MANUAL_ALWAYS / HUMAN_ACTIVE arası çevirir.
+router.post('/conversations/:channel/:conversationKey/manual-always', authenticateToken, async (req: any, res: any) => {
+  const salonId = getSalonId(req, res);
+  const channel = asInboundChannel(req.params.channel);
+  if (!channel) {
+    throw new BusinessError('VALIDATION_FAILED', 'channel must be INSTAGRAM or WHATSAPP.', 400);
+  }
+  const conversationKey = typeof req.params.conversationKey === 'string' ? req.params.conversationKey.trim() : '';
+  if (!conversationKey) {
+    throw new BusinessError('VALIDATION_FAILED', 'conversationKey is required.', 400);
+  }
+  const enabled = req.body?.enabled !== false; // varsayılan true (süresiz aç)
+  try {
+    const updatedState = await markConversationHumanActive({
+      salonId,
+      channel,
+      conversationKey,
+      manualAlways: enabled,
+    });
+    await resolveHandoverAlert({ salonId, channel, conversationKey, byHumanMessage: true }).catch(() => {});
+    return res.status(200).json({
+      ok: true,
+      conversationKey: updatedState.conversationKey,
+      state: serializeConversationState({
+        channel,
+        conversationKey: updatedState.conversationKey,
+        customerId: updatedState.customerId || null,
+        mode: updatedState.mode as ConversationAutomationModeValue,
+        manualAlways: Boolean(updatedState.manualAlways),
+        humanPendingSince: updatedState.humanPendingSince || null,
+        humanActiveUntil: updatedState.humanActiveUntil || null,
+        lastHumanMessageAt: updatedState.lastHumanMessageAt || null,
+        lastCustomerMessageAt: updatedState.lastCustomerMessageAt || null,
+        updatedAt: updatedState.updatedAt || null,
+      }),
+    });
+  } catch (error) {
+    console.error('Admin conversations manual-always error:', error);
     throw error;
   }
 });
