@@ -139,11 +139,12 @@ async function whatsAppLinkSend(opts: {
     mediaPayload.caption = input.caption;
   }
   // Voice flag for audio: WhatsApp shows as a push-to-talk bubble.
-  // GEÇİCİ MP3 DENEMESİ: mp3 voice-note olamaz; normal ses dosyası olarak
-  // gönderiyoruz, voice flag eklemiyoruz.
-  // if (input.kind === 'audio' && input.isVoice) {
-  //   mediaPayload.voice = true;
-  // }
+  // mp3 + voice:true denemesi: WhatsApp resmî olarak voice-note için OGG ister
+  // (ve OGG link Meta'da octet-stream'e düşüp 131053 veriyor), ama mp3'ü
+  // baloncuk olarak gösterip göstermediğini ölçüyoruz.
+  if (input.kind === 'audio' && input.isVoice) {
+    mediaPayload.voice = true;
+  }
   const body: Record<string, unknown> = {
     messaging_product: 'whatsapp',
     recipient_type: 'individual',
