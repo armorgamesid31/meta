@@ -1,5 +1,6 @@
 import { ChannelType, IdentityBindingSource, IdentitySessionStatus, IdentitySubjectType } from '@prisma/client';
 import { prisma } from '../prisma.js';
+import { ensureChannelPrefixedKey } from '../utils/conversationKey.js';
 
 type NullableString = string | null | undefined;
 
@@ -105,6 +106,12 @@ export async function upsertIdentitySession(input: {
   status?: IdentitySessionStatus;
   metadata?: Record<string, unknown> | null;
 }) {
+  // identitySession.conversationKey kanonik olmalı: ham (905...) kaydedilirse
+  // resolveConversationKeyForPhone onu okuyup sonraki tüm outbound'lara yayar
+  // (zincirleme bölünme). Burada prefix'le, kaynağı kes.
+  if (input.conversationKey) {
+    input.conversationKey = ensureChannelPrefixedKey(input.identity.channel, input.conversationKey);
+  }
   return prisma.identitySession.upsert({
     where: {
       salonId_channel_subjectNormalized: {

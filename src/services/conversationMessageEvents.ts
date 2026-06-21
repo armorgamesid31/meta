@@ -9,6 +9,7 @@ import { prisma } from '../prisma.js';
 import { publishConversationStreamEvent, publishConversationTypingEvent } from './conversationEventsBus.js';
 import { createRealtimeEventInTx } from './conversationRealtimeEvents.js';
 import { upsertConversationThreadSummaryInTx } from './conversationThreadSummary.js';
+import { ensureChannelPrefixedKey } from '../utils/conversationKey.js';
 
 type UpsertConversationMessageEventInput = {
   salonId: number;
@@ -47,6 +48,10 @@ type UpsertConversationMessageEventInput = {
 export async function upsertConversationMessageEvent(
   input: UpsertConversationMessageEventInput,
 ): Promise<void> {
+  // conversationKey'i kanonikleştir: panel bazı aksiyonlarda çıplak alıcı id'si
+  // (ör. 905...) postluyor; mesaj her zaman `<CHANNEL>:<raw>` altında saklanmalı
+  // (yoksa aynı müşteri iki konuşmaya bölünür). Webhook prefix'li gönderir → idempotent.
+  input.conversationKey = ensureChannelPrefixedKey(input.channel, input.conversationKey);
   const providerMessageId = input.providerMessageId.trim();
   if (!providerMessageId) {
     return;

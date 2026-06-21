@@ -6,6 +6,7 @@ import {
   PrismaClient,
 } from '@prisma/client';
 import { normalizeInstagramIdentity } from './identityService.js';
+import { ensureChannelPrefixedKey } from '../utils/conversationKey.js';
 
 type UpsertConversationThreadSummaryInput = {
   salonId: number;
@@ -178,12 +179,15 @@ export async function upsertConversationThreadSummaryInTx(
   // hızlanmış sayım var; bu guard yalnızca AUTO modundaki inbound mesajları
   // bypass eder.
   if (unreadDelta > 0 && input.direction === 'INBOUND') {
+    // summaryKey RAW (prefix'siz) tutulur ama ConversationState `<CHANNEL>:<raw>`
+    // saklanır → prefix'leyerek ara, yoksa State hep null gelir ve AUTO modda bile
+    // mesaj "okunmamış" sayılır (yanlış unread rozeti).
     const state = await tx.conversationState.findUnique({
       where: {
         salonId_channel_conversationKey: {
           salonId: input.salonId,
           channel: input.channel,
-          conversationKey: summaryKey,
+          conversationKey: ensureChannelPrefixedKey(input.channel, summaryKey),
         },
       },
       select: { mode: true },
