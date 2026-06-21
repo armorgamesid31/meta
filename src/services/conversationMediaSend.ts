@@ -37,6 +37,7 @@ import {
   type MediaCachedMeta,
   type MediaKind,
 } from './conversationMediaCache.js';
+import { transcodeToWhatsAppVoice } from './audioTranscode.js';
 
 const META_GRAPH_VERSION = (process.env.META_GRAPH_VERSION || 'v22.0').trim();
 const META_INSTAGRAM_GRAPH_BASE = `https://graph.instagram.com/${META_GRAPH_VERSION}`;
@@ -327,6 +328,22 @@ export async function sendOutboundMedia(input: SendMediaInput): Promise<SendMedi
     throw new Error('unsupported_channel');
   }
 
+  // WhatsApp sesli mesajı (voice note) SADECE OGG/Opus kabul eder. Web webm,
+  // iOS/Capacitor m4a üretiyor → Meta dosyayı çekip sessizce reddediyordu
+  // ("gönderildi görünüp gitmeme"). R2'ye yazmadan ÖNCE OGG/Opus'a çevir;
+  // tüm aşağı akış (R2 cache + Meta link + mediaItem) bu buffer'ı kullanır.
+  let effectiveBuffer = input.buffer;
+  let effectiveMime = input.mimeType;
+  if (input.channel === 'WHATSAPP' && kind === 'audio' && input.isVoice) {
+    try {
+      effectiveBuffer = await transcodeToWhatsAppVoice(input.buffer);
+      effectiveMime = 'audio/ogg';
+    } catch (err) {
+      console.error('[conversationMediaSend] WA voice transcode failed:', err);
+      throw new Error('voice_transcode_failed');
+    }
+  }
+
   // ── Order of operations is now unified across channels ────────────
   //
   // Both WhatsApp and Instagram outbound are link-based: Meta fetches
@@ -349,9 +366,9 @@ export async function sendOutboundMedia(input: SendMediaInput): Promise<SendMedi
       conversationKey: input.conversationKey,
       messageId: synthIdForKey,
       mediaIndex: 0,
-      mimeType: input.mimeType,
+      mimeType: effectiveMime,
       kind,
-      buffer: input.buffer,
+      buffer: effectiveBuffer,
     });
     if (!persisted) throw new Error('r2_eager_cache_failed');
     cached = persisted;
@@ -389,8 +406,8 @@ export async function sendOutboundMedia(input: SendMediaInput): Promise<SendMedi
   const mediaItem: MediaItemMeta = {
     index: 0,
     type: kind,
-    mimeType: input.mimeType,
-    sizeBytes: input.buffer.length,
+    mimeType: effectiveMime,
+    sizeBytes: effectiveBuffer.length,
     isVoice: kind === 'audio' && !!input.isVoice,
     caption: input.caption || undefined,
     providerMediaId: metaIdentifier,

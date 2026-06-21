@@ -383,6 +383,9 @@ router.post(
       if (msg.startsWith('media_too_large')) {
         throw new BusinessError('PAYLOAD_TOO_LARGE', 'Boyut sınırını aşıyor.', 413);
       }
+      if (msg === 'voice_transcode_failed') {
+        throw new BusinessError('INTERNAL_ERROR', 'Ses dönüştürülemedi, tekrar deneyin.', 500, { reason: msg });
+      }
       console.error('[conversationMedia/send-media] failed:', err?.response?.data || err);
       throw new BusinessError('INTERNAL_ERROR', 'Medya gönderimi başarısız.', 500, {
         reason: msg,
