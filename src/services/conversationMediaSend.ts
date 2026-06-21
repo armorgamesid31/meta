@@ -139,9 +139,12 @@ async function whatsAppLinkSend(opts: {
     mediaPayload.caption = input.caption;
   }
   // Voice flag for audio: WhatsApp shows as a push-to-talk bubble.
-  if (input.kind === 'audio' && input.isVoice) {
-    mediaPayload.voice = true;
-  }
+  // GEÇİCİ TEŞHİS: voice:true + link-payload kombinasyonu Meta'da async-drop'a
+  // yol açıyor olabilir (foto link ile gidiyor, ses gitmiyor — tek fark bu).
+  // Devre dışı bırakıp sesin normal-audio olarak teslim olup olmadığını ölçüyoruz.
+  // if (input.kind === 'audio' && input.isVoice) {
+  //   mediaPayload.voice = true;
+  // }
   const body: Record<string, unknown> = {
     messaging_product: 'whatsapp',
     recipient_type: 'individual',
@@ -174,7 +177,8 @@ async function whatsAppLinkSend(opts: {
       data: sendResp?.data,
       type: whatsAppType,
       voice: (mediaPayload as any).voice ?? null,
-      r2link: String(r2Url).slice(0, 90),
+      r2key: cached.r2Key,
+      r2link: String(r2Url),
     }).slice(0, 1400));
   } catch (_) { /* ignore */ }
   const providerMessageId = String(
