@@ -291,7 +291,7 @@ router.post('/website/generate', authenticateToken, async (req: any, res: any) =
             about: salon.about,
             tagline: salon.tagline,
             heroText: salon.heroText,
-            callbackUrl: `${process.env.FRONTEND_URL?.replace('mobil', 'app')}/api/internal/website/${salonId}/generate-callback`,
+            callbackUrl: `https://${req.get('host')}/api/internal/website/${salonId}/generate-callback`,
             internalApiKey: internalApiKey,
           }),
         });

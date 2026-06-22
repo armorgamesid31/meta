@@ -54,12 +54,16 @@ function normalizeWhatsappPhone(phone?: string | null): string {
   return phone.replace(/[^\d]/g, '');
 }
 
+function toTitleCaseTr(s: string): string {
+  return s.replace(/(^|\s)(\p{L})/gu, (_m, sp: string, ch: string) => sp + ch.toLocaleUpperCase('tr-TR'));
+}
+
 function normalizeServiceNameForCopy(name?: string | null): string {
   const value = (name || '')
     .replace(/\s+/g, ' ')
     .trim()
     .toLocaleLowerCase('tr-TR');
-  return value;
+  return toTitleCaseTr(value);
 }
 
 function formatExpertReferenceForTestimonial(expert: {
@@ -67,13 +71,13 @@ function formatExpertReferenceForTestimonial(expert: {
   firstName?: string | null;
   gender?: 'female' | 'male' | 'other' | null;
 }): string {
-  const firstName = String(expert?.firstName || '').trim();
+  const firstName = toTitleCaseTr(String(expert?.firstName || '').trim());
   if (firstName) {
     if (expert.gender === 'female') return `${firstName} Hanım`;
     if (expert.gender === 'male') return `${firstName} Bey`;
     return firstName;
   }
-  return String(expert?.name || 'Uzman').trim() || 'Uzman';
+  return toTitleCaseTr(String(expert?.name || 'Uzman').trim()) || 'Uzman';
 }
 
 function fillTemplate(template: string, values: { expert?: string; service?: string }): string {
