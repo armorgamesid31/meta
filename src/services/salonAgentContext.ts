@@ -286,43 +286,18 @@ const TONE_DIRECTIVES: Record<AgentTone, string> = {
   professional: PROFESSIONAL_DIRECTIVE,
 };
 
-const ANSWER_LENGTH_RULES: Record<AgentAnswerLength, string> = {
-  short: 'çoğunlukla 1-2 cümle, en fazla 3 (3 cümleye yalnızca gerektiğinde, nadiren çık)',
-  medium: '2-3 net cümle',
-  detailed: '3-4 cümle, gerekirse kısa madde işareti',
-};
-
-const EMOJI_RULES: Record<AgentEmojiUsage, string> = {
-  off: 'emoji yok',
-  low: 'en fazla 1 emoji ve sadece vurgu noktasında',
-  normal: '1-2 emoji uygun',
-};
-
-const BOOKING_GUIDANCE_RULES: Record<AgentBookingGuidance, string> = {
-  low: 'Randevu önerisini sadece müşteri açıkça isterse yap',
-  medium: 'Hizmet/fiyat sorusunda "istersen sana randevu linki gönderebilirim" şeklinde yumuşak öner',
-  high: 'Hizmet/fiyat/uygunluk sorularında proaktif olarak randevu linki teklif et',
-};
-
-const HANDOVER_RULES: Record<AgentHandoverThreshold, string> = {
-  early: 'Belirsizlik, şikayet, özel istek veya ödeme/randevu kaydı değişikliklerinde insan temsilciye devret',
-  balanced: 'Şikayet, ödeme ihtilafı, agresif dil veya randevu güncelleme talebinde insan temsilciye devret',
-  late: 'Sadece açık handover talebinde veya ciddi bir risk (yasal, sağlık) algılanırsa insan temsilciye devret',
-};
-
-const AI_DISCLOSURE_RULES: Record<AgentAiDisclosure, string> = {
-  always: 'İlk yanıtının başında kısaca AI asistan olduğunu belirt',
-  onQuestion: 'AI olup olmadığın sorulursa dürüstçe söyle, aksi halde belirtme',
-  never: 'AI olduğunu kendiliğinden belirtme; sorulursa salonun dijital asistanı olduğunu söyle',
-};
-
-function buildStyleDirective(s: AgentSettings): string {
+// Gelişmiş AI ayarları (cevap uzunluğu / emoji / randevu yönlendirme / handover /
+// açıklama) panelden kaldırıldı → herkese tek STANDART davranış (Berkay kararı,
+// 2026-06-22). Randevu yönlendirme satırı bilerek YOK: booking kararı artık
+// niyet-bazlı (# EN ÖNEMLİ KURAL + tool_booking_link description). Emoji genel sınır
+// 1-2 ama ton bloğundaki sınır önceliklidir (ör. professional'da emoji yasak).
+// Parametre geriye-uyum için opsiyonel; içerik artık salon ayarından bağımsız.
+function buildStyleDirective(_s?: AgentSettings): string {
   return [
-    `Cevap uzunluğu: ${ANSWER_LENGTH_RULES[s.answerLength]}.`,
-    `Emoji: ${EMOJI_RULES[s.emojiUsage]}.`,
-    `Randevu yönlendirme: ${BOOKING_GUIDANCE_RULES[s.bookingGuidance]}.`,
-    `Handover: ${HANDOVER_RULES[s.handoverThreshold]}.`,
-    `Açıklama: ${AI_DISCLOSURE_RULES[s.aiDisclosure]}.`,
+    'Cevap uzunluğu: çoğunlukla 1-2 cümle, en fazla 3 (3. cümleye yalnızca gerektiğinde çık).',
+    'Emoji: 1-2 emoji uygun (ton bloğundaki sınır önceliklidir).',
+    'Handover: şikayet, ödeme ihtilafı, agresif dil veya randevu güncelleme talebinde insan temsilciye devret.',
+    'Açıklama: AI olup olmadığın sorulursa dürüstçe söyle, aksi halde belirtme.',
   ].join(' ');
 }
 
