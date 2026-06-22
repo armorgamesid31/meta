@@ -47,24 +47,29 @@ export interface CampaignTierConfig {
  */
 export const CAMPAIGN_TIERS: readonly CampaignTierConfig[] = [
   {
+    // SADECE GÖSTERİM: bu kademe "dolu" gösterilir (sayaç 187'den başlar);
+    // hiçbir yeni salon buraya düşmediği için monthlyEnv/annualEnv hiç
+    // kullanılmaz (yeni Stripe price'a gerek yok).
     key: 'tier1',
-    maxRank: 50,
+    maxRank: 100,
+    monthlyEnv: 'STRIPE_PRICE_KURUCU_TIER1_MONTHLY',
+    annualEnv: 'STRIPE_PRICE_KURUCU_TIER1_ANNUAL',
+    monthlyAmount: 599,
+    annualAmount: 5990,
+  },
+  {
+    // AKTİF kademe (101-250). 699 = MEVCUT TIER1 Stripe price'ı (zaten canlı) —
+    // bu yüzden tier2, TIER1 env'ine işaret eder; yeni price yaratılmaz.
+    key: 'tier2',
+    maxRank: 250,
     monthlyEnv: 'STRIPE_PRICE_KURUCU_TIER1_MONTHLY',
     annualEnv: 'STRIPE_PRICE_KURUCU_TIER1_ANNUAL',
     monthlyAmount: 699,
     annualAmount: 6990,
   },
   {
-    key: 'tier2',
-    maxRank: 100,
-    monthlyEnv: 'STRIPE_PRICE_KURUCU_TIER2_MONTHLY',
-    annualEnv: 'STRIPE_PRICE_KURUCU_TIER2_ANNUAL',
-    monthlyAmount: 799,
-    annualAmount: 7990,
-  },
-  {
     key: 'tier3',
-    maxRank: 150,
+    maxRank: 400,
     monthlyEnv: 'STRIPE_PRICE_KURUCU_TIER3_MONTHLY',
     annualEnv: 'STRIPE_PRICE_KURUCU_TIER3_ANNUAL',
     monthlyAmount: 899,
@@ -79,6 +84,43 @@ export const CAMPAIGN_TIERS: readonly CampaignTierConfig[] = [
     annualAmount: 9999,
   },
 ] as const;
+
+/* ───── GÖSTERİLEN kampanya sayacı: 187 taban + günlük 2-5 deterministik ─────
+ * Cron/migration/yeni-tablo YOK: padding her istekte lansman tarihinden
+ * deterministik hesaplanır. Hem sayaç görüntüsü hem yeni kaydın kademe/fiyatı
+ * bu tek kaynaktan türer → müşterinin gördüğü fiyat = kilitlenen fiyat. */
+
+/** Kampanyanın "187. salondayız" başlangıç anı (UTC). */
+const CAMPAIGN_LAUNCH_UTC = Date.UTC(2026, 5, 22); // 22 Haziran 2026
+/** Sayaç bu değerden başlar — sanki 187 salon zaten kayıtlıymış gibi. */
+const CAMPAIGN_DISPLAY_BASE = 187;
+
+/** Belirli bir gün için deterministik [2,5] artış (klasik hash, durum tutmaz). */
+function dailyPadding(dayIndex: number): number {
+  const h = Math.sin((dayIndex + 1) * 12.9898) * 43758.5453;
+  const frac = h - Math.floor(h);
+  return 2 + Math.floor(frac * 4); // 2,3,4,5
+}
+
+/** Lansmandan bugüne kümülatif padding. Gün 0 = 0 (sayaç tam 187'de başlar). */
+function paddingSinceLaunch(now = new Date()): number {
+  const days = Math.max(
+    0,
+    Math.floor((now.getTime() - CAMPAIGN_LAUNCH_UTC) / 86_400_000),
+  );
+  let sum = 0;
+  for (let d = 0; d < days; d++) sum += dailyPadding(d);
+  return sum;
+}
+
+/**
+ * GÖSTERİLEN sayı = max(187 + padding, gerçek damgalanmış max). Gerçek kayıt
+ * padding'i geçerse gerçek değer kazanır (sayacı asla küçültmez).
+ */
+export function computeDisplayCount(realMax: number): number {
+  const padded = CAMPAIGN_DISPLAY_BASE + paddingSinceLaunch();
+  return Math.max(padded, realMax > 0 ? realMax : 0);
+}
 
 /**
  * Verilen sıraya hangi tier düşüyor? 501+ için null döner —
@@ -159,8 +201,10 @@ export async function allocateCampaignRankAndLock(
     throw new Error('CAMPAIGN_TIER_SEQUENCE_FAILED');
   }
 
-  // 3. Tier hesapla ve price'ları env'den oku (kilitleme anı).
-  const tierConfig = tierForRank(rank);
+  // 3. Tier hesapla. Kademe artık ham sequence rank'ten DEĞİL, GÖSTERİLEN
+  //    sayıdan (187 + padding) belirlenir → müşterinin gördüğü "Kademe N açık"
+  //    ile kilitlenen fiyat birebir tutarlı olur. Price'lar env'den okunur.
+  const tierConfig = tierForRank(computeDisplayCount(rank));
   const tierKey: CampaignTierKey = tierConfig ? tierConfig.key : 'after_campaign';
   const monthlyPriceId = tierConfig ? readEnvPriceId(tierConfig.monthlyEnv) : null;
   const annualPriceId = tierConfig ? readEnvPriceId(tierConfig.annualEnv) : null;
@@ -235,7 +279,9 @@ export async function getCampaignCounters(
     FROM "Salon"
     WHERE "campaignSignupRank" IS NOT NULL
   `;
-  const totalFilled = Number(maxRows[0]?.max || 0);
+  const realMax = Number(maxRows[0]?.max || 0);
+  // GÖSTERİLEN sayı: 187 taban + günlük padding (gerçek kaydı asla küçültmez).
+  const totalFilled = computeDisplayCount(realMax);
 
   // Tier'ları doldur. Her tier'ın filled değeri = bu tier'ın
   // alt sınırından totalFilled'a kadar olan kapsam (cap'lı).
