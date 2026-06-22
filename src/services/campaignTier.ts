@@ -1,17 +1,18 @@
 /**
  * Kurucu Salon 4-tier kampanya kilit servisi.
  *
- * Kampanya yapısı (env'den okunan price'lar, kod hard-code etmez):
- *   tier1: sıra 1-50    -> STRIPE_PRICE_KURUCU_TIER1_MONTHLY / _ANNUAL
- *   tier2: sıra 51-100  -> STRIPE_PRICE_KURUCU_TIER2_MONTHLY / _ANNUAL
- *   tier3: sıra 101-150 -> STRIPE_PRICE_KURUCU_TIER3_MONTHLY / _ANNUAL
- *   tier4: sıra 151-500 -> STRIPE_PRICE_PROFESSIONAL_PLUS (mevcut) /
- *                          STRIPE_PRICE_PROFESSIONAL_PLUS_ANNUAL (mevcut)
- *   after_campaign: 501+ -> kampanya sonrası fiyat henüz Stripe'da yok.
- *                           null döndürülür; checkout env fallback'e düşer
+ * Kademe = GÖSTERİLEN sayıdan (computeDisplayCount, ~187 tabandan) belirlenir,
+ * ham sequence rank'ten değil → müşterinin gördüğü fiyat = kilitlenen fiyat.
+ * Price'lar env'den okunur (kod hard-code etmez):
+ *   tier1: gösterilen 1-100   -> 599 TL · TIER1 env (DOLU/sadece gösterim, kullanılmaz)
+ *   tier2: gösterilen 101-250 -> 699 TL · TIER1 env (MEVCUT canlı price, AKTİF)
+ *   tier3: gösterilen 251-400 -> 899 TL · TIER3 env
+ *   tier4: gösterilen 401-500 -> 999 TL · STRIPE_PRICE_PROFESSIONAL_PLUS (mevcut)
+ *   after_campaign: 501+ -> kampanya sonrası fiyat (1.999) Stripe'da ayrı yok;
+ *                           null döndürülür, checkout env fallback'e düşer
  *                           (tier4 = STRIPE_PRICE_PROFESSIONAL_PLUS).
  *
- * RACE-SAFETY: salon sırası PostgreSQL native sequence
+ * RACE-SAFETY: salon REAL sırası PostgreSQL native sequence
  * (salon_campaign_signup_rank_seq) üzerinden nextval() ile alınır. Aynı
  * anda 100 salon kaydolsa bile her biri benzersiz, ardışık sıra alır —
  * Postgres sequence semantiği zaten atomiktir. Sequence sonucu salon
