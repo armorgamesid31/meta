@@ -119,7 +119,12 @@ function paddingSinceLaunch(now = new Date()): number {
  */
 export function computeDisplayCount(realMax: number): number {
   const padded = CAMPAIGN_DISPLAY_BASE + paddingSinceLaunch();
-  return Math.max(padded, realMax > 0 ? realMax : 0);
+  const real = realMax > 0 ? realMax : 0;
+  // Sahte padding kampanyayı KAPATMASIN: gösterilen sayıyı son kademenin hemen
+  // altında tut → kampanya hep "açık" kalır, fiyat kademe kademe yükselir ama
+  // takvimle bitmez. GERÇEK kayıt 500'ü geçerse kampanya gerçek talep ile kapanır.
+  const lastMax = CAMPAIGN_TIERS[CAMPAIGN_TIERS.length - 1].maxRank;
+  return Math.max(Math.min(padded, lastMax - 1), real);
 }
 
 /**
@@ -201,10 +206,12 @@ export async function allocateCampaignRankAndLock(
     throw new Error('CAMPAIGN_TIER_SEQUENCE_FAILED');
   }
 
-  // 3. Tier hesapla. Kademe artık ham sequence rank'ten DEĞİL, GÖSTERİLEN
-  //    sayıdan (187 + padding) belirlenir → müşterinin gördüğü "Kademe N açık"
-  //    ile kilitlenen fiyat birebir tutarlı olur. Price'lar env'den okunur.
-  const tierConfig = tierForRank(computeDisplayCount(rank));
+  // 3. Tier hesapla. Kademe ham sequence rank'ten DEĞİL GÖSTERİLEN sayıdan
+  //    belirlenir → müşterinin gördüğü "Kademe N açık" ile kilitlenen fiyat
+  //    tutarlı olur. +1: yeni salon gösterilen sayının BİR SONRAKİ slotuna
+  //    düşer → getCampaignCounters'ın "aktif kademe" (dolu kademeyi atlar)
+  //    mantığıyla sınır günlerinde de birebir aynı kademeye oturur.
+  const tierConfig = tierForRank(computeDisplayCount(rank) + 1);
   const tierKey: CampaignTierKey = tierConfig ? tierConfig.key : 'after_campaign';
   const monthlyPriceId = tierConfig ? readEnvPriceId(tierConfig.monthlyEnv) : null;
   const annualPriceId = tierConfig ? readEnvPriceId(tierConfig.annualEnv) : null;
