@@ -139,9 +139,9 @@ async function whatsAppLinkSend(opts: {
     mediaPayload.caption = input.caption;
   }
   // Voice flag for audio: WhatsApp shows as a push-to-talk bubble.
-  // mp3 + voice:true denemesi: WhatsApp resmî olarak voice-note için OGG ister
-  // (ve OGG link Meta'da octet-stream'e düşüp 131053 veriyor), ama mp3'ü
-  // baloncuk olarak gösterip göstermediğini ölçüyoruz.
+  // MP3 + voice:true sorunsuz teslim oluyor ve baloncuk olarak gösteriliyor
+  // (delivered doğrulandı 2026-06-22). OGG link Meta'da octet-stream'e
+  // düşüyordu (131053); MP3 bu sorunu yaşamıyor.
   if (input.kind === 'audio' && input.isVoice) {
     mediaPayload.voice = true;
   }
@@ -339,10 +339,10 @@ export async function sendOutboundMedia(input: SendMediaInput): Promise<SendMedi
   let effectiveMime = input.mimeType;
   if (input.channel === 'WHATSAPP' && kind === 'audio' && input.isVoice) {
     try {
-      // GEÇİCİ MP3 DENEMESİ: Chakra, OGG audio-link'i Meta'ya iletirken
-      // content-type'ı octet-stream'e çeviriyor (131053 media upload error).
-      // MP3'ün doğru iletilip iletilmediğini test ediyoruz; başarılıysa
-      // voice baloncuğu yerine normal "ses dosyası" olarak gider.
+      // ÇÖZÜM: ses MP3'e çevriliyor. OGG/Opus link-payload ile gönderince Meta
+      // 131053 ("audio/ogg uploaded however processing octet-stream") ile
+      // reddediyor; MP3 link ise voice:true ile sorunsuz teslim oluyor
+      // (delivered + sesli-mesaj baloncuğu — 2026-06-22 doğrulandı).
       effectiveBuffer = await transcodeToMp3(input.buffer);
       effectiveMime = 'audio/mpeg';
     } catch (err) {
