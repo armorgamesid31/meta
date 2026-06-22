@@ -12604,6 +12604,7 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
         .filter((id) => Number.isInteger(id) && id > 0),
     ));
     const senderNameByUserId = new Map<number, string>();
+    const senderAvatarByUserId = new Map<number, string>();
     if (senderUserIds.length > 0) {
       // SalonUser is the per-salon row; UserIdentity is the cross-salon
       // person record. UserIdentity lookup depends on the emails that
@@ -12622,7 +12623,7 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
       const identities = identityEmails.length > 0
         ? await prisma.userIdentity.findMany({
             where: { email: { in: identityEmails } },
-            select: { email: true, firstName: true, lastName: true, displayName: true },
+            select: { email: true, firstName: true, lastName: true, displayName: true, profileImageUrl: true },
           })
         : [];
       const identityByEmail = new Map(identities.map((i) => [i.email, i]));
@@ -12644,6 +12645,10 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
         const salonFull = first && last ? `${first} ${last}` : '';
         const friendly = identityFull || salonFull || iDisplay || display || iFull || full;
         if (friendly) senderNameByUserId.set(u.id, friendly);
+        // Gönderenin profil fotoğrafı — UserIdentity (cross-salon kimlik) bunun
+        // doğruluk kaynağı. Ses baloncuğunda sol avatar olarak gösterilir.
+        const avatar = identity ? (identity.profileImageUrl || '').trim() : '';
+        if (avatar) senderAvatarByUserId.set(u.id, avatar);
       }
     }
 
@@ -12710,6 +12715,9 @@ router.get('/conversations/:channel/:conversationKey/messages', authenticateToke
         outboundSourceLabel: outboundMeta.outboundSourceLabel,
         outboundSenderUserId: outboundMeta.outboundSenderUserId,
         outboundSenderEmail: outboundMeta.outboundSenderEmail,
+        outboundSenderAvatarUrl: outboundMeta.outboundSenderUserId
+          ? (senderAvatarByUserId.get(outboundMeta.outboundSenderUserId) || null)
+          : null,
         systemAction,
         systemActorUserId,
         systemActorEmail,
