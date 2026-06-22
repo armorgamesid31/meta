@@ -30,6 +30,7 @@ import { createAuthTokens } from './mobileAuth.js';
 import { ensureSalonServiceCategories } from './salonCategorySetup.js';
 import { ensureSalonAccessSeed } from './accessControl.js';
 import { startSetupPeriod } from './onboarding/lifecycle.js';
+import { allocateCampaignRankAndLock } from './campaignTier.js';
 import { sendLeadInviteEmail, isEmailConfigured } from './emailService.js';
 import { normalizeDigitsOnly } from './phoneValidation.js';
 import { BusinessError } from '../lib/errors.js';
@@ -504,6 +505,12 @@ export async function activateLead(input: {
     await startSetupPeriod(salon.id);
   } catch (err) {
     console.error('[leadService] setup period start warning', err);
+  }
+  // Kurucu kademe sırasını al + tier fiyatını kilitle (best-effort, idempotent).
+  try {
+    await allocateCampaignRankAndLock(prisma, salon.id);
+  } catch (err) {
+    console.error('[leadService] allocateCampaignRankAndLock failed', err);
   }
 
   await prisma.lead.update({

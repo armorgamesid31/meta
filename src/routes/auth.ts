@@ -24,6 +24,7 @@ import {
 } from '../services/platformAccess.js';
 import { activateInvite, hashPlainToken, validateInvite, redeemInviteForIdentity } from '../services/inviteService.js';
 import { startSetupPeriod } from '../services/onboarding/lifecycle.js';
+import { allocateCampaignRankAndLock } from '../services/campaignTier.js';
 import { createPhoneVerification, verifyPhoneCode } from '../services/phoneVerification.js';
 import { normalizeDigitsOnly } from '../services/phoneValidation.js';
 import { isR2Configured, uploadBufferToR2 } from '../lib/r2.js';
@@ -180,6 +181,12 @@ router.post('/register-salon', async (req: any, res: any) => {
       await startSetupPeriod(salon.id);
     } catch (lifecycleError) {
       console.error('Salon setup period start warning:', lifecycleError);
+    }
+    // Kurucu kademe sırasını al + tier fiyatını kilitle (best-effort, idempotent).
+    try {
+      await allocateCampaignRankAndLock(prisma, salon.id);
+    } catch (campaignError) {
+      console.error('[auth:register-salon] allocateCampaignRankAndLock failed', campaignError);
     }
 
     const { accessToken, refreshToken } = await createAuthTokens({
