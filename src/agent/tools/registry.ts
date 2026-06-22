@@ -120,7 +120,8 @@ export function buildToolSet(ctx: ToolContext): ToolSet {
 
     // ─── SIDE-EFFECTING (taslakta ertelenir) ─────────────────────────────
     tool_booking_link: tool({
-      description: 'Randevu/rezervasyon/müsait-saat/iptal/erteleme/SPESİFİK SAAT sorusunda ZORUNLU çağır. Tek-tık randevu butonu gönderilir.',
+      description:
+        'Müşteri GERÇEKTEN randevu almak/değiştirmek istediğinde çağır: net randevu talebi ("randevu al", "yer ayırt", "gelmek istiyorum"), spesifik gün+saat ("cumartesi 14:00"), iptal/erteleme. SADECE selam, fiyat, bilgi veya "açık mısınız" sorusunda ÇAĞIRMA — bunlar randevu talebi değildir. Tek-tık randevu butonu gönderilir.',
       inputSchema: z.object({}),
       execute: async () =>
         sideEffect('tool_booking_link', {}, async () => {
