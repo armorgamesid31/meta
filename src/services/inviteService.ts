@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'crypto';
 import bcrypt from 'bcrypt';
 import { InviteStatus, UserRole } from '@prisma/client';
 import { prisma } from '../prisma.js';
+import { findOrphanStaffCandidates, resolveAutoBindOrphan } from './staffMatchService.js';
 
 export const INVITE_TTL_DAYS = 7;
 
@@ -270,6 +271,30 @@ export async function activateInvite(input: {
       data: { legacySalonUserId: legacyUser.id },
     });
 
+    // Orphan-uzman güvenlik ağı (best-effort): davet staffId ile önceden
+    // bağlanmadıysa, salonda telefon/isim eşleşen HESAPSIZ uzmanı bul ve bu
+    // membership'e bağla → çift kayıt kaynakta önlenir. Belirsiz/yok → dokunma.
+    // Hata daveti BLOKLAMAZ (catch + log).
+    try {
+      const alreadyBound = await tx.staff.findFirst({
+        where: { salonId: membership.salonId, OR: [{ membershipId: membership.id }, { userId: legacyUser.id }] },
+        select: { id: true },
+      });
+      if (!alreadyBound) {
+        const salonRow = await tx.salon.findUnique({ where: { id: membership.salonId }, select: { countryCode: true } });
+        const orphan = resolveAutoBindOrphan(
+          await findOrphanStaffCandidates(tx, membership.salonId, {
+            displayName: nextDisplayName, firstName, lastName, phone: nextPhone, countryCode: salonRow?.countryCode,
+          }),
+        );
+        if (orphan) {
+          await tx.staff.update({ where: { id: orphan.id }, data: { membershipId: membership.id, userId: legacyUser.id } });
+        }
+      }
+    } catch (err) {
+      console.error('[invite:activate] orphan staff auto-bind skipped (non-fatal)', { membershipId: membership.id, err });
+    }
+
     await tx.staff.updateMany({
       where: { salonId: membership.salonId, OR: [{ membershipId: membership.id }, { userId: legacyUser.id }] },
       data: {
@@ -427,6 +452,30 @@ export async function redeemInviteForIdentity(input: {
     // and the displayName/phone match what they registered with.
     // Without this the team UI keeps showing the placeholder name
     // and the role/availability widgets can't resolve the row.
+    // Orphan-uzman güvenlik ağı (best-effort) — bkz. activateInvite. Çalışan
+    // kendi hesabıyla daveti kabul ettiğinde, staffId ile bağlanmamış mevcut
+    // hesapsız uzman varsa ona bağlanır → çift kayıt önlenir. Hata daveti bozmaz.
+    try {
+      const alreadyBound = await tx.staff.findFirst({
+        where: { salonId: membership.salonId, OR: [{ membershipId: membership.id }, { userId: legacyUser.id }] },
+        select: { id: true },
+      });
+      if (!alreadyBound) {
+        const salonRow = await tx.salon.findUnique({ where: { id: membership.salonId }, select: { countryCode: true } });
+        const orphan = resolveAutoBindOrphan(
+          await findOrphanStaffCandidates(tx, membership.salonId, {
+            displayName: identity.displayName, firstName: identity.firstName, lastName: identity.lastName,
+            phone: identity.phone, countryCode: salonRow?.countryCode,
+          }),
+        );
+        if (orphan) {
+          await tx.staff.update({ where: { id: orphan.id }, data: { membershipId: membership.id, userId: legacyUser.id } });
+        }
+      }
+    } catch (err) {
+      console.error('[invite:redeem] orphan staff auto-bind skipped (non-fatal)', { membershipId: membership.id, err });
+    }
+
     await tx.staff.updateMany({
       where: {
         salonId: membership.salonId,

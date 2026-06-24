@@ -27,6 +27,7 @@ import { startSetupPeriod } from '../services/onboarding/lifecycle.js';
 import { allocateCampaignRankAndLock } from '../services/campaignTier.js';
 import { createPhoneVerification, verifyPhoneCode } from '../services/phoneVerification.js';
 import { normalizeDigitsOnly } from '../services/phoneValidation.js';
+import { findOrphanStaffCandidates, resolveAutoBindOrphan } from '../services/staffMatchService.js';
 import { isR2Configured, uploadBufferToR2 } from '../lib/r2.js';
 import { BusinessError } from '../lib/errors.js';
 
@@ -1596,6 +1597,46 @@ router.post('/memberships/accept', authenticateToken, async (req: any, res: any)
 
       membershipId = newMembership.id;
       role = String(newMembership.role);
+    }
+
+    // Orphan-uzman güvenlik ağı (best-effort): bu üye-kabul yolu Staff'a hiç
+    // dokunmuyordu (üç dal da). Üye gerçek kimliğiyle bağlanınca, salonda
+    // telefon/isim eşleşen HESAPSIZ uzmanı bu membership'e bağla → çift kayıt
+    // önlenir. Yalnız TEK kesin aday; belirsiz/yok → dokunma. Hata BLOKLAMAZ.
+    try {
+      const memRow = await tx.salonMembership.findUnique({
+        where: { id: membershipId },
+        select: { salonId: true, legacySalonUserId: true },
+      });
+      if (memRow) {
+        const already = await tx.staff.findFirst({
+          where: {
+            salonId: memRow.salonId,
+            OR: [{ membershipId }, ...(memRow.legacySalonUserId ? [{ userId: memRow.legacySalonUserId }] : [])],
+          },
+          select: { id: true },
+        });
+        if (!already) {
+          const salonRow = await tx.salon.findUnique({ where: { id: memRow.salonId }, select: { countryCode: true } });
+          const orphan = resolveAutoBindOrphan(
+            await findOrphanStaffCandidates(tx, memRow.salonId, {
+              displayName: identity.displayName,
+              firstName: identity.firstName,
+              lastName: identity.lastName,
+              phone: identity.phone,
+              countryCode: salonRow?.countryCode,
+            }),
+          );
+          if (orphan) {
+            await tx.staff.update({
+              where: { id: orphan.id },
+              data: { membershipId, userId: memRow.legacySalonUserId || undefined },
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[auth:memberships/accept] orphan staff auto-bind skipped (non-fatal)', { membershipId, err });
     }
 
     await tx.invite.update({

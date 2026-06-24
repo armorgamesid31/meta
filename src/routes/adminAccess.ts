@@ -17,6 +17,7 @@ import {
 } from '../services/accessControl.js';
 import { hashPlainToken, INVITE_TTL_DAYS } from '../services/inviteService.js';
 import { markTaskComplete } from '../services/journeyService.js';
+import { findOrphanStaffCandidates, resolveAutoBindOrphan } from '../services/staffMatchService.js';
 
 const router = Router();
 
@@ -373,6 +374,31 @@ router.post('/users', authenticateToken, requirePermissionKey('access.users.mana
             phone: identity.phone || staff.phone || null,
           },
         });
+      } else {
+        // staffId verilmediyse: aynı salonda telefon/isim eşleşen HESAPSIZ
+        // uzmanı bul ve bu davete bağla → çift kayıt kaynakta önlenir. Yalnız
+        // TEK kesin aday (best-effort); belirsiz/yok → dokunma (eski davranış:
+        // Staff yaratılmaz). Hata daveti BLOKLAMAZ.
+        try {
+          const salonRow = await tx.salon.findUnique({ where: { id: auth.salonId }, select: { countryCode: true } });
+          const orphan = resolveAutoBindOrphan(
+            await findOrphanStaffCandidates(tx, auth.salonId, {
+              displayName: identity.displayName, phone: identity.phone || hintPhone, countryCode: salonRow?.countryCode,
+            }),
+          );
+          if (orphan) {
+            await tx.staff.update({
+              where: { id: orphan.id },
+              data: {
+                membershipId: membership.id,
+                userId: legacyUser.id,
+                phone: identity.phone || orphan.phone || hintPhone || null,
+              },
+            });
+          }
+        } catch (err) {
+          console.error('[access:users] orphan staff auto-bind skipped (non-fatal)', { membershipId: membership.id, err });
+        }
       }
 
       return {
