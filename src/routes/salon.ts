@@ -16,6 +16,7 @@ import { OnboardingStatus, OnboardingStep, Prisma } from '@prisma/client';
 import { markTaskComplete } from '../services/journeyService.js';
 import { deriveTones, PRESET_DEFAULT_BRAND, isPresetId } from '../lib/theme/derive.js';
 import { syncAgentSettingsTone, type AgentTone } from '../services/salonAgentContext.js';
+import { requirePermissionKey } from '../middleware/access.js';
 
 const ONBOARDING_STEP_VALUES = new Set<string>([
   'NOT_STARTED',
@@ -983,7 +984,9 @@ router.get('/staff/public', async (req: any, res: any) => {
 });
 
 // POST /api/salon/staff - Create a new staff member
-router.post('/staff', authenticateToken, async (req: any, res: any) => {
+// Legacy uç (panel artık /api/admin/staff kullanıyor). RBAC eklendi: bu uç
+// yetki-kontrolsüzdü → salona giren herhangi biri uzman ekleyebiliyordu.
+router.post('/staff', authenticateToken, requirePermissionKey('staff.manage'), async (req: any, res: any) => {
   if (!req.user) {
     throw new BusinessError('UNAUTHORIZED', 'Unauthorized', 401);
   }
@@ -1020,8 +1023,8 @@ router.post('/staff', authenticateToken, async (req: any, res: any) => {
   }
 });
 
-// PUT /api/salon/staff/:id - Update specific staff member
-router.put('/staff/:id', authenticateToken, async (req: any, res: any) => {
+// PUT /api/salon/staff/:id - Update specific staff member (legacy, RBAC'li)
+router.put('/staff/:id', authenticateToken, requirePermissionKey('staff.manage'), async (req: any, res: any) => {
   if (!req.user) {
     throw new BusinessError('UNAUTHORIZED', 'Unauthorized', 401);
   }
@@ -1063,8 +1066,8 @@ router.put('/staff/:id', authenticateToken, async (req: any, res: any) => {
   }
 });
 
-// DELETE /api/salon/staff/:id - Delete specific staff member
-router.delete('/staff/:id', authenticateToken, async (req: any, res: any) => {
+// DELETE /api/salon/staff/:id - Delete specific staff member (legacy, RBAC'li)
+router.delete('/staff/:id', authenticateToken, requirePermissionKey('staff.manage'), async (req: any, res: any) => {
   if (!req.user) {
     throw new BusinessError('UNAUTHORIZED', 'Unauthorized', 401);
   }

@@ -2748,7 +2748,10 @@ router.post('/appointments', authenticateToken, validate({ body: CreateAppointme
         where: {
           serviceId: { in: serviceIds },
           isactive: true,
-          Staff: { salonId },
+          // Pasife alınmış uzman manuel randevuda da aday OLMAMALI (booking
+          // motoruyla simetri — slots-engine zaten isActive süzer). Yoksa
+          // resepsiyon elle randevu girerken silinmiş uzman seçilebiliyordu.
+          Staff: { salonId, isActive: true },
         },
         select: {
           staffId: true,

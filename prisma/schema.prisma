@@ -548,6 +548,7 @@ model Staff {
   commissionEntries    CommissionEntry[]
   commissionPayouts    CommissionPayout[]
 
+  @@unique([salonId, membershipId], map: "uq_staff_salon_membership")
   @@index([salonId, isActive], map: "idx_staff_salon_active")
 }
 

@@ -71,7 +71,7 @@ function resolveStaffDisplayName(input: { displayName?: string | null; email?: s
     const local = fromEmail.split('@')[0]?.trim();
     if (local) return local;
   }
-  return (fallback || '').trim() || 'Ekip Ãœyesi';
+  return (fallback || '').trim() || 'Ekip Üyesi';
 }
 
 function buildInviteShareText(input: {
@@ -218,12 +218,12 @@ router.get('/users', authenticateToken, requirePermissionKey('access.users.manag
 
     const staff = await prisma.staff.findMany({
       where: { salonId: auth.salonId, membershipId: { not: null } },
-      select: { id: true, name: true, membershipId: true },
+      select: { id: true, name: true, title: true, membershipId: true },
     });
-    const staffByMembershipId = new Map<number, { id: number; name: string }>();
+    const staffByMembershipId = new Map<number, { id: number; name: string; title: string | null }>();
     for (const row of staff) {
       if (typeof row.membershipId === 'number') {
-        staffByMembershipId.set(row.membershipId, { id: row.id, name: row.name });
+        staffByMembershipId.set(row.membershipId, { id: row.id, name: row.name, title: row.title ?? null });
       }
     }
 
