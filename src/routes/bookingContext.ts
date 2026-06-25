@@ -215,9 +215,13 @@ async function computeCampaignsMeta(input: {
         };
       }
     } else if (typeKey === 'OFF_PEAK') {
-      const dayNames = formatDayNames(cfg.dayOfWeekMask);
-      const timeStart = String(cfg.timeStart || '');
-      const timeEnd = String(cfg.timeEnd || '');
+      const WEEKDAY_IDX: Record<string, number> = { SUN: 0, MON: 1, TUE: 2, WED: 3, THU: 4, FRI: 5, SAT: 6 };
+      const rawWeekdays = Array.isArray(cfg.weekdays) ? cfg.weekdays : null;
+      const dayNames = rawWeekdays
+        ? rawWeekdays.map((d: string) => TR_DAY_NAMES[WEEKDAY_IDX[String(d).toUpperCase()] ?? -1]).filter(Boolean)
+        : formatDayNames(cfg.dayOfWeekMask);
+      const timeStart = String(cfg.startHour || cfg.timeStart || '');
+      const timeEnd = String(cfg.endHour || cfg.timeEnd || '');
       entry.offPeak = { dayNames, timeStart, timeEnd };
       entry.conditionSummary = [dayNames.join(' · '), `${timeStart} — ${timeEnd}`]
         .filter(Boolean)
