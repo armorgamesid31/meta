@@ -529,7 +529,7 @@ router.get('/context', async (req: any, res: any) => {
         where: {
           customerId: customer.id,
           salonId,
-          status: { notIn: ['CANCELLED'] },
+          status: { notIn: [] },
         },
         select: {
           id: true,
@@ -578,7 +578,7 @@ router.get('/context', async (req: any, res: any) => {
         where: {
           customerId: customer.id,
           salonId,
-          status: { notIn: ['CANCELLED'] },
+          status: { notIn: [] },
         },
         select: {
           id: true,
