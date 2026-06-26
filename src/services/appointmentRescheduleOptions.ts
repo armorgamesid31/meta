@@ -35,7 +35,7 @@ function clusterOptions(options: RescheduleOptionItem[]): RescheduleOptionItem[]
 
   for (const option of options) {
     const currentMinutes = Number(option.time.slice(0, 2)) * 60 + Number(option.time.slice(3, 5));
-    if (lastAcceptedMinutes !== null && currentMinutes <= lastAcceptedMinutes + DISPLAY_CLUSTER_MINUTES) {
+    if (lastAcceptedMinutes !== null && currentMinutes < lastAcceptedMinutes + DISPLAY_CLUSTER_MINUTES) {
       continue;
     }
     result.push(option);

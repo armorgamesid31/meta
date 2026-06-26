@@ -1024,7 +1024,7 @@ router.post("/cancel", authenticateToken, async (req: any, res: any) => {
       }
 
       if (new Date(appointment.startTime) <= new Date()) {
-        return { status: 400, body: { message: 'Cannot cancel past bookings.' }, notify: null as null | {
+        return { status: 400, body: { message: 'Geçmiş randevular iptal edilemez.' }, notify: null as null | {
           appointmentId: number;
           customerName: string;
           serviceName: string | null;
@@ -1121,7 +1121,7 @@ router.post('/reschedule-preview', async (req: any, res: any) => {
       throw new BusinessError('CONFLICT', 'Only BOOKED/CONFIRMED appointments can be updated.', 409);
     }
     if (ownedAppointments.some((item) => new Date(item.startTime).getTime() <= Date.now())) {
-      throw new BusinessError('CONFLICT', 'Past appointments cannot be updated.', 409);
+      throw new BusinessError('CONFLICT', 'Geçmiş randevular güncellenemez.', 409);
     }
 
     const preview = await buildAppointmentReschedulePreview({
@@ -1184,7 +1184,7 @@ router.post('/reschedule-options', async (req: any, res: any) => {
       throw new BusinessError('CONFLICT', 'Only BOOKED/CONFIRMED appointments can be updated.', 409);
     }
     if (ownedAppointments.some((item) => new Date(item.startTime).getTime() <= Date.now())) {
-      throw new BusinessError('CONFLICT', 'Past appointments cannot be updated.', 409);
+      throw new BusinessError('CONFLICT', 'Geçmiş randevular güncellenemez.', 409);
     }
 
     const options = await buildRescheduleOptions({
@@ -1251,7 +1251,7 @@ router.post('/reschedule-commit', async (req: any, res: any) => {
       throw new BusinessError('CONFLICT', 'Only BOOKED/CONFIRMED appointments can be updated.', 409);
     }
     if (ownedAppointments.some((item) => new Date(item.startTime).getTime() <= Date.now())) {
-      throw new BusinessError('CONFLICT', 'Past appointments cannot be updated.', 409);
+      throw new BusinessError('CONFLICT', 'Geçmiş randevular güncellenemez.', 409);
     }
 
     const committed = await commitAppointmentReschedule({
@@ -1346,7 +1346,7 @@ router.post('/cancel-by-token', async (req: any, res: any) => {
       throw new BusinessError('CONFLICT', 'Only BOOKED/CONFIRMED/UPDATED appointments can be cancelled.', 409);
     }
     if (ownedAppointments.some((item) => new Date(item.startTime).getTime() <= Date.now())) {
-      throw new BusinessError('CONFLICT', 'Past appointments cannot be cancelled.', 409);
+      throw new BusinessError('CONFLICT', 'Geçmiş randevular iptal edilemez.', 409);
     }
 
     await prisma.appointment.updateMany({
