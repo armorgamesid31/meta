@@ -40,6 +40,8 @@ export type AppliedCampaignDetail = {
   campaignType: CampaignType;
   campaignName: string;
   amount: number;
+  discountKind: DiscountKind | null;
+  discountValue: number | null;
 };
 
 export type CampaignSkipReasonCode =
@@ -647,6 +649,8 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
       }
 
       let amount = 0;
+      let appliedDiscountKind: DiscountKind | null = null;
+      let appliedDiscountValue: number | null = null;
       const rewardType = String(cfg.rewardType || cfg.discountType || cfg.offerType || '').trim().toLowerCase();
 
       if (type === 'LOYALTY' || type === 'REFERRAL') {
@@ -670,6 +674,8 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
           skip(campaign, 'INVALID_DISCOUNT_CONFIG');
           continue;
         }
+        appliedDiscountKind = kind;
+        appliedDiscountValue = value;
         amount = computeDiscount(running, kind, value);
       }
 
@@ -680,6 +686,8 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
         campaignType: campaign.type,
         campaignName: campaign.name,
         amount: Number(amount.toFixed(2)),
+        discountKind: appliedDiscountKind,
+        discountValue: appliedDiscountValue,
       });
       // Aynı tipten 2. kampanyayı engelle — bu satıra zaten X tipi
       // uygulandığını işaretle.
@@ -820,6 +828,8 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
         campaignType: campaign.type,
         campaignName: campaign.name,
         amount: capped,
+        discountKind: rewardType === 'discount_percent' ? 'PERCENT' : 'FIXED',
+        discountValue: rewardValue,
       });
       remaining = Number((remaining - capped).toFixed(2));
     });
