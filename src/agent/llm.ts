@@ -9,12 +9,8 @@ import { google } from '@ai-sdk/google';
 import { createOpenAI } from '@ai-sdk/openai';
 import type { AgentMessage, AgentTurnResult } from './types.js';
 
-const openrouter = process.env.OPENROUTER_API_KEY
-  ? createOpenAI({
-      baseURL: 'https://openrouter.ai/api/v1',
-      apiKey: process.env.OPENROUTER_API_KEY,
-    })
-  : null;
+const makeOpenRouter = (key: string) =>
+  createOpenAI({ baseURL: 'https://openrouter.ai/api/v1', apiKey: key });
 
 const DEFAULT_MODEL = (process.env.AGENT_MODEL || 'gemini-2.5-flash').trim();
 const DEFAULT_MAX_STEPS = Number(process.env.AGENT_MAX_STEPS || 6);
@@ -40,9 +36,10 @@ function providerOptionsFor(modelName?: string): any {
  * İsimden AI SDK LanguageModel çöz. Bench için sağlayıcı eklemek = burada bir
  * dal + ilgili `@ai-sdk/*` paketi (openai/anthropic W7'de). Şimdilik Gemini.
  */
-export function resolveModel(name: string = DEFAULT_MODEL) {
+export function resolveModel(name: string = DEFAULT_MODEL, openrouterKey?: string) {
   const n = (name || DEFAULT_MODEL).trim();
-  if (openrouter) return openrouter(n);
+  const key = openrouterKey || process.env.OPENROUTER_API_KEY;
+  if (key) return makeOpenRouter(key)(n);
   return google(n.startsWith('gemini') ? n : 'gemini-2.5-flash');
 }
 
@@ -103,6 +100,7 @@ export async function runAgentTurn(params: {
   tools: ToolSet;
   modelName?: string;
   maxSteps?: number;
+  openrouterKey?: string;
 }): Promise<AgentTurnResult> {
   const messages = coalesceMessages(params.messages).map(toModelMessage) as any;
   const providerOptions = providerOptionsFor(params.modelName);
@@ -111,7 +109,7 @@ export async function runAgentTurn(params: {
   // Boş cevap güvenlik ağı: thinking kapalıyken nadir; yine de gelirse yeniden dene.
   for (let attempt = 0; attempt <= EMPTY_RETRIES; attempt++) {
     result = await generateText({
-      model: resolveModel(params.modelName),
+      model: resolveModel(params.modelName, params.openrouterKey),
       system: params.system,
       messages,
       tools: params.tools,

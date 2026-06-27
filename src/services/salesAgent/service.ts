@@ -61,7 +61,8 @@ export async function processSalesMessage(input: SalesMessageInput): Promise<voi
       system: buildSalesSystemPrompt(),
       messages: agentMessages,
       tools,
-      modelName: process.env.AGENT_SALES_MODEL || 'gemini-2.5-flash',
+      modelName: process.env.AGENT_SALES_MODEL || 'google/gemini-2.5-flash',
+      openrouterKey: process.env.OPENROUTER_SALES_API_KEY,
     });
     replyText = result.text.trim();
     toolCalls = result.toolCalls;
