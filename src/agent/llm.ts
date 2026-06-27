@@ -10,7 +10,7 @@ import { createOpenAI } from '@ai-sdk/openai';
 import type { AgentMessage, AgentTurnResult } from './types.js';
 
 const makeOpenRouter = (key: string) =>
-  createOpenAI({ baseURL: 'https://openrouter.ai/api/v1', apiKey: key });
+  createOpenAI({ baseURL: 'https://openrouter.ai/api/v1', apiKey: key, compatibility: 'compatible' });
 
 const DEFAULT_MODEL = (process.env.AGENT_MODEL || 'gemini-2.5-flash').trim();
 const DEFAULT_MAX_STEPS = Number(process.env.AGENT_MAX_STEPS || 6);
