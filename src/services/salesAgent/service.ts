@@ -79,8 +79,9 @@ async function runSingleModel(
     replyText = result.text.trim();
     toolCalls = result.toolCalls;
   } catch (err: any) {
-    console.error('[salesAgent/test] runAgentTurn hatası', { modelId, err: err?.message });
-    replyText = 'Şu an yanıt veremiyorum.';
+    const errMsg = err?.message || String(err);
+    console.error('[salesAgent/test] runAgentTurn hatası', { modelId, errMsg });
+    replyText = `[HATA] ${errMsg.slice(0, 200)}`;
   }
 
   if (!replyText) return;
