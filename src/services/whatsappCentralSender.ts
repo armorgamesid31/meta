@@ -115,6 +115,50 @@ export async function sendCentralTemplate(input: SendTemplateInput): Promise<Sen
 }
 
 /**
+ * Serbest metin (session message) gönderir — 24 saat penceresi gerektirir.
+ * Satış agent'ının gelen mesaja yanıt vermesinde kullanılır.
+ */
+export async function sendCentralText(input: { to: string; text: string }): Promise<SendTemplateResult> {
+  if (!isKedyWhatsappConfigured()) {
+    return { ok: false, error: 'kedy_whatsapp_not_configured' };
+  }
+  const to = normalizeDigitsOnly(input.to);
+  if (!to) {
+    return { ok: false, error: 'recipient_phone_invalid' };
+  }
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${CHAKRA_API_TOKEN}`,
+  };
+
+  const body = {
+    messaging_product: 'whatsapp',
+    to,
+    type: 'text',
+    text: { body: input.text },
+  };
+
+  try {
+    const response = await axios.post(buildSendUrl(), body, { headers, timeout: 25_000 });
+    const messageId =
+      response?.data?._data?.whatsappMessageId ||
+      response?.data?.messages?.[0]?.id ||
+      response?.data?.data?.messages?.[0]?.id ||
+      undefined;
+    return { ok: true, messageId };
+  } catch (error: any) {
+    const reason =
+      error?.response?.data?.error?.message ||
+      error?.response?.data?.message ||
+      error?.message ||
+      'unknown_error';
+    console.error('[whatsappCentralSender] sendText failed', { to, reason });
+    return { ok: false, error: String(reason) };
+  }
+}
+
+/**
  * Sends the `kedyekip` UTILITY template. The template has a single
  * URL-button parameter that receives the magic-link token; everything
  * else (header, body copy) is static and pre-approved.

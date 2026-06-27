@@ -3430,3 +3430,20 @@ model KbChunk {
   @@index([namespace])
   @@map("KbChunk")
 }
+
+// Kedy merkez WA/IG'dan yazan potansiyel salon sahipleriyle satış sohbeti.
+// Salon bağlamı yok — kedy-central kanalına özel, salon-agnostik.
+model SalesConversation {
+  id             Int         @id @default(autoincrement())
+  channel        ChannelType
+  subject        String      // canonical phone (WA) | IGSID (IG)
+  status         String      @default("active") // active | handover | closed
+  messages       Json        @default("[]")     // {role:'user'|'assistant', content:string}[]
+  handoverReason String?
+  handoverAt     DateTime?   @db.Timestamp(6)
+  createdAt      DateTime    @default(now()) @db.Timestamp(6)
+  updatedAt      DateTime    @default(now()) @updatedAt @db.Timestamp(6)
+
+  @@unique([channel, subject], map: "uq_sales_conv_channel_subject")
+  @@index([status, updatedAt])
+}

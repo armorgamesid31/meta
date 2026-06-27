@@ -40,6 +40,12 @@ import {
 // backend-native agent'a gider. Default (liste boş) → davranış değişmez.
 import { isBackendEngine } from '../agent/cutover.js';
 import { dispatchAgentInbound, type AgentInboundItem } from '../agent/dispatch.js';
+import { processSalesMessage } from '../services/salesAgent/service.js';
+
+// Kedy'nin kendi kanalları — bu ID'lere gelen mesajlar salon bağlamı olmadan
+// satış agent'ına yönlendirilir.
+const KEDY_CENTRAL_PHONE_NUMBER_ID = (process.env.KEDY_CENTRAL_CHAKRA_PHONE_NUMBER_ID || '').trim();
+const KEDY_CENTRAL_IG_SENDER_ID = (process.env.KEDY_CENTRAL_IG_SENDER_ID || '').trim();
 
 const router = Router();
 
@@ -1297,6 +1303,28 @@ async function processIncomingBatch(items: any[]) {
       } catch (e: any) {
         console.warn('IG verify code capture failed:', e?.message || e);
       }
+    }
+
+    // ── Kedy merkez kanalları: WA veya IG'dan gelen mesajı satış agent'ına ilet ──
+    // salon_not_found düşmesinden ÖNCE çalışır; echo ve reactions zaten yukarıda elenmiş.
+    const isKedyCentralWa =
+      channel === 'WHATSAPP' &&
+      KEDY_CENTRAL_PHONE_NUMBER_ID &&
+      externalAccountId === KEDY_CENTRAL_PHONE_NUMBER_ID;
+    const isKedyCentralIg =
+      channel === 'INSTAGRAM' &&
+      KEDY_CENTRAL_IG_SENDER_ID &&
+      externalAccountId === KEDY_CENTRAL_IG_SENDER_ID;
+
+    if ((isKedyCentralWa || isKedyCentralIg) && !row.isEcho && typeof row.text === 'string' && row.text.trim()) {
+      const subject = String(row.channelUserId || '').trim();
+      if (subject) {
+        processSalesMessage({ channel, subject, text: row.text.trim() }).catch((err) =>
+          console.error('[salesAgent] processSalesMessage hatası', { channel, subject, err: err?.message }),
+        );
+      }
+      processed.push({ ...row, success: true, result: 'sales_agent' });
+      continue;
     }
 
     const salonId = await resolveSalonId(channel, externalAccountId, externalBusinessId);
