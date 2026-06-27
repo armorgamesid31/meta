@@ -49,6 +49,7 @@ export async function processSalesMessage(input: SalesMessageInput): Promise<voi
       system: buildSalesSystemPrompt(),
       messages: agentMessages,
       tools,
+      modelName: process.env.AGENT_SALES_MODEL || 'gemini-3.0-flash',
     });
     replyText = result.text.trim();
     toolCalls = result.toolCalls;
