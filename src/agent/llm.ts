@@ -6,7 +6,15 @@
 
 import { generateText, stepCountIs, type ToolSet } from 'ai';
 import { google } from '@ai-sdk/google';
+import { createOpenAI } from '@ai-sdk/openai';
 import type { AgentMessage, AgentTurnResult } from './types.js';
+
+const openrouter = process.env.OPENROUTER_API_KEY
+  ? createOpenAI({
+      baseURL: 'https://openrouter.ai/api/v1',
+      apiKey: process.env.OPENROUTER_API_KEY,
+    })
+  : null;
 
 const DEFAULT_MODEL = (process.env.AGENT_MODEL || 'gemini-2.5-flash').trim();
 const DEFAULT_MAX_STEPS = Number(process.env.AGENT_MAX_STEPS || 6);
@@ -34,7 +42,7 @@ function providerOptionsFor(modelName?: string): any {
  */
 export function resolveModel(name: string = DEFAULT_MODEL) {
   const n = (name || DEFAULT_MODEL).trim();
-  // İleride: if (n.startsWith('gpt')) return openai(n); if (n.startsWith('claude')) return anthropic(n);
+  if (openrouter) return openrouter(n);
   return google(n.startsWith('gemini') ? n : 'gemini-2.5-flash');
 }
 
