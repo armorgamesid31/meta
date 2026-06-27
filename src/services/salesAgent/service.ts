@@ -26,11 +26,12 @@ const TEST_MODELS = [
 ] as const;
 
 function isTestSubject(subject: string): boolean {
+  const strip = (s: string) => s.replace(/^\+/, '');
   const list = (process.env.SALES_TEST_SUBJECTS || '')
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
-  return list.includes(subject);
+  return list.some((s) => strip(s) === strip(subject));
 }
 
 // subject + model için bileşik anahtar (şema değişikliği yok)
