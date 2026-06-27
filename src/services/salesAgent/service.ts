@@ -21,6 +21,18 @@ export async function processSalesMessage(input: SalesMessageInput): Promise<voi
   const { channel, subject, text } = input;
   if (!text.trim()) return;
 
+  // ── memorysil komutu ──────────────────────────────────────────────────────
+  if (text.trim().toLowerCase() === 'memorysil') {
+    await prisma.salesConversation.upsert({
+      where: { channel_subject: { channel, subject } },
+      update: { messages: [], status: 'active', handoverReason: null, handoverAt: null },
+      create: { channel, subject, messages: [], status: 'active' },
+    });
+    if (channel === 'WHATSAPP') await sendCentralText({ to: subject, text: 'Hafıza temizlendi 🧹' });
+    else await sendCentralIgText({ recipientId: subject, text: 'Hafıza temizlendi 🧹' });
+    return;
+  }
+
   // ── Konuşmayı yükle veya oluştur ──────────────────────────────────────────
   const conv = await prisma.salesConversation.findUnique({
     where: { channel_subject: { channel, subject } },
@@ -49,7 +61,7 @@ export async function processSalesMessage(input: SalesMessageInput): Promise<voi
       system: buildSalesSystemPrompt(),
       messages: agentMessages,
       tools,
-      modelName: process.env.AGENT_SALES_MODEL || 'gemini-3.0-flash',
+      modelName: process.env.AGENT_SALES_MODEL || 'gemini-2.5-flash',
     });
     replyText = result.text.trim();
     toolCalls = result.toolCalls;
