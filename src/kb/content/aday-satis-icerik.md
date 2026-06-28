@@ -21,7 +21,7 @@ Kedy, yalnızca güzellik salonları için kurulmuş randevu ve salon yönetim p
 
 En önemli farkı şu: Müşteriniz WhatsApp ya da Instagram'dan size yazdığında, Kedy'nin yapay zekası onu gece gündüz karşılar, ne istediğini anlar ve kişiye özel bir randevu ekranı gönderir. Müşteri o ekrandan uygulama indirmeden, form doldurmadan, tek dokunuşla randevusunu seçer. Buna **Sihirli Randevu** diyoruz.
 
-Kısacası: Siz koltuktayken müşteriniz yazar, Kedy karşılar; randevu, müşteri defteri, hatırlatmalar, paket takibi, çalışan primleri, stok ve raporlar tek programda toplanır.
+Kısacası: Siz işlemdeyken müşteriniz yazar, Kedy karşılar; randevu, müşteri defteri, hatırlatmalar, paket takibi, çalışan primleri, stok ve raporlar tek programda toplanır.
 
 ---
 
@@ -62,7 +62,7 @@ Müşteriye WhatsApp veya Instagram üzerinden kişiselleştirilmiş bir randevu
 
 ### WhatsApp yapay zeka asistanı
 
-Müşteri "bugün boş var mı?", "saç boyama ne kadar?" diye yazdığında yapay zeka anında cevap verir, müşteriyi karşılar, niyetini anlar ve Sihirli Randevu ekranını gönderir. Siz koltuktayken, elleriniz boyalıyken, mesai dışında — asistan 7/24 çalışır, 5 saniye içinde yanıt verir. İstediğiniz an konuşmaya girip devralabilirsiniz; yapay zeka bekler, siz öne geçersiniz, bitince tekrar devreder. Sesli mesajları metne çevirip anlayabilir, gönderilen fotoğrafları tanıyabilir.
+Müşteri "bugün boş var mı?", "saç boyama ne kadar?" diye yazdığında yapay zeka anında cevap verir, müşteriyi karşılar, niyetini anlar ve Sihirli Randevu ekranını gönderir. Siz işlemdeyken, elleriniz boyalıyken, mesai dışında — asistan 7/24 çalışır, 5 saniye içinde yanıt verir. İstediğiniz an konuşmaya girip devralabilirsiniz; yapay zeka bekler, siz öne geçersiniz, bitince tekrar devreder. Sesli mesajları metne çevirip anlayabilir, gönderilen fotoğrafları tanıyabilir.
 
 *Kazancınız: Hiçbir mesaj cevapsız kalmaz, müşteri rakibe gitmez.*
 

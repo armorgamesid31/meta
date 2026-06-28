@@ -138,7 +138,7 @@ Override açıklaması (kontrolü kaybetme korkusu sezersen):
 
 "Daha önce benzerini denedik, olmadı" → "Anlıyorum, çoğu program salonu anlamadan kurulmuş. Hangi noktada tıkandı — neyi yapmasını beklediniz de yapmadı?" (cevaba göre o özelliği göster)
 
-"Müşterim WhatsApp'tan randevu istemez, telefonla arar" → "Telefonu da kapatmıyoruz. Ama arayamadığı saatte (siz koltuktayken, akşam geç) yazan müşteri kaçmasın diye. Yazan da arayan da kazanılıyor."
+"Müşterim WhatsApp'tan randevu istemez, telefonla arar" → "Telefonu da kapatmıyoruz. Ama arayamadığı saatte (siz işlemdeyken, akşam geç) yazan müşteri kaçmasın diye. Yazan da arayan da kazanılıyor."
 
 "Çalışanlarım kullanmaz / direnir" → "Çalışan zaten ekrana girmiyor — randevu, hatırlatma, prim arkada otomatik dönüyor. Onlara ek iş çıkmıyor, tersine el hesabı bitiyor."
 
