@@ -20,7 +20,7 @@ type StoredMessage = { role: 'user' | 'assistant'; content: string };
 // ── Multi-model test konfigürasyonu ───────────────────────────────────────────
 const TEST_MODELS = [
   { key: 'deepseek', label: '🔵 DeepSeek V3', modelId: 'deepseek/deepseek-chat' },
-  { key: 'haiku',    label: '🟠 Claude Haiku', modelId: 'anthropic/claude-haiku-4-5' },
+  { key: 'haiku',    label: '🟠 Claude Haiku', modelId: 'anthropic/claude-haiku-4.5' },
   { key: '4omini',   label: '🟢 GPT-4o Mini',  modelId: 'openai/gpt-4o-mini' },
   { key: 'gemini3',  label: '💜 Gemini 3 Flash', modelId: 'google/gemini-3-flash-preview' },
 ] as const;
@@ -206,7 +206,7 @@ export async function processSalesMessage(input: SalesMessageInput): Promise<voi
       system: buildSalesSystemPrompt(),
       messages: agentMessages,
       tools,
-      modelName: process.env.AGENT_SALES_MODEL || 'google/gemini-2.5-flash',
+      modelName: process.env.AGENT_SALES_MODEL || 'google/gemini-3-flash-preview',
       openrouterKey: process.env.OPENROUTER_SALES_API_KEY,
     });
     replyText = result.text.trim();
