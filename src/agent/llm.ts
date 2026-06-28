@@ -6,13 +6,19 @@
 
 import { generateText, stepCountIs, type ToolSet } from 'ai';
 import { google } from '@ai-sdk/google';
-import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
+import { createOpenAI } from '@ai-sdk/openai';
 import type { AgentMessage, AgentTurnResult } from './types.js';
 
-// @ai-sdk/openai-compatible → her zaman Chat Completions API kullanır (Responses API değil)
-// @ai-sdk/openai v3 + ai v6 kombinasyonunda multi-step tool call'larda Responses API'ye kayıyordu
-const makeOpenRouter = (key: string) =>
-  createOpenAICompatible({ name: 'openrouter', baseURL: 'https://openrouter.ai/api/v1', apiKey: key });
+// OpenRouter (Chat Completions, OpenAI-uyumlu). @ai-sdk/openai-compatible@3.x
+// `@ai-sdk/provider@4` (spec "v4") çekiyordu; ai@6 ise spec "v3" bekler →
+// "Unsupported model version v4" hatası. @ai-sdk/openai@3 ise google ile aynı
+// `@ai-sdk/provider@3` (spec "v3") neslinde → uyumlu.
+// .chat() = Chat Completions endpoint'ine kilitler; default Responses API
+// multi-step tool call'da OpenRouter'da kırılıyordu.
+const makeOpenRouter = (key: string) => {
+  const provider = createOpenAI({ name: 'openrouter', baseURL: 'https://openrouter.ai/api/v1', apiKey: key });
+  return (modelId: string) => provider.chat(modelId);
+};
 
 const DEFAULT_MODEL = (process.env.AGENT_MODEL || 'gemini-2.5-flash').trim();
 const DEFAULT_MAX_STEPS = Number(process.env.AGENT_MAX_STEPS || 6);
