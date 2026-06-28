@@ -6,12 +6,13 @@
 
 import { generateText, stepCountIs, type ToolSet } from 'ai';
 import { google } from '@ai-sdk/google';
-import { createOpenAI } from '@ai-sdk/openai';
+import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import type { AgentMessage, AgentTurnResult } from './types.js';
 
+// @ai-sdk/openai-compatible → her zaman Chat Completions API kullanır (Responses API değil)
+// @ai-sdk/openai v3 + ai v6 kombinasyonunda multi-step tool call'larda Responses API'ye kayıyordu
 const makeOpenRouter = (key: string) =>
-  // compatibility:'compatible' → Chat Completions API (Responses API değil); @ai-sdk/openai v3 type'ında yok ama runtime'da okunuyor
-  createOpenAI({ baseURL: 'https://openrouter.ai/api/v1', apiKey: key, compatibility: 'compatible' } as any);
+  createOpenAICompatible({ name: 'openrouter', baseURL: 'https://openrouter.ai/api/v1', apiKey: key });
 
 const DEFAULT_MODEL = (process.env.AGENT_MODEL || 'gemini-2.5-flash').trim();
 const DEFAULT_MAX_STEPS = Number(process.env.AGENT_MAX_STEPS || 6);
