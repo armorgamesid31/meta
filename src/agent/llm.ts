@@ -38,7 +38,7 @@ function providerOptionsFor(modelName?: string): any {
  * İsimden AI SDK LanguageModel çöz. Bench için sağlayıcı eklemek = burada bir
  * dal + ilgili `@ai-sdk/*` paketi (openai/anthropic W7'de). Şimdilik Gemini.
  */
-export function resolveModel(name: string = DEFAULT_MODEL, openrouterKey?: string) {
+export function resolveModel(name: string = DEFAULT_MODEL, openrouterKey?: string): any {
   const n = (name || DEFAULT_MODEL).trim();
   const key = openrouterKey || process.env.OPENROUTER_API_KEY;
   if (key) return makeOpenRouter(key)(n);
