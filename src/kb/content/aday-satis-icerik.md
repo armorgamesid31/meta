@@ -171,7 +171,7 @@ Her salon kendi alt alan adını (salonunuz.kedyapp.com) alır. Sayfada hizmet l
 **Kurucu Salon fiyatı (ilk salonlara özel indirim):**
 İlk katılan salonlar kademeli, indirimli fiyatla başlar. Kademeler doldukça fiyat bir basamak yukarı çıkar. Hangi kademenin açık olduğunu ve güncel fiyatı sormadan söyleme; canlı araçtan kontrol et.
 
-> Önemli: Bugün hangi kademeden girerseniz, o fiyat size ömür boyu sabit kalır.
+> Önemli: Bugün hangi kademeden girerseniz, o kampanyalı fiyat size 1 yıl boyunca sabit kalır. Kademeler doldukça yeni girenlere fiyat yükselse de sizin başlangıç fiyatınızı 1 yıl etkilemez.
 
 **Yıllık ödeme:** Yıllık seçerseniz 2 ay bedava gelir. Güncel yıllık tutarı canlı araçtan kontrol et.
 
