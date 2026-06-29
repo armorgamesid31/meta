@@ -4,7 +4,6 @@ import { prisma } from '../prisma.js';
 import { syncCustomerToGlobalIdentity } from './globalCustomerIdentity.js';
 import type { DisplaySlot, PersonGroup } from '../modules/availability/types.js';
 import { generateAvailability } from './availabilityService.js';
-import { createNotification } from './notifications.js';
 import { buildWaitlistOfferUrl } from '../utils/waitlistOfferUrl.js';
 import { canonicalPhoneDigits } from './phoneValidation.js';
 
@@ -358,23 +357,18 @@ async function sendWhatsappOffer(params: {
   );
 }
 
-async function notifySalon(input: {
+// Waitlist bildirimleri iptal (Berkay, 2026-06-29): bekleme listesi
+// eşleştirme/teklif AKIŞI çalışmaya devam eder (müşteriye teklif gider),
+// ama salona PUSH/in-app bildirim ÜRETİLMEZ. Tek noktada no-op; çağrı
+// yerleri korunuyor ki geri açmak istenirse sadece bu gövde geri gelir.
+async function notifySalon(_input: {
   salonId: number;
   eventType: 'WAITLIST_MATCH_FOUND' | 'WAITLIST_OFFER_CREATED' | 'WAITLIST_OFFER_EXPIRED' | 'WAITLIST_OFFER_ACCEPTED';
   title: string;
   body: string;
   payload?: Record<string, unknown>;
 }) {
-  await createNotification({
-    salonId: input.salonId,
-    eventType: input.eventType,
-    title: input.title,
-    body: input.body,
-    payload: {
-      route: 'schedule',
-      ...(input.payload || {}),
-    },
-  }).catch(() => undefined);
+  return;
 }
 
 function serializeEntry(entry: any): WaitlistListItem {

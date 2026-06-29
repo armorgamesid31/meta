@@ -49,7 +49,6 @@ import {
   readRealtimeSync,
 } from '../services/conversationRealtimeEvents.js';
 import {
-  createNotification,
   getDefaultNotificationPolicy,
   getSalonNotificationPolicy,
   notifySameDayAppointmentChange,
@@ -10768,18 +10767,9 @@ router.post('/campaigns/:id/send', authenticateToken, async (req: any, res: any)
       select: { id: true, executionKey: true },
     });
 
-    await createNotification({
-      salonId,
-      eventType: 'CAMPAIGN_MANUAL_SEND',
-      title: `Kampanya gönderildi: ${campaign.name}`,
-      body: `Hedef liste hazırlandı — ${recipientUserIds.length} müşteri.`,
-      payload: {
-        campaignId: campaign.id,
-        campaignType: campaign.type,
-        audienceSize: recipientUserIds.length,
-      },
-      recipientUserIds: [req.user?.userId].filter((id: any) => Number.isInteger(id) && id > 0),
-    });
+    // Kampanya gönderim bildirimi iptal (Berkay, 2026-06-29): kampanya
+    // gönderimi/execution kaydı çalışmaya devam eder, ama "kampanya
+    // gönderildi" push/in-app bildirimi ÜRETİLMEZ.
 
     return res.status(200).json({
       sent: true,
