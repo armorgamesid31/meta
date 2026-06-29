@@ -471,10 +471,40 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
   const eligibleBaseTotal = input.lines
     .filter((line) => !line.isPackageCovered && isMainPersonLine(line))
     .reduce((sum, line) => sum + Math.max(0, Number(line.listPrice || 0)), 0);
+
+  // For MULTI_SERVICE_DISCOUNT campaigns set to discount only the CHEAPEST
+  // eligible service ("ikinciye/en ucuza indirim"), precompute that line's
+  // index once. Absent/`all` → empty map → discount applies to every eligible
+  // line as before (backward-compatible).
+  const multiCheapestLineIndex = new Map<number, number>();
+  for (const campaign of sortedCampaigns) {
+    if (String(campaign.type) !== 'MULTI_SERVICE_DISCOUNT') continue;
+    const cfg = (campaign.config || {}) as Record<string, any>;
+    if (String(cfg.discountTarget || 'all') !== 'cheapest') continue;
+    // "cheapest" targets a single line by price and is meaningless for
+    // free_service (which targets a specific rewardServiceId). Fall back to
+    // normal free_service handling instead of accidentally suppressing it.
+    const rewardType = String(cfg.rewardType || cfg.discountType || '').trim().toLowerCase();
+    if (rewardType === 'free_service') continue;
+    let bestIdx = -1;
+    let bestPrice = Infinity;
+    input.lines.forEach((line, idx) => {
+      if (line.isPackageCovered || !isMainPersonLine(line)) return;
+      if (!isServiceEligibleByScope(cfg, Number(line.serviceId))) return;
+      const price = Math.max(0, Number(line.listPrice || 0));
+      if (price <= 0) return;
+      if (price < bestPrice) {
+        bestPrice = price;
+        bestIdx = idx;
+      }
+    });
+    if (bestIdx >= 0) multiCheapestLineIndex.set(campaign.id, bestIdx);
+  }
+
   const weekdayKey = getInTimezoneWeekdayKey(startTime, timezone);
   const minuteOfDay = getInTimezoneMinuteOfDay(startTime, timezone);
 
-  const lines: CampaignPricingLineResult[] = input.lines.map((line) => {
+  const lines: CampaignPricingLineResult[] = input.lines.map((line, lineIndex) => {
     const base = Math.max(0, Number(line.listPrice || 0));
     const packageCovered = Boolean(line.isPackageCovered);
     if (packageCovered || base <= 0) {
@@ -605,6 +635,13 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
         const minCount = Math.max(2, Number(cfg.minServiceCount || 2));
         if (eligibleServiceCount < minCount) {
           skip(campaign, 'MULTI_SERVICE_NOT_ELIGIBLE');
+          continue;
+        }
+        // Cheapest-only target: this campaign discounts a single line (the
+        // cheapest eligible service). Skip every other line.
+        const cheapestIndex = multiCheapestLineIndex.get(campaign.id);
+        if (cheapestIndex !== undefined && cheapestIndex !== lineIndex) {
+          skip(campaign, 'SERVICE_NOT_ELIGIBLE');
           continue;
         }
       }
