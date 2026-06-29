@@ -1060,11 +1060,108 @@ export async function processCompletionCampaignRewards(input: {
 
   const campaigns = await getActiveCampaigns(input.salonId, new Date());
   const loyalty = campaigns.filter((c) => c.type === 'LOYALTY');
+
+  // Optional "once per day" stamp rule: if ANY loyalty campaign opts in, count
+  // stamps by DISTINCT completed days instead of raw completed-appointment
+  // count, so a customer can't farm stamps with multiple same-day bookings.
+  // To stay idempotent (createOrIncrementWalletCredit is NOT idempotent), the
+  // reward only fires on the day's "representative" completion = the
+  // smallest-id completed appointment of that day. Exactly one completion per
+  // day passes the gate, regardless of completion order → never double-credits.
+  const anyOncePerDay = loyalty.some((c) => Boolean((c.config as Record<string, any>)?.oncePerDay));
+  let distinctDayCount: number | null = null;
+  let isDayRepresentative = false;
+  if (anyOncePerDay) {
+    const timezone = await getSalonTimezone(input.salonId);
+    const completed = await prisma.appointment.findMany({
+      where: { salonId: input.salonId, customerId: input.customerId, status: 'COMPLETED' },
+      select: { id: true, startTime: true },
+    });
+    const dayKeyFmt = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    const days = new Set<string>();
+    const minIdByDay = new Map<string, number>();
+    let currentDayKey: string | null = null;
+    for (const appt of completed) {
+      if (!appt.startTime) continue;
+      const key = dayKeyFmt.format(new Date(appt.startTime));
+      days.add(key);
+      const existing = minIdByDay.get(key);
+      if (existing === undefined || appt.id < existing) minIdByDay.set(key, appt.id);
+      if (appt.id === input.appointmentId) currentDayKey = key;
+    }
+    distinctDayCount = days.size;
+    isDayRepresentative = currentDayKey != null && minIdByDay.get(currentDayKey) === input.appointmentId;
+  }
+
   for (const campaign of loyalty) {
     const cfg = campaign.config;
     const threshold = Math.max(1, Number(cfg.rewardThreshold || 5));
     const rewardValue = Math.max(0, Number(cfg.rewardValue || 0));
     if (rewardValue <= 0) continue;
+
+    const oncePerDay = Boolean((cfg as Record<string, any>).oncePerDay);
+
+    if (oncePerDay && distinctDayCount != null) {
+      // Skip redundant same-day work; correctness does NOT rely on this — the
+      // earned-vs-credited check below is idempotent on its own.
+      if (!isDayRepresentative) continue;
+
+      // Idempotent crediting: how many rewards the customer SHOULD have earned
+      // by now (one per `threshold` distinct days) vs how many we've already
+      // credited (tracked in wallet metadata). Credit only the difference.
+      // Order-independent → the same-day reverse-order double-credit window is
+      // closed, and it never over- or under-credits across re-runs.
+      const earnedRewards = Math.floor(distinctDayCount / threshold);
+      if (earnedRewards <= 0) continue;
+
+      const wallet = await prisma.customerCampaignWallet.findUnique({
+        where: {
+          salonId_customerId_campaignId: {
+            salonId: input.salonId,
+            customerId: input.customerId,
+            campaignId: campaign.id,
+          },
+        },
+        select: { metadata: true, balanceAmount: true, consumedAmount: true },
+      });
+      const trackedRewardCount = Number(
+        (wallet?.metadata as Record<string, any> | null)?.loyaltyRewardCount
+      );
+      // Prefer the tracked counter; if absent (e.g. oncePerDay was enabled on a
+      // campaign that already credited via the legacy path), estimate from the
+      // wallet's total credited amount so we never re-credit past rewards.
+      // Use ceil for the estimate: if rewardValue changed since the legacy
+      // credits, this biases toward OVER-estimating past rewards → at worst a
+      // one-off under-credit (salon-safe), never an over-credit to the customer.
+      const creditedRewards = Number.isFinite(trackedRewardCount)
+        ? Math.max(0, trackedRewardCount)
+        : Math.ceil(
+            Math.max(0, (wallet?.balanceAmount || 0) + (wallet?.consumedAmount || 0)) /
+              Math.max(1, rewardValue)
+          );
+      const owedRewards = earnedRewards - creditedRewards;
+      if (owedRewards <= 0) continue;
+
+      await createOrIncrementWalletCredit({
+        salonId: input.salonId,
+        customerId: input.customerId,
+        campaignId: campaign.id,
+        amount: rewardValue * owedRewards,
+        metadata: {
+          source: 'LOYALTY_THRESHOLD',
+          threshold,
+          appointmentId: input.appointmentId,
+          oncePerDay: true,
+          loyaltyRewardCount: earnedRewards,
+        },
+      });
+      continue;
+    }
 
     const completedCount = await prisma.appointment.count({
       where: {
@@ -1080,7 +1177,11 @@ export async function processCompletionCampaignRewards(input: {
         customerId: input.customerId,
         campaignId: campaign.id,
         amount: rewardValue,
-        metadata: { source: 'LOYALTY_THRESHOLD', threshold, appointmentId: input.appointmentId },
+        metadata: {
+          source: 'LOYALTY_THRESHOLD',
+          threshold,
+          appointmentId: input.appointmentId,
+        },
       });
     }
   }
