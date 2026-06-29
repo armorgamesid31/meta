@@ -22,14 +22,46 @@ const EMAIL_LINK_TTL_MINUTES = 30;
 const VERIFICATION_BASE_URL =
   (process.env.VERIFICATION_BASE_URL_KEDY || process.env.FRONTEND_URL || 'https://web.kedyapp.com').trim().replace(/\/+$/, '');
 
-// Test bypass: girilen telefon/e-posta bu sabit test değerleriyse WhatsApp/
-// e-posta gönderimi atlanır ve ilgili adım anında doğrulanmış işaretlenir.
-// Geçici: gönderim hattı (merkez WABA, e-posta sağlayıcı) elden geçerken
-// kayıt akışını uçtan uca test edebilmek için. Prod'da gerçek numara kullan.
-const TEST_BYPASS_EMAIL = 'test@test.test';
+// Test bypass: girilen telefon/e-posta test değeriyse WhatsApp/e-posta
+// gönderimi atlanır, adım anında doğrulanmış işaretlenir VE her kullanımda
+// bir sonraki boş test kimliğine ilerletilir (test@test.test → test1@... ,
+// 905555555555 → 905555555556 ...) ki aynı değerle tekrar tekrar kayıt
+// denenebilsin. Geçici: gönderim hattı elden geçerken uçtan uca test için.
+const TEST_BYPASS_EMAIL_BASE = 'test@test.test';
+const TEST_BYPASS_PHONE_BASE = 905555555555;
+
+// Kullanıcı her seferinde test@test.test yazar; sistem boş olan ilk
+// test{N}@test.test adresini seçer (N: '', '1', '2', ...).
+function isTestBypassEmail(email: string): boolean {
+  return /^test\d*@test\.test$/.test(String(email || '').trim().toLowerCase());
+}
+async function nextFreeTestEmail(): Promise<string> {
+  for (let i = 0; i < 100000; i += 1) {
+    const candidate = i === 0 ? TEST_BYPASS_EMAIL_BASE : `test${i}@test.test`;
+    const existing = await prisma.userIdentity.findFirst({ where: { email: candidate }, select: { id: true } });
+    if (!existing) return candidate;
+  }
+  throw new Error('TEST_EMAIL_POOL_EXHAUSTED');
+}
+
+// 905555555555 ve komşuları (9055555555xx, 12 hane) test telefonu sayılır;
+// boş olan ilk numara seçilir, E.164 ("+90...") formatında saklanır.
 function isTestBypassPhone(phone: string): boolean {
   const digits = String(phone || '').replace(/\D/g, '');
-  return digits === '905555555555' || digits === '5555555555' || digits === '05555555555';
+  if (digits === '5555555555' || digits === '05555555555') return true;
+  return digits.length === 12 && digits.startsWith('9055555555');
+}
+async function nextFreeTestPhone(): Promise<string> {
+  for (let i = 0; i < 100000; i += 1) {
+    const digits = String(TEST_BYPASS_PHONE_BASE + i);
+    const e164 = `+${digits}`;
+    const existing = await prisma.userIdentity.findFirst({
+      where: { phone: { in: [e164, digits] } },
+      select: { id: true },
+    });
+    if (!existing) return e164;
+  }
+  throw new Error('TEST_PHONE_POOL_EXHAUSTED');
 }
 
 function generateToken(): string {
@@ -141,12 +173,14 @@ export async function sendPhoneMagicLink(input: { sessionId: string; phone: stri
     throw new Error('PHONE_INVALID');
   }
 
-  // Test bypass: WhatsApp göndermeden telefonu doğrulanmış işaretle.
+  // Test bypass: WhatsApp göndermeden, boş olan ilk test numarasını seçip
+  // telefonu doğrulanmış işaretle.
   if (isTestBypassPhone(normalizedPhone)) {
+    const freePhone = await nextFreeTestPhone();
     await prisma.onboardingSession.update({
       where: { id: session.id },
       data: {
-        phone: normalizedPhone,
+        phone: freePhone,
         phoneToken: null,
         phoneTokenSentAt: new Date(),
         phoneVerifiedAt: new Date(),
@@ -179,12 +213,14 @@ export async function sendEmailMagicLink(input: { sessionId: string; email: stri
     throw new Error('EMAIL_INVALID');
   }
 
-  // Test bypass: e-posta göndermeden adresi doğrulanmış işaretle.
-  if (email === TEST_BYPASS_EMAIL) {
+  // Test bypass: e-posta göndermeden, boş olan ilk test adresini seçip
+  // doğrulanmış işaretle.
+  if (isTestBypassEmail(email)) {
+    const freeEmail = await nextFreeTestEmail();
     await prisma.onboardingSession.update({
       where: { id: session.id },
       data: {
-        email,
+        email: freeEmail,
         emailToken: null,
         emailTokenSentAt: new Date(),
         emailVerifiedAt: new Date(),
