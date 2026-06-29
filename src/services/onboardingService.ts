@@ -22,6 +22,16 @@ const EMAIL_LINK_TTL_MINUTES = 30;
 const VERIFICATION_BASE_URL =
   (process.env.VERIFICATION_BASE_URL_KEDY || process.env.FRONTEND_URL || 'https://web.kedyapp.com').trim().replace(/\/+$/, '');
 
+// Test bypass: girilen telefon/e-posta bu sabit test değerleriyse WhatsApp/
+// e-posta gönderimi atlanır ve ilgili adım anında doğrulanmış işaretlenir.
+// Geçici: gönderim hattı (merkez WABA, e-posta sağlayıcı) elden geçerken
+// kayıt akışını uçtan uca test edebilmek için. Prod'da gerçek numara kullan.
+const TEST_BYPASS_EMAIL = 'test@test.test';
+function isTestBypassPhone(phone: string): boolean {
+  const digits = String(phone || '').replace(/\D/g, '');
+  return digits === '905555555555' || digits === '5555555555' || digits === '05555555555';
+}
+
 function generateToken(): string {
   // url-safe, ~22 chars
   return crypto.randomBytes(16).toString('base64url');
@@ -131,6 +141,20 @@ export async function sendPhoneMagicLink(input: { sessionId: string; phone: stri
     throw new Error('PHONE_INVALID');
   }
 
+  // Test bypass: WhatsApp göndermeden telefonu doğrulanmış işaretle.
+  if (isTestBypassPhone(normalizedPhone)) {
+    await prisma.onboardingSession.update({
+      where: { id: session.id },
+      data: {
+        phone: normalizedPhone,
+        phoneToken: null,
+        phoneTokenSentAt: new Date(),
+        phoneVerifiedAt: new Date(),
+      },
+    });
+    return;
+  }
+
   const token = generateToken();
   await prisma.onboardingSession.update({
     where: { id: session.id },
@@ -154,6 +178,21 @@ export async function sendEmailMagicLink(input: { sessionId: string; email: stri
   if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
     throw new Error('EMAIL_INVALID');
   }
+
+  // Test bypass: e-posta göndermeden adresi doğrulanmış işaretle.
+  if (email === TEST_BYPASS_EMAIL) {
+    await prisma.onboardingSession.update({
+      where: { id: session.id },
+      data: {
+        email,
+        emailToken: null,
+        emailTokenSentAt: new Date(),
+        emailVerifiedAt: new Date(),
+      },
+    });
+    return;
+  }
+
   if (!isEmailConfigured()) throw new Error('EMAIL_PROVIDER_NOT_CONFIGURED');
 
   const token = generateToken();
