@@ -465,6 +465,11 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
   const eligibleServiceCount = input.lines.filter(
     (line) => !line.isPackageCovered && isMainPersonLine(line),
   ).length;
+  // Basket total of the booker's chargeable lines (pre-discount list price) —
+  // used by the optional per-campaign minimum-spend gate below.
+  const eligibleBaseTotal = input.lines
+    .filter((line) => !line.isPackageCovered && isMainPersonLine(line))
+    .reduce((sum, line) => sum + Math.max(0, Number(line.listPrice || 0)), 0);
   const weekdayKey = getInTimezoneWeekdayKey(startTime, timezone);
   const minuteOfDay = getInTimezoneMinuteOfDay(startTime, timezone);
 
@@ -566,6 +571,19 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
       // apply its rewardValue to every line.
       if (String(type) === 'BILL_THRESHOLD') {
         continue;
+      }
+
+      // Optional minimum-spend gate (₺): the campaign only applies if the
+      // booker's pre-discount basket total reaches the configured floor.
+      // Reduce-only (only ever suppresses a discount). Wallet types
+      // (LOYALTY/REFERRAL) are excluded — their reward is the customer's
+      // earned credit and shouldn't be gated by a spend floor here.
+      if (type !== 'LOYALTY' && type !== 'REFERRAL') {
+        const minSpendAmount = Math.max(0, Number(cfg.minSpendAmount || 0));
+        if (minSpendAmount > 0 && eligibleBaseTotal < minSpendAmount) {
+          skip(campaign, 'BILL_THRESHOLD_NOT_REACHED');
+          continue;
+        }
       }
 
       if (
