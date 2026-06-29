@@ -15,6 +15,7 @@ import {
 export type NotificationEventType =
   | 'HANDOVER_REQUIRED'
   | 'HANDOVER_REMINDER'
+  | 'SAME_DAY_APPOINTMENT_NEW'
   | 'SAME_DAY_APPOINTMENT_CHANGE'
   | 'END_OF_DAY_MISSING_DATA'
   | 'DAILY_MANAGER_REPORT'
@@ -53,6 +54,9 @@ const DEFAULT_RECIPIENTS: Record<NotificationEventType, string[]> = {
   HANDOVER_REMINDER: ['OWNER', 'MANAGER', 'RECEPTION', 'STAFF'],
   // Yeni randevu + randevu değişikliği/iptali personele de gitsin (Berkay, 2026-06-07):
   // owner/yönetici/resepsiyon dışında salon personeli de anlık görsün.
+  // 2026-06-29: "yeni randevu" ve "iptal/değişiklik" AYRI bildirim tipi oldu
+  // (ayrı kanal/ses + ayrı aç-kapa); ikisi de tüm salona gider.
+  SAME_DAY_APPOINTMENT_NEW: ['OWNER', 'MANAGER', 'RECEPTION', 'STAFF'],
   SAME_DAY_APPOINTMENT_CHANGE: ['OWNER', 'MANAGER', 'RECEPTION', 'STAFF'],
   END_OF_DAY_MISSING_DATA: ['OWNER', 'MANAGER', 'RECEPTION', 'STAFF'],
   DAILY_MANAGER_REPORT: ['OWNER', 'MANAGER'],
@@ -66,6 +70,13 @@ const DEFAULT_RECIPIENTS: Record<NotificationEventType, string[]> = {
 
 const DEFAULT_INTERVAL_MINUTES = Number(process.env.HANDOVER_REMINDER_INTERVAL_MINUTES || 30);
 const DEFAULT_MAX_COUNT = Number(process.env.HANDOVER_REMINDER_MAX_COUNT || 6);
+
+// Gün sonu raporu/eksik-veri zamanlaması (Berkay, 2026-06-29):
+// kapanış saatinde başla, son-kontrol penceresinde eksik-veri uyarısı ver,
+// grace dolunca raporu eksik bilgisiyle yine de gönder.
+const EOD_REPORT_GRACE_MINUTES = Number(process.env.EOD_REPORT_GRACE_MINUTES || 60);
+const EOD_NUDGE_COOLDOWN_MINUTES = Number(process.env.EOD_NUDGE_COOLDOWN_MINUTES || 20);
+const EOD_NUDGE_MAX = Number(process.env.EOD_NUDGE_MAX || 3);
 
 const LOCK_HANDOVER = 903_001;
 const LOCK_DAILY = 903_002;
@@ -87,7 +98,7 @@ function resolveNotificationRoute(
   if (eventType === 'HANDOVER_REQUIRED' || eventType === 'HANDOVER_REMINDER') {
     return 'conversations';
   }
-  if (eventType === 'SAME_DAY_APPOINTMENT_CHANGE' || eventType === 'END_OF_DAY_MISSING_DATA') {
+  if (eventType === 'SAME_DAY_APPOINTMENT_NEW' || eventType === 'SAME_DAY_APPOINTMENT_CHANGE' || eventType === 'END_OF_DAY_MISSING_DATA') {
     return 'schedule';
   }
   if (eventType === 'DAILY_MANAGER_REPORT') {
@@ -124,11 +135,11 @@ function resolveAndroidChannelId(
     return ANDROID_PUSH_CHANNEL_HANDOVER_ID;
   }
 
+  if (eventType === 'SAME_DAY_APPOINTMENT_NEW') {
+    return ANDROID_PUSH_CHANNEL_APPOINTMENT_ID;
+  }
+
   if (eventType === 'SAME_DAY_APPOINTMENT_CHANGE') {
-    const event = typeof payload?.event === 'string' ? payload.event.toUpperCase() : '';
-    if (event === 'CREATED') {
-      return ANDROID_PUSH_CHANNEL_APPOINTMENT_ID;
-    }
     return ANDROID_PUSH_CHANNEL_BOOKING_CHANGE_ID;
   }
 
@@ -304,6 +315,7 @@ async function getEligibleUserIdsByPreference(
 const EVENT_TYPE_EMOJI: Record<NotificationEventType, string> = {
   HANDOVER_REQUIRED: '🚨',
   HANDOVER_REMINDER: '⏰',
+  SAME_DAY_APPOINTMENT_NEW: '🆕',
   SAME_DAY_APPOINTMENT_CHANGE: '📅',
   END_OF_DAY_MISSING_DATA: '📝',
   DAILY_MANAGER_REPORT: '📊',
@@ -711,6 +723,11 @@ export async function notifySameDayAppointmentChange(input: {
     input.event === 'UPDATED' ? 'Randevu güncellendi' :
     'Randevu iptal edildi';
 
+  // Yeni randevu ile iptal/değişiklik AYRI bildirim tipi (ayrı kanal/ses,
+  // ayrı aç-kapa). CREATED → NEW, UPDATED/CANCELLED → CHANGE.
+  const eventType: NotificationEventType =
+    input.event === 'CREATED' ? 'SAME_DAY_APPOINTMENT_NEW' : 'SAME_DAY_APPOINTMENT_CHANGE';
+
   const startTimeStr = new Intl.DateTimeFormat('tr-TR', {
     timeZone: tz,
     hour: '2-digit',
@@ -719,7 +736,7 @@ export async function notifySameDayAppointmentChange(input: {
 
   await createNotification({
     salonId: input.salonId,
-    eventType: 'SAME_DAY_APPOINTMENT_CHANGE',
+    eventType,
     title: eventLabel,
     body: `${startTimeStr} • ${input.customerName}\n${input.serviceName || 'Hizmet'}`,
     payload: {
@@ -874,14 +891,16 @@ export async function runDailyNotificationSweep(): Promise<void> {
 
       const local = localTimeParts(now, timezone);
       const currentMinute = local.hour * 60 + local.minute;
-      // After workEndHour + 5 minutes we begin evaluating "is the day
-      // fully closed?". The sweep tick runs every 10 minutes, and we
-      // gate retries via SalonDailyReportState (reminderCount + 30-min
-      // cooldown), so the only window check we need is "are we past
-      // the cutoff at all?".
-      const evaluationStartMinute = workEndHour * 60 + 5;
-      const isPastEod = currentMinute >= evaluationStartMinute;
-      if (!isPastEod) continue;
+      // Gün sonu akışı (Berkay, 2026-06-29):
+      //   1) Kapanış saatinde (workEndHour) tetiklen — kayan saat YOK.
+      //   2) Eksik veri varsa önce "eksik veri / tamamla" uyarıları gider
+      //      (kapanış ile rapor-deadline arası son-kontrol penceresi).
+      //   3) Rapor-deadline'da (kapanış + grace) HÂLÂ eksikse rapor YİNE DE
+      //      gider — ama eksik bilgisiyle. Eksik kalmadıysa rapor hemen gider.
+      // Böylece hem saat kayması hem eski 3-tavan-aşımı bug'ı kapanır.
+      const closingMinute = workEndHour * 60;
+      const deadlineMinute = closingMinute + EOD_REPORT_GRACE_MINUTES;
+      if (currentMinute < closingMinute) continue;
 
       // Lazily create today's state row, then read its current flags.
       // ON CONFLICT keeps the row idempotent across the 10-min ticks.
@@ -922,17 +941,19 @@ export async function runDailyNotificationSweep(): Promise<void> {
       const bookedCount = Number(missingRows?.[0]?.bookedCount || 0);
       const missingPaymentCount = Number(missingRows?.[0]?.missingPaymentCount || 0);
       const unfinishedTotal = bookedCount + missingPaymentCount;
+      const pastDeadline = currentMinute >= deadlineMinute;
 
-      if (unfinishedTotal > 0) {
+      // Faz 1 — son-kontrol penceresi: eksik var ve rapor-deadline'a daha
+      // varsa "tamamla" uyarısı gönder, raporu HENÜZ gönderme. Personele
+      // randevuları kapatması için süre tanır.
+      if (unfinishedTotal > 0 && !pastDeadline) {
         const reminderCount = Number(state.reminderCount || 0);
         const lastReminderAt = state.lastReminderAt ? new Date(state.lastReminderAt) : null;
         const minutesSinceLast = lastReminderAt
           ? (Date.now() - lastReminderAt.getTime()) / 60000
           : Number.POSITIVE_INFINITY;
 
-        // Cap at 3 nudges with a 30-min cooldown so a long-running open
-        // day doesn't spam the staff at every tick.
-        if (reminderCount < 3 && minutesSinceLast >= 30) {
+        if (reminderCount < EOD_NUDGE_MAX && minutesSinceLast >= EOD_NUDGE_COOLDOWN_MINUTES) {
           const missingParts: string[] = [];
           if (bookedCount > 0) missingParts.push(`${bookedCount} randevu durumu`);
           if (missingPaymentCount > 0) missingParts.push(`${missingPaymentCount} ödeme tipi`);
@@ -965,7 +986,9 @@ export async function runDailyNotificationSweep(): Promise<void> {
         continue;
       }
 
-      // Everything is finalized — generate the report and lock it in.
+      // Faz 2 — rapor zamanı: ya eksik kalmadı (erken, temiz rapor) ya da
+      // rapor-deadline doldu (hâlâ eksikse rapor eksik bilgisiyle gider).
+      // Her hâlükârda gönderilir ve gün kilitlenir.
       const metricsRows = await prisma.$queryRawUnsafe<any[]>(
         `
           SELECT
@@ -996,12 +1019,30 @@ export async function runDailyNotificationSweep(): Promise<void> {
         maximumFractionDigits: 0,
       }).format(revenue);
 
+      let reportBody = `${completed}/${total} tamamlandı • ${revenueFmt} ciro\nİptal ${cancelled} · No-show ${noShow}`;
+      if (unfinishedTotal > 0) {
+        const missingParts: string[] = [];
+        if (bookedCount > 0) missingParts.push(`${bookedCount} randevu durumu`);
+        if (missingPaymentCount > 0) missingParts.push(`${missingPaymentCount} ödeme tipi`);
+        reportBody += `\n⚠️ Eksik kaldı: ${missingParts.join(' · ')}`;
+      }
+
       await createNotification({
         salonId,
         eventType: 'DAILY_MANAGER_REPORT',
         title: 'Günlük özet hazır',
-        body: `${completed}/${total} tamamlandı • ${revenueFmt} ciro\nİptal ${cancelled} · No-show ${noShow}`,
-        payload: { dayKey: local.dayKey, total, completed, cancelled, noShow, revenue },
+        body: reportBody,
+        payload: {
+          dayKey: local.dayKey,
+          total,
+          completed,
+          cancelled,
+          noShow,
+          revenue,
+          incompleteCount: unfinishedTotal,
+          bookedCount,
+          missingPaymentCount,
+        },
       });
 
       await prisma.$executeRawUnsafe(

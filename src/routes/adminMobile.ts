@@ -10771,8 +10771,8 @@ router.post('/campaigns/:id/send', authenticateToken, async (req: any, res: any)
     await createNotification({
       salonId,
       eventType: 'CAMPAIGN_MANUAL_SEND',
-      title: `Campaign sent: ${campaign.name}`,
-      body: `${campaign.type} campaign target list prepared (${recipientUserIds.length} customers).`,
+      title: `Kampanya gönderildi: ${campaign.name}`,
+      body: `Hedef liste hazırlandı — ${recipientUserIds.length} müşteri.`,
       payload: {
         campaignId: campaign.id,
         campaignType: campaign.type,
