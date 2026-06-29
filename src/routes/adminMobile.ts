@@ -1485,6 +1485,91 @@ async function buildCampaignStats(campaign: any) {
     stats.referral = { inviteCount, arrivedCount, topReferrerName, topReferrerCount };
   }
 
+  // LOYALTY funnel (read-only). Stamps are NOT stored per-campaign; the reward
+  // is triggered from the customer's total COMPLETED appointment count modulo
+  // the threshold (campaignPricing.ts processCompletionCampaignRewards). The
+  // wallet holds the monetary reward credit (balance = earned, consumed = used).
+  if (type === 'LOYALTY') {
+    const wallets = await prisma.customerCampaignWallet.findMany({
+      where: { salonId, campaignId },
+      select: { balanceAmount: true, consumedAmount: true },
+    });
+    const rewardReachedCount = wallets.filter(
+      (w) => (w.balanceAmount || 0) > 0 || (w.consumedAmount || 0) > 0
+    ).length;
+    const rewardRedeemedCount = wallets.filter((w) => (w.consumedAmount || 0) > 0).length;
+
+    const cfg =
+      campaign.config && typeof campaign.config === 'object'
+        ? (campaign.config as Record<string, unknown>)
+        : {};
+    const threshold = Math.max(1, Number(cfg.rewardThreshold || 5));
+
+    let nearRewardCount = 0;
+    if (threshold > 1) {
+      const completedByCustomer = await prisma.appointment.groupBy({
+        by: ['customerId'],
+        where: { salonId, status: 'COMPLETED', customerId: { not: null } },
+        _count: { _all: true },
+      });
+      for (const row of completedByCustomer) {
+        const count = row._count?._all || 0;
+        if (count <= 0) continue;
+        const remainder = count % threshold;
+        // 1 away always; 2 away only when threshold > 2 (avoids counting a
+        // just-earned reward, remainder 0, as "near" when threshold === 2).
+        if (remainder === threshold - 1 || (threshold > 2 && remainder === threshold - 2)) {
+          nearRewardCount += 1;
+        }
+      }
+    }
+
+    stats.loyalty = { rewardReachedCount, rewardRedeemedCount, nearRewardCount, threshold };
+  }
+
+  // Retention / return rate (read-only) for first-visit & win-back campaigns:
+  // among customers who USED this campaign, how many came back with a COMPLETED
+  // appointment AFTER their first campaign use. NOTE: short campaign windows
+  // understate this (some customers haven't had time to return yet).
+  if (type === 'WELCOME_FIRST_VISIT' || type === 'WINBACK') {
+    const firstUse = await prisma.appointmentCampaignApplication.groupBy({
+      by: ['customerId'],
+      where: { salonId, campaignId, status: 'APPLIED', customerId: { not: null } },
+      _min: { appliedAt: true },
+    });
+    const userIds = firstUse
+      .map((r) => r.customerId)
+      .filter((x): x is number => x != null);
+
+    let returnedCount = 0;
+    if (userIds.length > 0) {
+      const firstUseMap = new Map<number, Date>();
+      for (const r of firstUse) {
+        if (r.customerId != null && r._min?.appliedAt) {
+          firstUseMap.set(r.customerId, new Date(r._min.appliedAt));
+        }
+      }
+      const completed = await prisma.appointment.findMany({
+        where: { salonId, customerId: { in: userIds }, status: 'COMPLETED' },
+        select: { customerId: true, startTime: true },
+      });
+      const returnedSet = new Set<number>();
+      for (const appt of completed) {
+        const cid = appt.customerId;
+        if (cid == null) continue;
+        const firstAt = firstUseMap.get(cid);
+        if (firstAt && appt.startTime && new Date(appt.startTime) > firstAt) {
+          returnedSet.add(cid);
+        }
+      }
+      returnedCount = returnedSet.size;
+    }
+
+    const userCount = userIds.length;
+    const returnRate = userCount > 0 ? Math.round((returnedCount / userCount) * 100) : 0;
+    stats.retention = { userCount, returnedCount, returnRate };
+  }
+
   return stats;
 }
 
