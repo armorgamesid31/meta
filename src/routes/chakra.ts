@@ -902,6 +902,49 @@ function extractWhatsappPhoneNumberId(payload: any): string | null {
   return null;
 }
 
+// Tüm kaynaklardaki (plugin state + SDK data) enabled WhatsApp numara
+// id'lerini toplar: serverConfig.enabledWhatsappPhoneNumbers + auth altındaki
+// whatsappPhoneNumbersById anahtarları. Çok numaralı işletmelerde kullanıcının
+// seçtiği numarayı doğrulamak için kullanılır.
+function collectEnabledPhoneNumberIds(...payloads: any[]): string[] {
+  const ids = new Set<string>();
+  for (const payload of payloads) {
+    const list = payload?.serverConfig?.enabledWhatsappPhoneNumbers;
+    if (Array.isArray(list)) {
+      for (const v of list) {
+        if (typeof v === 'string' && v.trim()) ids.add(v.trim());
+      }
+    }
+    const byId = payload?.auth?.whatsappPhoneNumbersById;
+    if (byId && typeof byId === 'object') {
+      for (const k of Object.keys(byId)) {
+        if (k && k.trim()) ids.add(k.trim());
+      }
+    }
+  }
+  return Array.from(ids);
+}
+
+// Bağlanan numarayı seç. Kullanıcının Meta embedded-signup'ta seçtiği
+// `selectedPhoneNumberId` öncelikli (çok numaralı işletmelerde doğru olan
+// budur) — ama yalnız enabled listede yer alıyorsa ya da liste boşsa güvenilir
+// kabul edilir. Yoksa eski "ilk enabled" davranışına düşer (tek numaralı
+// salonlarda regresyon yok).
+function resolveConnectedPhoneNumberId(
+  selectedPhoneNumberId: string | null,
+  ...payloads: any[]
+): string | null {
+  const fallback = payloads.reduce<string | null>(
+    (acc, p) => acc || extractWhatsappPhoneNumberId(p),
+    null,
+  );
+  const selected = (selectedPhoneNumberId || '').trim();
+  if (!selected) return fallback;
+  const enabled = collectEnabledPhoneNumberIds(...payloads);
+  if (enabled.length === 0 || enabled.includes(selected)) return selected;
+  return fallback;
+}
+
 // Best-effort: Chakra pass-through ile Meta Cloud API'sinden display_phone_number çek.
 // Chakra documented endpoint sadece POST /messages, ama aynı pass-through GET
 // genelde aynı Meta resource'una proxy ediyor. Başarısız olursa sessizce null dön.
@@ -1426,6 +1469,13 @@ router.post('/connect-event', authenticateToken, async (req: any, res: any) => {
     const event = req.body?.event;
     const data = req.body?.data;
     const intent = parseConnectIntent(req.body?.intent);
+    // Kullanıcının Meta embedded-signup'ta bağladığı spesifik numara
+    // (frontend FB signup mesajından yakalayıp gönderir). Çok numaralı
+    // işletmelerde doğru numarayı seçmek için otoriter kaynak.
+    const selectedPhoneNumberId =
+      typeof req.body?.selectedPhoneNumberId === 'string' && req.body.selectedPhoneNumberId.trim()
+        ? req.body.selectedPhoneNumberId.trim()
+        : null;
     const pluginIdFromClient =
       typeof req.body?.pluginId === 'string' && req.body.pluginId.trim() ? req.body.pluginId.trim() : null;
     const pluginId = pluginIdFromClient || salon.chakraPluginId || null;
@@ -1453,9 +1503,10 @@ router.post('/connect-event', authenticateToken, async (req: any, res: any) => {
 
     if (connected) {
       pluginState = await setPluginActiveState(pluginId, true);
-      whatsappPhoneNumberId = extractWhatsappPhoneNumberId(pluginState) || extractWhatsappPhoneNumberId(data);
+      whatsappPhoneNumberId = resolveConnectedPhoneNumberId(selectedPhoneNumberId, pluginState, data);
       pluginState = await ensurePluginWebhookConfigured(pluginId, whatsappPhoneNumberId);
-      whatsappPhoneNumberId = extractWhatsappPhoneNumberId(pluginState) || whatsappPhoneNumberId;
+      whatsappPhoneNumberId =
+        resolveConnectedPhoneNumberId(selectedPhoneNumberId, pluginState) || whatsappPhoneNumberId;
 
       await updateSalonChakraState(salon.id, {
         chakraPhoneNumberId: whatsappPhoneNumberId,
