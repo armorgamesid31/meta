@@ -350,6 +350,7 @@ async function getWalletBalanceMap(salonId: number, customerId: number | null | 
       SELECT "campaignId", GREATEST("balanceAmount" - "consumedAmount", 0) AS "available"
       FROM "CustomerCampaignWallet"
       WHERE "salonId" = $1 AND "customerId" = $2
+        AND ("expiresAt" IS NULL OR "expiresAt" > NOW())
     `,
     salonId,
     customerId,
@@ -1028,27 +1029,41 @@ export async function createOrIncrementWalletCredit(input: {
   campaignId: number;
   amount: number;
   metadata?: Record<string, unknown>;
+  // Optional reward validity. When set, the wallet's expiry is set/extended to
+  // this instant; when null, any existing expiry is preserved (no expiry on a
+  // fresh wallet) → fully backward-compatible.
+  expiresAt?: Date | null;
 }): Promise<void> {
   if (!Number.isFinite(input.amount) || input.amount <= 0) return;
 
   await prisma.$executeRawUnsafe(
     `
       INSERT INTO "CustomerCampaignWallet"
-        ("salonId", "customerId", "campaignId", "balanceAmount", "consumedAmount", "metadata", "createdAt", "updatedAt")
+        ("salonId", "customerId", "campaignId", "balanceAmount", "consumedAmount", "metadata", "expiresAt", "createdAt", "updatedAt")
       VALUES
-        ($1, $2, $3, $4, 0, $5::jsonb, NOW(), NOW())
+        ($1, $2, $3, $4, 0, $5::jsonb, $6::timestamptz, NOW(), NOW())
       ON CONFLICT ("salonId", "customerId", "campaignId")
       DO UPDATE SET
         "balanceAmount" = COALESCE("CustomerCampaignWallet"."balanceAmount", 0) + EXCLUDED."balanceAmount",
         "updatedAt" = NOW(),
-        "metadata" = EXCLUDED."metadata"
+        "metadata" = EXCLUDED."metadata",
+        "expiresAt" = COALESCE(EXCLUDED."expiresAt", "CustomerCampaignWallet"."expiresAt")
     `,
     input.salonId,
     input.customerId,
     input.campaignId,
     Number(input.amount),
     JSON.stringify(input.metadata || {}),
+    input.expiresAt ? input.expiresAt.toISOString() : null,
   );
+}
+
+// Reward validity → absolute expiry instant. config.rewardValidityDays absent or
+// <= 0 means "never expires" (returns null), preserving the legacy behavior.
+function walletExpiryFromConfig(cfg: Record<string, any> | null | undefined): Date | null {
+  const days = Math.max(0, Number(cfg?.rewardValidityDays || 0));
+  if (!Number.isFinite(days) || days <= 0) return null;
+  return new Date(Date.now() + days * 24 * 60 * 60 * 1000);
 }
 
 export async function processCompletionCampaignRewards(input: {
@@ -1104,6 +1119,7 @@ export async function processCompletionCampaignRewards(input: {
     const rewardValue = Math.max(0, Number(cfg.rewardValue || 0));
     if (rewardValue <= 0) continue;
 
+    const loyaltyExpiresAt = walletExpiryFromConfig(cfg as Record<string, any>);
     const oncePerDay = Boolean((cfg as Record<string, any>).oncePerDay);
 
     if (oncePerDay && distinctDayCount != null) {
@@ -1152,6 +1168,7 @@ export async function processCompletionCampaignRewards(input: {
         customerId: input.customerId,
         campaignId: campaign.id,
         amount: rewardValue * owedRewards,
+        expiresAt: loyaltyExpiresAt,
         metadata: {
           source: 'LOYALTY_THRESHOLD',
           threshold,
@@ -1177,6 +1194,7 @@ export async function processCompletionCampaignRewards(input: {
         customerId: input.customerId,
         campaignId: campaign.id,
         amount: rewardValue,
+        expiresAt: loyaltyExpiresAt,
         metadata: {
           source: 'LOYALTY_THRESHOLD',
           threshold,
@@ -1206,6 +1224,7 @@ export async function processCompletionCampaignRewards(input: {
     const cfg = asObject(campaignRows?.[0]?.config);
     const referredReward = Math.max(0, Number(cfg.referredCustomerRewardValue || cfg.rewardValue || 0));
     const referrerReward = Math.max(0, Number(cfg.referrerRewardValue || cfg.rewardValue || 0));
+    const referralExpiresAt = walletExpiryFromConfig(cfg as Record<string, any>);
 
     if (referredReward > 0) {
       await createOrIncrementWalletCredit({
@@ -1213,6 +1232,7 @@ export async function processCompletionCampaignRewards(input: {
         customerId: input.customerId,
         campaignId,
         amount: referredReward,
+        expiresAt: referralExpiresAt,
         metadata: { source: 'REFERRAL_REFERRED_COMPLETED', attributionId: Number(row.id) },
       });
     }
@@ -1223,6 +1243,7 @@ export async function processCompletionCampaignRewards(input: {
         customerId: Number(row.referrerCustomerId),
         campaignId,
         amount: referrerReward,
+        expiresAt: referralExpiresAt,
         metadata: { source: 'REFERRAL_REFERRER_COMPLETED', attributionId: Number(row.id), referredCustomerId: input.customerId },
       });
     }
@@ -1296,6 +1317,7 @@ export async function getCampaignTeasersForCustomer(input: {
         SELECT "campaignId", GREATEST("balanceAmount" - "consumedAmount", 0) AS "available"
         FROM "CustomerCampaignWallet"
         WHERE "salonId" = $1 AND "customerId" = $2
+          AND ("expiresAt" IS NULL OR "expiresAt" > NOW())
       `,
       input.salonId,
       input.customerId,
