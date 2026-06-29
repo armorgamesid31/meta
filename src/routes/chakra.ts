@@ -1508,6 +1508,32 @@ router.post('/connect-event', authenticateToken, async (req: any, res: any) => {
       whatsappPhoneNumberId =
         resolveConnectedPhoneNumberId(selectedPhoneNumberId, pluginState) || whatsappPhoneNumberId;
 
+      // Chakra, plugin'i aktive ettikten birkaç saniye SONRA enabled numara
+      // listesini doldurabiliyor; connect-event o ana yetişirse numara null
+      // kalır, binding hiç oluşmaz ve "bağlandı ama görünmüyor" yaşanır.
+      // Numara gelene kadar kısa aralıklarla yeniden çek (sınırlı deneme).
+      if (!whatsappPhoneNumberId) {
+        for (let attempt = 0; attempt < 5 && !whatsappPhoneNumberId; attempt += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+          try {
+            const refreshed = await fetchPluginState(pluginId);
+            const resolved = resolveConnectedPhoneNumberId(selectedPhoneNumberId, refreshed);
+            if (resolved) {
+              whatsappPhoneNumberId = resolved;
+              pluginState = refreshed;
+            }
+          } catch (pollError) {
+            console.warn('[chakra] connect-event phone poll attempt failed:', pollError);
+          }
+        }
+        if (!whatsappPhoneNumberId) {
+          console.warn('[chakra] connect-event: phone number still empty after polling', {
+            salonId: salon.id,
+            pluginId,
+          });
+        }
+      }
+
       await updateSalonChakraState(salon.id, {
         chakraPhoneNumberId: whatsappPhoneNumberId,
       });
