@@ -856,11 +856,28 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
       continue;
     }
 
+    // Optional tiered rewards: a higher bill earns a higher reward. Tier 1 is
+    // the base thresholdAmount/rewardValue (entry gate, already checked above);
+    // tier 2/3 are optional flat config slots. Pick the highest tier whose
+    // threshold the eligible bill reaches. No tiers configured → effective
+    // value stays rewardValue → behavior identical to before.
+    const tiers = [
+      { threshold: thresholdAmount, value: rewardValue },
+      { threshold: Number(cfg.tier2Threshold || 0), value: Number(cfg.tier2RewardValue || 0) },
+      { threshold: Number(cfg.tier3Threshold || 0), value: Number(cfg.tier3RewardValue || 0) },
+    ]
+      .filter((tier) => tier.threshold > 0 && tier.value > 0)
+      .sort((a, b) => a.threshold - b.threshold);
+    let effectiveRewardValue = rewardValue;
+    for (const tier of tiers) {
+      if (eligibleTotal >= tier.threshold) effectiveRewardValue = tier.value;
+    }
+
     let totalRewardAmount = 0;
     if (rewardType === 'discount_percent') {
-      totalRewardAmount = Math.max(0, (eligibleTotal * rewardValue) / 100);
+      totalRewardAmount = Math.max(0, (eligibleTotal * effectiveRewardValue) / 100);
     } else if (rewardType === 'discount_fixed' || rewardType === 'fixed_amount') {
-      totalRewardAmount = Math.min(eligibleTotal, rewardValue);
+      totalRewardAmount = Math.min(eligibleTotal, effectiveRewardValue);
     } else {
       // free_service or other unknown — bail out for now. The free
       // service flow lives in the per-line loop and doesn't make sense
