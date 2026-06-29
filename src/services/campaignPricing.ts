@@ -677,6 +677,12 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
         appliedDiscountKind = kind;
         appliedDiscountValue = value;
         amount = computeDiscount(running, kind, value);
+        // Optional reward cap (₺): owner-set ceiling on the discount given by
+        // this campaign on this line. Reduce-only; absent/0 = no cap.
+        const maxDiscountAmount = Math.max(0, Number(cfg.maxDiscountAmount || 0));
+        if (maxDiscountAmount > 0) {
+          amount = Math.min(amount, maxDiscountAmount);
+        }
       }
 
       if (amount <= 0) continue;
@@ -804,6 +810,11 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
       // service flow lives in the per-line loop and doesn't make sense
       // as a BILL_THRESHOLD aggregate.
       continue;
+    }
+    // Optional reward cap (₺) on the total bill-threshold reward. Reduce-only.
+    const maxBillReward = Math.max(0, Number(cfg.maxDiscountAmount || 0));
+    if (maxBillReward > 0) {
+      totalRewardAmount = Math.min(totalRewardAmount, maxBillReward);
     }
     if (totalRewardAmount <= 0) continue;
 
