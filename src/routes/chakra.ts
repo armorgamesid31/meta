@@ -1804,6 +1804,14 @@ router.post('/disconnect', authenticateToken, async (req: any, res: any) => {
       throw new BusinessError('UNAUTHORIZED', 'Unauthorized.', 401);
     }
 
+    // Plugin'i Chakra'da silmeyi DENE. Silme GERÇEKTEN başarılıysa (ya da
+    // zaten yoksa = 404) local pointer'ı temizleriz. Silme BAŞARISIZ olursa
+    // plugin Chakra'da yaşamaya + WhatsApp WABA'sını tutmaya devam eder; o
+    // durumda pointer'ı null'larsak referansı kaybeder, reconnect yeni BOŞ
+    // bir plugin yaratır ve numara orphan plugin'de kilitli kalır ("bağlandı
+    // ama görünmüyor"). Bu yüzden silme başarısızsa pointer'ı KORUYORUZ ki
+    // reconnect aynı plugin'i (WABA'sıyla birlikte) yeniden kullansın.
+    let pluginRemoved = false;
     if (salon.chakraPluginId && CHAKRA_API_TOKEN) {
       try {
         await setPluginActiveState(salon.chakraPluginId, false);
@@ -1818,15 +1826,21 @@ router.post('/disconnect', authenticateToken, async (req: any, res: any) => {
           },
           timeout: 8000,
         });
+        pluginRemoved = true;
       } catch (deleteErr: any) {
-        // Plugin removal is best-effort; orphaned plugin in Chakra is
-        // tolerable as long as we unlink locally.
-        console.warn('Chakra plugin delete on disconnect failed:', deleteErr?.response?.status, deleteErr?.response?.data || deleteErr?.message);
+        if (deleteErr?.response?.status === 404) {
+          pluginRemoved = true; // zaten yok
+        } else {
+          console.warn('Chakra plugin delete on disconnect failed (pointer korunuyor):', deleteErr?.response?.status, deleteErr?.response?.data || deleteErr?.message);
+        }
       }
+    } else {
+      pluginRemoved = true;
     }
 
     await updateSalonChakraState(salon.id, {
-      chakraPluginId: null,
+      // Silme başarısızsa plugin'i koru (reconnect yeniden kullansın).
+      ...(pluginRemoved ? { chakraPluginId: null } : {}),
       chakraPhoneNumberId: null,
     });
 
