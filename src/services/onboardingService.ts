@@ -345,6 +345,10 @@ export async function activateOnboarding(input: {
         passwordHash,
         phoneVerifiedAt: session.phoneVerifiedAt,
         emailVerifiedAt: session.emailVerifiedAt,
+        profileImageUrl: session.photoUrl ?? undefined,
+        // gender'ı taşımazsak bootstrap completionRequired=true kalır ve
+        // kullanıcı davet kabulünden sonra profil adımını TEKRAR görür.
+        gender: (session.gender as any) ?? undefined,
         isActive: true,
       },
     });
@@ -404,6 +408,8 @@ export async function activateOnboarding(input: {
         phone: session.phone,
         email: session.email,
         passwordHash,
+        profileImageUrl: session.photoUrl ?? undefined,
+        gender: (session.gender as any) ?? undefined,
         isActive: true,
       },
     });

@@ -64,7 +64,6 @@ const DEFAULT_ROLE_PERMISSIONS: Record<FixedRole, string[]> = {
     'imports.manage',
     'timeoff.manage',
     'salon.faq.manage',
-    'referrals.view',
     'notifications.inbox.view',
     'notifications.preferences.manage',
   ],
@@ -74,6 +73,13 @@ const DEFAULT_ROLE_PERMISSIONS: Record<FixedRole, string[]> = {
     'customers.view',
     'customers.manage',
     'campaigns.view',
+    // Berkay kararı: çalışanlar varsayılan olarak paket / kampanya / hizmet /
+    // veri aktarımı / envanter yönetebilsin. Referans programı yalnız sahibe.
+    'packages.manage',
+    'campaigns.manage',
+    'services.manage',
+    'imports.manage',
+    'inventory.manage',
     'blacklist.manage',
     'conversations.manage',
     'notifications.inbox.view',
