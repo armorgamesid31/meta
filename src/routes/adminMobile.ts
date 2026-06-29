@@ -1388,6 +1388,106 @@ async function buildCampaignMetrics(campaign: any) {
   };
 }
 
+/**
+ * Campaign-SCOPED stats, derived from AppointmentCampaignApplication rows that
+ * actually belong to THIS campaign (campaignId-filtered) — unlike
+ * buildCampaignMetrics which reports salon-wide totals. Read-only, no schema
+ * change. Used to render the per-type performance panel.
+ */
+async function buildCampaignStats(campaign: any) {
+  const salonId = campaign.salonId;
+  const campaignId = campaign.id;
+  const type: string = campaign.type;
+
+  const [agg, customerGroups, appointmentGroups] = await Promise.all([
+    prisma.appointmentCampaignApplication.aggregate({
+      where: { salonId, campaignId, status: 'APPLIED' },
+      _sum: { discountAmount: true, finalPrice: true, listPrice: true },
+      _count: { _all: true },
+    }),
+    prisma.appointmentCampaignApplication.groupBy({
+      by: ['customerId'],
+      where: { salonId, campaignId, status: 'APPLIED', customerId: { not: null } },
+    }),
+    prisma.appointmentCampaignApplication.groupBy({
+      by: ['appointmentId'],
+      where: { salonId, campaignId, status: 'APPLIED' },
+      _sum: { finalPrice: true },
+    }),
+  ]);
+
+  const usedCustomerCount = customerGroups.length;
+  const appointmentCount = appointmentGroups.length;
+  const applicationCount = agg._count?._all || 0;
+  const totalDiscount = Number((agg._sum?.discountAmount || 0).toFixed(2));
+  const totalRevenue = Number((agg._sum?.finalPrice || 0).toFixed(2));
+  const avgTicket =
+    appointmentCount > 0
+      ? Number(
+          (
+            appointmentGroups.reduce((sum, group) => sum + (group._sum?.finalPrice || 0), 0) /
+            appointmentCount
+          ).toFixed(2)
+        )
+      : 0;
+  const servicesPerAppointment =
+    appointmentCount > 0 ? Number((applicationCount / appointmentCount).toFixed(1)) : 0;
+
+  const stats: any = {
+    type,
+    usedCustomerCount,
+    appointmentCount,
+    totalRevenue,
+    totalDiscount,
+    avgTicket,
+    servicesPerAppointment,
+  };
+
+  // REFERRAL ("Arkadaşını Getir") lives in CampaignAttribution, NOT the
+  // ReferralReward/ReferralCode tables (those are Kedy's own SaaS invites).
+  if (type === 'REFERRAL') {
+    const attributions = await prisma.campaignAttribution.findMany({
+      where: { salonId, campaignId, status: { not: 'CANCELLED' } },
+      select: {
+        referrerCustomerId: true,
+        referredCustomerId: true,
+        firstAppointmentId: true,
+        status: true,
+      },
+    });
+
+    const inviteCount = attributions.length;
+    const arrivedCount = attributions.filter(
+      (a) => a.firstAppointmentId != null || a.status === 'QUALIFIED' || a.status === 'REWARDED'
+    ).length;
+
+    const byReferrer = new Map<number, number>();
+    for (const a of attributions) {
+      byReferrer.set(a.referrerCustomerId, (byReferrer.get(a.referrerCustomerId) || 0) + 1);
+    }
+    let topReferrerId = 0;
+    let topReferrerCount = 0;
+    for (const [id, count] of byReferrer) {
+      if (count > topReferrerCount) {
+        topReferrerCount = count;
+        topReferrerId = id;
+      }
+    }
+    let topReferrerName: string | null = null;
+    if (topReferrerId) {
+      const referrer = await prisma.customer.findFirst({
+        where: { id: topReferrerId, salonId },
+        select: { name: true },
+      });
+      topReferrerName = referrer?.name || null;
+    }
+
+    stats.referral = { inviteCount, arrivedCount, topReferrerName, topReferrerCount };
+  }
+
+  return stats;
+}
+
 const TONE_VALUES = new Set(['friendly', 'professional', 'balanced']);
 const ANSWER_LENGTH_VALUES = new Set(['short', 'medium', 'detailed']);
 const EMOJI_USAGE_VALUES = new Set(['off', 'low', 'normal']);
@@ -10505,11 +10605,15 @@ router.get('/campaigns/:id', authenticateToken, async (req: any, res: any) => {
       throw new BusinessError('NOT_FOUND', 'Campaign not found.', 404);
     }
 
-    const metrics = await buildCampaignMetrics(campaign);
+    const [metrics, campaignStats] = await Promise.all([
+      buildCampaignMetrics(campaign),
+      buildCampaignStats(campaign),
+    ]);
 
     return res.status(200).json({
       item: campaign,
       metrics,
+      campaignStats,
     });
   } catch (error) {
     console.error('Admin campaign detail error:', error);
