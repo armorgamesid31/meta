@@ -1246,8 +1246,8 @@ router.get('/callback', async (req: any, res: any) => {
       channel,
       message:
         status === 'CONNECTED'
-          ? `${channel} connected successfully and initial verification completed.`
-          : `Connection completed with warnings (${status}). ${probeError || 'Check Meta webhook subscription.'}`,
+          ? `${channel === 'INSTAGRAM' ? 'Instagram' : channel === 'WHATSAPP' ? 'WhatsApp' : channel} bağlantısı başarıyla kuruldu.`
+          : `Bağlantı uyarılarla tamamlandı (${status}). ${probeError || 'Meta webhook aboneliğini kontrol edin.'}`,
     }));
   } catch (error) {
     console.error('Meta Direct callback exchange failed:', {
