@@ -708,6 +708,34 @@ router.post('/push/register', authenticateToken, async (req: any, res: any) => {
     // (iki salonu olan sahip / iki salonda çalışan) HER salonundan bildirim almalı.
     // "Çıkmış cihaz" temizliği logout → /push/unregister'da (token-bazlı) yapılır.
 
+    // Cihaz-bazlı dedup: FCM token'ı rotasyona uğrayınca (reinstall / yedekten
+    // dönüş / OS rotasyonu) app YENİ token kaydeder ama eski satır aktif kalırdı
+    // → aynı kişiye çift titreşim + ölü-token'a gönderim hatası. Stabil
+    // installationId varsa AYNI cihazın (aynı salon+kullanıcı) ESKİ token'larını
+    // pasifle; az önce kaydedilen token korunur. Çok-salon (salonId ile) ve
+    // çok-cihaz (farklı installationId aktif kalır) güvenli.
+    const installationId =
+      deviceMeta && typeof deviceMeta === 'object' && !Array.isArray(deviceMeta)
+        ? String((deviceMeta as Record<string, unknown>).installationId || '').trim()
+        : '';
+    if (installationId) {
+      await prisma.$executeRawUnsafe(
+        `
+          UPDATE "PushDeviceToken"
+          SET "isActive" = false, "updatedAt" = NOW()
+          WHERE "salonId" = $1
+            AND "userId" = $2
+            AND "isActive" = true
+            AND "deviceMeta"->>'installationId' = $3
+            AND "token" <> $4
+        `,
+        salonId,
+        userId,
+        installationId,
+        token,
+      );
+    }
+
     return res.status(200).json({ ok: true });
   } catch (error) {
     console.error('Mobile push register error:', error);
