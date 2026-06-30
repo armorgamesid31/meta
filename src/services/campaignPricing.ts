@@ -1697,39 +1697,6 @@ export async function registerReferralAttributionFromToken(input: {
   );
 }
 
-export async function getCampaignsForAutoSend(salonId: number): Promise<Array<{ id: number; name: string; type: string }>> {
-  const rows = await prisma.$queryRawUnsafe<any[]>(
-    `
-      SELECT "id", "name", "type"
-      FROM "Campaign"
-      WHERE "salonId" = $1
-        AND "isActive" = true
-        AND "deliveryMode" = 'AUTO'::"CampaignDeliveryMode"
-        AND "type" IN ('BIRTHDAY', 'WINBACK', 'WELCOME_FIRST_VISIT')
-    `,
-    salonId,
-  );
-  return rows.map((row) => ({ id: Number(row.id), name: String(row.name || ''), type: String(row.type || '') }));
-}
-
-export async function listCampaignsForSend(salonId: number, campaignId: number): Promise<Array<{ customerId: number; name: string | null }>> {
-  const rows = await prisma.$queryRawUnsafe<any[]>(
-    `
-      SELECT DISTINCT c."id" AS "customerId", c."name"
-      FROM "Customer" c
-      LEFT JOIN "CustomerCampaignEnrollment" e
-        ON e."salonId" = c."salonId" AND e."customerId" = c."id" AND e."campaignId" = $2
-      WHERE c."salonId" = $1
-        AND (e."status" = 'ENROLLED'::"CampaignEnrollmentStatus" OR e."id" IS NULL)
-      ORDER BY c."id" DESC
-      LIMIT 1000
-    `,
-    salonId,
-    campaignId,
-  );
-  return rows.map((row) => ({ customerId: Number(row.customerId), name: row.name || null }));
-}
-
 export function shouldAutoSendCampaignType(type: string): boolean {
   const normalized = String(type || '').toUpperCase();
   return normalized === 'BIRTHDAY' || normalized === 'WINBACK' || normalized === 'WELCOME_FIRST_VISIT';

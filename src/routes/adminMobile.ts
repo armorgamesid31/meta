@@ -78,7 +78,6 @@ import { normalizeDigitsOnly } from '../services/phoneValidation.js';
 import { backfillConversationThreadSummaryForSalon } from '../services/conversationThreadSummary.js';
 import { isR2ObjectUrl, fetchR2ObjectByUrl } from '../services/conversationAvatarStorage.js';
 import {
-  listCampaignsForSend,
   previewCampaignPricing,
   processCompletionCampaignRewards,
   releaseAppointmentCampaignApplications,
@@ -10886,120 +10885,6 @@ router.post('/campaigns/pricing-preview', authenticateToken, async (req: any, re
     return res.status(200).json(result);
   } catch (error) {
     console.error('Admin campaign pricing-preview error:', error);
-    throw error;
-  }
-});
-
-router.post('/campaigns/:id/publish', authenticateToken, async (req: any, res: any) => {
-  const salonId = getSalonId(req, res);
-  const campaignId = Number(req.params.id);
-  if (!Number.isInteger(campaignId) || campaignId <= 0) {
-    throw new BusinessError('VALIDATION_FAILED', 'Invalid campaign id.', 400);
-  }
-
-  try {
-    const campaign = await prisma.campaign.findFirst({
-      where: { id: campaignId, salonId },
-    });
-    if (!campaign) {
-      throw new BusinessError('NOT_FOUND', 'Campaign not found.', 404);
-    }
-
-    const updated = await prisma.campaign.update({
-      where: { id: campaignId },
-      data: {
-        isActive: true,
-        lifecycleStatus: 'ACTIVE',
-        publishedAt: new Date(),
-      },
-    });
-
-    return res.status(200).json({ item: updated });
-  } catch (error) {
-    console.error('Admin campaign publish error:', error);
-    throw error;
-  }
-});
-
-router.post('/campaigns/:id/send', authenticateToken, async (req: any, res: any) => {
-  const salonId = getSalonId(req, res);
-  const campaignId = Number(req.params.id);
-  if (!Number.isInteger(campaignId) || campaignId <= 0) {
-    throw new BusinessError('VALIDATION_FAILED', 'Invalid campaign id.', 400);
-  }
-
-  try {
-    const executionKey = `cmp_send_${salonId}_${campaignId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    const startedAt = new Date();
-    const campaign = await prisma.campaign.findFirst({
-      where: { id: campaignId, salonId },
-      select: { id: true, name: true, type: true },
-    });
-    if (!campaign) {
-      throw new BusinessError('NOT_FOUND', 'Campaign not found.', 404);
-    }
-
-    const recipients = await listCampaignsForSend(salonId, campaignId);
-    const recipientUserIds = recipients.map((row) => row.customerId).filter((id) => Number.isInteger(id) && id > 0);
-
-    const execution = await prisma.campaignSendExecution.create({
-      data: {
-        salonId,
-        campaignId: campaign.id,
-        executionKey,
-        status: 'COMPLETED',
-        audienceSize: recipientUserIds.length,
-        successCount: recipientUserIds.length,
-        failureCount: 0,
-        startedAt,
-        completedAt: new Date(),
-      },
-      select: { id: true, executionKey: true },
-    });
-
-    // Kampanya gönderim bildirimi iptal (Berkay, 2026-06-29): kampanya
-    // gönderimi/execution kaydı çalışmaya devam eder, ama "kampanya
-    // gönderildi" push/in-app bildirimi ÜRETİLMEZ.
-
-    return res.status(200).json({
-      sent: true,
-      campaignId: campaign.id,
-      audienceSize: recipientUserIds.length,
-      executionId: execution.id,
-      executionKey: execution.executionKey,
-    });
-  } catch (error) {
-    await prisma.campaignSendExecution.create({
-      data: {
-        salonId,
-        campaignId,
-        executionKey: `cmp_send_${salonId}_${campaignId}_${Date.now()}_error`,
-        status: 'FAILED',
-        errorMessage: (error as any)?.message || 'send_failed',
-        completedAt: new Date(),
-      },
-    }).catch(() => undefined);
-    console.error('Admin campaign send error:', error);
-    throw error;
-  }
-});
-
-router.get('/campaigns/:id/send-executions', authenticateToken, async (req: any, res: any) => {
-  const salonId = getSalonId(req, res);
-  const campaignId = Number(req.params.id);
-  if (!Number.isInteger(campaignId) || campaignId <= 0) {
-    throw new BusinessError('VALIDATION_FAILED', 'Invalid campaign id.', 400);
-  }
-
-  try {
-    const items = await prisma.campaignSendExecution.findMany({
-      where: { salonId, campaignId },
-      orderBy: { createdAt: 'desc' },
-      take: 50,
-    });
-    return res.status(200).json({ items });
-  } catch (error) {
-    console.error('Admin campaign send-executions error:', error);
     throw error;
   }
 });
