@@ -1272,6 +1272,12 @@ export async function processCompletionCampaignRewards(input: {
     input.customerId,
   );
 
+  // Referral anti-abuse: total completed appointments of the just-completed
+  // (referred) customer. "Genuinely new" = exactly this one (count === 1).
+  const referredCompletedCount = await prisma.appointment.count({
+    where: { salonId: input.salonId, customerId: input.customerId, status: 'COMPLETED' },
+  });
+
   for (const row of refRows) {
     const campaignId = Number(row.campaignId);
     const campaignRows = await prisma.$queryRawUnsafe<any[]>(`SELECT "config" FROM "Campaign" WHERE "id" = $1 LIMIT 1`, campaignId);
@@ -1279,6 +1285,18 @@ export async function processCompletionCampaignRewards(input: {
     const referredReward = Math.max(0, Number(cfg.referredCustomerRewardValue || cfg.rewardValue || 0));
     const referrerReward = Math.max(0, Number(cfg.referrerRewardValue || cfg.rewardValue || 0));
     const referralExpiresAt = walletExpiryFromConfig(cfg as Record<string, any>);
+
+    // Optional: only reward when the referred customer is genuinely new (no
+    // prior completed appointment). Otherwise the referral is invalid → cancel
+    // the attribution so it isn't retried. Config absent → no gate.
+    if (Boolean((cfg as Record<string, any>).referredMustBeNew) && referredCompletedCount > 1) {
+      await prisma.$executeRawUnsafe(
+        `UPDATE "CampaignAttribution" SET "status" = 'CANCELLED'::"CampaignAttributionStatus", "updatedAt" = NOW() WHERE "id" = $1 AND "salonId" = $2`,
+        Number(row.id),
+        input.salonId,
+      );
+      continue;
+    }
 
     if (referredReward > 0) {
       await createOrIncrementWalletCredit({
@@ -1292,14 +1310,32 @@ export async function processCompletionCampaignRewards(input: {
     }
 
     if (referrerReward > 0 && Number(row.referrerCustomerId) > 0) {
-      await createOrIncrementWalletCredit({
-        salonId: input.salonId,
-        customerId: Number(row.referrerCustomerId),
-        campaignId,
-        amount: referrerReward,
-        expiresAt: referralExpiresAt,
-        metadata: { source: 'REFERRAL_REFERRER_COMPLETED', attributionId: Number(row.id), referredCustomerId: input.customerId },
-      });
+      // Optional cap: how many referral rewards a single referrer can earn for
+      // this campaign. Counts already-REWARDED attributions (excludes the
+      // current one, still REGISTERED/PENDING here). Config absent → no cap.
+      const maxPerReferrer = Math.max(0, Number((cfg as Record<string, any>).maxReferralRewardsPerReferrer || 0));
+      let referrerUnderCap = true;
+      if (maxPerReferrer > 0) {
+        const rewardedRows = await prisma.$queryRawUnsafe<any[]>(
+          `SELECT COUNT(*)::int AS c FROM "CampaignAttribution"
+           WHERE "salonId" = $1 AND "campaignId" = $2 AND "referrerCustomerId" = $3
+             AND "status" = 'REWARDED'::"CampaignAttributionStatus"`,
+          input.salonId,
+          campaignId,
+          Number(row.referrerCustomerId),
+        );
+        referrerUnderCap = Number(rewardedRows?.[0]?.c || 0) < maxPerReferrer;
+      }
+      if (referrerUnderCap) {
+        await createOrIncrementWalletCredit({
+          salonId: input.salonId,
+          customerId: Number(row.referrerCustomerId),
+          campaignId,
+          amount: referrerReward,
+          expiresAt: referralExpiresAt,
+          metadata: { source: 'REFERRAL_REFERRER_COMPLETED', attributionId: Number(row.id), referredCustomerId: input.customerId },
+        });
+      }
     }
 
     await prisma.$executeRawUnsafe(
