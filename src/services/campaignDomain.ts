@@ -93,6 +93,19 @@ export function validateCampaignConfig(type: CampaignType, rawConfig: unknown): 
     if (!rewardValue) {
       return { ok: false, message: 'config.rewardValue must be a positive number.' };
     }
+    // Optional tiers must require progressively higher bills than the base
+    // threshold (otherwise a higher bill could earn a lower reward).
+    const t2 = requirePositive('tier2Threshold');
+    const t3 = requirePositive('tier3Threshold');
+    if (t2 && t2 <= thresholdAmount) {
+      return { ok: false, message: '2. kademe eşiği ana eşikten büyük olmalı.' };
+    }
+    if (t3 && t3 <= thresholdAmount) {
+      return { ok: false, message: '3. kademe eşiği ana eşikten büyük olmalı.' };
+    }
+    if (t2 && t3 && t3 <= t2) {
+      return { ok: false, message: '3. kademe eşiği 2. kademeden büyük olmalı.' };
+    }
   }
 
   if (type === 'MULTI_SERVICE_DISCOUNT') {
@@ -108,6 +121,9 @@ export function validateCampaignConfig(type: CampaignType, rawConfig: unknown): 
     if (!/^\d{2}:\d{2}$/.test(startHour) || !/^\d{2}:\d{2}$/.test(endHour)) {
       return { ok: false, message: 'config.startHour and config.endHour must be HH:mm.' };
     }
+    if (startHour === endHour) {
+      return { ok: false, message: 'Başlangıç ve bitiş saati aynı olamaz.' };
+    }
   }
 
   if (type === 'LOYALTY' || type === 'REFERRAL') {
@@ -118,6 +134,23 @@ export function validateCampaignConfig(type: CampaignType, rawConfig: unknown): 
     }
     if (!rewardValue) {
       return { ok: false, message: 'config.rewardValue must be a positive number.' };
+    }
+  }
+
+  if (type === 'LOYALTY') {
+    // Optional milestone tiers must require progressively more visits than the
+    // base reward threshold.
+    const baseVisits = requirePositive('rewardThreshold');
+    const lt2 = requirePositive('tier2Visits');
+    const lt3 = requirePositive('tier3Visits');
+    if (lt2 && baseVisits && lt2 <= baseVisits) {
+      return { ok: false, message: '2. ödül için ziyaret sayısı ilk ödülden büyük olmalı.' };
+    }
+    if (lt3 && baseVisits && lt3 <= baseVisits) {
+      return { ok: false, message: '3. ödül için ziyaret sayısı ilk ödülden büyük olmalı.' };
+    }
+    if (lt2 && lt3 && lt3 <= lt2) {
+      return { ok: false, message: '3. ödül için ziyaret sayısı 2. ödülden büyük olmalı.' };
     }
   }
 
