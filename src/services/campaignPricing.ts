@@ -1184,32 +1184,39 @@ export async function processCompletionCampaignRewards(input: {
   const campaigns = await getActiveCampaigns(input.salonId, new Date());
   const loyalty = campaigns.filter((c) => c.type === 'LOYALTY');
 
-  // Optional "once per day" stamp rule: if ANY loyalty campaign opts in, count
-  // stamps by DISTINCT completed days instead of raw completed-appointment
-  // count, so a customer can't farm stamps with multiple same-day bookings.
-  // To stay idempotent (createOrIncrementWalletCredit is NOT idempotent), the
-  // reward only fires on the day's "representative" completion = the
-  // smallest-id completed appointment of that day. Exactly one completion per
-  // day passes the gate, regardless of completion order → never double-credits.
-  const anyOncePerDay = loyalty.some((c) => Boolean((c.config as Record<string, any>)?.oncePerDay));
-  let distinctDayCount: number | null = null;
-  let isDayRepresentative = false;
-  if (anyOncePerDay) {
-    const timezone = await getSalonTimezone(input.salonId);
-    const completed = await prisma.appointment.findMany({
-      where: { salonId: input.salonId, customerId: input.customerId, status: 'COMPLETED' },
-      select: { id: true, startTime: true },
-    });
-    const dayKeyFmt = new Intl.DateTimeFormat('en-CA', {
-      timeZone: timezone,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    });
+  // Fetch the customer's completed appointments ONCE (with finalPrice so each
+  // campaign can apply its own optional minBillThreshold). Stamp counting is
+  // then derived per-campaign from this list — supporting:
+  //  - "once per day": count DISTINCT completed days (not raw count) so a
+  //    customer can't farm stamps with multiple same-day bookings. To stay
+  //    idempotent (createOrIncrementWalletCredit is NOT idempotent) the reward
+  //    only fires on the day's "representative" completion = smallest-id
+  //    completed appointment of that day → exactly one completion per day
+  //    passes, order-independent, never double-credits.
+  //  - minBillThreshold: only appointments whose bill (finalPrice) reaches the
+  //    threshold count as stamps.
+  // minBillThreshold absent/0 → no filter → behavior identical to before.
+  const anyLoyalty = loyalty.length > 0;
+  const timezone = anyLoyalty ? await getSalonTimezone(input.salonId) : 'Europe/Istanbul';
+  const completedAppts = anyLoyalty
+    ? await prisma.appointment.findMany({
+        where: { salonId: input.salonId, customerId: input.customerId, status: 'COMPLETED' },
+        select: { id: true, startTime: true, finalPrice: true },
+      })
+    : [];
+  const dayKeyFmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const computeStamps = (
+    appts: Array<{ id: number; startTime: Date | null; finalPrice: number | null }>
+  ) => {
     const days = new Set<string>();
     const minIdByDay = new Map<string, number>();
     let currentDayKey: string | null = null;
-    for (const appt of completed) {
+    for (const appt of appts) {
       if (!appt.startTime) continue;
       const key = dayKeyFmt.format(new Date(appt.startTime));
       days.add(key);
@@ -1217,9 +1224,13 @@ export async function processCompletionCampaignRewards(input: {
       if (existing === undefined || appt.id < existing) minIdByDay.set(key, appt.id);
       if (appt.id === input.appointmentId) currentDayKey = key;
     }
-    distinctDayCount = days.size;
-    isDayRepresentative = currentDayKey != null && minIdByDay.get(currentDayKey) === input.appointmentId;
-  }
+    return {
+      totalCount: appts.length,
+      distinctDayCount: days.size,
+      isDayRepresentative:
+        currentDayKey != null && minIdByDay.get(currentDayKey) === input.appointmentId,
+    };
+  };
 
   for (const campaign of loyalty) {
     const cfg = campaign.config;
@@ -1229,6 +1240,14 @@ export async function processCompletionCampaignRewards(input: {
 
     const loyaltyExpiresAt = walletExpiryFromConfig(cfg as Record<string, any>);
     const oncePerDay = Boolean((cfg as Record<string, any>).oncePerDay);
+
+    // Optional minimum-bill filter: only appointments whose finalPrice reaches
+    // the threshold count as stamps. minBill 0 → all completed appointments
+    // (identical to the previous behavior).
+    const minBill = Math.max(0, Number((cfg as Record<string, any>).minBillThreshold || 0));
+    const qualifyingAppts =
+      minBill > 0 ? completedAppts.filter((a) => (a.finalPrice ?? 0) >= minBill) : completedAppts;
+    const stamps = computeStamps(qualifyingAppts);
 
     // MILESTONE MODE: when optional tier2/tier3 (kaç ziyaret → ödül) are set,
     // loyalty switches from "repeating every N visits" to one-time tiered
@@ -1246,13 +1265,11 @@ export async function processCompletionCampaignRewards(input: {
 
     if (milestoneTiers.length > 1) {
       let stampCount: number;
-      if (oncePerDay && distinctDayCount != null) {
-        if (!isDayRepresentative) continue; // optimization; idempotency below is the real guard
-        stampCount = distinctDayCount;
+      if (oncePerDay) {
+        if (!stamps.isDayRepresentative) continue; // optimization; idempotency below is the real guard
+        stampCount = stamps.distinctDayCount;
       } else {
-        stampCount = await prisma.appointment.count({
-          where: { salonId: input.salonId, customerId: input.customerId, status: 'COMPLETED' },
-        });
+        stampCount = stamps.totalCount;
       }
 
       const reachedMilestones = milestoneTiers.filter((tier) => stampCount >= tier.visits).length;
@@ -1305,17 +1322,17 @@ export async function processCompletionCampaignRewards(input: {
       continue;
     }
 
-    if (oncePerDay && distinctDayCount != null) {
+    if (oncePerDay) {
       // Skip redundant same-day work; correctness does NOT rely on this — the
       // earned-vs-credited check below is idempotent on its own.
-      if (!isDayRepresentative) continue;
+      if (!stamps.isDayRepresentative) continue;
 
       // Idempotent crediting: how many rewards the customer SHOULD have earned
       // by now (one per `threshold` distinct days) vs how many we've already
       // credited (tracked in wallet metadata). Credit only the difference.
       // Order-independent → the same-day reverse-order double-credit window is
       // closed, and it never over- or under-credits across re-runs.
-      const earnedRewards = Math.floor(distinctDayCount / threshold);
+      const earnedRewards = Math.floor(stamps.distinctDayCount / threshold);
       if (earnedRewards <= 0) continue;
 
       const wallet = await prisma.customerCampaignWallet.findUnique({
@@ -1363,15 +1380,16 @@ export async function processCompletionCampaignRewards(input: {
       continue;
     }
 
-    const completedCount = await prisma.appointment.count({
-      where: {
-        salonId: input.salonId,
-        customerId: input.customerId,
-        status: 'COMPLETED',
-      },
-    });
+    // Only credit when THIS completion actually earned a stamp (qualifies under
+    // minBill). The legacy path is non-idempotent and relies on the modulo
+    // boundary being hit exactly once per new stamp; a sub-threshold completion
+    // leaves the qualifying count unchanged, so without this guard it would
+    // re-trigger the modulo on an unchanged count → spurious double credit.
+    // minBill 0 → every appointment qualifies → guard is a no-op (old behavior).
+    const currentQualifies = qualifyingAppts.some((a) => a.id === input.appointmentId);
+    const completedCount = stamps.totalCount;
 
-    if (completedCount > 0 && completedCount % threshold === 0) {
+    if (currentQualifies && completedCount > 0 && completedCount % threshold === 0) {
       await createOrIncrementWalletCredit({
         salonId: input.salonId,
         customerId: input.customerId,
