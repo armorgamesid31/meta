@@ -1176,6 +1176,81 @@ export async function processCompletionCampaignRewards(input: {
     const loyaltyExpiresAt = walletExpiryFromConfig(cfg as Record<string, any>);
     const oncePerDay = Boolean((cfg as Record<string, any>).oncePerDay);
 
+    // MILESTONE MODE: when optional tier2/tier3 (kaç ziyaret → ödül) are set,
+    // loyalty switches from "repeating every N visits" to one-time tiered
+    // milestones (e.g. 5 ziyaret→100₺, 10→250₺). Tier 1 = base
+    // rewardThreshold/rewardValue. Idempotent via the SAME loyaltyRewardCount
+    // counter (= number of milestones credited). No tiers → length 1 → mode off
+    // → existing repeating logic runs unchanged.
+    const milestoneTiers = [
+      { visits: threshold, value: rewardValue },
+      { visits: Number((cfg as Record<string, any>).tier2Visits || 0), value: Number((cfg as Record<string, any>).tier2RewardValue || 0) },
+      { visits: Number((cfg as Record<string, any>).tier3Visits || 0), value: Number((cfg as Record<string, any>).tier3RewardValue || 0) },
+    ]
+      .filter((tier) => tier.visits > 0 && tier.value > 0)
+      .sort((a, b) => a.visits - b.visits);
+
+    if (milestoneTiers.length > 1) {
+      let stampCount: number;
+      if (oncePerDay && distinctDayCount != null) {
+        if (!isDayRepresentative) continue; // optimization; idempotency below is the real guard
+        stampCount = distinctDayCount;
+      } else {
+        stampCount = await prisma.appointment.count({
+          where: { salonId: input.salonId, customerId: input.customerId, status: 'COMPLETED' },
+        });
+      }
+
+      const reachedMilestones = milestoneTiers.filter((tier) => stampCount >= tier.visits).length;
+      if (reachedMilestones <= 0) continue;
+
+      const wallet = await prisma.customerCampaignWallet.findUnique({
+        where: {
+          salonId_customerId_campaignId: {
+            salonId: input.salonId,
+            customerId: input.customerId,
+            campaignId: campaign.id,
+          },
+        },
+        select: { metadata: true, balanceAmount: true, consumedAmount: true },
+      });
+      const trackedCount = Number((wallet?.metadata as Record<string, any> | null)?.loyaltyRewardCount);
+      // Tracked counter preferred. If absent but the wallet already has credit
+      // (e.g. switched from legacy repeating mode), treat all currently-reached
+      // milestones as already credited → never retroactively double-pay
+      // (salon-safe under-credit at the switch). Fresh/empty wallet → 0.
+      let creditedMilestones: number;
+      if (Number.isFinite(trackedCount)) {
+        creditedMilestones = Math.max(0, trackedCount);
+      } else if (((wallet?.balanceAmount || 0) + (wallet?.consumedAmount || 0)) > 0) {
+        creditedMilestones = reachedMilestones;
+      } else {
+        creditedMilestones = 0;
+      }
+      if (creditedMilestones >= reachedMilestones) continue;
+
+      let milestoneAmount = 0;
+      for (let i = creditedMilestones; i < reachedMilestones; i++) {
+        milestoneAmount += milestoneTiers[i].value;
+      }
+      if (milestoneAmount <= 0) continue;
+
+      await createOrIncrementWalletCredit({
+        salonId: input.salonId,
+        customerId: input.customerId,
+        campaignId: campaign.id,
+        amount: milestoneAmount,
+        expiresAt: loyaltyExpiresAt,
+        metadata: {
+          source: 'LOYALTY_MILESTONE',
+          appointmentId: input.appointmentId,
+          oncePerDay,
+          loyaltyRewardCount: reachedMilestones,
+        },
+      });
+      continue;
+    }
+
     if (oncePerDay && distinctDayCount != null) {
       // Skip redundant same-day work; correctness does NOT rely on this — the
       // earned-vs-credited check below is idempotent on its own.
