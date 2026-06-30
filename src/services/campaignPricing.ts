@@ -720,8 +720,18 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
           skip(campaign, 'OFF_PEAK_NOT_ELIGIBLE');
           continue;
         }
-        const startMinute = toMinute(cfg.startHour) ?? toMinute('12:00')!;
-        const endMinute = toMinute(cfg.endHour) ?? toMinute('16:00')!;
+        // Optional per-day hours: cfg.dayHours = { MON: {start,end}, ... }.
+        // When today has an entry, use that window; otherwise fall back to the
+        // global startHour/endHour (existing behavior → backward-compatible).
+        const dayHours =
+          cfg.dayHours && typeof cfg.dayHours === 'object' && !Array.isArray(cfg.dayHours)
+            ? (cfg.dayHours as Record<string, any>)
+            : null;
+        const todayWindow = dayHours?.[weekdayKey];
+        const startRaw = todayWindow?.start ?? cfg.startHour;
+        const endRaw = todayWindow?.end ?? cfg.endHour;
+        const startMinute = toMinute(startRaw) ?? toMinute('12:00')!;
+        const endMinute = toMinute(endRaw) ?? toMinute('16:00')!;
         // Gece yarısını aşan pencere desteği (örn. 22:00–02:00): endMinute
         // startMinute'ten KÜÇÜKSE aralık ertesi güne sarar. EŞİTSE sıfır-genişlik
         // (dejenere config, örn. 12:00–12:00) → hiç uygulama (eski davranışla aynı,
