@@ -760,7 +760,18 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
         }
         amount = Math.min(running, walletAmount);
       } else if (rewardType === 'free_service') {
-        if (Number(cfg.rewardServiceId) === Number(line.serviceId)) {
+        // The free-service picker stores its selection in `rewardServiceIds`
+        // (array); older/singular `rewardServiceId` kept as a fallback. Read
+        // both so the configured gift service is actually matched (previously
+        // only the singular key was checked, which the form never sets → the
+        // free-service reward never applied for ANY campaign type).
+        const freeServiceIds = Array.isArray(cfg.rewardServiceIds)
+          ? cfg.rewardServiceIds.map((id: any) => Number(id))
+          : [];
+        if (cfg.rewardServiceId != null) {
+          freeServiceIds.push(Number(cfg.rewardServiceId));
+        }
+        if (freeServiceIds.includes(Number(line.serviceId))) {
           amount = running;
         } else {
           skip(campaign, 'SERVICE_NOT_ELIGIBLE');
