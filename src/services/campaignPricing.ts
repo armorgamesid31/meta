@@ -26,6 +26,10 @@ export type CampaignPricingLineInput = {
   // booker only — companion lines pass through with no discount.
   // Optional for back-compat: undefined behaves as 1.
   personIndex?: number;
+  // Staff assigned to this line, when known (booking commit path). Used by the
+  // optional staff-scope filter (eligibleStaffIds). Undefined/null = unknown →
+  // a staff-restricted campaign won't apply (safe).
+  staffId?: number | null;
 };
 
 export type CampaignPricingInput = {
@@ -54,6 +58,7 @@ export type CampaignSkipReasonCode =
   | 'OFF_PEAK_NOT_ELIGIBLE'
   | 'WALLET_EMPTY'
   | 'SERVICE_NOT_ELIGIBLE'
+  | 'STAFF_NOT_ELIGIBLE'
   | 'INVALID_DISCOUNT_CONFIG'
   | 'COMPANION_LINE'
   | 'BILL_THRESHOLD_NOT_REACHED'
@@ -82,6 +87,7 @@ export const SKIP_REASON_LABELS_TR: Record<CampaignSkipReasonCode, string> = {
   OFF_PEAK_NOT_ELIGIBLE: 'Uygun saat dışı',
   WALLET_EMPTY: 'Cüzdan bakiyesi yok',
   SERVICE_NOT_ELIGIBLE: 'Bu hizmet kampanyaya dahil değil',
+  STAFF_NOT_ELIGIBLE: 'Bu çalışan kampanyaya dahil değil',
   INVALID_DISCOUNT_CONFIG: 'Kampanya ayarı geçersiz',
   COMPANION_LINE: 'Yanınızdaki kişiye kampanya uygulanmaz',
   BILL_THRESHOLD_NOT_REACHED: 'Minimum tutara ulaşılmadı',
@@ -209,6 +215,17 @@ function isServiceEligibleByScope(config: Record<string, any>, serviceId: number
     return eligible.has(serviceId);
   }
 
+  return true;
+}
+
+// Optional staff-scope filter. If eligibleStaffIds is set, the line's assigned
+// staff must be in it. Unknown staffId (preview paths) with a restriction set
+// → not eligible (safe: a staff-restricted campaign won't apply blindly).
+function isStaffEligibleByScope(config: Record<string, any>, staffId: number | null | undefined): boolean {
+  const eligible = toServiceIdSet(config.eligibleStaffIds);
+  if (eligible && eligible.size > 0) {
+    return staffId != null && eligible.has(Number(staffId));
+  }
   return true;
 }
 
@@ -491,6 +508,7 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
     input.lines.forEach((line, idx) => {
       if (line.isPackageCovered || !isMainPersonLine(line)) return;
       if (!isServiceEligibleByScope(cfg, Number(line.serviceId))) return;
+      if (!isStaffEligibleByScope(cfg, line.staffId)) return;
       const price = Math.max(0, Number(line.listPrice || 0));
       if (price <= 0) return;
       if (price < bestPrice) {
@@ -628,6 +646,21 @@ export async function previewCampaignPricing(input: CampaignPricingInput): Promi
         !isServiceEligibleByScope(cfg, Number(line.serviceId))
       ) {
         skip(campaign, 'SERVICE_NOT_ELIGIBLE');
+        continue;
+      }
+
+      // Optional staff-scope filter (eligibleStaffIds). Same campaign types.
+      if (
+        (type === 'WELCOME_FIRST_VISIT' ||
+          type === 'BIRTHDAY' ||
+          type === 'WINBACK' ||
+          type === 'REFERRAL' ||
+          type === 'LOYALTY' ||
+          type === 'MULTI_SERVICE_DISCOUNT' ||
+          type === 'OFF_PEAK') &&
+        !isStaffEligibleByScope(cfg, line.staffId)
+      ) {
+        skip(campaign, 'STAFF_NOT_ELIGIBLE');
         continue;
       }
 

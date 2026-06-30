@@ -10875,6 +10875,7 @@ router.post('/campaigns/pricing-preview', authenticateToken, async (req: any, re
       serviceId: Number(line?.serviceId),
       listPrice: Number(line?.listPrice || 0),
       isPackageCovered: Boolean(line?.isPackageCovered),
+      staffId: line?.staffId != null ? Number(line.staffId) : null,
     }));
     const result = await previewCampaignPricing({
       salonId,

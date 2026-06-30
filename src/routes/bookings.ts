@@ -490,6 +490,7 @@ async function createExactSlotBooking(input: {
     isPackageCovered: packageByService.has(l.serviceId),
     // Faz 42: pricing engine scopes campaigns to the booker (personIndex 1) only.
     personIndex: l.personIndex,
+    staffId: l.staffId,
   }));
   const pricingResult = await previewCampaignPricing({
     salonId: input.salonId,
@@ -1611,6 +1612,7 @@ router.post('/pricing-preview', async (req: any, res: any) => {
       listPrice: Math.max(0, Number(resolved[i]?.price || 0)),
       isPackageCovered: packageByService.has(l.serviceId),
       personIndex: l.personIndex,
+      staffId: l.staffId,
     }));
 
     const pricing = await previewCampaignPricing({
